@@ -86,39 +86,52 @@ func (h *Hub) Register(client *Client) {
 }
 
 func (h *Hub) Unregister(client *Client) {
-	h.unregister <- client
+	select {
+	case h.unregister <- client:
+	case <-h.quit:
+	}
 }
 
 func (h *Hub) BroadcastToChannel(channel string, message []byte) {
 	h.mu.RLock()
-	clients, ok := h.channels[channel]
+	full := sendMessage(h.channels[channel], message)
 	h.mu.RUnlock()
-	if !ok {
-		return
-	}
-	h.mu.RLock()
-	for client := range clients {
-		select {
-		case client.Send <- message:
-		default:
-			go h.Unregister(client)
-		}
-	}
-	h.mu.RUnlock()
+	h.unregisterClients(full)
 }
 
 func (h *Hub) BroadcastToUser(userID uint, message []byte) {
 	h.mu.RLock()
+	var full []*Client
 	for client := range h.clients {
-		if client.UserID == userID {
-			select {
-			case client.Send <- message:
-			default:
-				go h.Unregister(client)
-			}
+		if client.UserID != userID {
+			continue
+		}
+		select {
+		case client.Send <- message:
+		default:
+			full = append(full, client)
 		}
 	}
 	h.mu.RUnlock()
+	h.unregisterClients(full)
+}
+
+func sendMessage(clients map[*Client]bool, message []byte) []*Client {
+	var full []*Client
+	for client := range clients {
+		select {
+		case client.Send <- message:
+		default:
+			full = append(full, client)
+		}
+	}
+	return full
+}
+
+func (h *Hub) unregisterClients(clients []*Client) {
+	for _, client := range clients {
+		h.Unregister(client)
+	}
 }
 
 // WritePump sends messages from the Send channel to the WebSocket connection
