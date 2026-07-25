@@ -1,6 +1,8 @@
 package service
 
 import (
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -240,25 +242,52 @@ func (s *PermissionService) allFeaturePermissions() ([]string, error) {
 }
 
 func (s *PermissionService) filterSuperAdminOnly(codes []string) ([]string, error) {
-	gated, err := s.resources.ListSuperAdminOnlyFullCodes()
+	resources, err := s.resources.ListByFullCodes(codes)
 	if err != nil {
 		return nil, err
 	}
-	deny := rbac.ToSet(gated)
+
+	exactGates := make(map[string]bool, len(resources))
+	for _, resource := range resources {
+		exactGates[resource.FullCode] = resource.SuperAdminOnly
+	}
+
+	menuCodes := make(map[string]struct{})
+	missingMenus := make(map[string]string)
+	for _, code := range codes {
+		if _, found := exactGates[code]; found {
+			continue
+		}
+		menuCode, _, ok := rbac.SplitPermission(code)
+		if !ok {
+			continue
+		}
+		missingMenus[code] = menuCode
+		menuCodes[menuCode] = struct{}{}
+	}
+	menus, err := s.resources.ListByFullCodes(slices.Collect(maps.Keys(menuCodes)))
+	if err != nil {
+		return nil, err
+	}
+	menuGates := make(map[string]bool, len(menus))
+	for _, menu := range menus {
+		if menu.Type == model.ResourceTypeMenu {
+			menuGates[menu.FullCode] = menu.SuperAdminOnly
+		}
+	}
+
 	out := make([]string, 0, len(codes))
-	for _, c := range codes {
-		if _, ok := deny[c]; ok {
+	for _, code := range codes {
+		if gated, found := exactGates[code]; found {
+			if !gated {
+				out = append(out, code)
+			}
 			continue
 		}
-		// Also deny if parent menu is super_admin_only.
-		only, err := s.resources.IsSuperAdminOnly(c)
-		if err != nil {
-			return nil, err
-		}
-		if only {
+		if menuGates[missingMenus[code]] {
 			continue
 		}
-		out = append(out, c)
+		out = append(out, code)
 	}
 	return out, nil
 }

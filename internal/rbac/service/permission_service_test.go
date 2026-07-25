@@ -176,7 +176,11 @@ func TestSuperAdminOnlyGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Simulate a stale grant that slipped into role_permissions.
-	if err := roleRepo.ReplacePermissions(r.ID, []string{"ops_processes:view", "system_users:view"}); err != nil {
+	if err := roleRepo.ReplacePermissions(r.ID, []string{
+		"ops_processes:view",
+		"ops_processes:removed_legacy",
+		"system_users:view",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := roles.SetUserRoles(u.ID, []uint{r.ID}); err != nil {
@@ -476,11 +480,21 @@ func TestMenuGroupDeleteRejectsNonEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	system, err := groups.FindByCode("system")
+	items, err := groups.List()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.Delete(system.ID); err == nil {
+	var systemID uint
+	for _, item := range items {
+		if item.Code == "system" {
+			systemID = item.ID
+			break
+		}
+	}
+	if systemID == 0 {
+		t.Fatal("system menu group not found")
+	}
+	if err := svc.Delete(systemID); err == nil {
 		t.Fatal("expected delete non-empty group reject")
 	}
 	if err := svc.Delete(created.ID); err != nil {

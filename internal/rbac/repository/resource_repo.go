@@ -53,6 +53,15 @@ func (r *ResourceRepository) ListFeatures() ([]model.RbacResource, error) {
 	return items, err
 }
 
+func (r *ResourceRepository) ListByFullCodes(fullCodes []string) ([]model.RbacResource, error) {
+	if len(fullCodes) == 0 {
+		return nil, nil
+	}
+	var items []model.RbacResource
+	err := r.db.Where("full_code IN ?", fullCodes).Find(&items).Error
+	return items, err
+}
+
 func (r *ResourceRepository) ListByParentID(parentID uint) ([]model.RbacResource, error) {
 	var items []model.RbacResource
 	err := r.db.Where("parent_id = ?", parentID).
@@ -106,12 +115,4 @@ func (r *ResourceRepository) IsSuperAdminOnly(fullCode string) (bool, error) {
 		return false, err
 	}
 	return res.SuperAdminOnly, nil
-}
-
-func (r *ResourceRepository) ListSuperAdminOnlyFullCodes() ([]string, error) {
-	var codes []string
-	err := r.db.Model(&model.RbacResource{}).
-		Where("super_admin_only = ? AND type IN ?", true, []string{model.ResourceTypeAction, model.ResourceTypeCard}).
-		Pluck("full_code", &codes).Error
-	return codes, err
 }
