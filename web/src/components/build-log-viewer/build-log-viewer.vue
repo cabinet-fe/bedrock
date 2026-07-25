@@ -343,8 +343,6 @@ async function loadLogs() {
 defineExpose({
   appendLine,
   reconnect,
-  setLogs,
-  scrollToBottom,
 });
 
 watch(
@@ -491,7 +489,7 @@ onBeforeUnmount(() => {
 
     <div
       ref="terminalContainer"
-      class="build-log-viewer__terminal xterm-container"
+      class="build-log-viewer__terminal"
       :style="{ height: terminalHeight }"
     />
   </div>
@@ -578,6 +576,35 @@ onBeforeUnmount(() => {
 
 .build-log-viewer__terminal {
   padding: 8px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.build-log-viewer__terminal :deep(.xterm) {
+  height: 100%;
+  width: 100%;
+}
+
+.build-log-viewer__terminal :deep(.xterm-viewport) {
+  scrollbar-width: thin;
+  scrollbar-color: #52525b transparent;
+}
+
+.build-log-viewer__terminal :deep(.xterm-viewport::-webkit-scrollbar) {
+  width: 8px;
+}
+
+.build-log-viewer__terminal :deep(.xterm-viewport::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+.build-log-viewer__terminal :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
+  background: #52525b;
+  border-radius: 9999px;
+}
+
+.build-log-viewer__terminal :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
+  background: #71717a;
 }
 
 .build-log-viewer :deep(.u-button) {
@@ -587,39 +614,5 @@ onBeforeUnmount(() => {
 .build-log-viewer :deep(.u-button:hover) {
   background: #3f3f46;
   color: #fff;
-}
-</style>
-
-<style>
-.xterm-container {
-  width: 100%;
-  overflow: hidden;
-}
-
-.xterm-container .xterm {
-  height: 100%;
-  width: 100%;
-}
-
-.xterm-container .xterm-viewport {
-  scrollbar-width: thin;
-  scrollbar-color: #52525b transparent;
-}
-
-.xterm-container .xterm-viewport::-webkit-scrollbar {
-  width: 8px;
-}
-
-.xterm-container .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.xterm-container .xterm-viewport::-webkit-scrollbar-thumb {
-  background: #52525b;
-  border-radius: 9999px;
-}
-
-.xterm-container .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: #71717a;
 }
 </style>

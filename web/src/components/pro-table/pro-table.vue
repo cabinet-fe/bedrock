@@ -1,6 +1,5 @@
 <script setup lang="ts" generic="T extends Record<string, any>">
 import { computed, h, onMounted, ref, useSlots, watch } from "vue";
-import { o } from "@cat-kit/core";
 import {
   message,
   UButton,
@@ -29,21 +28,11 @@ const props = withDefaults(
     query?: ProTableQuery;
     /** Fields that auto-trigger search when changed (selects, etc.) */
     autoQueryFields?: string[];
-    /**
-     * Path into the unwrapped response body for row data.
-     * Envelope plugin unwraps `{ data }` first; default is `items`.
-     */
-    dataPath?: string;
     /** Enable pagination (mutually exclusive with `tree`) */
     pagination?: boolean;
-    /**
-     * Enable tree table. `true` uses default children key;
-     * a string overrides the children field name.
-     * Mutually exclusive with `pagination`.
-     */
-    tree?: boolean | string;
+    /** Enable tree table (mutually exclusive with `pagination`). */
+    tree?: boolean;
     rowKey?: string;
-    pageSize?: number;
     /** Table area height; default fills remaining space */
     height?: string;
     /** Load on mount */
@@ -56,11 +45,9 @@ const props = withDefaults(
   {
     query: () => ({}),
     autoQueryFields: () => [],
-    dataPath: "items",
     pagination: false,
     tree: false,
     rowKey: "id",
-    pageSize: 20,
     height: "100%",
     immediate: true,
     defaultExpandAll: false,
@@ -78,23 +65,13 @@ const slots = useSlots();
 const loading = ref(false);
 const items = ref<T[]>([]);
 const page = ref(1);
-const pageSize = ref(props.pageSize);
+const pageSize = ref(20);
 const total = ref(0);
-const loadedOnce = ref(false);
 
 const mode = computed(() => {
-  if (props.pagination && props.tree) {
-    console.warn("[ProTable] `pagination` and `tree` are mutually exclusive; using pagination.");
-    return "pagination" as const;
-  }
   if (props.pagination) return "pagination" as const;
   if (props.tree) return "tree" as const;
   return "list" as const;
-});
-
-const tableTree = computed(() => {
-  if (mode.value !== "tree") return false;
-  return props.tree === true ? true : props.tree;
 });
 
 function parseSort(value: unknown): { field: string; order: SortOrder | null } {
@@ -197,16 +174,7 @@ function cleanQuery(params: Record<string, unknown>): Record<string, string | nu
 }
 
 function extractItems(body: Record<string, unknown>): T[] {
-  const extracted = o(body).get(props.dataPath);
-  if (Array.isArray(extracted)) return extracted as T[];
-  if (
-    extracted &&
-    typeof extracted === "object" &&
-    Array.isArray((extracted as { items?: T[] }).items)
-  ) {
-    return (extracted as { items: T[] }).items;
-  }
-  return [];
+  return Array.isArray(body.items) ? (body.items as T[]) : [];
 }
 
 function applyPaginationMeta(body: Record<string, unknown>) {
@@ -244,7 +212,6 @@ async function load() {
     total.value = 0;
   } finally {
     loading.value = false;
-    loadedOnce.value = true;
   }
 }
 
@@ -288,7 +255,7 @@ onMounted(() => {
   if (props.immediate) void load();
 });
 
-defineExpose({ search, reload, load });
+defineExpose({ search, reload });
 </script>
 
 <template>
@@ -308,7 +275,7 @@ defineExpose({ search, reload, load });
           :data="items"
           :border="false"
           :row-key="rowKey"
-          :tree="tableTree"
+          :tree="tree"
           :default-expand-all="defaultExpandAll"
           :stripe="mode !== 'tree'"
           :checkable="checkable"

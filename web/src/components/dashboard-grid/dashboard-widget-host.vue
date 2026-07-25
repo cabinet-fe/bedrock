@@ -21,7 +21,7 @@ const cardId = id as DashboardCardID;
 </script>
 
 <template>
-  <div class="dashboard-widget" :class="{ 'dashboard-widget--editing': ctx.editing }">
+  <div class="dashboard-widget">
     <div v-if="ctx.editing" class="dashboard-widget__drag" title="拖拽移动">
       <u-icon :size="14"><Move /></u-icon>
       <span>拖拽</span>

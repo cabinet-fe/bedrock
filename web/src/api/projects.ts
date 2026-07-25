@@ -47,11 +47,6 @@ export async function listRequirementStatuses(): Promise<RequirementStatusOption
   return body.items;
 }
 
-export async function listProjectMembers(projectID: number): Promise<ProjectMember[]> {
-  const { body } = await http.get<{ items: ProjectMember[] }>(`/projects/${projectID}/members`);
-  return body.items;
-}
-
 export async function addProjectMember(
   projectID: number,
   userID: number,
@@ -290,16 +285,5 @@ export async function publishDocNode(
 
 export async function getDocDiff(projectID: number, nodeID: number): Promise<ApiDocDiff> {
   const { body } = await http.get<ApiDocDiff>(`/projects/${projectID}/docs/${nodeID}/diff`);
-  return body;
-}
-
-export async function generateDocs(
-  projectID: number,
-  input: { agent_id: number; node_id?: number },
-): Promise<{ agent_run_id: number; node_id: number }> {
-  const { body } = await http.post<{ agent_run_id: number; node_id: number }>(
-    `/projects/${projectID}/docs/generate`,
-    input,
-  );
   return body;
 }

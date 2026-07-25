@@ -1,58 +1,9 @@
-import { computed, inject, onBeforeUnmount, onMounted } from "vue";
+import { computed, inject } from "vue";
 import { Utils } from "gridstack";
 import type { GridStackNode } from "gridstack";
 import { GS_CONTEXT_KEY, GS_ITEM_CONTEXT_KEY } from "./gridstack-context";
-import type { GridStackWidget } from "./types";
 
-// ---------------------------------------------------------------------------
-// useGridStack
-// ---------------------------------------------------------------------------
-
-/**
- * Access the parent `<GridStack>`'s grid instance and helpers.
- *
- * Must be called within a component that is a descendant of `<GridStack>`.
- */
-export function useGridStack() {
-  const ctx = inject(GS_CONTEXT_KEY);
-  if (!ctx) throw new Error("useGridStack must be used within <GridStack>");
-
-  return {
-    /** Raw GridStack instance (not a Vue ref — never proxy it). */
-    get grid() {
-      return ctx.grid;
-    },
-    /** Bumps whenever the layout changes — use as a reactive dependency. */
-    get layoutVersion() {
-      return ctx.layoutVersion.value;
-    },
-    addWidget(w: GridStackWidget) {
-      return ctx.grid?.addWidget(w as Parameters<NonNullable<typeof ctx.grid>["addWidget"]>[0]);
-    },
-    removeWidget(
-      el: Parameters<NonNullable<typeof ctx.grid>["removeWidget"]>[0],
-      removeDOM?: boolean,
-      triggerEvent?: boolean,
-    ) {
-      return ctx.grid?.removeWidget(el, removeDOM, triggerEvent);
-    },
-    removeAll(removeDOM = true) {
-      return ctx.grid?.removeAll(removeDOM);
-    },
-    save(saveContent = true, saveGridOpt = false) {
-      return ctx.grid?.save(saveContent, saveGridOpt);
-    },
-    load(items: GridStackWidget[]) {
-      return ctx.grid?.load(items);
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------
-// useGridStackItem
-// ---------------------------------------------------------------------------
-
-export interface UseGridStackItemResult {
+interface UseGridStackItemResult {
   id: string;
   node: GridStackNode | undefined;
 }
@@ -84,45 +35,4 @@ export function useGridStackItem(): UseGridStackItemResult {
       return node.value;
     },
   };
-}
-
-// ---------------------------------------------------------------------------
-// useWidgetSerializer
-// ---------------------------------------------------------------------------
-
-export interface UseWidgetSerializerOptions<T extends Record<string, unknown>> {
-  serialize?: () => T | undefined;
-  deserialize?: (data: T) => void;
-}
-
-/**
- * Optional composable for widget components that need to participate in `grid.save()` / `grid.load()`.
- *
- * Call this inside the `setup()` of a widget component rendered inside `<GridStackItem>`.
- * The `serialize` function is called during `grid.save()` and its return value is merged
- * into the widget's `props` in the serialized JSON.
- * The `deserialize` function is called when GS updates the node (e.g. after `grid.load()`).
- *
- * @example
- * ```ts
- * const count = ref(0)
- * useWidgetSerializer({
- *   serialize: () => ({ count: count.value }),
- *   deserialize: (data) => { count.value = data.count as number ?? 0 },
- * })
- * ```
- */
-export function useWidgetSerializer<T extends Record<string, unknown>>(
-  opts: UseWidgetSerializerOptions<T>,
-): void {
-  const itemCtx = inject(GS_ITEM_CONTEXT_KEY);
-
-  onMounted(() => {
-    if (!itemCtx?.registerSerializer) return;
-    const cleanup = itemCtx.registerSerializer(
-      () => opts.serialize?.() as Record<string, unknown> | undefined,
-      opts.deserialize ? (data) => opts.deserialize?.(data as T) : undefined,
-    );
-    onBeforeUnmount(cleanup);
-  });
 }

@@ -24,10 +24,10 @@ export const DASHBOARD_WIDGET_CTX: InjectionKey<DashboardWidgetHostContext> =
   Symbol("dashboard-widget-ctx");
 
 export const DASHBOARD_GRID_COLUMNS = 12;
-export const DASHBOARD_MIN_W = 2;
-export const DASHBOARD_MIN_H = 2;
+const DASHBOARD_MIN_W = 2;
+const DASHBOARD_MIN_H = 2;
 
-export const DEFAULT_CARD_GEOMETRY: Record<
+const DEFAULT_CARD_GEOMETRY: Record<
   DashboardCardID,
   Pick<DashboardCardLayout, "x" | "y" | "w" | "h">
 > = {

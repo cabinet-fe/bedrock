@@ -55,7 +55,7 @@ interface RolePermission {
   permission: string;
 }
 
-export type RoleType = "builtin" | "custom";
+type RoleType = "builtin" | "custom";
 
 export interface Role {
   id: number;
@@ -77,7 +77,7 @@ export interface MenuGroup {
   updated_at?: string;
 }
 
-export type RbacResourceType = "menu" | "action" | "card";
+type RbacResourceType = "menu" | "action" | "card";
 
 export interface RbacResource {
   id: number;
@@ -569,7 +569,7 @@ export interface AiAgentRepoBinding {
   branch: string;
 }
 
-export interface AiAgentEnvVar {
+interface AiAgentEnvVar {
   key: string;
   has_value: boolean;
 }

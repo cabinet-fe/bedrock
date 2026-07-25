@@ -120,7 +120,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <u-dropdown trigger="click" width="360px" content-class="notif-dropdown">
+  <u-dropdown trigger="click" width="360px">
     <template #trigger>
       <u-badge
         class="notif-badge"

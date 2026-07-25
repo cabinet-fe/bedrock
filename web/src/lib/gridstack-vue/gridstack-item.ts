@@ -16,7 +16,7 @@ import type { GridStackWidget } from "./types";
 
 /**
  * Teleport anchor for one grid item.
- * Owns Vue subtree; survives cross-grid DnD while this component stays mounted.
+ * Owns the Vue subtree rendered inside GridStack-managed DOM.
  *
  * The slot content is teleported into the GS-owned `.grid-stack-item-content` element,
  * so widget components never need to know about GS DOM internals.
@@ -31,7 +31,7 @@ export const GridStackItem = defineComponent({
     },
     options: {
       type: Object as PropType<Partial<GridStackWidget>>,
-      default: () => ({}),
+      required: true,
     },
   },
 
@@ -61,13 +61,10 @@ export const GridStackItem = defineComponent({
 
       const node = Utils.findInGrid(g, props.id, true);
       if (!node?.el) {
-        // Item not yet in any grid — add it.
         g.addWidget({ ...props.options, id: props.id } as GridStackWidget);
-      } else if (node.grid === g) {
-        // Already in the outer grid — update position/opts.
+      } else {
         g.update(node.el, { ...props.options, id: props.id } as GridStackWidget);
       }
-      // Items owned by a nested sub-grid are left alone (sub-grid manages them).
 
       syncContainer();
 
@@ -83,51 +80,21 @@ export const GridStackItem = defineComponent({
     // Re-sync the container whenever layoutVersion changes (GS rearranged the DOM).
     watch(() => ctx!.layoutVersion.value, syncContainer);
 
-    // Per-item serialize/deserialize fns — updated by child calling registerSerializer.
-    let serializeFn: (() => Record<string, unknown> | undefined) | undefined;
-    let deserializeFn: ((data: Record<string, unknown>) => void) | undefined;
-
-    // Register with parent context once; the delegate closures always call the latest fns.
-    const cleanupParentSerializer = ctx!.registerWidgetSerializer(
-      props.id,
-      () => serializeFn?.(),
-      (data) => deserializeFn?.(data),
-    );
-
     onBeforeUnmount(() => {
       alive = false;
-      cleanupParentSerializer();
 
       const g = ctx!.grid;
       if (!g?.engine) return;
       const node = Utils.findInGrid(g, props.id, true);
-      if (!node?.el || !node.grid) return;
-      if (node.grid === g) {
-        try {
-          g.removeWidget(node.el, false);
-        } catch {
-          // already removed
-        }
+      if (!node?.el) return;
+      try {
+        g.removeWidget(node.el, false);
+      } catch {
+        // already removed
       }
     });
 
-    // Expose id + serialize/deserialize registration to child composables via item context.
-    function registerSerializer(
-      serialize: () => Record<string, unknown> | undefined,
-      deserialize?: (data: Record<string, unknown>) => void,
-    ) {
-      serializeFn = serialize;
-      deserializeFn = deserialize;
-      return () => {
-        serializeFn = undefined;
-        deserializeFn = undefined;
-      };
-    }
-
-    provide(GS_ITEM_CONTEXT_KEY, {
-      id: props.id,
-      registerSerializer,
-    });
+    provide(GS_ITEM_CONTEXT_KEY, { id: props.id });
 
     return () => {
       const target = containerEl.value;

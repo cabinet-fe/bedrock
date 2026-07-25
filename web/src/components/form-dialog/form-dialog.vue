@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, toRaw, useSlots, useTemplateRef, watch } from "vue";
+import { ref, toRaw, useTemplateRef, watch } from "vue";
 
 const props = withDefaults(
   defineProps<{
@@ -11,9 +11,7 @@ const props = withDefaults(
      */
     model: Record<string, any>;
     labelWidth?: string | number;
-    cols?: number;
     confirmText?: string;
-    cancelText?: string;
     confirmLoading?: boolean;
   }>(),
   {
@@ -21,7 +19,6 @@ const props = withDefaults(
 
     labelWidth: "88px",
     confirmText: "保存",
-    cancelText: "取消",
     confirmLoading: false,
   },
 );
@@ -72,10 +69,6 @@ watch(
   },
 );
 
-function close() {
-  emit("update:modelValue", false);
-}
-
 async function onConfirm() {
   const ok = await formRef.value?.validate();
   if (!ok) return;
@@ -85,21 +78,6 @@ async function onConfirm() {
 function onClosed() {
   emit("closed");
 }
-
-const slots = useSlots();
-
-const groupSlots = computed(() => {
-  return Object.keys(slots).filter((key) => key.startsWith("group:"));
-});
-
-defineExpose({
-  validate: () => formRef.value?.validate() ?? Promise.resolve(false),
-  /** 恢复挂载时默认值（关闭时也会自动调用） */
-  reset,
-  /** 会话内 u-form.reset：恢复到本次打开时的快照 */
-  resetSession: () => formRef.value?.reset(),
-  close,
-});
 </script>
 
 <template>
@@ -115,27 +93,15 @@ defineExpose({
       ref="form"
       :model="model"
       :label-width="labelWidth"
-      :cols="cols"
     >
       <slot />
     </u-form>
 
-    <u-card v-for="name of groupSlots" :key="name">
-      <u-card-header> 分组 </u-card-header>
-      <u-card-content>
-        <u-form :model="model" :label-width="labelWidth" :cols="cols">
-          <slot :name="name" />
-        </u-form>
-      </u-card-content>
-    </u-card>
-
-    <template #footer="{ close: dialogClose }">
-      <slot name="footer" :close="dialogClose" :submit="onConfirm">
-        <u-button text @click="dialogClose()">{{ cancelText }}</u-button>
-        <u-button type="primary" :loading="confirmLoading" @click="onConfirm">
-          {{ confirmText }}
-        </u-button>
-      </slot>
+    <template #footer="{ close }">
+      <u-button text @click="close()">取消</u-button>
+      <u-button type="primary" :loading="confirmLoading" @click="onConfirm">
+        {{ confirmText }}
+      </u-button>
     </template>
   </u-dialog>
 </template>

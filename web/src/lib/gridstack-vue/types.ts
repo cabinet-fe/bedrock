@@ -14,40 +14,21 @@ import type {
 export interface GridStackHostApi {
   registerSyntheticItemId(id: string): void;
   unregisterSyntheticItemId(id: string): void;
-  /** Notify Vue to re-read node props after GS `update()` / `updateCB`. */
-  requestUpdate(): void;
-  registerWidgetSerializer(
-    id: string,
-    serialize: () => Record<string, unknown> | undefined,
-    deserialize?: (data: Record<string, unknown>) => void,
-  ): () => void;
-  /** Merge `useWidgetSerializer` results into `w.props` during `grid.save()`. */
-  mergeWidgetPropsForSave(id: string, w: GridStackWidget): void;
-  /** Call widget's deserialize callback with updated props (invoked by `updateCB`). */
-  deserializeWidget(id: string, w: GridStackWidget): void;
 }
 
-export type GridStackWidgetProps = Record<string, unknown>;
-
-export interface GridStackWidget extends Omit<CoreGridStackWidget, "subGridOpts"> {
+export interface GridStackWidget extends CoreGridStackWidget {
   /** Key in the `components` map passed to `<GridStack :components="...">` */
   component?: string;
-  props?: GridStackWidgetProps;
-  /** Extra CSS classes on the widget root. */
-  class?: string;
   /** Runtime DOM node when removing via `addRemoveCB` (not serialized). */
   el?: HTMLElement;
-  /** Nested grid options (recursive; uses Vue-extended widget children). */
-  subGridOpts?: GridStackOptions;
 }
 
 export interface GridStackNode extends CoreGridStackNode {
   component?: string;
 }
 
-export interface GridStackOptions extends Omit<CoreGridStackOptions, "children" | "subGridOpts"> {
+export interface GridStackOptions extends Omit<CoreGridStackOptions, "children"> {
   children?: GridStackWidget[];
-  subGridOpts?: GridStackOptions;
 }
 
 export interface GridHTMLElement extends CoreGridHTMLElement {
