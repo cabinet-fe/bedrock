@@ -159,8 +159,8 @@ func (s *CredentialService) GetDecrypted(id uint) (*model.Credential, string, st
 	return c, secret, passphrase, nil
 }
 
-func (s *CredentialService) List(page, pageSize int, keyword string) ([]model.Credential, int64, error) {
-	items, total, err := s.repo.List(page, pageSize, keyword)
+func (s *CredentialService) List(q pkg.ListQuery, keyword string) ([]model.Credential, int64, error) {
+	items, total, err := s.repo.List(q, keyword)
 	if err != nil {
 		return nil, 0, err
 	}

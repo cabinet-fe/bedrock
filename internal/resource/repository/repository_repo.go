@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bedrock/internal/pkg"
 	"bedrock/internal/resource/model"
 
 	"gorm.io/gorm"
@@ -32,18 +33,18 @@ func (r *RepositoryRepository) FindByID(id uint) (*model.Repository, error) {
 	return &repo, nil
 }
 
-func (r *RepositoryRepository) List(page, pageSize int, keyword string) ([]model.Repository, int64, error) {
-	q := r.db.Model(&model.Repository{})
+func (r *RepositoryRepository) List(q pkg.ListQuery, keyword string) ([]model.Repository, int64, error) {
+	db := r.db.Model(&model.Repository{})
 	if keyword != "" {
 		like := "%" + keyword + "%"
-		q = q.Where("name LIKE ? OR repo_url LIKE ? OR tags LIKE ?", like, like, like)
+		db = db.Where("name LIKE ? OR repo_url LIKE ? OR tags LIKE ?", like, like, like)
 	}
 	var total int64
-	if err := q.Count(&total).Error; err != nil {
+	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var items []model.Repository
-	err := q.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error
+	err := db.Order("id DESC").Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
 	return items, total, err
 }
 

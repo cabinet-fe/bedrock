@@ -12,7 +12,12 @@ export const useNotificationStore = defineStore("notification", () => {
   const unreadCount = computed(() => items.value.filter((n) => !n.is_read).length);
 
   async function fetchNotifications(): Promise<void> {
-    const page = await listNotifications({ page: 1, page_size: NOTIFICATION_LIMIT });
+    // 铃铛面板是收件箱语义：只拉未读，已读不再回拉，避免列表随历史膨胀
+    const page = await listNotifications({
+      page: 1,
+      page_size: NOTIFICATION_LIMIT,
+      is_read: false,
+    });
     items.value = page?.items ?? [];
   }
 

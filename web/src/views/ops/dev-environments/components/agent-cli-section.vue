@@ -1,9 +1,9 @@
 <script setup lang="ts">
 defineOptions({ name: "AgentCliSection" });
 
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { o } from "@cat-kit/core";
-import { message } from "@veltra/desktop";
+import { message, messageConfirm } from "@veltra/desktop";
 
 import {
   checkCLIUpdate,
@@ -24,6 +24,7 @@ type DetectState = {
 };
 
 type Operation = "install" | "upgrade" | "uninstall" | "check";
+type VersionOperation = "install" | "upgrade";
 
 const loading = ref(false);
 const items = ref<CliRuntimeDefinition[]>([]);
@@ -45,9 +46,24 @@ const sourceForm = reactive({
   enabled: true,
 });
 
+const versionDialogOpen = ref(false);
+const versionForm = reactive({ version: "" });
+const pendingVersionOp = ref<{
+  item: CliRuntimeDefinition;
+  operation: VersionOperation;
+} | null>(null);
+
 const failureDialogOpen = ref(false);
 const failureTitle = ref("");
 const failureDetail = ref("");
+
+const versionDialogTitle = computed(() => {
+  const pending = pendingVersionOp.value;
+  if (!pending) return "目标版本";
+  return pending.operation === "install"
+    ? `安装 ${pending.item.name}`
+    : `升级 ${pending.item.name}`;
+});
 
 function showError(error: unknown) {
   message.error(error instanceof Error ? error.message : "操作失败");
@@ -118,7 +134,10 @@ async function runCheckUpdate(item: CliRuntimeDefinition) {
       return;
     }
     if (result.update_available && latest) {
-      if (window.confirm(`${item.name} 有新版本 ${latest}，是否更新？`)) {
+      const action = await messageConfirm.warning(`${item.name} 有新版本 ${latest}，是否更新？`, {
+        cancelButtonText: "取消",
+      }).onClosed;
+      if (action === "confirm") {
         busy.value = null;
         await runOperation(item, "upgrade", latest);
       }
@@ -139,14 +158,40 @@ async function runOperation(
 ) {
   if (isBusy(item.key)) return;
 
-  let targetVersion = version;
-  if (operation !== "uninstall" && !targetVersion) {
-    const requested = window.prompt(`输入 ${item.name} 的目标版本（可留空）`);
-    if (requested === null) return;
-    targetVersion = requested;
+  if (operation === "uninstall") {
+    const action = await messageConfirm.danger(`确认卸载 ${item.name}？`, {
+      cancelButtonText: "取消",
+    }).onClosed;
+    if (action !== "confirm") return;
+    await executeCliOperation(item, operation, "");
+    return;
   }
-  if (operation === "uninstall" && !window.confirm(`确认卸载 ${item.name}？`)) return;
 
+  if (!version) {
+    pendingVersionOp.value = { item, operation };
+    versionForm.version = "";
+    versionDialogOpen.value = true;
+    return;
+  }
+
+  await executeCliOperation(item, operation, version);
+}
+
+async function submitVersion() {
+  const pending = pendingVersionOp.value;
+  if (!pending) return;
+  const { item, operation } = pending;
+  const targetVersion = versionForm.version;
+  versionDialogOpen.value = false;
+  pendingVersionOp.value = null;
+  void executeCliOperation(item, operation, targetVersion);
+}
+
+async function executeCliOperation(
+  item: CliRuntimeDefinition,
+  operation: "install" | "upgrade" | "uninstall",
+  targetVersion: string,
+) {
   busy.value = { key: item.key, op: operation };
   try {
     const result = await executeCLI(item.key, operation, targetVersion);
@@ -218,7 +263,10 @@ async function saveSource() {
 }
 
 async function removeSource(source: CliInstallSource) {
-  if (!window.confirm(`删除安装源 ${source.name}？`)) return;
+  const action = await messageConfirm.danger(`删除安装源 ${source.name}？`, {
+    cancelButtonText: "取消",
+  }).onClosed;
+  if (action !== "confirm") return;
   try {
     await deleteCLISource(source.id);
     await loadSources();
@@ -348,6 +396,18 @@ onMounted(() => {
           { label: '停用', value: false },
         ]"
       />
+    </FormDialog>
+
+    <FormDialog
+      v-model="versionDialogOpen"
+      :title="versionDialogTitle"
+      :model="versionForm"
+      confirm-text="确认"
+      label-width="100px"
+      style="width: 480px"
+      @submit="submitVersion"
+    >
+      <u-input label="目标版本" field="version" placeholder="可留空，使用安装源默认版本" />
     </FormDialog>
 
     <u-dialog v-model="failureDialogOpen" :title="failureTitle" style="width: 760px">

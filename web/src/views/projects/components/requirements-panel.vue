@@ -28,6 +28,7 @@ import type {
 } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
 import { tagType, type TagType } from "@/lib/tag";
@@ -54,6 +55,7 @@ const props = defineProps<{
 }>();
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const auth = useAuthStore();
 const tableRef = useTemplateRef("table");
 const query = reactive({ keyword: "", status: "", priority: "" });
@@ -109,7 +111,6 @@ const filterStatusOptions = computed(() => [
 ]);
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "title", name: "标题", sortable: true },
   { key: "status", name: "状态", width: 100, align: "center" },
   { key: "priority", name: "优先级", width: 100, align: "center", sortable: true },
@@ -189,8 +190,7 @@ async function save() {
   }
 }
 
-async function remove(requirement: Requirement) {
-  if (!window.confirm(`确认删除需求「${requirement.title}」？`)) return;
+const remove = bind(async (requirement: Requirement) => {
   try {
     await deleteRequirement(props.project.id, requirement.id);
     message.success("需求已删除");
@@ -198,9 +198,9 @@ async function remove(requirement: Requirement) {
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除失败");
   }
-}
+});
 
-async function showDetail(requirement: Requirement) {
+const showDetail = bind(async (requirement: Requirement) => {
   try {
     selected.value = await getRequirement(props.project.id, requirement.id);
     const [commentItems, attachmentItems] = await Promise.all([
@@ -216,7 +216,7 @@ async function showDetail(requirement: Requirement) {
   } catch (error) {
     message.error(error instanceof Error ? error.message : "读取需求详情失败");
   }
-}
+});
 
 async function addComment() {
   if (!selected.value || !commentText.value.trim()) return;
@@ -354,7 +354,7 @@ onMounted(() => void loadRequirementStatuses());
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3">
+        <u-action-group :max="3" :loading="busyKey === (rowData as Requirement).id">
           <u-action @run="showDetail(rowData as Requirement)">详情</u-action>
           <u-action v-if="canUpdateRequirement" @run="openEdit(rowData as Requirement)">
             编辑

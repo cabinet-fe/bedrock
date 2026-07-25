@@ -5,6 +5,7 @@ import { clearTokens, loginApi, logoutApi, meApi, setAccessToken } from "@/api/a
 import { getAccessToken } from "@/api/http";
 import type { MenuGroupNode, User } from "@/api/types";
 import { encryptLoginPassword } from "@/lib/login-crypto";
+import { useTabsStore } from "@/stores/tabs";
 
 /** Re-fetch /auth/me when menus/permissions may have changed (role edits, etc.). */
 const ME_STALE_MS = 30_000;
@@ -41,12 +42,7 @@ export const useAuthStore = defineStore("auth", () => {
     } catch {
       // ignore network errors on logout
     }
-    clearTokens();
-    token.value = null;
-    user.value = null;
-    permissions.value = [];
-    menus.value = [];
-    lastMeAt.value = 0;
+    clearSession();
   }
 
   async function fetchMe(opts?: { clearOnError?: boolean }): Promise<void> {
@@ -67,12 +63,7 @@ export const useAuthStore = defineStore("auth", () => {
         lastMeAt.value = Date.now();
       } catch {
         if (clearOnError) {
-          clearTokens();
-          token.value = null;
-          user.value = null;
-          permissions.value = [];
-          menus.value = [];
-          lastMeAt.value = 0;
+          clearSession();
         }
       } finally {
         meInflight = null;
@@ -97,6 +88,7 @@ export const useAuthStore = defineStore("auth", () => {
     permissions.value = [];
     menus.value = [];
     lastMeAt.value = 0;
+    useTabsStore().reset();
   }
 
   function hasPermission(code: string): boolean {

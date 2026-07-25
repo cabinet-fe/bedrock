@@ -1,4 +1,5 @@
 <script setup lang="ts" generic="T extends Record<string, any>">
+import { sleep } from "@cat-kit/core";
 import { computed, h, onMounted, ref, useSlots, watch } from "vue";
 import {
   message,
@@ -14,6 +15,9 @@ import { http } from "@/api/http";
 import type { ProTableColumn, ProTableQuery } from "./helper";
 
 type SortOrder = "asc" | "desc";
+
+/** loading 最短展示，避免请求过快时闪烁 */
+const MIN_LOADING_MS = 250;
 
 const props = withDefaults(
   defineProps<{
@@ -65,8 +69,10 @@ const slots = useSlots();
 const loading = ref(false);
 const items = ref<T[]>([]);
 const page = ref(1);
-const pageSize = ref(20);
+const pageSize = ref(100);
 const total = ref(0);
+/** 与后端 ParsePage maxPageSize=100 对齐，避免选项超出后被回写打回 */
+const pageSizeOptions = [20, 50, 100];
 
 const mode = computed(() => {
   if (props.pagination) return "pagination" as const;
@@ -185,6 +191,7 @@ function applyPaginationMeta(body: Record<string, unknown>) {
 
 async function load() {
   loading.value = true;
+  const started = Date.now();
   try {
     const params: Record<string, unknown> = { ...props.query };
     if (mode.value === "pagination") {
@@ -211,12 +218,15 @@ async function load() {
     items.value = [];
     total.value = 0;
   } finally {
+    const remain = MIN_LOADING_MS - (Date.now() - started);
+    if (remain > 0) await sleep(remain);
     loading.value = false;
   }
 }
 
 /** Reset to page 1 and fetch (manual search / Enter / submit / sort). */
 function search() {
+  if (loading.value) return Promise.resolve();
   page.value = 1;
   return load();
 }
@@ -226,7 +236,10 @@ function reload() {
   return load();
 }
 
-function onPageSizeChange() {
+function onPageSizeChange(size: number) {
+  if (typeof size === "number" && size > 0) {
+    pageSize.value = size;
+  }
   page.value = 1;
   void load();
 }
@@ -264,7 +277,9 @@ defineExpose({ search, reload });
       <div class="pro-table__filters">
         <slot name="filters" :search="search" :reload="reload" :query="query" />
       </div>
-      <u-button type="primary" class="pro-table__search" @click="search">查询</u-button>
+      <u-button type="primary" class="pro-table__search" :loading="loading" @click="search">
+        查询
+      </u-button>
     </form>
 
     <div class="pro-table__panel" :style="height !== '100%' ? { height, flex: 'none' } : undefined">
@@ -294,6 +309,7 @@ defineExpose({ search, reload });
         <u-paginator
           v-model:page-number="page"
           v-model:page-size="pageSize"
+          :page-size-options="pageSizeOptions"
           :total="total"
           @change:page-number="load"
           @change:page-size="onPageSizeChange"

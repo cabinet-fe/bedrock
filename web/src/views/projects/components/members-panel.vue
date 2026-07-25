@@ -5,13 +5,15 @@ import { message } from "@veltra/desktop";
 
 import {
   addProjectMember,
+  listUserOptions,
   removeProjectMember,
   transferProjectOwner,
   updateProjectMember,
 } from "@/api/projects";
-import type { ProductProject, ProjectMember, ProjectRole } from "@/api/types";
+import type { ProductProject, ProjectMember, ProjectRole, UserOption } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
 import { tagType, type TagType } from "@/lib/tag";
@@ -40,11 +42,17 @@ const emit = defineEmits<{ ownerTransferred: [] }>();
 
 const auth = useAuthStore();
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
+const { busy: addBusy, run: runAdd } = useBusy();
 const tableRef = useTemplateRef("table");
 const members = ref<ProjectMember[]>([]);
+const users = ref<UserOption[]>([]);
 const dialogOpen = ref(false);
 const editing = ref<ProjectMember | null>(null);
-const form = reactive({ user_id: 0, role: "member" as Exclude<ProjectRole, "owner"> });
+const form = reactive({
+  user_id: undefined as number | undefined,
+  role: "member" as Exclude<ProjectRole, "owner">,
+});
 
 const selfMember = computed(() => members.value.find((member) => member.user_id === auth.user?.id));
 const canManageAll = computed(() => hasPermission("project_projects:manage_all"));
@@ -61,8 +69,18 @@ const canTransferOwner = computed(
     (canManageAll.value || selfMember.value?.role === "owner"),
 );
 
+const memberUserIDs = computed(() => new Set(members.value.map((m) => m.user_id)));
+const userOptions = computed(() =>
+  users.value
+    .filter((u) => !memberUserIDs.value.has(u.id))
+    .map((u) => ({
+      label: u.display_name ? `${u.display_name} (${u.username})` : u.username,
+      value: u.id,
+    })),
+);
+
 const columns = defineProTableColumns([
-  { key: "user_id", name: "用户 ID" },
+  { key: "username", name: "用户" },
   { key: "role", name: "项目角色", width: 140, align: "center" },
   {
     key: "created_at",
@@ -74,13 +92,27 @@ const columns = defineProTableColumns([
   { key: "action", name: "操作", width: 320, align: "center", fixed: "right" },
 ]);
 
+function memberLabel(member: ProjectMember) {
+  if (member.display_name && member.username) {
+    return `${member.display_name} (${member.username})`;
+  }
+  return member.display_name || member.username || `#${member.user_id}`;
+}
+
 function onLoaded(items: ProjectMember[]) {
   members.value = items;
 }
 
-function openAdd() {
+async function openAdd() {
   editing.value = null;
-  dialogOpen.value = true;
+  await runAdd(async () => {
+    try {
+      users.value = await listUserOptions();
+      dialogOpen.value = true;
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "加载用户列表失败");
+    }
+  });
 }
 
 function openEdit(member: ProjectMember) {
@@ -100,6 +132,10 @@ async function save() {
       await updateProjectMember(props.project.id, editing.value.user_id, form.role);
       message.success("角色已更新");
     } else {
+      if (!form.user_id) {
+        message.error("请选择用户");
+        return;
+      }
       await addProjectMember(props.project.id, form.user_id, form.role);
       message.success("成员已添加");
     }
@@ -110,7 +146,7 @@ async function save() {
   }
 }
 
-async function remove(member: ProjectMember) {
+const remove = bind(async (member: ProjectMember) => {
   try {
     await removeProjectMember(props.project.id, member.user_id);
     message.success("成员已移除");
@@ -118,10 +154,9 @@ async function remove(member: ProjectMember) {
   } catch (error) {
     message.error(error instanceof Error ? error.message : "移除失败");
   }
-}
+});
 
-async function transfer(member: ProjectMember) {
-  if (!window.confirm(`确认将 Owner 转让给用户 #${member.user_id}？`)) return;
+const transfer = bind(async (member: ProjectMember) => {
   try {
     await transferProjectOwner(props.project.id, member.user_id);
     message.success("Owner 已转让");
@@ -130,7 +165,7 @@ async function transfer(member: ProjectMember) {
   } catch (error) {
     message.error(error instanceof Error ? error.message : "转让失败");
   }
-}
+});
 </script>
 
 <template>
@@ -146,11 +181,15 @@ async function transfer(member: ProjectMember) {
         <u-button
           v-if="canManageMembers"
           type="primary"
+          :loading="addBusy"
           style="margin-left: auto"
           @click.prevent="openAdd"
         >
           添加成员
         </u-button>
+      </template>
+      <template #column:username="{ rowData }">
+        {{ memberLabel(rowData as ProjectMember) }}
       </template>
       <template #column:role="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as ProjectMember).role, ROLE_TAG)">
@@ -158,7 +197,7 @@ async function transfer(member: ProjectMember) {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3">
+        <u-action-group :max="3" :loading="busyKey === (rowData as ProjectMember).id">
           <u-action
             v-if="canManageMembers && (rowData as ProjectMember).role !== 'owner'"
             @run="openEdit(rowData as ProjectMember)"
@@ -167,6 +206,7 @@ async function transfer(member: ProjectMember) {
           </u-action>
           <u-action
             v-if="canTransferOwner && (rowData as ProjectMember).role !== 'owner'"
+            need-confirm
             @run="transfer(rowData as ProjectMember)"
           >
             转让 Owner
@@ -191,10 +231,13 @@ async function transfer(member: ProjectMember) {
       style="width: 420px"
       @submit="save"
     >
-      <u-number-input
+      <u-select
         v-if="!editing"
-        label="用户 ID"
+        label="用户"
         field="user_id"
+        :options="userOptions"
+        filterable
+        placeholder="请选择用户"
         :rules="{ required: '必填' }"
       />
       <u-select

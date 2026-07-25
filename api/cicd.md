@@ -65,7 +65,7 @@
 ### GET /build-runs — 列出构建运行
 
 权限：`cicd_build_runs:view`
-查询参数：page: integer, page_size: integer, build_job_id: integer, status: string
+查询参数：page: integer, page_size: integer, build_job_id: integer, status: string, sort: string
 响应 200：data = BuildRunPage
 
 ### GET /build-runs/{id} — 获取构建运行详情（含部署尝试）

@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"bedrock/internal/deployer"
+	"bedrock/internal/pkg"
 	"bedrock/internal/resource/model"
 	"bedrock/internal/resource/repository"
 )
@@ -218,8 +219,8 @@ func (s *ServerService) Get(id uint) (*model.Server, error) {
 	return srv, nil
 }
 
-func (s *ServerService) List(page, pageSize int, keyword, tag string) ([]model.Server, int64, error) {
-	return s.repo.List(page, pageSize, keyword, tag)
+func (s *ServerService) List(q pkg.ListQuery, keyword, tag string) ([]model.Server, int64, error) {
+	return s.repo.List(q, keyword, tag)
 }
 
 func (s *ServerService) TestConnection(id uint) (string, error) {

@@ -31,6 +31,7 @@
 - 分页请求使用 `page` 和 `page_size`，后端统一通过 `internal/pkg` 中的分页工具解析。
 - 分页结果放在响应的 `data` 中，字段为 `items`、`total`、`page`、`page_size` 和 `total_pages`。
 - 不分页的列表直接作为 `data` 返回，不需要额外包装。
+- 可排序列表使用查询参数 `sort`，格式为 `<field>@asc` 或 `<field>@desc`（与前端 ProTable 一致）；未传或字段不在白名单时回退接口默认排序。后端统一通过 `internal/pkg.OrderBy` 解析。
 
 ## HTTP 认证
 

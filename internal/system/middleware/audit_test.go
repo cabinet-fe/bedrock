@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
@@ -48,7 +49,7 @@ func TestAuditWriteUsesPIDAsProcessTarget(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("response status = %d", recorder.Code)
 	}
-	events, total, err := audit.List(repository.OperationLogFilters{Page: 1, PageSize: 10})
+	events, total, err := audit.List(repository.OperationLogFilters{ListQuery: pkg.ListQuery{Page: 1, PageSize: 10}})
 	if err != nil {
 		t.Fatal(err)
 	}

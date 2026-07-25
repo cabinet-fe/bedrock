@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
@@ -42,7 +43,7 @@ func TestPATPlaintextOnceAndScopes(t *testing.T) {
 	if !strings.HasPrefix(created.Token, "br_") || strings.HasPrefix(created.Token, "br_pat_") {
 		t.Fatalf("unexpected token %s", created.Token)
 	}
-	list, _, err := pats.List(1, 1, 20)
+	list, _, err := pats.List(1, pkg.ListQuery{Page: 1, PageSize: 20})
 	if err != nil || len(list) != 1 {
 		t.Fatalf("list: %v %#v", err, list)
 	}
@@ -72,7 +73,7 @@ func TestPATPlaintextOnceAndScopes(t *testing.T) {
 	if _, _, err := pats.ValidateBearer(created.Token); err == nil {
 		t.Fatal("deleted PAT must be invalid")
 	}
-	list, _, err = pats.List(1, 1, 20)
+	list, _, err = pats.List(1, pkg.ListQuery{Page: 1, PageSize: 20})
 	if err != nil || len(list) != 0 {
 		t.Fatalf("deleted PAT must be removed from list: %v %#v", err, list)
 	}

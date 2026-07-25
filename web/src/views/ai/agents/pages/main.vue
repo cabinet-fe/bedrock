@@ -27,6 +27,7 @@ import type {
 } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { tagType, type TagType } from "@/lib/tag";
 import RunHistoryDialog from "../components/run-history-dialog.vue";
@@ -79,6 +80,7 @@ type EnvVarDraft = {
 };
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const router = useRouter();
 const table = useTemplateRef("table");
 const dialogOpen = ref(false);
@@ -134,7 +136,6 @@ const buildJobOptions = computed(() =>
 );
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "name", name: "名称" },
   { key: "cli_key", name: "CLI", width: 120, align: "center" },
   { key: "workspace_status", name: "工作区", width: 110, align: "center" },
@@ -446,28 +447,28 @@ async function save() {
   }
 }
 
-async function run(row: AiAgent) {
+const run = bind(async (row: AiAgent) => {
   if (!canRun(row)) {
     message.error(runDisabledTip(row) || "无法运行");
     return;
   }
   try {
-    const run = await manualRunAgent(row.id);
-    message.success(`已创建运行 #${run.id}`);
-    await router.push(`/ai/runs/${run.id}`);
+    const agentRun = await manualRunAgent(row.id);
+    message.success(`已创建运行 #${agentRun.id}`);
+    await router.push(`/ai/runs/${agentRun.id}`);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "触发失败");
   }
-}
+});
 
-async function remove(row: AiAgent) {
+const remove = bind(async (row: AiAgent) => {
   try {
     await deleteAgent(row.id);
     table.value?.reload();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除失败");
   }
-}
+});
 </script>
 
 <template>
@@ -507,7 +508,7 @@ async function remove(row: AiAgent) {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3">
+        <u-action-group :max="3" :loading="busyKey === (rowData as AiAgent).id">
           <u-action v-if="hasPermission('ai_agents:update')" @run="openEdit(rowData as AiAgent)">
             编辑
           </u-action>

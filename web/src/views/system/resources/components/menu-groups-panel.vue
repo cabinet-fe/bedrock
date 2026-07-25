@@ -7,9 +7,11 @@ import { createMenuGroup, deleteMenuGroup, updateMenuGroup } from "@/api/system"
 import type { MenuGroup } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const listRef = useTemplateRef("list");
 const dialogOpen = ref(false);
 const editing = ref<MenuGroup | null>(null);
@@ -22,7 +24,6 @@ const form = reactive({
 });
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "name", name: "名称" },
   { key: "code", name: "编码" },
   { key: "route_prefix", name: "路由前缀" },
@@ -58,7 +59,7 @@ async function save() {
   }
 }
 
-async function remove(row: MenuGroup) {
+const remove = bind(async (row: MenuGroup) => {
   try {
     await deleteMenuGroup(row.id);
     message.success("已删除");
@@ -66,7 +67,7 @@ async function remove(row: MenuGroup) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "删除失败");
   }
-}
+});
 </script>
 
 <template>
@@ -88,7 +89,7 @@ async function remove(row: MenuGroup) {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3">
+        <u-action-group :max="3" :loading="busyKey === (rowData as MenuGroup).id">
           <u-action
             v-if="hasPermission('system_resources:update')"
             @run="openEdit(rowData as MenuGroup)"

@@ -16,6 +16,7 @@ import (
 
 	"bedrock/internal/ops/model"
 	"bedrock/internal/ops/repository"
+	"bedrock/internal/pkg"
 )
 
 var (
@@ -291,11 +292,11 @@ func (s *DevEnvironmentService) PingSource(environmentID, sourceID uint) (bool, 
 	return response.StatusCode >= 200 && response.StatusCode < 400, response.Status, nil
 }
 
-func (s *DevEnvironmentService) ListJobs(environmentID uint, page, pageSize int, status string) ([]model.DevEnvJob, int64, error) {
+func (s *DevEnvironmentService) ListJobs(environmentID uint, q pkg.ListQuery, status string) ([]model.DevEnvJob, int64, error) {
 	if _, err := s.repo.FindEnvironment(environmentID); err != nil {
 		return nil, 0, err
 	}
-	items, total, err := s.repo.ListJobs(environmentID, page, pageSize, status)
+	items, total, err := s.repo.ListJobs(environmentID, q, status)
 	for i := range items {
 		sanitizeJob(&items[i])
 	}

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from "vue";
+import type { Component } from "vue";
 import { useRouter } from "vue-router";
-import { Bell } from "@veltra/icons/normal";
+import { Agent, Bell, Build } from "@veltra/icons/normal";
 
 import { getAccessToken } from "@/api/http";
 import { notificationWsUrl } from "@/api/system";
 import type { NotificationItem } from "@/api/types";
+import { useBusy } from "@/composables/use-busy";
 import { formatDateTime } from "@/lib/datetime";
 import { useAuthStore } from "@/stores/auth";
 import { useNotificationStore } from "@/stores/notification";
@@ -13,6 +15,7 @@ import { useNotificationStore } from "@/stores/notification";
 const auth = useAuthStore();
 const store = useNotificationStore();
 const router = useRouter();
+const { busy: markAllBusy, run: runMarkAll } = useBusy();
 
 const unreadHidden = computed(() => store.unreadCount === 0);
 
@@ -87,11 +90,29 @@ async function onItemClick(n: NotificationItem): Promise<void> {
 }
 
 async function onMarkAll(): Promise<void> {
-  try {
-    await store.markAllRead();
-  } catch {
-    // ignore
-  }
+  await runMarkAll(async () => {
+    try {
+      await store.markAllRead();
+    } catch {
+      // ignore
+    }
+  });
+}
+
+/** 类型 → 图标：构建 / 智能体 / 其他 */
+function iconOf(n: NotificationItem): Component {
+  if (n.type.startsWith("build_run_")) return Build;
+  if (n.type.startsWith("agent_run_")) return Agent;
+  return Bell;
+}
+
+type NotifTone = "success" | "failed" | "muted";
+
+/** 状态 → 色调：成功松烟绿，失败朱砂，其余黛墨灰 */
+function toneOf(n: NotificationItem): NotifTone {
+  if (n.type.endsWith("_success")) return "success";
+  if (n.type.endsWith("_failed")) return "failed";
+  return "muted";
 }
 
 onMounted(() => {
@@ -137,21 +158,33 @@ onUnmounted(() => {
     <template #content>
       <div class="notif-panel">
         <div class="notif-panel__head">
-          <span class="notif-panel__title">站内通知</span>
+          <div class="notif-panel__heading">
+            <span class="notif-panel__title">站内通知</span>
+            <span v-if="store.unreadCount > 0" class="notif-panel__unread">
+              {{ store.unreadCount }} 条未读
+            </span>
+          </div>
           <u-button
             v-if="store.unreadCount > 0"
             text
             type="primary"
             size="small"
+            :loading="markAllBusy"
             @click="onMarkAll"
           >
             全部已读
           </u-button>
         </div>
         <div v-if="store.items.length === 0" class="notif-panel__empty">
-          <u-empty description="暂无通知" />
+          <u-empty text="暂无未读通知" />
         </div>
-        <ul v-else class="notif-panel__list">
+        <u-scroll
+          v-else
+          tag="ul"
+          class="notif-panel__scroll"
+          container-class="notif-panel__list"
+          content-class="notif-panel__items"
+        >
           <li v-for="n in store.items" :key="n.id">
             <button
               type="button"
@@ -159,12 +192,20 @@ onUnmounted(() => {
               :class="{ 'is-unread': !n.is_read }"
               @click="onItemClick(n)"
             >
-              <span class="notif-item__title">{{ n.title }}</span>
-              <span v-if="n.message" class="notif-item__msg">{{ n.message }}</span>
-              <span class="notif-item__time">{{ formatDateTime(n.created_at) }}</span>
+              <span class="notif-item__icon" :class="`is-${toneOf(n)}`" aria-hidden="true">
+                <u-icon :size="15">
+                  <component :is="iconOf(n)" />
+                </u-icon>
+              </span>
+              <span class="notif-item__body">
+                <span class="notif-item__title">{{ n.title }}</span>
+                <span v-if="n.message" class="notif-item__msg">{{ n.message }}</span>
+                <span class="notif-item__time">{{ formatDateTime(n.created_at) }}</span>
+              </span>
+              <span v-if="!n.is_read" class="notif-item__dot" aria-label="未读" />
             </button>
           </li>
-        </ul>
+        </u-scroll>
       </div>
     </template>
   </u-dropdown>
@@ -213,7 +254,7 @@ onUnmounted(() => {
 .notif-panel {
   display: flex;
   flex-direction: column;
-  max-height: 360px;
+  max-height: 420px;
 }
 
 .notif-panel__head {
@@ -221,66 +262,147 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: fn.use-var(gap, small);
-  padding: 10px 12px;
-  border-bottom: fn.use-var(border);
+  padding: 12px 16px 10px;
+  /* 发丝分隔线，比整根 border 轻 */
+  border-bottom: 1px solid color-mix(in srgb, fn.use-var(border, muted-color) 55%, transparent);
+}
+
+.notif-panel__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 
 .notif-panel__title {
+  font-size: fn.use-var(font-size-main, default);
   font-weight: 600;
   color: fn.use-var(text-color, title);
 }
 
-.notif-panel__empty {
-  padding: 24px 12px;
+.notif-panel__unread {
+  font-size: fn.use-var(font-size-assist, small);
+  color: fn.use-var(text-color, second);
+  white-space: nowrap;
 }
 
-.notif-panel__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow: auto;
+.notif-panel__empty {
+  padding: 32px 0;
+  text-align: center;
+}
+
+.notif-panel__scroll {
+  flex: 1;
+  min-height: 0;
+
+  :deep(.notif-panel__list) {
+    padding: 6px;
+  }
+
+  :deep(.notif-panel__items) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
 }
 
 .notif-item {
   display: flex;
-  flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: 10px;
   width: 100%;
-  padding: 10px 12px;
+  padding: 9px 10px;
   border: 0;
-  border-bottom: fn.use-var(border);
+  border-radius: fn.use-var(radius, default);
   background: transparent;
   text-align: left;
   cursor: pointer;
   color: inherit;
+  transition: background-color 0.15s ease;
 
   &:hover {
-    background: fn.use-var(bg-color, top);
+    background: fn.use-var(bg-color, hover);
   }
 
-  &.is-unread {
-    background: color-mix(in srgb, fn.use-var(color, primary) 8%, transparent);
+  /* 已读条目整体降半阶，未读保持墨色并缀朱砂点 */
+  &:not(.is-unread) {
+    .notif-item__title {
+      color: fn.use-var(text-color, second);
+      font-weight: 400;
+    }
+
+    .notif-item__icon {
+      opacity: 0.72;
+    }
   }
+}
+
+.notif-item__icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-top: 1px;
+  border-radius: fn.use-var(radius, default);
+
+  &.is-success {
+    color: fn.use-var(color, primary);
+    background: color-mix(in srgb, fn.use-var(color, primary) 10%, transparent);
+  }
+
+  /* 与登录页朱砂印同色 */
+  &.is-failed {
+    color: #b3452e;
+    background: color-mix(in srgb, #b3452e 10%, transparent);
+  }
+
+  &.is-muted {
+    color: fn.use-var(text-color, assist);
+    background: color-mix(in srgb, fn.use-var(text-color, assist) 14%, transparent);
+  }
+}
+
+.notif-item__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .notif-item__title {
   font-size: fn.use-var(font-size-main, default);
   font-weight: 500;
-  color: fn.use-var(text-color, main);
+  line-height: 1.4;
+  color: fn.use-var(text-color, title);
 }
 
 .notif-item__msg {
   font-size: fn.use-var(font-size-assist, small);
+  line-height: 1.45;
   color: fn.use-var(text-color, second);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
 }
 
 .notif-item__time {
+  margin-top: 1px;
   font-size: fn.use-var(font-size-assist, small);
   color: fn.use-var(text-color, tip);
+}
+
+.notif-item__dot {
+  flex-shrink: 0;
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-radius: 50%;
+  /* 与登录页朱砂印同色 */
+  background: #b3452e;
 }
 </style>

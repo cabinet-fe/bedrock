@@ -32,13 +32,13 @@ func (h *RoleHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc
 }
 
 func (h *RoleHandler) List(c *gin.Context) {
-	page := pkg.ParsePage(c)
-	items, total, err := h.roles.List(page.Page, page.PageSize)
+	q := pkg.ParseListQuery(c)
+	items, total, err := h.roles.List(q)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	pkg.PageSuccess(c, items, total, page)
+	pkg.PageSuccess(c, items, total, q)
 }
 
 func (h *RoleHandler) PermissionCatalog(c *gin.Context) {

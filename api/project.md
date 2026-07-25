@@ -10,7 +10,7 @@
 ### GET /projects — 列出项目
 
 权限：`project_projects:view`
-查询参数：page: integer, page_size: integer, keyword: string, status: 'active' | 'archived'
+查询参数：page: integer, page_size: integer, keyword: string, status: 'active' | 'archived', sort: string
 响应 200：data = ProductProjectPage
 错误：403
 
@@ -24,6 +24,13 @@
 
 权限：`project_requirements:view`
 响应 200：data = RequirementStatusOptions
+错误：403
+
+### GET /projects/meta/user-options — 列出可选用户（添加成员等）
+
+权限：`project_projects:update`
+查询参数：keyword: string
+响应 200：data = UserOptions
 错误：403
 
 ### GET /projects/{id} — 获取项目
@@ -408,12 +415,39 @@
 | `manage_members` | `boolean` | 是 |  |
 | `transfer_owner` | `boolean` | 是 |  |
 
+### ProjectMember
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `project_id` | `integer` |  |  |
+| `user_id` | `integer` |  |  |
+| `role` | `'owner' \| 'admin' \| 'member' \| 'readonly'` |  |  |
+| `username` | `string` |  | 响应附加，不落库 |
+| `display_name` | `string` |  | 响应附加，不落库 |
+| `created_at` | `string(date-time)` |  |  |
+| `updated_at` | `string(date-time)` |  |  |
+
 ### ProjectMemberRequest
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `user_id` | `integer` | 是 |  |
 | `role` | `'admin' \| 'member' \| 'readonly'` | 是 |  |
+
+### UserOption
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` | 是 |  |
+| `username` | `string` | 是 |  |
+| `display_name` | `string` |  |  |
+
+### UserOptions
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `items` | `UserOption[]` | 是 |  |
 
 ### ProjectMemberRoleRequest
 

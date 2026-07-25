@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/rbac"
 	"bedrock/internal/rbac/model"
 	"bedrock/internal/rbac/repository"
@@ -45,8 +46,8 @@ func (s *RoleService) Get(id uint) (*model.Role, error) {
 	return s.roles.FindByID(id)
 }
 
-func (s *RoleService) List(page, pageSize int) ([]model.Role, int64, error) {
-	return s.roles.List(page, pageSize)
+func (s *RoleService) List(q pkg.ListQuery) ([]model.Role, int64, error) {
+	return s.roles.List(q)
 }
 
 func (s *RoleService) Update(id uint, name, description string) (*model.Role, error) {

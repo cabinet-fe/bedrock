@@ -3,6 +3,7 @@ package repository
 import (
 	"time"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/system/model"
 
 	"gorm.io/gorm"
@@ -21,11 +22,10 @@ func (r *OperationLogRepository) Create(log *model.OperationLog) error {
 }
 
 type OperationLogFilters struct {
-	Page         int
-	PageSize     int
-	UserID       *uint
-	Action       string
-	ResourceType string
+	pkg.ListQuery
+	UserID       *uint  `form:"user_id"`
+	Action       string `form:"action"`
+	ResourceType string `form:"resource_type"`
 	From         *time.Time
 	To           *time.Time
 }
@@ -51,7 +51,10 @@ func (r *OperationLogRepository) List(f OperationLogFilters) ([]model.OperationL
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
+	order := pkg.OrderBy(f.Sort, map[string]string{
+		"created_at": "created_at",
+	}, "id", "id DESC")
 	var items []model.OperationLog
-	err := q.Offset((f.Page - 1) * f.PageSize).Limit(f.PageSize).Order("id DESC").Find(&items).Error
+	err := q.Offset(f.Offset()).Limit(f.PageSize).Order(order).Find(&items).Error
 	return items, total, err
 }

@@ -32,13 +32,13 @@ func (h *TokenHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFun
 }
 
 func (h *TokenHandler) List(c *gin.Context) {
-	page := pkg.ParsePage(c)
-	items, total, err := h.svc.List(authmiddleware.GetUserID(c), page.Page, page.PageSize)
+	q := pkg.ParseListQuery(c)
+	items, total, err := h.svc.List(authmiddleware.GetUserID(c), q)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	pkg.PageSuccess(c, items, total, page)
+	pkg.PageSuccess(c, items, total, q)
 }
 
 func (h *TokenHandler) Create(c *gin.Context) {

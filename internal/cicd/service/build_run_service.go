@@ -12,6 +12,7 @@ import (
 	"bedrock/internal/cicd/model"
 	"bedrock/internal/cicd/repository"
 	"bedrock/internal/engine"
+	"bedrock/internal/pkg"
 )
 
 // BuildRunService provides enqueue/cancel/retry/redeploy and artifact paths.
@@ -40,8 +41,8 @@ type RedeployInput struct {
 	TargetIDs []uint `json:"target_ids"`
 }
 
-func (s *BuildRunService) List(page, pageSize int, buildJobID *uint, status string) ([]model.BuildRun, int64, error) {
-	return s.runs.List(page, pageSize, buildJobID, status)
+func (s *BuildRunService) List(q pkg.ListQuery, buildJobID *uint, status string) ([]model.BuildRun, int64, error) {
+	return s.runs.List(q, buildJobID, status)
 }
 
 func (s *BuildRunService) Get(id uint) (*model.BuildRun, error) {

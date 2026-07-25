@@ -231,7 +231,7 @@
 ### GET /operation-logs — 列出操作日志
 
 权限：`system_operation_logs:view`
-查询参数：page: integer, page_size: integer, user_id: integer, action: string, resource_type: string, from: string(date), to: string(date)
+查询参数：page: integer, page_size: integer, user_id: integer, action: string, resource_type: string, from: string(date), to: string(date), sort: string
 响应 200：data = OperationLogPage
 错误：403
 
@@ -239,9 +239,9 @@
 
 ### GET /notifications — 列出当前用户通知
 
-查询参数：page: integer, page_size: integer
+查询参数：page: integer, page_size: integer, is_read: boolean（可选；传 false 仅查未读，传 true 仅查已读，缺省查全部）
 响应 200：data = NotificationPage
-错误：401
+错误：400（is_read 无法解析）、401
 
 ### PUT /notifications/read-all — 全部标为已读
 

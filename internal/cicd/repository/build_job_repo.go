@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bedrock/internal/cicd/model"
+	"bedrock/internal/pkg"
 
 	"gorm.io/gorm"
 )
@@ -39,21 +40,21 @@ func (r *BuildJobRepository) FindByID(id uint) (*model.BuildJob, error) {
 	return &job, nil
 }
 
-func (r *BuildJobRepository) List(page, pageSize int, repositoryID *uint, keyword string) ([]model.BuildJob, int64, error) {
-	q := r.db.Model(&model.BuildJob{})
+func (r *BuildJobRepository) List(q pkg.ListQuery, repositoryID *uint, keyword string) ([]model.BuildJob, int64, error) {
+	db := r.db.Model(&model.BuildJob{})
 	if repositoryID != nil && *repositoryID > 0 {
-		q = q.Where("repository_id = ?", *repositoryID)
+		db = db.Where("repository_id = ?", *repositoryID)
 	}
 	if keyword != "" {
 		like := "%" + keyword + "%"
-		q = q.Where("name LIKE ? OR description LIKE ?", like, like)
+		db = db.Where("name LIKE ? OR description LIKE ?", like, like)
 	}
 	var total int64
-	if err := q.Count(&total).Error; err != nil {
+	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var items []model.BuildJob
-	err := q.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error
+	err := db.Order("id DESC").Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
 	return items, total, err
 }
 

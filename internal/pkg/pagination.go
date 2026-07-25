@@ -2,15 +2,22 @@ package pkg
 
 import (
 	"math"
-	"strconv"
+	"reflect"
 
 	"github.com/gin-gonic/gin"
 )
 
-// PageQuery holds normalized pagination query params.
+// PageQuery holds normalized pagination fields for response envelopes.
 type PageQuery struct {
 	Page     int `json:"page"`
 	PageSize int `json:"page_size"`
+}
+
+// ListQuery is the shared list-query input: page / page_size / sort.
+type ListQuery struct {
+	Page     int    `form:"page"`
+	PageSize int    `form:"page_size"`
+	Sort     string `form:"sort"`
 }
 
 // PageResult is the standard list envelope: items/total/page/page_size/total_pages.
@@ -49,38 +56,63 @@ const (
 	maxPageSize     = 100
 )
 
-// ParsePage reads page/page_size from query with defaults and caps.
-func ParsePage(c *gin.Context) PageQuery {
-	page := defaultPage
-	pageSize := defaultPageSize
-	if p := c.Query("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil {
-			page = v
-		}
+// Normalize applies defaults and caps for page / page_size.
+func (q ListQuery) Normalize() ListQuery {
+	if q.Page < 1 {
+		q.Page = defaultPage
 	}
-	if ps := c.Query("page_size"); ps != "" {
-		if v, err := strconv.Atoi(ps); err == nil {
-			pageSize = v
-		}
+	if q.PageSize < 1 {
+		q.PageSize = defaultPageSize
 	}
-	if page < 1 {
-		page = defaultPage
+	if q.PageSize > maxPageSize {
+		q.PageSize = maxPageSize
 	}
-	if pageSize < 1 {
-		pageSize = defaultPageSize
+	return q
+}
+
+// Offset is the SQL OFFSET for the current page.
+func (q ListQuery) Offset() int {
+	return (q.Page - 1) * q.PageSize
+}
+
+// ParseListQuery reads page / page_size / sort from the query string and normalizes.
+func ParseListQuery(c *gin.Context) ListQuery {
+	var q ListQuery
+	_ = c.ShouldBindQuery(&q)
+	return q.Normalize()
+}
+
+// BindList binds domain filter fields (and embedded ListQuery) from the query,
+// normalizes the embedded ListQuery in place, and returns it.
+func BindList(c *gin.Context, dst any) ListQuery {
+	_ = c.ShouldBindQuery(dst)
+	return normalizeEmbeddedListQuery(dst)
+}
+
+func normalizeEmbeddedListQuery(dst any) ListQuery {
+	v := reflect.ValueOf(dst)
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return ListQuery{}.Normalize()
 	}
-	if pageSize > maxPageSize {
-		pageSize = maxPageSize
+	v = v.Elem()
+	if v.Kind() != reflect.Struct {
+		return ListQuery{}.Normalize()
 	}
-	return PageQuery{Page: page, PageSize: pageSize}
+	f := v.FieldByName("ListQuery")
+	if !f.IsValid() || !f.CanSet() || f.Type() != reflect.TypeOf(ListQuery{}) {
+		return ListQuery{}.Normalize()
+	}
+	q := f.Interface().(ListQuery).Normalize()
+	f.Set(reflect.ValueOf(q))
+	return q
 }
 
 // PageSuccess writes a success response with the standard pagination envelope as data.
-func PageSuccess(c *gin.Context, items interface{}, total int64, page PageQuery) {
-	Success(c, NewPageResult(items, total, page))
+func PageSuccess(c *gin.Context, items interface{}, total int64, q ListQuery) {
+	Success(c, NewPageResult(items, total, PageQuery{Page: q.Page, PageSize: q.PageSize}))
 }
 
 // Paginated keeps the 1.x helper signature.
 func Paginated(c *gin.Context, items interface{}, total int64, page, pageSize int) {
-	PageSuccess(c, items, total, PageQuery{Page: page, PageSize: pageSize})
+	PageSuccess(c, items, total, ListQuery{Page: page, PageSize: pageSize})
 }

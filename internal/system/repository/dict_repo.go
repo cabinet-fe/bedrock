@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bedrock/internal/pkg"
 	"bedrock/internal/system/model"
 
 	"gorm.io/gorm"
@@ -26,13 +27,13 @@ func (r *DictionaryRepository) FindByID(id uint) (*model.Dictionary, error) {
 	return &d, err
 }
 
-func (r *DictionaryRepository) List(page, pageSize int) ([]model.Dictionary, int64, error) {
+func (r *DictionaryRepository) List(q pkg.ListQuery) ([]model.Dictionary, int64, error) {
 	var items []model.Dictionary
 	var total int64
 	if err := r.db.Model(&model.Dictionary{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := r.db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&items).Error
+	err := r.db.Offset(q.Offset()).Limit(q.PageSize).Order("id DESC").Find(&items).Error
 	return items, total, err
 }
 

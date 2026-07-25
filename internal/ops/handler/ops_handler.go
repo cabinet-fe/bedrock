@@ -282,13 +282,13 @@ func (h *OpsHandler) ListJobs(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page := pkg.ParsePage(c)
-	items, total, err := h.devEnvs.ListJobs(envID, page.Page, page.PageSize, c.Query("status"))
+	q := pkg.ParseListQuery(c)
+	items, total, err := h.devEnvs.ListJobs(envID, q, c.Query("status"))
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	pkg.PageSuccess(c, items, total, page)
+	pkg.PageSuccess(c, items, total, q)
 }
 
 func (h *OpsHandler) GetJob(c *gin.Context) {

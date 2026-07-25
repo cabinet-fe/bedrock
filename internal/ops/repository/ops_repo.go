@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bedrock/internal/ops/model"
+	"bedrock/internal/pkg"
 
 	"gorm.io/gorm"
 )
@@ -83,18 +84,18 @@ func (r *OpsRepository) DeleteSource(id uint) error {
 	return r.db.Delete(&model.DevEnvInstallSource{}, id).Error
 }
 
-func (r *OpsRepository) ListJobs(environmentID uint, page, pageSize int, status string) ([]model.DevEnvJob, int64, error) {
-	q := r.db.Model(&model.DevEnvJob{}).Where("environment_id = ?", environmentID)
+func (r *OpsRepository) ListJobs(environmentID uint, q pkg.ListQuery, status string) ([]model.DevEnvJob, int64, error) {
+	db := r.db.Model(&model.DevEnvJob{}).Where("environment_id = ?", environmentID)
 	if status != "" {
-		q = q.Where("status = ?", status)
+		db = db.Where("status = ?", status)
 	}
 	var total int64
-	if err := q.Count(&total).Error; err != nil {
+	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var items []model.DevEnvJob
-	err := q.Preload("Environment").Preload("Source").Order("id DESC").
-		Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error
+	err := db.Preload("Environment").Preload("Source").Order("id DESC").
+		Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
 	return items, total, err
 }
 

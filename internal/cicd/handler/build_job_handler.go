@@ -37,7 +37,7 @@ func (h *BuildJobHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handler
 }
 
 func (h *BuildJobHandler) List(c *gin.Context) {
-	page := pkg.ParsePage(c)
+	q := pkg.ParseListQuery(c)
 	var repoID *uint
 	if v := c.Query("repository_id"); v != "" {
 		if id, err := strconv.ParseUint(v, 10, 64); err == nil {
@@ -45,12 +45,12 @@ func (h *BuildJobHandler) List(c *gin.Context) {
 			repoID = &u
 		}
 	}
-	items, total, err := h.svc.List(page.Page, page.PageSize, repoID, c.Query("keyword"))
+	items, total, err := h.svc.List(q, repoID, c.Query("keyword"))
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	pkg.PageSuccess(c, items, total, page)
+	pkg.PageSuccess(c, items, total, q)
 }
 
 func (h *BuildJobHandler) Get(c *gin.Context) {

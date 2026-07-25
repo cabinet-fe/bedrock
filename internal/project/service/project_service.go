@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"bedrock/internal/pkg"
 	projectmodel "bedrock/internal/project/model"
 	"bedrock/internal/project/repository"
 	storagemodel "bedrock/internal/storage/model"
@@ -56,10 +57,9 @@ type UpdateProjectInput struct {
 }
 
 type ProjectListFilter struct {
-	Keyword  string
-	Status   string
-	Page     uint
-	PageSize uint
+	pkg.ListQuery
+	Keyword string `form:"keyword"`
+	Status  string `form:"status"`
 }
 
 // ProjectCapabilities reports the actions that the authenticated actor may
@@ -114,13 +114,7 @@ func (s *ProjectService) ListProjects(actor AccessContext, filter ProjectListFil
 	if err != nil {
 		return nil, 0, err
 	}
-	if filter.Page == 0 {
-		filter.Page = 1
-	}
-	if filter.PageSize == 0 {
-		filter.PageSize = 20
-	}
-	projects, total, err := s.repo.ListProjects(filter.Page, filter.PageSize, filter.Keyword, filter.Status, actor.UserID, all)
+	projects, total, err := s.repo.ListProjects(filter.ListQuery, filter.Keyword, filter.Status, actor.UserID, all)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -325,6 +319,16 @@ func (s *ProjectService) ListMembers(actor AccessContext, projectID uint) ([]pro
 	return s.repo.ListMembers(projectID)
 }
 
+// ListUserOptions returns active users for member pickers. Callers need
+// project update permission; membership alone is not enough (same gate as
+// AddMember's global RBAC requirement).
+func (s *ProjectService) ListUserOptions(actor AccessContext, keyword string) ([]projectmodel.UserOption, error) {
+	if !actor.Has("project_projects:update") {
+		return nil, NewForbidden("缺少全局权限: project_projects:update")
+	}
+	return s.repo.ListUserOptions(keyword, 200)
+}
+
 func (s *ProjectService) AddMember(actor AccessContext, projectID uint, input MemberInput) (*projectmodel.ProjectMember, error) {
 	if _, err := s.acl.Require(projectID, actor, "project_projects:update", capMemberManage); err != nil {
 		return nil, err
@@ -348,6 +352,7 @@ func (s *ProjectService) AddMember(actor AccessContext, projectID uint, input Me
 		}
 		return nil, err
 	}
+	_ = s.repo.AttachMemberUser(member)
 	return member, nil
 }
 
@@ -377,6 +382,7 @@ func (s *ProjectService) UpdateMember(actor AccessContext, projectID, userID uin
 	if err := s.repo.UpdateMember(member); err != nil {
 		return nil, err
 	}
+	_ = s.repo.AttachMemberUser(member)
 	return member, nil
 }
 
@@ -439,28 +445,20 @@ type RequirementInput struct {
 }
 
 type RequirementFilter struct {
-	Keyword  string
-	Status   string
-	Priority string
-	Assignee string
-	Sort     string
-	Page     uint
-	PageSize uint
+	pkg.ListQuery
+	Keyword  string `form:"keyword"`
+	Status   string `form:"status"`
+	Priority string `form:"priority"`
+	Assignee string `form:"assignee_id"`
 }
 
 func (s *ProjectService) ListRequirements(actor AccessContext, projectID uint, filter RequirementFilter) ([]projectmodel.Requirement, int64, error) {
 	if _, err := s.acl.Require(projectID, actor, "project_requirements:view", capRequirementView); err != nil {
 		return nil, 0, err
 	}
-	if filter.Page == 0 {
-		filter.Page = 1
-	}
-	if filter.PageSize == 0 {
-		filter.PageSize = 20
-	}
 	return s.repo.ListRequirements(
-		projectID, filter.Page, filter.PageSize,
-		filter.Keyword, filter.Status, filter.Priority, filter.Assignee, filter.Sort,
+		projectID, filter.ListQuery,
+		filter.Keyword, filter.Status, filter.Priority, filter.Assignee,
 	)
 }
 

@@ -41,13 +41,13 @@ func (h *RepositoryHandler) canUseCredential(c *gin.Context) bool {
 }
 
 func (h *RepositoryHandler) List(c *gin.Context) {
-	page := pkg.ParsePage(c)
-	items, total, err := h.svc.List(page.Page, page.PageSize, c.Query("keyword"))
+	q := pkg.ParseListQuery(c)
+	items, total, err := h.svc.List(q, c.Query("keyword"))
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	pkg.PageSuccess(c, items, total, page)
+	pkg.PageSuccess(c, items, total, q)
 }
 
 func (h *RepositoryHandler) Get(c *gin.Context) {

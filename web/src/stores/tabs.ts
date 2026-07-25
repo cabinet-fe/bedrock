@@ -1,4 +1,5 @@
 import { computed, ref } from "vue";
+import { storage, storageKey } from "@cat-kit/fe";
 import { defineStore } from "pinia";
 
 export type WorkspaceTab = {
@@ -12,6 +13,13 @@ export type WorkspaceTab = {
   closable: boolean;
 };
 
+type TabsCache = {
+  tabs: WorkspaceTab[];
+  activeKey: string;
+};
+
+const TABS_KEY = storageKey<TabsCache>("workspace_tabs");
+
 const HOME_TAB: WorkspaceTab = {
   key: "/",
   fullPath: "/",
@@ -19,6 +27,40 @@ const HOME_TAB: WorkspaceTab = {
   name: "HomePage",
   closable: false,
 };
+
+function isWorkspaceTab(value: unknown): value is WorkspaceTab {
+  if (!value || typeof value !== "object") return false;
+  const t = value as Record<string, unknown>;
+  return (
+    typeof t.key === "string" &&
+    typeof t.fullPath === "string" &&
+    typeof t.title === "string" &&
+    typeof t.name === "string" &&
+    typeof t.closable === "boolean"
+  );
+}
+
+function loadCache(): TabsCache | null {
+  const cached = storage.session.get(TABS_KEY);
+  if (!cached || !Array.isArray(cached.tabs) || !cached.tabs.length) return null;
+  if (!cached.tabs.every(isWorkspaceTab)) return null;
+  if (typeof cached.activeKey !== "string") return null;
+
+  const tabs = cached.tabs.map((t) => ({ ...t }));
+  if (!tabs.some((t) => t.key === HOME_TAB.key)) {
+    tabs.unshift({ ...HOME_TAB });
+  }
+  const activeKey = tabs.some((t) => t.key === cached.activeKey) ? cached.activeKey : HOME_TAB.key;
+  return { tabs, activeKey };
+}
+
+function persist(tabs: WorkspaceTab[], activeKey: string) {
+  storage.session.set(TABS_KEY, { tabs, activeKey });
+}
+
+function clearCache() {
+  storage.session.remove(TABS_KEY);
+}
 
 function keepAliveNameFromRoute(route: {
   name?: string | symbol | null;
@@ -37,8 +79,9 @@ function keepAliveNameFromRoute(route: {
 }
 
 export const useTabsStore = defineStore("tabs", () => {
-  const tabs = ref<WorkspaceTab[]>([{ ...HOME_TAB }]);
-  const activeKey = ref("/");
+  const cached = loadCache();
+  const tabs = ref<WorkspaceTab[]>(cached?.tabs ?? [{ ...HOME_TAB }]);
+  const activeKey = ref(cached?.activeKey ?? HOME_TAB.key);
 
   const cachedNames = computed(() => [...new Set(tabs.value.map((t) => t.name))]);
 
@@ -61,6 +104,7 @@ export const useTabsStore = defineStore("tabs", () => {
       existing.fullPath = tab.fullPath;
       existing.name = tab.name;
       activeKey.value = existing.key;
+      persist(tabs.value, activeKey.value);
       return;
     }
     tabs.value.push({
@@ -71,6 +115,7 @@ export const useTabsStore = defineStore("tabs", () => {
       closable: tab.closable ?? tab.key !== "/",
     });
     activeKey.value = tab.key;
+    persist(tabs.value, activeKey.value);
   }
 
   function close(key: string) {
@@ -85,6 +130,7 @@ export const useTabsStore = defineStore("tabs", () => {
     if (!tabs.value.length) {
       tabs.value.push({ ...HOME_TAB });
       activeKey.value = HOME_TAB.key;
+      persist(tabs.value, activeKey.value);
       return;
     }
 
@@ -92,6 +138,7 @@ export const useTabsStore = defineStore("tabs", () => {
       const next = tabs.value[Math.min(idx, tabs.value.length - 1)]!;
       activeKey.value = next.key;
     }
+    persist(tabs.value, activeKey.value);
   }
 
   function syncFromRoute(
@@ -116,6 +163,7 @@ export const useTabsStore = defineStore("tabs", () => {
   function reset() {
     tabs.value = [{ ...HOME_TAB }];
     activeKey.value = HOME_TAB.key;
+    clearCache();
   }
 
   return {

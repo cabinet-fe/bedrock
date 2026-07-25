@@ -26,7 +26,6 @@ const table = useTemplateRef("table");
 const query = reactive({ agent_id: undefined as number | undefined });
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "trigger_type", name: "触发", width: 110, align: "center" },
   { key: "status", name: "状态", width: 100, align: "center" },
   {

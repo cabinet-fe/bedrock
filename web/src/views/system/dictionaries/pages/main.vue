@@ -9,9 +9,11 @@ import { createDictionary, deleteDictionary, getDictionary, updateDictionary } f
 import type { DictItem, Dictionary } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const listRef = useTemplateRef("list");
 const dialogOpen = ref(false);
 const editing = ref<Dictionary | null>(null);
@@ -23,7 +25,6 @@ const form = reactive({
 });
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "name", name: "名称" },
   { key: "code", name: "编码" },
   { key: "description", name: "描述" },
@@ -35,7 +36,7 @@ function openCreate() {
   dialogOpen.value = true;
 }
 
-async function openEdit(row: Dictionary) {
+const openEdit = bind(async (row: Dictionary) => {
   try {
     const full = await getDictionary(row.id);
     editing.value = full;
@@ -50,7 +51,7 @@ async function openEdit(row: Dictionary) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "加载失败");
   }
-}
+});
 
 function addItem() {
   form.items.push({
@@ -99,7 +100,7 @@ async function save() {
   }
 }
 
-async function remove(row: Dictionary) {
+const remove = bind(async (row: Dictionary) => {
   try {
     await deleteDictionary(row.id);
     message.success("已删除");
@@ -107,7 +108,7 @@ async function remove(row: Dictionary) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "删除失败");
   }
-}
+});
 </script>
 
 <template>
@@ -124,7 +125,7 @@ async function remove(row: Dictionary) {
         </u-button>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3">
+        <u-action-group :max="3" :loading="busyKey === (rowData as Dictionary).id">
           <u-action
             v-if="hasPermission('system_dictionaries:update')"
             @run="openEdit(rowData as Dictionary)"

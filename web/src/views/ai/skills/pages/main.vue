@@ -10,9 +10,11 @@ import { deleteSkill, downloadSkill, overwriteSkill, uploadSkill } from "@/api/a
 import type { SkillPackage } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const table = useTemplateRef("table");
 const dialogOpen = ref(false);
 const overwriteID = ref<number | null>(null);
@@ -24,7 +26,6 @@ const form = reactive({
 });
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "name", name: "名称" },
   { key: "visibility", name: "可见性", width: 100, align: "center" },
   { key: "package_digest", name: "Digest" },
@@ -72,22 +73,22 @@ async function save() {
   }
 }
 
-async function onDownload(row: SkillPackage) {
+const onDownload = bind(async (row: SkillPackage) => {
   try {
     saveBlob(await downloadSkill(row.id), `${row.name}.zip`);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "下载失败");
   }
-}
+});
 
-async function remove(row: SkillPackage) {
+const remove = bind(async (row: SkillPackage) => {
   try {
     await deleteSkill(row.id);
     table.value?.reload();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除失败");
   }
-}
+});
 </script>
 
 <template>
@@ -112,7 +113,7 @@ async function remove(row: SkillPackage) {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3">
+        <u-action-group :max="3" :loading="busyKey === (rowData as SkillPackage).id">
           <u-action
             v-if="hasPermission('ai_skills:download')"
             @run="onDownload(rowData as SkillPackage)"

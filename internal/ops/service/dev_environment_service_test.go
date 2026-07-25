@@ -12,6 +12,7 @@ import (
 
 	"bedrock/internal/ops/model"
 	"bedrock/internal/ops/repository"
+	"bedrock/internal/pkg"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
@@ -56,7 +57,7 @@ func TestInstallFallsBackToSecondSourceAndKeepsLogs(t *testing.T) {
 		!strings.Contains(finished.LogText, `source "second-source" succeeded`) {
 		t.Fatalf("fallback is not observable in logs:\n%s", finished.LogText)
 	}
-	audits, total, err := audit.List(systemrepository.OperationLogFilters{Page: 1, PageSize: 20})
+	audits, total, err := audit.List(systemrepository.OperationLogFilters{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
 	if err != nil {
 		t.Fatal(err)
 	}

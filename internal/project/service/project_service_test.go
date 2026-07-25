@@ -10,6 +10,7 @@ import (
 
 	authmodel "bedrock/internal/auth/model"
 	authrepo "bedrock/internal/auth/repository"
+	"bedrock/internal/pkg"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
@@ -39,13 +40,13 @@ func TestProjectACLListAndGlobalBypass(t *testing.T) {
 	}
 
 	member := actor(2, "project_projects:view")
-	items, total, err := svc.ListProjects(member, ProjectListFilter{Page: 1, PageSize: 20})
+	items, total, err := svc.ListProjects(member, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
 	if err != nil || total != 1 || len(items) != 1 || items[0].ID != project.ID {
 		t.Fatalf("joined list = %#v total=%d err=%v", items, total, err)
 	}
 
 	viewAll := actor(3, "project_projects:view", "project_projects:view_all")
-	items, total, err = svc.ListProjects(viewAll, ProjectListFilter{Page: 1, PageSize: 20})
+	items, total, err = svc.ListProjects(viewAll, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
 	if err != nil || total != 1 || len(items) != 1 {
 		t.Fatalf("view_all list = %#v total=%d err=%v", items, total, err)
 	}
@@ -71,7 +72,7 @@ func TestProjectListCapabilitiesReflectProjectACL(t *testing.T) {
 		"project_projects:update",
 		"project_projects:delete",
 	)
-	items, _, err := svc.ListProjects(viewAll, ProjectListFilter{Page: 1, PageSize: 20})
+	items, _, err := svc.ListProjects(viewAll, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +95,7 @@ func TestProjectListCapabilitiesReflectProjectACL(t *testing.T) {
 		"project_projects:delete",
 		"project_projects:manage_all",
 	)
-	items, _, err = svc.ListProjects(manager, ProjectListFilter{Page: 1, PageSize: 20})
+	items, _, err = svc.ListProjects(manager, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +168,7 @@ func TestProjectACLUsesResolvedRolePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	actorFromRole := NewAccessContext(user.ID, false, resolved)
-	items, total, err := svc.ListProjects(actorFromRole, ProjectListFilter{Page: 1, PageSize: 20})
+	items, total, err := svc.ListProjects(actorFromRole, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
 	if err != nil || total != 1 || len(items) != 1 || items[0].ID != project.ID {
 		t.Fatalf("view_all via resolved role = %#v total=%d err=%v", items, total, err)
 	}

@@ -20,10 +20,13 @@ import type {
 } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { useAuthStore } from "@/stores/auth";
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
+const { busy: permBusy, run: runPerm } = useBusy();
 const auth = useAuthStore();
 const listRef = useTemplateRef("list");
 const dialogOpen = ref(false);
@@ -34,7 +37,6 @@ const catalog = ref<PermissionCatalogGroup[]>([]);
 const checked = ref<Set<string>>(new Set());
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "name", name: "名称" },
   { key: "code", name: "编码" },
   { key: "type", name: "类型", width: 90, align: "center" },
@@ -60,7 +62,7 @@ function openEdit(row: Role) {
   dialogOpen.value = true;
 }
 
-async function openPerms(row: Role) {
+const openPerms = bind(async (row: Role) => {
   if (isBuiltinRole(row)) {
     message.info("内置超级管理员拥有全部权限，不可编辑");
     return;
@@ -72,7 +74,7 @@ async function openPerms(row: Role) {
   }
   checked.value = new Set((row.permissions ?? []).map((p) => p.permission));
   permOpen.value = true;
-}
+});
 
 function isChecked(code: string) {
   return checked.value.has(code);
@@ -130,18 +132,20 @@ async function save() {
 
 async function savePerms() {
   if (!editing.value || isBuiltin.value) return;
-  try {
-    await setRolePermissions(editing.value.id, [...checked.value]);
-    message.success("权限已保存");
-    permOpen.value = false;
-    await listRef.value?.reload();
-    await auth.refreshMe(true);
-  } catch (err) {
-    message.error(err instanceof Error ? err.message : "保存失败");
-  }
+  await runPerm(async () => {
+    try {
+      await setRolePermissions(editing.value!.id, [...checked.value]);
+      message.success("权限已保存");
+      permOpen.value = false;
+      await listRef.value?.reload();
+      await auth.refreshMe(true);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "保存失败");
+    }
+  });
 }
 
-async function remove(row: Role) {
+const remove = bind(async (row: Role) => {
   if (isBuiltinRole(row)) return;
   try {
     await deleteRole(row.id);
@@ -150,7 +154,7 @@ async function remove(row: Role) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "删除失败");
   }
-}
+});
 </script>
 
 <template>
@@ -172,7 +176,7 @@ async function remove(row: Role) {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="4">
+        <u-action-group :max="4" :loading="busyKey === (rowData as Role).id">
           <u-action
             v-if="hasPermission('system_roles:update') && !isBuiltinRole(rowData as Role)"
             @run="openEdit(rowData as Role)"
@@ -252,8 +256,10 @@ async function remove(row: Role) {
         </section>
       </div>
       <template #footer="{ close }">
-        <u-button text @click="close()">取消</u-button>
-        <u-button v-if="!isBuiltin" type="primary" @click="savePerms">保存权限</u-button>
+        <u-button text :disabled="permBusy" @click="close()">取消</u-button>
+        <u-button v-if="!isBuiltin" type="primary" :loading="permBusy" @click="savePerms">
+          保存权限
+        </u-button>
       </template>
     </u-dialog>
   </div>

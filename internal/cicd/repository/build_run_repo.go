@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bedrock/internal/cicd/model"
+	"bedrock/internal/pkg"
 
 	"gorm.io/gorm"
 )
@@ -26,20 +27,23 @@ func (r *BuildRunRepository) FindByID(id uint) (*model.BuildRun, error) {
 	return &run, nil
 }
 
-func (r *BuildRunRepository) List(page, pageSize int, buildJobID *uint, status string) ([]model.BuildRun, int64, error) {
-	q := r.db.Model(&model.BuildRun{})
+func (r *BuildRunRepository) List(q pkg.ListQuery, buildJobID *uint, status string) ([]model.BuildRun, int64, error) {
+	db := r.db.Model(&model.BuildRun{})
 	if buildJobID != nil && *buildJobID > 0 {
-		q = q.Where("build_job_id = ?", *buildJobID)
+		db = db.Where("build_job_id = ?", *buildJobID)
 	}
 	if status != "" {
-		q = q.Where("status = ?", status)
+		db = db.Where("status = ?", status)
 	}
 	var total int64
-	if err := q.Count(&total).Error; err != nil {
+	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
+	order := pkg.OrderBy(q.Sort, map[string]string{
+		"created_at": "created_at",
+	}, "id", "id DESC")
 	var items []model.BuildRun
-	err := q.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error
+	err := db.Order(order).Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
 	return items, total, err
 }
 

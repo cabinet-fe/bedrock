@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
-import { message, type TabItem } from "@veltra/desktop";
+import { message, messageConfirm, type TabItem } from "@veltra/desktop";
 import { Books, Folder } from "@veltra/icons/normal";
 
 import {
@@ -173,7 +173,10 @@ async function saveDraft() {
 
 async function saveAndPublish() {
   if (!selected.value || selected.value.kind !== "doc") return;
-  if (!window.confirm(`确认保存并发布文档「${selected.value.name}」？`)) return;
+  const action = await messageConfirm.warning(`确认保存并发布文档「${selected.value.name}」？`, {
+    cancelButtonText: "取消",
+  }).onClosed;
+  if (action !== "confirm") return;
   try {
     const saved = await updateDocNode(props.project.id, selected.value.id, {
       draft_content: draftContent.value,
@@ -192,7 +195,7 @@ async function saveAndPublish() {
 }
 
 async function removeNode() {
-  if (!selected.value || !window.confirm(`确认删除「${selected.value.name}」及其子节点？`)) return;
+  if (!selected.value) return;
   try {
     await deleteDocNode(props.project.id, selected.value.id);
     await selectNode();
@@ -329,7 +332,7 @@ watch(canUpdate, (ok) => {
             </p>
           </div>
           <u-action-group v-if="canDelete" :max="4">
-            <u-action type="danger" @run="removeNode">删除</u-action>
+            <u-action need-confirm type="danger" @run="removeNode">删除</u-action>
           </u-action-group>
         </div>
 

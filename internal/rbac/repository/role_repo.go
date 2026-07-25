@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bedrock/internal/pkg"
 	"bedrock/internal/rbac/model"
 
 	"gorm.io/gorm"
@@ -33,14 +34,14 @@ func (r *RoleRepository) FindByCode(code string) (*model.Role, error) {
 	return &role, err
 }
 
-func (r *RoleRepository) List(page, pageSize int) ([]model.Role, int64, error) {
+func (r *RoleRepository) List(q pkg.ListQuery) ([]model.Role, int64, error) {
 	var items []model.Role
 	var total int64
 	if err := r.db.Model(&model.Role{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	err := r.db.Preload("Permissions").
-		Offset((page - 1) * pageSize).Limit(pageSize).
+		Offset(q.Offset()).Limit(q.PageSize).
 		Order("id ASC").Find(&items).Error
 	return items, total, err
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/resource/model"
 	"bedrock/internal/resource/repository"
 )
@@ -107,8 +108,8 @@ func (s *PATService) Create(userID uint, in CreatePATInput) (*CreatePATResult, e
 	return &CreatePATResult{Token: plain, Metadata: *item}, nil
 }
 
-func (s *PATService) List(userID uint, page, pageSize int) ([]model.PersonalAccessToken, int64, error) {
-	items, total, err := s.repo.ListByUser(userID, page, pageSize)
+func (s *PATService) List(userID uint, q pkg.ListQuery) ([]model.PersonalAccessToken, int64, error) {
+	items, total, err := s.repo.ListByUser(userID, q)
 	if err != nil {
 		return nil, 0, err
 	}

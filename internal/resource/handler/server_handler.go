@@ -36,13 +36,13 @@ func (h *ServerHandler) canUseCredential(c *gin.Context) bool {
 }
 
 func (h *ServerHandler) List(c *gin.Context) {
-	page := pkg.ParsePage(c)
-	items, total, err := h.svc.List(page.Page, page.PageSize, c.Query("keyword"), c.Query("tag"))
+	q := pkg.ParseListQuery(c)
+	items, total, err := h.svc.List(q, c.Query("keyword"), c.Query("tag"))
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	pkg.PageSuccess(c, items, total, page)
+	pkg.PageSuccess(c, items, total, q)
 }
 
 func (h *ServerHandler) Get(c *gin.Context) {

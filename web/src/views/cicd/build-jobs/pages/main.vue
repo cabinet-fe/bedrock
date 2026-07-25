@@ -19,6 +19,7 @@ import { listRepositories, listRepositoryBranches, listServers } from "@/api/res
 import type { BuildJob, BuildRun, DeployTarget, Repository, Server } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
 import {
@@ -52,6 +53,8 @@ const BUILD_SCRIPT_TYPE_OPTIONS = [
 ];
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
+const { busy: rotateBusy, run: runRotate } = useBusy();
 const router = useRouter();
 const listRef = useTemplateRef("list");
 const historyRef = useTemplateRef("history");
@@ -107,7 +110,6 @@ const repoNameMap = computed(() => {
 });
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "name", name: "名称" },
   { key: "repository", name: "仓库" },
   { key: "branch", name: "分支" },
@@ -279,7 +281,7 @@ async function save() {
   }
 }
 
-async function remove(row: BuildJob) {
+const remove = bind(async (row: BuildJob) => {
   try {
     await deleteBuildJob(row.id);
     message.success("已删除");
@@ -287,9 +289,9 @@ async function remove(row: BuildJob) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "删除失败");
   }
-}
+});
 
-async function trigger(row: BuildJob) {
+const trigger = bind(async (row: BuildJob) => {
   try {
     const run = await enqueueBuildRun(row.id, { trigger_type: "manual" });
     message.success(`已入队 #${run.build_number}`);
@@ -297,9 +299,9 @@ async function trigger(row: BuildJob) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "构建失败");
   }
-}
+});
 
-async function showWebhook(row: BuildJob) {
+const showWebhook = bind(async (row: BuildJob) => {
   try {
     const res = await getBuildJobWebhookSecret(row.id);
     webhookInfo.secret = res.webhook_secret;
@@ -309,18 +311,20 @@ async function showWebhook(row: BuildJob) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "获取 Webhook 失败");
   }
-}
+});
 
 async function rotateWebhookSecret() {
   if (!editing.value) return;
-  try {
-    const res = await rotateBuildJobWebhookSecret(editing.value.id);
-    webhookInfo.secret = res.webhook_secret;
-    webhookInfo.url = res.webhook_url;
-    message.success("已轮换");
-  } catch (err) {
-    message.error(err instanceof Error ? err.message : "轮换失败");
-  }
+  await runRotate(async () => {
+    try {
+      const res = await rotateBuildJobWebhookSecret(editing.value!.id);
+      webhookInfo.secret = res.webhook_secret;
+      webhookInfo.url = res.webhook_url;
+      message.success("已轮换");
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "轮换失败");
+    }
+  });
 }
 </script>
 
@@ -371,7 +375,7 @@ async function rotateWebhookSecret() {
         </span>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="4">
+        <u-action-group :max="4" :loading="busyKey === (rowData as BuildJob).id">
           <u-action
             v-if="hasPermission('cicd_build_jobs:update')"
             @run="openEdit(rowData as BuildJob)"
@@ -555,6 +559,7 @@ async function rotateWebhookSecret() {
         <u-button
           v-if="hasPermission('cicd_build_jobs:update')"
           type="primary"
+          :loading="rotateBusy"
           @click="rotateWebhookSecret"
         >
           轮换

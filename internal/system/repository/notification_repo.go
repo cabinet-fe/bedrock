@@ -3,6 +3,7 @@ package repository
 import (
 	"gorm.io/gorm"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/system/model"
 )
 
@@ -18,17 +19,24 @@ func (r *NotificationRepository) Create(n *model.Notification) error {
 	return r.db.Create(n).Error
 }
 
-func (r *NotificationRepository) ListByUser(userID uint, page, pageSize int) ([]model.Notification, int64, error) {
+// ListByUser 按用户分页查询通知；isRead 非 nil 时按已读状态过滤。
+func (r *NotificationRepository) ListByUser(userID uint, isRead *bool, q pkg.ListQuery) ([]model.Notification, int64, error) {
 	var items []model.Notification
 	var total int64
-	q := r.db.Model(&model.Notification{}).Where("user_id = ?", userID)
-	if err := q.Count(&total).Error; err != nil {
+	where := func(db *gorm.DB) *gorm.DB {
+		db = db.Where("user_id = ?", userID)
+		if isRead != nil {
+			db = db.Where("is_read = ?", *isRead)
+		}
+		return db
+	}
+	if err := where(r.db.Model(&model.Notification{})).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := r.db.Where("user_id = ?", userID).
+	err := where(r.db).
 		Order("created_at DESC").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
+		Offset(q.Offset()).
+		Limit(q.PageSize).
 		Find(&items).Error
 	return items, total, err
 }

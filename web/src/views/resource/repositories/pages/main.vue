@@ -17,6 +17,7 @@ import {
 import type { Credential, Repository } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
 import { tagType, type TagType } from "@/lib/tag";
@@ -27,6 +28,8 @@ const AUTH_TYPE_TAG: Record<string, TagType> = {
 };
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
+const { busy: batchBusy, run: runBatch } = useBusy();
 const listRef = useTemplateRef("list");
 const query = reactive({ keyword: "" });
 const checked = ref<Repository[]>([]);
@@ -43,7 +46,6 @@ const form = reactive({
 });
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "name", name: "名称" },
   { key: "repo_url", name: "URL" },
   { key: "auth_type", name: "认证", width: 100, align: "center" },
@@ -98,7 +100,7 @@ async function save() {
   }
 }
 
-async function remove(row: Repository) {
+const remove = bind(async (row: Repository) => {
   try {
     await deleteRepository(row.id);
     message.success("已删除");
@@ -106,9 +108,9 @@ async function remove(row: Repository) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "删除失败");
   }
-}
+});
 
-async function onTest(row: Repository) {
+const onTest = bind(async (row: Repository) => {
   try {
     const res = await testRepository(row.id);
     message.success(`拉取成功，分支 ${res.branches?.length ?? 0} 个`);
@@ -116,9 +118,9 @@ async function onTest(row: Repository) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "测试失败");
   }
-}
+});
 
-async function onSyncBranches(row: Repository) {
+const onSyncBranches = bind(async (row: Repository) => {
   try {
     const res = await syncRepositoryBranches(row.id);
     message.success(`已同步 ${res.items.length} 个分支`);
@@ -126,27 +128,29 @@ async function onSyncBranches(row: Repository) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "同步失败");
   }
-}
+});
 
 async function onBatchSyncBranches() {
   if (!checked.value.length) {
     message.warning("请先勾选要同步的仓库");
     return;
   }
-  try {
-    const results = await syncRepositoryBranchesBatch(checked.value.map((r) => r.id));
-    const ok = results.filter((r) => r.ok).length;
-    const fail = results.length - ok;
-    if (fail === 0) {
-      message.success(`已同步 ${ok} 个仓库`);
-    } else {
-      message.warning(`同步完成：成功 ${ok}，失败 ${fail}`);
+  await runBatch(async () => {
+    try {
+      const results = await syncRepositoryBranchesBatch(checked.value.map((r) => r.id));
+      const ok = results.filter((r) => r.ok).length;
+      const fail = results.length - ok;
+      if (fail === 0) {
+        message.success(`已同步 ${ok} 个仓库`);
+      } else {
+        message.warning(`同步完成：成功 ${ok}，失败 ${fail}`);
+      }
+      checked.value = [];
+      await listRef.value?.reload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "批量同步失败");
     }
-    checked.value = [];
-    await listRef.value?.reload();
-  } catch (err) {
-    message.error(err instanceof Error ? err.message : "批量同步失败");
-  }
+  });
 }
 </script>
 
@@ -165,6 +169,7 @@ async function onBatchSyncBranches() {
         <u-input v-model="query.keyword" placeholder="名称/URL" style="width: 200px" />
         <u-button
           v-if="hasPermission('resource_repositories:update')"
+          :loading="batchBusy"
           @click.prevent="onBatchSyncBranches"
         >
           批量同步分支
@@ -190,7 +195,7 @@ async function onBatchSyncBranches() {
         {{ formatDateTime((rowData as Repository).branches_synced_at) || "—" }}
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="4">
+        <u-action-group :max="4" :loading="busyKey === (rowData as Repository).id">
           <u-action
             v-if="hasPermission('resource_repositories:update')"
             @run="openEdit(rowData as Repository)"

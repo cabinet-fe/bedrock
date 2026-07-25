@@ -8,6 +8,7 @@ import (
 
 	"bedrock/internal/cicd/model"
 	"bedrock/internal/cicd/repository"
+	"bedrock/internal/pkg"
 	resourcerepo "bedrock/internal/resource/repository"
 )
 
@@ -322,8 +323,8 @@ func (s *BuildJobService) RotateWebhookSecret(id uint) (*model.BuildJob, error) 
 	return publicJob(job, true), nil
 }
 
-func (s *BuildJobService) List(page, pageSize int, repositoryID *uint, keyword string) ([]model.BuildJob, int64, error) {
-	items, total, err := s.jobs.List(page, pageSize, repositoryID, keyword)
+func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword string) ([]model.BuildJob, int64, error) {
+	items, total, err := s.jobs.List(q, repositoryID, keyword)
 	if err != nil {
 		return nil, 0, err
 	}

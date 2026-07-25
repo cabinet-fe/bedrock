@@ -99,7 +99,9 @@ onMounted(async () => {
     <div class="page">
       <header class="page-header">
         <div class="page-header__lead">
-          <u-button text @click="router.push({ name: 'ai-runs' })">返回列表</u-button>
+          <u-button type="primary" plain @click="router.push({ name: 'ai-runs' })">
+            返回列表
+          </u-button>
           <div v-if="run" class="page-header__title">
             <h2>运行 #{{ run.id }}</h2>
             <u-tag size="small" :type="tagType(run.status, JOB_STATUS_TAG)">{{ run.status }}</u-tag>

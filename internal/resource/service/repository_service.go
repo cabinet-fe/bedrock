@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"bedrock/internal/engine"
+	"bedrock/internal/pkg"
 	"bedrock/internal/resource/model"
 	"bedrock/internal/resource/repository"
 )
@@ -171,8 +172,8 @@ func (s *RepositoryService) Get(id uint) (*model.Repository, error) {
 	return repo, nil
 }
 
-func (s *RepositoryService) List(page, pageSize int, keyword string) ([]model.Repository, int64, error) {
-	items, total, err := s.repo.List(page, pageSize, keyword)
+func (s *RepositoryService) List(q pkg.ListQuery, keyword string) ([]model.Repository, int64, error) {
+	items, total, err := s.repo.List(q, keyword)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -32,13 +32,13 @@ func (h *DictionaryHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handl
 }
 
 func (h *DictionaryHandler) List(c *gin.Context) {
-	page := pkg.ParsePage(c)
-	items, total, err := h.dicts.List(page.Page, page.PageSize)
+	q := pkg.ParseListQuery(c)
+	items, total, err := h.dicts.List(q)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	pkg.PageSuccess(c, items, total, page)
+	pkg.PageSuccess(c, items, total, q)
 }
 
 func (h *DictionaryHandler) Get(c *gin.Context) {

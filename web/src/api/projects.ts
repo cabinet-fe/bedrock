@@ -11,6 +11,7 @@ import type {
   RequirementAttachment,
   RequirementComment,
   RequirementStatusOption,
+  UserOption,
 } from "./types";
 
 export async function getProject(id: number): Promise<ProductProject> {
@@ -45,6 +46,13 @@ export async function listRequirementStatuses(): Promise<RequirementStatusOption
     "/projects/meta/requirement-statuses",
   );
   return body.items;
+}
+
+export async function listUserOptions(keyword?: string): Promise<UserOption[]> {
+  const { body } = await http.get<{ items: UserOption[] }>("/projects/meta/user-options", {
+    query: keyword ? { keyword } : undefined,
+  });
+  return body.items ?? [];
 }
 
 export async function addProjectMember(

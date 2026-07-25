@@ -9,10 +9,12 @@ import { createUser, deleteUser, listRoles, updateUser } from "@/api/system";
 import type { Role, User } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { useAuthStore } from "@/stores/auth";
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const auth = useAuthStore();
 const listRef = useTemplateRef("list");
 const query = reactive({ keyword: "" });
@@ -41,7 +43,6 @@ const roleNameById = computed(() => {
 });
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "username", name: "用户名" },
   { key: "display_name", name: "显示名" },
   { key: "role_ids", name: "角色" },
@@ -105,7 +106,7 @@ async function save() {
   }
 }
 
-async function remove(row: User) {
+const remove = bind(async (row: User) => {
   try {
     await deleteUser(row.id);
     message.success("已删除");
@@ -113,7 +114,7 @@ async function remove(row: User) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "删除失败");
   }
-}
+});
 </script>
 
 <template>
@@ -148,7 +149,7 @@ async function remove(row: User) {
         <span v-else>—</span>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3">
+        <u-action-group :max="3" :loading="busyKey === (rowData as User).id">
           <u-action v-if="hasPermission('system_users:update')" @run="openEdit(rowData as User)">
             编辑
           </u-action>

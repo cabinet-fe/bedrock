@@ -15,6 +15,7 @@ import {
 import type { Credential, Server } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { tagType, type TagType } from "@/lib/tag";
 
@@ -32,6 +33,7 @@ const SERVER_STATUS_TAG: Record<string, TagType> = {
 };
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const listRef = useTemplateRef("list");
 const query = reactive({ keyword: "" });
 const dialogOpen = ref(false);
@@ -52,7 +54,6 @@ const form = reactive({
 });
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "name", name: "名称" },
   { key: "host", name: "主机" },
   { key: "port", name: "端口" },
@@ -109,7 +110,7 @@ async function save() {
   }
 }
 
-async function remove(row: Server) {
+const remove = bind(async (row: Server) => {
   try {
     await deleteServer(row.id);
     message.success("已删除");
@@ -117,9 +118,9 @@ async function remove(row: Server) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "删除失败");
   }
-}
+});
 
-async function onTest(row: Server) {
+const onTest = bind(async (row: Server) => {
   try {
     const res = await testServer(row.id);
     message.success(res.output?.slice(0, 120) || "连接成功");
@@ -127,7 +128,7 @@ async function onTest(row: Server) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "连接失败");
   }
-}
+});
 </script>
 
 <template>
@@ -155,7 +156,7 @@ async function onTest(row: Server) {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="4">
+        <u-action-group :max="4" :loading="busyKey === (rowData as Server).id">
           <u-action
             v-if="hasPermission('resource_servers:update')"
             @run="openEdit(rowData as Server)"

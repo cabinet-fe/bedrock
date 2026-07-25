@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"errors"
 	"strings"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/project/model"
 
 	"gorm.io/gorm"
@@ -49,26 +51,29 @@ func (r *ProjectRepository) FindProjectBySlug(slug string) (*model.ProductProjec
 	return &project, nil
 }
 
-func (r *ProjectRepository) ListProjects(page, pageSize uint, keyword, status string, userID uint, all bool) ([]model.ProductProject, int64, error) {
-	q := r.db.Model(&model.ProductProject{})
+func (r *ProjectRepository) ListProjects(q pkg.ListQuery, keyword, status string, userID uint, all bool) ([]model.ProductProject, int64, error) {
+	db := r.db.Model(&model.ProductProject{})
 	if !all {
-		q = q.Joins("JOIN project_members ON project_members.project_id = product_projects.id").
+		db = db.Joins("JOIN project_members ON project_members.project_id = product_projects.id").
 			Where("project_members.user_id = ?", userID)
 	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		q = q.Where("product_projects.name LIKE ? OR product_projects.slug LIKE ? OR product_projects.tags LIKE ?", like, like, like)
+		db = db.Where("product_projects.name LIKE ? OR product_projects.slug LIKE ? OR product_projects.tags LIKE ?", like, like, like)
 	}
 	if status = strings.TrimSpace(status); status != "" {
-		q = q.Where("product_projects.status = ?", status)
+		db = db.Where("product_projects.status = ?", status)
 	}
 	var total int64
-	if err := q.Count(&total).Error; err != nil {
+	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
+	order := pkg.OrderBy(q.Sort, map[string]string{
+		"name":       "product_projects.name",
+		"updated_at": "product_projects.updated_at",
+	}, "product_projects.id", "product_projects.updated_at DESC, product_projects.id DESC")
 	var projects []model.ProductProject
-	err := q.Order("product_projects.updated_at DESC, product_projects.id DESC").
-		Offset(int((page - 1) * pageSize)).Limit(int(pageSize)).Find(&projects).Error
+	err := db.Order(order).Offset(q.Offset()).Limit(q.PageSize).Find(&projects).Error
 	return projects, total, err
 }
 
@@ -140,7 +145,83 @@ func (r *ProjectRepository) ListMembers(projectID uint) ([]model.ProjectMember, 
 	err := r.db.Where("project_id = ?", projectID).
 		Order("CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'member' THEN 2 ELSE 3 END, id ASC").
 		Find(&members).Error
-	return members, err
+	if err != nil {
+		return nil, err
+	}
+	if err := r.attachMemberUsers(members); err != nil {
+		return nil, err
+	}
+	return members, nil
+}
+
+func (r *ProjectRepository) AttachMemberUser(member *model.ProjectMember) error {
+	if member == nil {
+		return nil
+	}
+	var user model.UserOption
+	err := r.db.Table("users").
+		Select("id, username, display_name").
+		Where("id = ?", member.UserID).
+		Take(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	member.Username = user.Username
+	member.DisplayName = user.DisplayName
+	return nil
+}
+
+func (r *ProjectRepository) attachMemberUsers(members []model.ProjectMember) error {
+	if len(members) == 0 {
+		return nil
+	}
+	ids := make([]uint, 0, len(members))
+	seen := make(map[uint]struct{}, len(members))
+	for _, m := range members {
+		if _, ok := seen[m.UserID]; ok {
+			continue
+		}
+		seen[m.UserID] = struct{}{}
+		ids = append(ids, m.UserID)
+	}
+	var users []model.UserOption
+	if err := r.db.Table("users").
+		Select("id, username, display_name").
+		Where("id IN ?", ids).
+		Find(&users).Error; err != nil {
+		return err
+	}
+	byID := make(map[uint]model.UserOption, len(users))
+	for _, u := range users {
+		byID[u.ID] = u
+	}
+	for i := range members {
+		if u, ok := byID[members[i].UserID]; ok {
+			members[i].Username = u.Username
+			members[i].DisplayName = u.DisplayName
+		}
+	}
+	return nil
+}
+
+// ListUserOptions returns active users for member/assignee pickers.
+func (r *ProjectRepository) ListUserOptions(keyword string, limit int) ([]model.UserOption, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 200
+	}
+	q := r.db.Table("users").
+		Select("id, username, display_name").
+		Where("is_active = ?", true)
+	if kw := strings.TrimSpace(keyword); kw != "" {
+		like := "%" + kw + "%"
+		q = q.Where("username LIKE ? OR display_name LIKE ?", like, like)
+	}
+	var items []model.UserOption
+	err := q.Order("id ASC").Limit(limit).Find(&items).Error
+	return items, err
 }
 
 func (r *ProjectRepository) UpdateMember(member *model.ProjectMember) error {
@@ -179,42 +260,33 @@ func (r *ProjectRepository) FindRequirement(id uint) (*model.Requirement, error)
 	return &requirement, nil
 }
 
-func (r *ProjectRepository) ListRequirements(projectID, page, pageSize uint, keyword, status, priority, assignee string, sort string) ([]model.Requirement, int64, error) {
-	q := r.db.Model(&model.Requirement{}).Where("project_id = ?", projectID)
+func (r *ProjectRepository) ListRequirements(projectID uint, q pkg.ListQuery, keyword, status, priority, assignee string) ([]model.Requirement, int64, error) {
+	db := r.db.Model(&model.Requirement{}).Where("project_id = ?", projectID)
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		q = q.Where("title LIKE ? OR tags LIKE ?", like, like)
+		db = db.Where("title LIKE ? OR tags LIKE ?", like, like)
 	}
 	if status = strings.TrimSpace(status); status != "" {
-		q = q.Where("status = ?", status)
+		db = db.Where("status = ?", status)
 	}
 	if priority = strings.TrimSpace(priority); priority != "" {
-		q = q.Where("priority = ?", priority)
+		db = db.Where("priority = ?", priority)
 	}
 	if assignee = strings.TrimSpace(assignee); assignee != "" {
-		q = q.Where("assignee_id = ?", assignee)
+		db = db.Where("assignee_id = ?", assignee)
 	}
 	var total int64
-	if err := q.Count(&total).Error; err != nil {
+	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	order := "updated_at DESC, id DESC"
-	switch sort {
-	case "created_at@asc":
-		order = "created_at ASC, id ASC"
-	case "created_at@desc":
-		order = "created_at DESC, id DESC"
-	case "title@asc":
-		order = "title ASC, id ASC"
-	case "title@desc":
-		order = "title DESC, id DESC"
-	case "priority@asc":
-		order = "priority ASC, id ASC"
-	case "priority@desc":
-		order = "priority DESC, id DESC"
-	}
+	order := pkg.OrderBy(q.Sort, map[string]string{
+		"title":      "title",
+		"priority":   "priority",
+		"created_at": "created_at",
+		"updated_at": "updated_at",
+	}, "id", "updated_at DESC, id DESC")
 	var requirements []model.Requirement
-	err := q.Order(order).Offset(int((page - 1) * pageSize)).Limit(int(pageSize)).Find(&requirements).Error
+	err := db.Order(order).Offset(q.Offset()).Limit(q.PageSize).Find(&requirements).Error
 	return requirements, total, err
 }
 

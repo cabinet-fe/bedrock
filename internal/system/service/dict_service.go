@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/system/model"
 	"bedrock/internal/system/repository"
 )
@@ -17,8 +18,8 @@ func NewDictionaryService(dicts *repository.DictionaryRepository) *DictionarySer
 	return &DictionaryService{dicts: dicts}
 }
 
-func (s *DictionaryService) List(page, pageSize int) ([]model.Dictionary, int64, error) {
-	return s.dicts.List(page, pageSize)
+func (s *DictionaryService) List(q pkg.ListQuery) ([]model.Dictionary, int64, error) {
+	return s.dicts.List(q)
 }
 
 func (s *DictionaryService) Get(id uint) (*model.Dictionary, error) {

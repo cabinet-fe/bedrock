@@ -26,8 +26,8 @@ type UserDTO struct {
 	RoleIDs []uint `json:"role_ids"`
 }
 
-func (s *UserService) List(page, pageSize int) ([]UserDTO, int64, error) {
-	users, total, err := s.users.List(page, pageSize)
+func (s *UserService) List(q pkg.ListQuery) ([]UserDTO, int64, error) {
+	users, total, err := s.users.List(q)
 	if err != nil {
 		return nil, 0, err
 	}

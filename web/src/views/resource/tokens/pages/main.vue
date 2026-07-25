@@ -9,10 +9,12 @@ import { createToken, deleteToken } from "@/api/resource";
 import type { PersonalAccessToken } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const table = useTemplateRef("table");
 const dialogOpen = ref(false);
 const plaintext = ref("");
@@ -58,7 +60,6 @@ const STATUS_TAG: Record<TokenStatus, "success" | "warning" | "danger"> = {
 };
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "name", name: "名称" },
   { key: "token_prefix", name: "前缀" },
   { key: "scopes", name: "Scope" },
@@ -158,7 +159,7 @@ async function copyPlaintext() {
   }
 }
 
-async function remove(row: PersonalAccessToken) {
+const remove = bind(async (row: PersonalAccessToken) => {
   try {
     await deleteToken(row.id);
     message.success("已删除");
@@ -166,7 +167,7 @@ async function remove(row: PersonalAccessToken) {
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除失败");
   }
-}
+});
 </script>
 
 <template>
@@ -200,7 +201,7 @@ async function remove(row: PersonalAccessToken) {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="2">
+        <u-action-group :max="2" :loading="busyKey === (rowData as PersonalAccessToken).id">
           <u-action
             v-if="hasPermission('resource_tokens:delete')"
             need-confirm

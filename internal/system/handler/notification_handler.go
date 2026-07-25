@@ -28,13 +28,22 @@ func (h *NotificationHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Han
 
 func (h *NotificationHandler) List(c *gin.Context) {
 	userID := authmiddleware.GetUserID(c)
-	page := pkg.ParsePage(c)
-	items, total, err := h.notifications.ListByUser(userID, page.Page, page.PageSize)
+	q := pkg.ParseListQuery(c)
+	var isRead *bool
+	if v := c.Query("is_read"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			pkg.Error(c, http.StatusBadRequest, "参数错误")
+			return
+		}
+		isRead = &b
+	}
+	items, total, err := h.notifications.ListByUser(userID, isRead, q)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return
 	}
-	pkg.PageSuccess(c, items, total, page)
+	pkg.PageSuccess(c, items, total, q)
 }
 
 func (h *NotificationHandler) MarkRead(c *gin.Context) {

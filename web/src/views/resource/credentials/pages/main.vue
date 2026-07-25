@@ -9,6 +9,7 @@ import { createCredential, deleteCredential, updateCredential } from "@/api/reso
 import type { Credential } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { tagType, type TagType } from "@/lib/tag";
 
@@ -20,6 +21,7 @@ const CRED_TYPE_TAG: Record<string, TagType> = {
 };
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const listRef = useTemplateRef("list");
 const query = reactive({ keyword: "" });
 const dialogOpen = ref(false);
@@ -34,7 +36,6 @@ const form = reactive({
 });
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "name", name: "名称" },
   { key: "type", name: "类型", width: 100, align: "center" },
   { key: "username", name: "用户名" },
@@ -74,7 +75,7 @@ async function save() {
   }
 }
 
-async function remove(row: Credential) {
+const remove = bind(async (row: Credential) => {
   try {
     await deleteCredential(row.id);
     message.success("已删除");
@@ -82,7 +83,7 @@ async function remove(row: Credential) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "删除失败");
   }
-}
+});
 </script>
 
 <template>
@@ -110,7 +111,7 @@ async function remove(row: Credential) {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3">
+        <u-action-group :max="3" :loading="busyKey === (rowData as Credential).id">
           <u-action
             v-if="hasPermission('resource_credentials:update')"
             @run="openEdit(rowData as Credential)"

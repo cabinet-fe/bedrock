@@ -3,6 +3,7 @@ package repository
 import (
 	"gorm.io/gorm"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/resource/model"
 )
 
@@ -34,20 +35,14 @@ func (r *PATRepository) Find(id uint) (*model.PersonalAccessToken, error) {
 	return &token, nil
 }
 
-func (r *PATRepository) ListByUser(userID uint, page, pageSize int) ([]model.PersonalAccessToken, int64, error) {
-	q := r.db.Model(&model.PersonalAccessToken{}).Where("user_id = ?", userID)
+func (r *PATRepository) ListByUser(userID uint, q pkg.ListQuery) ([]model.PersonalAccessToken, int64, error) {
+	db := r.db.Model(&model.PersonalAccessToken{}).Where("user_id = ?", userID)
 	var total int64
-	if err := q.Count(&total).Error; err != nil {
+	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 {
-		pageSize = 20
-	}
 	var items []model.PersonalAccessToken
-	err := q.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error
+	err := db.Order("id DESC").Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
 	return items, total, err
 }
 

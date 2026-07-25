@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/system/model"
 	"bedrock/internal/system/repository"
 	"bedrock/internal/ws"
@@ -80,8 +81,9 @@ func (s *NotificationService) NotifyAgentRun(userID uint, agentRunID, agentID ui
 	})
 }
 
-func (s *NotificationService) ListByUser(userID uint, page, pageSize int) ([]model.Notification, int64, error) {
-	return s.repo.ListByUser(userID, page, pageSize)
+// ListByUser 分页查询用户通知；isRead 非 nil 时按已读状态过滤。
+func (s *NotificationService) ListByUser(userID uint, isRead *bool, q pkg.ListQuery) ([]model.Notification, int64, error) {
+	return s.repo.ListByUser(userID, isRead, q)
 }
 
 func (s *NotificationService) MarkRead(id, userID uint) error {

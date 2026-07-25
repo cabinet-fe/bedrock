@@ -34,6 +34,7 @@ func (h *ProjectHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerF
 	g.GET("", rbacmw.RequirePermission(h.perm, "project_projects:view"), h.ListProjects)
 	g.POST("", rbacmw.RequirePermission(h.perm, "project_projects:create"), h.CreateProject)
 	g.GET("/meta/requirement-statuses", rbacmw.RequirePermission(h.perm, "project_requirements:view"), h.ListRequirementStatuses)
+	g.GET("/meta/user-options", rbacmw.RequirePermission(h.perm, "project_projects:update"), h.ListUserOptions)
 	g.GET("/:id", rbacmw.RequirePermission(h.perm, "project_projects:view"), h.GetProject)
 	g.PUT("/:id", rbacmw.RequirePermission(h.perm, "project_projects:update"), h.UpdateProject)
 	g.POST("/:id/archive", rbacmw.RequirePermission(h.perm, "project_projects:update"), h.ArchiveProject)
@@ -82,15 +83,14 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page := pkg.ParsePage(c)
-	items, total, err := h.svc.ListProjects(actor, projectservice.ProjectListFilter{
-		Keyword: c.Query("keyword"), Status: c.Query("status"), Page: uint(page.Page), PageSize: uint(page.PageSize),
-	})
+	var filter projectservice.ProjectListFilter
+	q := pkg.BindList(c, &filter)
+	items, total, err := h.svc.ListProjects(actor, filter)
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	pkg.PageSuccess(c, items, total, page)
+	pkg.PageSuccess(c, items, total, q)
 }
 
 func (h *ProjectHandler) ListRequirementStatuses(c *gin.Context) {
@@ -99,6 +99,19 @@ func (h *ProjectHandler) ListRequirementStatuses(c *gin.Context) {
 		return
 	}
 	items, err := h.svc.ListRequirementStatuses(actor)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"items": items})
+}
+
+func (h *ProjectHandler) ListUserOptions(c *gin.Context) {
+	actor, ok := h.actor(c)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListUserOptions(actor, c.Query("keyword"))
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -314,21 +327,14 @@ func (h *ProjectHandler) ListRequirements(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page := pkg.ParsePage(c)
-	items, total, err := h.svc.ListRequirements(actor, projectID, projectservice.RequirementFilter{
-		Keyword:  c.Query("keyword"),
-		Status:   c.Query("status"),
-		Priority: c.Query("priority"),
-		Assignee: c.Query("assignee_id"),
-		Sort:     c.Query("sort"),
-		Page:     uint(page.Page),
-		PageSize: uint(page.PageSize),
-	})
+	var filter projectservice.RequirementFilter
+	q := pkg.BindList(c, &filter)
+	items, total, err := h.svc.ListRequirements(actor, projectID, filter)
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	pkg.PageSuccess(c, items, total, page)
+	pkg.PageSuccess(c, items, total, q)
 }
 
 func (h *ProjectHandler) CreateRequirement(c *gin.Context) {

@@ -7,6 +7,7 @@ import { message } from "@veltra/desktop";
 import { killProcess } from "@/api/ops";
 import type { ProcessInfo } from "@/api/types";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { formatDateTime } from "@/lib/datetime";
 import { tagType, type TagType } from "@/lib/tag";
 
@@ -21,6 +22,7 @@ const PROCESS_STATUS_TAG: Record<string, TagType> = {
   I: undefined,
 };
 
+const { busyKey, run } = useBusyKey();
 const listRef = useTemplateRef("list");
 const query = reactive({
   keyword: "",
@@ -57,14 +59,15 @@ function formatBytes(value: number): string {
 }
 
 async function terminate(row: ProcessInfo) {
-  if (!window.confirm(`确认终止进程 ${row.name}（PID ${row.pid}）？此操作不可撤销。`)) return;
-  try {
-    await killProcess(row.pid);
-    message.success("进程终止请求已发送");
-    await listRef.value?.reload();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : "终止进程失败");
-  }
+  await run(row.pid, async () => {
+    try {
+      await killProcess(row.pid);
+      message.success("进程终止请求已发送");
+      await listRef.value?.reload();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "终止进程失败");
+    }
+  });
 }
 </script>
 
@@ -104,7 +107,14 @@ async function terminate(row: ProcessInfo) {
         </span>
       </template>
       <template #column:action="{ rowData }">
-        <u-action danger @run="terminate(rowData as ProcessInfo)">终止</u-action>
+        <u-action
+          need-confirm
+          type="danger"
+          :loading="busyKey === (rowData as ProcessInfo).pid"
+          @run="terminate(rowData as ProcessInfo)"
+        >
+          终止
+        </u-action>
       </template>
     </ProTable>
   </div>

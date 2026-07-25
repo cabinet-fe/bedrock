@@ -454,8 +454,16 @@ export interface ProjectMember {
   project_id: number;
   user_id: number;
   role: ProjectRole;
+  username?: string;
+  display_name?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface UserOption {
+  id: number;
+  username: string;
+  display_name: string;
 }
 
 export interface Requirement {

@@ -14,6 +14,7 @@ import {
 import type { MenuGroup, RbacResource } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { useAuthStore } from "@/stores/auth";
 import { tagType, type TagType } from "@/lib/tag";
@@ -39,6 +40,7 @@ const RESOURCE_TYPE_TAG: Record<string, TagType> = {
 };
 
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const auth = useAuthStore();
 const listRef = useTemplateRef("list");
 const query = reactive({ keyword: "", type: "", enabled: "", group_id: "" as string | number });
@@ -249,7 +251,7 @@ async function onIconPick(files: File[]) {
   }
 }
 
-async function remove(row: RbacResource) {
+const remove = bind(async (row: RbacResource) => {
   try {
     await deleteResource(row.id);
     message.success("已删除");
@@ -257,7 +259,7 @@ async function remove(row: RbacResource) {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "删除失败");
   }
-}
+});
 </script>
 
 <template>
@@ -331,7 +333,7 @@ async function remove(row: RbacResource) {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3">
+        <u-action-group :max="3" :loading="busyKey === (rowData as RbacResource).id">
           <u-action
             v-if="
               hasPermission('system_resources:create') && (rowData as RbacResource).type === 'menu'

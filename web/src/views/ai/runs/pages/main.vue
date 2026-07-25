@@ -52,7 +52,6 @@ const agentOptions = computed(() =>
 );
 
 const columns = defineProTableColumns([
-  { key: "id", name: "ID" },
   { key: "agent_id", name: "智能体" },
   { key: "trigger_type", name: "触发", width: 110, align: "center" },
   { key: "status", name: "状态", width: 100, align: "center" },

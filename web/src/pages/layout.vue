@@ -51,7 +51,6 @@ onUnmounted(() => {
 
 async function handleLogout() {
   await auth.logout();
-  tabsStore.reset();
   await router.replace({ name: "login" });
 }
 
@@ -142,12 +141,30 @@ function onNavClick(item: NavItem) {
 }
 
 .app-sidebar__brand {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  min-height: 56px;
+  min-height: 68px;
   padding: 0 16px;
   border: none;
+  /* 品牌区铺一层极浅的绢面渐变，自上而淡，与导航拉开层次而不成卡片 */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, fn.use-var(bg-color, top) 70%, transparent) 0%,
+    transparent 100%
+  );
+
+  /* 与导航共用同一底色，仅靠一条柔和发丝线区分，避免割裂感 */
+  &::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 1px;
+    background: color-mix(in srgb, fn.use-var(border, muted-color) 70%, transparent);
+  }
 }
 
 .app-nav {
@@ -156,6 +173,10 @@ function onNavClick(item: NavItem) {
   width: 100%;
   overflow: hidden;
   border: none;
+  /* 抵消 u-group-nav 自带的卡片样式，使其融入侧边栏底色 */
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 
   :deep(*) {
     border: none;

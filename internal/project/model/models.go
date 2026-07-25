@@ -37,15 +37,24 @@ type ProductProject struct {
 func (ProductProject) TableName() string { return "product_projects" }
 
 type ProjectMember struct {
-	ID        uint      `json:"id" gorm:"primaryKey"`
-	ProjectID uint      `json:"project_id" gorm:"not null;uniqueIndex:idx_project_member"`
-	UserID    uint      `json:"user_id" gorm:"not null;uniqueIndex:idx_project_member;index"`
-	Role      string    `json:"role" gorm:"size:20;not null;index"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          uint      `json:"id" gorm:"primaryKey"`
+	ProjectID   uint      `json:"project_id" gorm:"not null;uniqueIndex:idx_project_member"`
+	UserID      uint      `json:"user_id" gorm:"not null;uniqueIndex:idx_project_member;index"`
+	Role        string    `json:"role" gorm:"size:20;not null;index"`
+	Username    string    `json:"username,omitempty" gorm:"-"`
+	DisplayName string    `json:"display_name,omitempty" gorm:"-"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (ProjectMember) TableName() string { return "project_members" }
+
+// UserOption is a lightweight picker item for assigning project members.
+type UserOption struct {
+	ID          uint   `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+}
 
 // RequirementStatusOption is an enabled item from the requirement_status
 // dictionary, exposed through the project domain's read-only metadata API.

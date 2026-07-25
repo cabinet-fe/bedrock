@@ -10,6 +10,7 @@ import { archiveProject, createProject, deleteProject, updateProject } from "@/a
 import type { ProductProject } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
 
@@ -17,6 +18,7 @@ import MembersPanel from "../../components/members-panel.vue";
 
 const router = useRouter();
 const { hasPermission } = usePermission();
+const { busyKey, bind } = useBusyKey();
 const tableRef = useTemplateRef("table");
 const query = reactive({ keyword: "", status: "" });
 const dialogOpen = ref(false);
@@ -79,8 +81,7 @@ async function save() {
   }
 }
 
-async function archive(project: ProductProject) {
-  if (!window.confirm(`确认归档项目「${project.name}」？`)) return;
+const archive = bind(async (project: ProductProject) => {
   try {
     await archiveProject(project.id);
     message.success("项目已归档");
@@ -88,10 +89,9 @@ async function archive(project: ProductProject) {
   } catch (error) {
     message.error(error instanceof Error ? error.message : "归档失败");
   }
-}
+});
 
-async function remove(project: ProductProject) {
-  if (!window.confirm(`确认解散项目「${project.name}」？此操作不可撤销。`)) return;
+const remove = bind(async (project: ProductProject) => {
   try {
     await deleteProject(project.id);
     message.success("项目已解散");
@@ -99,7 +99,7 @@ async function remove(project: ProductProject) {
   } catch (error) {
     message.error(error instanceof Error ? error.message : "解散失败");
   }
-}
+});
 
 function openProject(project: ProductProject) {
   void router.push({ name: "project-detail", params: { id: project.id } });
@@ -170,7 +170,7 @@ async function onOwnerTransferred() {
         </span>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="5">
+        <u-action-group :max="5" :loading="busyKey === (rowData as ProductProject).id">
           <u-action @run="openProject(rowData as ProductProject)">进入</u-action>
           <u-action @run="openMembers(rowData as ProductProject)">成员</u-action>
           <u-action
@@ -184,6 +184,7 @@ async function onOwnerTransferred() {
               (rowData as ProductProject).permissions?.archive &&
               (rowData as ProductProject).status === 'active'
             "
+            need-confirm
             @run="archive(rowData as ProductProject)"
           >
             归档

@@ -3,7 +3,7 @@ defineOptions({ name: "OpsDevEnvironments" });
 
 import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { o } from "@cat-kit/core";
-import { message } from "@veltra/desktop";
+import { message, messageConfirm } from "@veltra/desktop";
 
 import {
   createDevEnvSource,
@@ -91,10 +91,29 @@ const sourceForm = reactive({
   enabled: true,
 });
 
+type VersionOperation = "install" | "upgrade" | "switch";
+
+const versionDialogOpen = ref(false);
+const versionForm = reactive({ version: "" });
+const pendingVersionOp = ref<{
+  item: DevEnvironment;
+  operation: VersionOperation;
+} | null>(null);
+
 const scriptsReadOnly = computed(() => scriptsEnv.value?.kind === "builtin");
 const sourcesEnv = computed(
   () => environments.value.find((item) => item.id === sourcesEnvId.value) ?? null,
 );
+const versionDialogTitle = computed(() => {
+  const pending = pendingVersionOp.value;
+  if (!pending) return "目标版本";
+  const labels: Record<VersionOperation, string> = {
+    install: "安装",
+    upgrade: "升级",
+    switch: "切换版本",
+  };
+  return `${labels[pending.operation]} ${pending.item.name}`;
+});
 
 function showError(error: unknown) {
   message.error(error instanceof Error ? error.message : "操作失败");
@@ -214,7 +233,10 @@ async function saveScripts() {
 }
 
 async function removeEnv(item: DevEnvironment) {
-  if (!window.confirm(`删除自定义开发环境 ${item.name}？`)) return;
+  const action = await messageConfirm.danger(`删除自定义开发环境 ${item.name}？`, {
+    cancelButtonText: "取消",
+  }).onClosed;
+  if (action !== "confirm") return;
   try {
     await deleteDevEnvironment(item.id);
     message.success("已删除");
@@ -253,13 +275,35 @@ async function runOperation(
   item: DevEnvironment,
   operation: "install" | "upgrade" | "uninstall" | "switch",
 ) {
-  let version = "";
-  if (operation !== "uninstall") {
-    const requested = window.prompt(`输入 ${item.name} 的目标版本（可留空）`, item.default_version);
-    if (requested === null) return;
-    version = requested;
+  if (operation === "uninstall") {
+    const action = await messageConfirm.danger(`确认卸载 ${item.name}？`, {
+      cancelButtonText: "取消",
+    }).onClosed;
+    if (action !== "confirm") return;
+    await enqueueOperation(item, operation, "");
+    return;
   }
-  if (operation === "uninstall" && !window.confirm(`确认卸载 ${item.name}？`)) return;
+
+  pendingVersionOp.value = { item, operation };
+  versionForm.version = item.default_version ?? "";
+  versionDialogOpen.value = true;
+}
+
+async function submitVersion() {
+  const pending = pendingVersionOp.value;
+  if (!pending) return;
+  const { item, operation } = pending;
+  const version = versionForm.version;
+  versionDialogOpen.value = false;
+  pendingVersionOp.value = null;
+  void enqueueOperation(item, operation, version);
+}
+
+async function enqueueOperation(
+  item: DevEnvironment,
+  operation: "install" | "upgrade" | "uninstall" | "switch",
+  version: string,
+) {
   try {
     const job = await enqueueDevEnvironmentOperation(item.id, operation, version);
     message.success("任务已排队");
@@ -301,7 +345,10 @@ async function saveSource() {
 }
 
 async function removeSource(envId: number, source: DevEnvInstallSource) {
-  if (!window.confirm(`删除安装源 ${source.name}？`)) return;
+  const action = await messageConfirm.danger(`删除安装源 ${source.name}？`, {
+    cancelButtonText: "取消",
+  }).onClosed;
+  if (action !== "confirm") return;
   try {
     await deleteDevEnvSource(envId, source.id);
     await reload();
@@ -601,6 +648,18 @@ onUnmounted(stopJobPolling);
           { label: '停用', value: false },
         ]"
       />
+    </FormDialog>
+
+    <FormDialog
+      v-model="versionDialogOpen"
+      :title="versionDialogTitle"
+      :model="versionForm"
+      confirm-text="确认"
+      label-width="100px"
+      style="width: 480px"
+      @submit="submitVersion"
+    >
+      <u-input label="目标版本" field="version" placeholder="可留空，使用默认版本" />
     </FormDialog>
 
     <u-dialog v-model="logViewerOpen" :title="jobLogTitle" style="width: 760px">

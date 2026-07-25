@@ -49,7 +49,9 @@
     </svg>
     <div class="brand-logo__text">
       <span class="brand-logo__name">BEDROCK</span>
-      <span class="brand-logo__sub">磐石</span>
+      <span class="brand-logo__sub"
+        >磐石<span class="brand-logo__seal" aria-hidden="true">磐</span></span
+      >
     </div>
   </div>
 </template>
@@ -81,21 +83,47 @@
 .brand-logo__text {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
   line-height: 1.15;
 }
 
+/* 英文题签在上，宋体题名居下，与登录页同源 */
 .brand-logo__name {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: fn.use-var(text-color, title);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  color: fn.use-var(text-color, second);
 }
 
 .brand-logo__sub {
-  font-size: 11px;
-  letter-spacing: 0.28em;
-  color: fn.use-var(text-color, second);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.25;
+  color: fn.use-var(text-color, title);
+}
+
+/* 朱砂小印，缀于题名之侧 */
+.brand-logo__seal {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: #b3452e;
+  color: #f8f3e6;
+  font-family: "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  box-shadow: 0 1px 2px rgb(43 42 38 / 22%);
+  transform: rotate(3deg) translateY(-1px);
 }
 </style>
