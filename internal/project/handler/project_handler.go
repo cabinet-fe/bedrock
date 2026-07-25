@@ -949,8 +949,7 @@ func parseOptionalID(c *gin.Context, name string) (*uint, bool) {
 		pkg.Error(c, http.StatusBadRequest, "无效父节点 ID")
 		return nil, false
 	}
-	id := uint(parsed)
-	return &id, true
+	return new(uint(parsed)), true
 }
 
 func writeServiceError(c *gin.Context, err error) {

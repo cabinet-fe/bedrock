@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -701,9 +702,7 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		"BEDROCK_AGENT_WORKDIR":  absRoot,
 		"BEDROCK_AGENT_ENV_FILE": envFile,
 	}
-	for k, v := range agentEnv {
-		runtimeExtra[k] = v
-	}
+	maps.Copy(runtimeExtra, agentEnv)
 	cmd.Env = append(removeEnv(BuildRuntimeEnv(cli, "", runtimeExtra), "BEDROCK_AGENT_OUTPUT"), "BEDROCK_AGENT_OUTPUT="+absOutput)
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()

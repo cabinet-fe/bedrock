@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -57,8 +58,7 @@ func resolvePATExpiresAt(in CreatePATInput) (*time.Time, error) {
 		if _, ok := allowedPATExpireDays[days]; !ok {
 			return nil, errors.New("expires_in_days 仅允许 30、90、180、365")
 		}
-		at := time.Now().UTC().Add(time.Duration(days) * 24 * time.Hour)
-		return &at, nil
+		return new(time.Now().UTC().Add(time.Duration(days) * 24 * time.Hour)), nil
 	}
 	if in.ExpiresAt != nil {
 		if !in.ExpiresAt.After(time.Now().UTC()) {
@@ -161,10 +161,8 @@ func (s *PATService) ValidateBearer(raw string) (userID uint, scopes []string, e
 }
 
 func (s *PATService) RequireScope(scopes []string, required string) error {
-	for _, sc := range scopes {
-		if sc == required {
-			return nil
-		}
+	if slices.Contains(scopes, required) {
+		return nil
 	}
 	return ErrPATWrongScope
 }

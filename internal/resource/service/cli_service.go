@@ -358,7 +358,7 @@ func (s *CLIService) queryLatestNPMVersion(ctx context.Context, key, pkgName str
 }
 
 func firstNonEmptyLine(output string) string {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			return line
@@ -395,10 +395,7 @@ func isNewerCLIVersion(latest, current string) bool {
 func compareSemver(a, b string) int {
 	aCore, aPre := splitSemver(a)
 	bCore, bPre := splitSemver(b)
-	n := len(aCore)
-	if len(bCore) > n {
-		n = len(bCore)
-	}
+	n := max(len(bCore), len(aCore))
 	for i := 0; i < n; i++ {
 		avar, bvar := 0, 0
 		if i < len(aCore) {
@@ -432,7 +429,7 @@ func splitSemver(v string) (core []int, prerelease string) {
 		main = v[:i]
 		prerelease = v[i+1:]
 	}
-	for _, part := range strings.Split(main, ".") {
+	for part := range strings.SplitSeq(main, ".") {
 		n, err := strconv.Atoi(part)
 		if err != nil {
 			n = 0
@@ -492,7 +489,7 @@ func probeCLIVersion(binaryName string) string {
 }
 
 func extractCLIVersion(output, binaryName string) string {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || isPathLine(line, binaryName) {
 			continue
@@ -506,7 +503,7 @@ func extractCLIVersion(output, binaryName string) string {
 }
 
 func extractCLIPath(output, binaryName string) string {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if isPathLine(line, binaryName) {
 			return line

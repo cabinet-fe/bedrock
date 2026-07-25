@@ -45,7 +45,7 @@ func TestContract_MigrationsAndCICDTables(t *testing.T) {
 	for _, driver := range []string{"sqlite", "postgres", "mysql"} {
 		t.Run(driver, func(t *testing.T) {
 			gdb := openDriver(t, driver)
-			if err := migration.Up(context.Background(), gdb, migration.Driver(db.NormalizeDriver(driver))); err != nil {
+			if err := migration.Up(context.Background(), gdb, migration.Driver(driver)); err != nil {
 				t.Fatalf("migration.Up: %v", err)
 			}
 			for _, table := range []string{
@@ -134,7 +134,7 @@ func TestContract_MigrationsAndCICDTables(t *testing.T) {
 
 func openDriver(t *testing.T, driver string) *gorm.DB {
 	t.Helper()
-	switch db.NormalizeDriver(driver) {
+	switch driver {
 	case "sqlite":
 		gdb, err := db.Open(&config.DatabaseConfig{
 			Driver: "sqlite",

@@ -27,14 +27,12 @@ type RepositoryService struct {
 	git   GitLister
 }
 
-func NewRepositoryService(repo *repository.RepositoryRepository, creds *CredentialService) *RepositoryService {
-	return &RepositoryService{repo: repo, creds: creds, git: defaultGitLister{}}
-}
-
-func (s *RepositoryService) SetGitLister(g GitLister) {
-	if g != nil {
-		s.git = g
+func NewRepositoryService(repo *repository.RepositoryRepository, creds *CredentialService, git ...GitLister) *RepositoryService {
+	lister := GitLister(defaultGitLister{})
+	if len(git) > 0 && git[0] != nil {
+		lister = git[0]
 	}
+	return &RepositoryService{repo: repo, creds: creds, git: lister}
 }
 
 type CreateRepositoryInput struct {

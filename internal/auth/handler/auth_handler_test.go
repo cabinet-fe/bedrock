@@ -78,17 +78,13 @@ func setupAuthRouter(t *testing.T) *gin.Engine {
 	r := gin.New()
 	api := r.Group("/api/v1")
 	h := authhandler.NewAuthHandler(authSvc)
-	h.RegisterRoutes(api, authmiddleware.Auth(authSvc))
+	h.RegisterRoutes(api, authmiddleware.AuthWithPAT(authSvc, nil))
 	return r
 }
 
 func TestLogin_passwordCipher(t *testing.T) {
 	r := setupAuthRouter(t)
-
-	cipher, err := pkg.EncryptLoginPasswordCipherForTest("admin123")
-	if err != nil {
-		t.Fatal(err)
-	}
+	const cipher = "000102030405060708090a0b0c0d0e0f17f1b26aff75e950ec141048626a9ed8"
 
 	body, _ := json.Marshal(map[string]string{
 		"username":        "admin",

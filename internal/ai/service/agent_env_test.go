@@ -32,7 +32,7 @@ func TestMergeAgentEnvVars(t *testing.T) {
 }
 
 func TestMergeAgentEnvVarsRejectsBadKey(t *testing.T) {
-	_, err := mergeAgentEnvVars(nil, []EnvVarInput{{Key: "A=B", Value: strPtr("1")}})
+	_, err := mergeAgentEnvVars(nil, []EnvVarInput{{Key: "A=B", Value: new("1")}})
 	if err == nil {
 		t.Fatal("expected invalid key error")
 	}
@@ -107,5 +107,3 @@ func TestWriteAgentEnvFile(t *testing.T) {
 		t.Fatalf("path=%s", path)
 	}
 }
-
-func strPtr(s string) *string { return &s }

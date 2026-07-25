@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"gorm.io/gorm"
@@ -162,7 +162,7 @@ func loadLegacyAgentCleanupRows(db *gorm.DB) ([]uint, []agentRunCleanupRow, erro
 	for id := range known {
 		agentIDs = append(agentIDs, id)
 	}
-	sort.Slice(agentIDs, func(i, j int) bool { return agentIDs[i] < agentIDs[j] })
+	slices.Sort(agentIDs)
 	return agentIDs, runs, nil
 }
 

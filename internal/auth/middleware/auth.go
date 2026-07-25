@@ -3,6 +3,7 @@ package middleware
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -25,11 +26,6 @@ var ErrPATWrongScope = errors.New("token scope insufficient")
 // (implemented by resource PATService; wired in cmd/server).
 type PATValidator interface {
 	ValidateBearer(raw string) (userID uint, scopes []string, err error)
-}
-
-// Auth extracts Bearer JWT and sets user context.
-func Auth(authSvc *authservice.AuthService) gin.HandlerFunc {
-	return AuthWithPAT(authSvc, nil)
 }
 
 // AuthWithPAT accepts JWT or PAT (br_*) under Authorization: Bearer.
@@ -138,10 +134,8 @@ func PATScopes(c *gin.Context) []string {
 }
 
 func RequirePATScope(c *gin.Context, required string) error {
-	for _, sc := range PATScopes(c) {
-		if sc == required {
-			return nil
-		}
+	if slices.Contains(PATScopes(c), required) {
+		return nil
 	}
 	return ErrPATWrongScope
 }

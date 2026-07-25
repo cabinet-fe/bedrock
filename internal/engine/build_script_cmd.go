@@ -81,7 +81,7 @@ func newPowerShellBuildCommand(ctx context.Context, workDir, scriptType, script 
 	}
 	if strings.Contains(script, "&&") && isLegacyWindowsPowerShell(ps) {
 		return nil, func() {}, fmt.Errorf(
-			"Windows PowerShell 5.x 不支持 && 链式命令。请将脚本类型改为 CMD、安装 PowerShell 7 (pwsh)，或拆成多行命令",
+			"当前 Windows PowerShell 5.x 不支持 && 链式命令。请将脚本类型改为 CMD、安装 PowerShell 7 (pwsh)，或拆成多行命令",
 		)
 	}
 	f, err := os.CreateTemp(workDir, ".bedrock-*.ps1")

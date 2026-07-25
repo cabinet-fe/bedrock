@@ -123,24 +123,24 @@ func ExecuteLocalScriptInDir(ctx context.Context, workDir, script string, logFn 
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if stdout.Len() > 0 {
-			for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(stdout.String()), "\n") {
 				logFn(line)
 			}
 		}
 		if stderr.Len() > 0 {
-			for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(stderr.String()), "\n") {
 				logFn("stderr: " + line)
 			}
 		}
 		return fmt.Errorf("script execution: %w", err)
 	}
 	if stdout.Len() > 0 {
-		for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(stdout.String()), "\n") {
 			logFn(line)
 		}
 	}
 	if stderr.Len() > 0 {
-		for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(stderr.String()), "\n") {
 			logFn("stderr: " + line)
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -138,10 +139,7 @@ func (s *ProcessService) cpuPercent(proc *process.Process) float64 {
 		return 0
 	}
 	now := time.Now()
-	numCPU := runtime.NumCPU()
-	if numCPU < 1 {
-		numCPU = 1
-	}
+	numCPU := max(runtime.NumCPU(), 1)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	previous, ok := s.cpuCache[proc.Pid]
@@ -190,7 +188,7 @@ func listeningPorts() map[int32][]uint32 {
 		for port := range ports {
 			result[pid] = append(result[pid], port)
 		}
-		sort.Slice(result[pid], func(i, j int) bool { return result[pid][i] < result[pid][j] })
+		slices.Sort(result[pid])
 	}
 	return result
 }
@@ -212,13 +210,7 @@ func filterProcesses(items []model.ProcessInfo, opts model.ProcessListOptions) [
 			}
 		}
 		if opts.Port != nil {
-			found := false
-			for _, port := range item.Ports {
-				if port == *opts.Port {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(item.Ports, *opts.Port)
 			if !found {
 				continue
 			}

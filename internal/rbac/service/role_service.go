@@ -117,12 +117,6 @@ func (s *RoleService) EnsureSuperAdminRoleBound(userID uint) error {
 	return s.roles.EnsureUserHasRole(userID, role.ID)
 }
 
-// ValidateAssignableRoleIDs rejects builtin super_admin role assignment via API.
-func (s *RoleService) ValidateAssignableRoleIDs(roleIDs []uint) error {
-	_, err := s.filterAssignableRoleIDs(roleIDs)
-	return err
-}
-
 func (s *RoleService) filterAssignableRoleIDs(roleIDs []uint) ([]uint, error) {
 	out := make([]uint, 0, len(roleIDs))
 	for _, id := range roleIDs {

@@ -44,11 +44,6 @@ func Registered() []Migration {
 	return out
 }
 
-// ResetRegistry clears registrations (tests only).
-func ResetRegistry() {
-	registry = nil
-}
-
 const schemaMigrationsDDL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
 	version TEXT PRIMARY KEY,

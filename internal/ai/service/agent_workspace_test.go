@@ -672,7 +672,7 @@ func TestAgentRunStreamOutputCLIArgs(t *testing.T) {
 					joined := string(raw)
 					lines := strings.Fields(strings.ReplaceAll(joined, "\n", " "))
 					hasArg := func(flag string) bool {
-						for _, line := range strings.Split(joined, "\n") {
+						for line := range strings.SplitSeq(joined, "\n") {
 							if strings.TrimSpace(line) == flag {
 								return true
 							}
@@ -755,7 +755,7 @@ func TestAgentRunNonStreamOutputCLIArgs(t *testing.T) {
 				t.Fatal(err)
 			}
 			hasArg := false
-			for _, line := range strings.Split(string(raw), "\n") {
+			for line := range strings.SplitSeq(string(raw), "\n") {
 				if strings.TrimSpace(line) == "-p" {
 					hasArg = true
 					break

@@ -26,7 +26,7 @@ const (
 var (
 	ErrMissingSkillMD = errors.New("ZIP 必须包含 SKILL.md")
 	ErrSkillForbidden = errors.New("无权访问该 Skill")
-	ErrSkillNotFound  = errors.New("Skill 不存在")
+	ErrSkillNotFound  = errors.New("技能不存在")
 )
 
 type SkillService struct {

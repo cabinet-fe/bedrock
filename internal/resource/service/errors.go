@@ -14,8 +14,8 @@ func NewConflict(msg string) error {
 }
 
 func IsConflict(err error) bool {
-	var c *ConflictError
-	return errors.As(err, &c)
+	_, ok := errors.AsType[*ConflictError](err)
+	return ok
 }
 
 // ForbiddenError maps to HTTP 403 (e.g. missing resource_credentials:use on bind).
@@ -30,8 +30,8 @@ func NewForbidden(msg string) error {
 }
 
 func IsForbidden(err error) bool {
-	var f *ForbiddenError
-	return errors.As(err, &f)
+	_, ok := errors.AsType[*ForbiddenError](err)
+	return ok
 }
 
 // NotFoundError maps to HTTP 404.
@@ -46,6 +46,6 @@ func NewNotFound(msg string) error {
 }
 
 func IsNotFound(err error) bool {
-	var n *NotFoundError
-	return errors.As(err, &n)
+	_, ok := errors.AsType[*NotFoundError](err)
+	return ok
 }

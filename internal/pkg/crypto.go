@@ -1,7 +1,6 @@
 package pkg
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -91,41 +90,6 @@ func pkcs7Unpad(data []byte, blockSize int) ([]byte, error) {
 		}
 	}
 	return data[:len(data)-padLen], nil
-}
-
-// EncryptLoginPasswordCipherForTest builds the same hex format as the frontend (IV || CBC||PKCS#7).
-func EncryptLoginPasswordCipherForTest(plaintext string) (string, error) {
-	return encryptAES256CBCHexForTest(plaintext)
-}
-
-// encryptAES256CBCHexForTest builds the same hex format as the frontend (IV || CBC||PKCS#7); package tests only.
-func encryptAES256CBCHexForTest(plaintext string) (string, error) {
-	if len(encryptionKey) != 32 {
-		return "", errors.New("encryption not initialized")
-	}
-	block, err := aes.NewCipher(encryptionKey)
-	if err != nil {
-		return "", err
-	}
-	padded := pkcs7Pad([]byte(plaintext), aes.BlockSize)
-	iv := make([]byte, aes.BlockSize)
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return "", err
-	}
-	ciphertext := make([]byte, len(padded))
-	mode := cipher.NewCBCEncrypter(block, iv)
-	mode.CryptBlocks(ciphertext, padded)
-	combined := append(append([]byte{}, iv...), ciphertext...)
-	return hex.EncodeToString(combined), nil
-}
-
-func pkcs7Pad(data []byte, blockSize int) []byte {
-	padLen := blockSize - len(data)%blockSize
-	if padLen == 0 {
-		padLen = blockSize
-	}
-	padding := bytes.Repeat([]byte{byte(padLen)}, padLen)
-	return append(data, padding...)
 }
 
 func Decrypt(ciphertextHex string) (string, error) {

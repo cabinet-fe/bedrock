@@ -33,7 +33,4 @@ func TestNewPageResult(t *testing.T) {
 	if r.TotalPages != 3 || r.Page != 2 || r.Total != 25 {
 		t.Fatalf("%+v", r)
 	}
-	if (PageQuery{Page: 2, PageSize: 10}).Offset() != 10 {
-		t.Fatal("offset")
-	}
 }

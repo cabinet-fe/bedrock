@@ -294,11 +294,9 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 	defer func() { _ = killBuildCmdProcess(cmd) }()
 
 	var scanWg sync.WaitGroup
-	scanWg.Add(1)
-	go func() {
-		defer scanWg.Done()
+	scanWg.Go(func() {
 		scanLines(stdout, writeLine)
-	}()
+	})
 	scanLines(stderr, writeLine)
 	scanWg.Wait()
 
@@ -560,5 +558,3 @@ func decodeJobEnvNames(job *model.BuildJob) {
 		job.EnvVarNames = []string{}
 	}
 }
-
-func ptrTime(t time.Time) *time.Time { return &t }

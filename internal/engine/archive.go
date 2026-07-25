@@ -178,7 +178,7 @@ func extractTarGzArchiveFile(archivePath, destDir string) error {
 			if err := os.MkdirAll(targetPath, os.FileMode(header.Mode)); err != nil {
 				return err
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
 				return err
 			}
@@ -268,7 +268,7 @@ func parseCachePaths(raw string) []string {
 		return result
 	}
 	var result []string
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			result = append(result, line)

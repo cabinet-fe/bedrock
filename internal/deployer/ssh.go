@@ -123,12 +123,12 @@ func ExecuteRemoteScriptInDir(ctx context.Context, server ServerInfo, workDir, s
 	command := wrapRemoteScript(server, workDir, script)
 	if err := session.Run(command); err != nil {
 		if stdout.Len() > 0 {
-			for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(stdout.String()), "\n") {
 				logFn(line)
 			}
 		}
 		if stderr.Len() > 0 {
-			for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(stderr.String()), "\n") {
 				logFn("stderr: " + line)
 			}
 		}
@@ -136,12 +136,12 @@ func ExecuteRemoteScriptInDir(ctx context.Context, server ServerInfo, workDir, s
 	}
 
 	if stdout.Len() > 0 {
-		for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(stdout.String()), "\n") {
 			logFn(line)
 		}
 	}
 	if stderr.Len() > 0 {
-		for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(stderr.String()), "\n") {
 			logFn("stderr: " + line)
 		}
 	}
@@ -271,7 +271,7 @@ func executeAgentScript(ctx context.Context, server ServerInfo, workDir, script 
 
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
 	if len(respBody) > 0 && logFn != nil {
-		for _, line := range strings.Split(strings.TrimSpace(string(respBody)), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(string(respBody)), "\n") {
 			if line != "" {
 				logFn(line)
 			}

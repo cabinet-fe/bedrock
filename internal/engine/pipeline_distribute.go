@@ -70,7 +70,7 @@ func (p *Pipeline) runDistributions(
 			DeployTargetID:     &t.ID,
 			TargetSnapshotJSON: string(snap),
 			Status:             "running",
-			StartedAt:          ptrTime(time.Now()),
+			StartedAt:          new(time.Now()),
 		}
 		_ = p.runs.CreateAttempt(attempt)
 		p.broadcastRunRefresh(run.ID)
@@ -135,7 +135,7 @@ func (p *Pipeline) recordAttemptCancelled(run *model.BuildRun, batchNo int, t *m
 		TargetSnapshotJSON: string(snap),
 		Status:             "cancelled",
 		ErrorMessage:       "cancelled",
-		FinishedAt:         ptrTime(time.Now()),
+		FinishedAt:         new(time.Now()),
 	})
 	p.broadcastRunRefresh(run.ID)
 }

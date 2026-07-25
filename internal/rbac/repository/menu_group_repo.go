@@ -24,12 +24,6 @@ func (r *MenuGroupRepository) FindByID(id uint) (*model.MenuGroup, error) {
 	return &g, err
 }
 
-func (r *MenuGroupRepository) FindByCode(code string) (*model.MenuGroup, error) {
-	var g model.MenuGroup
-	err := r.db.Where("code = ?", code).First(&g).Error
-	return &g, err
-}
-
 func (r *MenuGroupRepository) List() ([]model.MenuGroup, error) {
 	var items []model.MenuGroup
 	err := r.db.Order("sort_key ASC, id ASC").Find(&items).Error

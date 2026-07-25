@@ -1,9 +1,29 @@
 package pkg
 
 import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"encoding/hex"
 	"testing"
 )
+
+func encryptAES256CBCHexForTest(plaintext string) (string, error) {
+	block, err := aes.NewCipher(encryptionKey)
+	if err != nil {
+		return "", err
+	}
+	padded := pkcs7Pad([]byte(plaintext), aes.BlockSize)
+	iv := make([]byte, aes.BlockSize)
+	ciphertext := make([]byte, len(padded))
+	cipher.NewCBCEncrypter(block, iv).CryptBlocks(ciphertext, padded)
+	return hex.EncodeToString(append(iv, ciphertext...)), nil
+}
+
+func pkcs7Pad(data []byte, blockSize int) []byte {
+	padLen := blockSize - len(data)%blockSize
+	return append(data, bytes.Repeat([]byte{byte(padLen)}, padLen)...)
+}
 
 func TestDecryptLoginPasswordCipher_roundTrip(t *testing.T) {
 	const keyHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

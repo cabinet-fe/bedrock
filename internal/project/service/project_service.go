@@ -286,8 +286,7 @@ func (s *ProjectService) UpdateProject(actor AccessContext, id uint, input Updat
 }
 
 func (s *ProjectService) ArchiveProject(actor AccessContext, id uint) (*projectmodel.ProductProject, error) {
-	archived := projectmodel.ProjectStatusArchived
-	return s.UpdateProject(actor, id, UpdateProjectInput{Status: &archived})
+	return s.UpdateProject(actor, id, UpdateProjectInput{Status: new(projectmodel.ProjectStatusArchived)})
 }
 
 func (s *ProjectService) DeleteProject(actor AccessContext, id uint) error {
@@ -366,7 +365,7 @@ func (s *ProjectService) UpdateMember(actor AccessContext, projectID, userID uin
 	}
 	newRole := normalizeProjectRole(role)
 	if newRole == "" || newRole == projectmodel.ProjectRoleOwner {
-		return nil, errors.New("Owner 只能通过转让负责人操作变更")
+		return nil, errors.New("仅可通过转让负责人操作变更 Owner")
 	}
 	if member.Role == projectmodel.ProjectRoleOwner {
 		return nil, NewForbidden("不可直接修改 Owner")

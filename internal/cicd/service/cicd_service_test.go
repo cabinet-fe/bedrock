@@ -70,8 +70,7 @@ func setupCICD(t *testing.T) (
 	runRepo := repository.NewBuildRunRepository(gdb)
 
 	credSvc := resourceservice.NewCredentialService(credRepo)
-	repoSvc := resourceservice.NewRepositoryService(repoRepo, credSvc)
-	repoSvc.SetGitLister(stubGit{branches: []string{"main", "develop"}})
+	repoSvc := resourceservice.NewRepositoryService(repoRepo, credSvc, stubGit{branches: []string{"main", "develop"}})
 	serverSvc := resourceservice.NewServerService(serverRepo, credSvc)
 	jobSvc := service.NewBuildJobService(jobRepo, repoRepo)
 	runSvc := service.NewBuildRunService(runRepo, jobRepo)
@@ -107,8 +106,8 @@ func TestCredential_CRUD_neverReturnsPlaintext(t *testing.T) {
 	}
 
 	updated, err := credSvc.Update(created.ID, resourceservice.UpdateCredentialInput{
-		Description: strPtr("desc"),
-		Secret:      strPtr(""), // keep
+		Description: new("desc"),
+		Secret:      new(""), // keep
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -427,6 +426,3 @@ func TestBuildRun_ArtifactPathDownloadable(t *testing.T) {
 		t.Fatalf("download content: %s %v", got, err)
 	}
 }
-
-func strPtr(s string) *string { return &s }
-func boolPtr(b bool) *bool    { return &b }

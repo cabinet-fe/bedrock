@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/mysql"
@@ -89,19 +88,5 @@ func dialectorFor(cfg *config.DatabaseConfig) (gorm.Dialector, error) {
 		return mysql.Open(dsn), nil
 	default:
 		return nil, fmt.Errorf("unsupported database.driver %q (want sqlite|postgres|mysql)", cfg.Driver)
-	}
-}
-
-// NormalizeDriver maps aliases to canonical driver names.
-func NormalizeDriver(d string) string {
-	switch strings.ToLower(strings.TrimSpace(d)) {
-	case "", "sqlite", "sqlite3":
-		return "sqlite"
-	case "postgres", "postgresql":
-		return "postgres"
-	case "mysql":
-		return "mysql"
-	default:
-		return strings.ToLower(strings.TrimSpace(d))
 	}
 }

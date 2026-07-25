@@ -93,9 +93,8 @@ func TestRepositoryBranchCacheSyncAndRead(t *testing.T) {
 
 	repoRepo := resourcerepo.NewRepositoryRepository(gdb)
 	credRepo := resourcerepo.NewCredentialRepository(gdb)
-	repoSvc := service.NewRepositoryService(repoRepo, service.NewCredentialService(credRepo))
 	git := &stubGitLister{branches: []string{"main", "develop"}}
-	repoSvc.SetGitLister(git)
+	repoSvc := service.NewRepositoryService(repoRepo, service.NewCredentialService(credRepo), git)
 
 	repo := &resourcemodel.Repository{
 		Name: "cached", RepoURL: "https://example.com/cached.git", AuthType: "none",

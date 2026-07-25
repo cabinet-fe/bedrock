@@ -41,7 +41,7 @@ func TestContract_CICD_CRUD(t *testing.T) {
 		t.Run(driver, func(t *testing.T) {
 			gdb := openContractDB(t, driver)
 			ctx := context.Background()
-			if err := migration.Up(ctx, gdb, migration.Driver(db.NormalizeDriver(driver))); err != nil {
+			if err := migration.Up(ctx, gdb, migration.Driver(driver)); err != nil {
 				t.Fatalf("migration.Up(%s): %v", driver, err)
 			}
 			runCICDCRUD(t, gdb, driver)
@@ -51,7 +51,7 @@ func TestContract_CICD_CRUD(t *testing.T) {
 
 func openContractDB(t *testing.T, driver string) *gorm.DB {
 	t.Helper()
-	switch db.NormalizeDriver(driver) {
+	switch driver {
 	case "sqlite":
 		cfg := &config.DatabaseConfig{
 			Driver: "sqlite",

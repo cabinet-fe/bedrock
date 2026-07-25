@@ -14,24 +14,8 @@ func NewConflict(msg string) error {
 }
 
 func IsConflict(err error) bool {
-	var c *ConflictError
-	return errors.As(err, &c)
-}
-
-// ForbiddenError maps to HTTP 403.
-type ForbiddenError struct {
-	Message string
-}
-
-func (e *ForbiddenError) Error() string { return e.Message }
-
-func NewForbidden(msg string) error {
-	return &ForbiddenError{Message: msg}
-}
-
-func IsForbidden(err error) bool {
-	var f *ForbiddenError
-	return errors.As(err, &f)
+	_, ok := errors.AsType[*ConflictError](err)
+	return ok
 }
 
 // NotFoundError maps to HTTP 404.
@@ -46,6 +30,6 @@ func NewNotFound(msg string) error {
 }
 
 func IsNotFound(err error) bool {
-	var n *NotFoundError
-	return errors.As(err, &n)
+	_, ok := errors.AsType[*NotFoundError](err)
+	return ok
 }

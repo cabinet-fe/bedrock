@@ -77,7 +77,7 @@ func runGit(ctx context.Context, dir string, logFn func(string), args ...string)
 	}
 	output, err := cmd.CombinedOutput()
 	if len(output) > 0 {
-		for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
 			logFn("[git] " + line)
 		}
 	}
@@ -119,7 +119,7 @@ func GitListBranches(repoURL, authType, username, password string) ([]string, er
 		return nil, fmt.Errorf("git ls-remote failed: %w", err)
 	}
 	var branches []string
-	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
 		if line == "" {
 			continue
 		}

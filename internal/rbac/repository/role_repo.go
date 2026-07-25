@@ -126,8 +126,3 @@ func (r *RoleRepository) EnsureUserHasRole(userID, roleID uint) error {
 	}
 	return r.db.Create(&model.UserRole{UserID: userID, RoleID: roleID}).Error
 }
-
-func (r *RoleRepository) RemoveRoleFromAllUsersExcept(roleID, keepUserID uint) error {
-	return r.db.Where("role_id = ? AND user_id <> ?", roleID, keepUserID).
-		Delete(&model.UserRole{}).Error
-}

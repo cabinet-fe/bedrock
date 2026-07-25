@@ -65,18 +65,3 @@ func TestOpen_postgresBadHostFailsFast(t *testing.T) {
 		t.Fatal("expected connectivity failure")
 	}
 }
-
-func TestNormalizeDriver(t *testing.T) {
-	cases := map[string]string{
-		"":           "sqlite",
-		"SQLite3":    "sqlite",
-		"postgresql": "postgres",
-		"Postgres":   "postgres",
-		"mysql":      "mysql",
-	}
-	for in, want := range cases {
-		if got := NormalizeDriver(in); got != want {
-			t.Errorf("NormalizeDriver(%q)=%q want %q", in, got, want)
-		}
-	}
-}

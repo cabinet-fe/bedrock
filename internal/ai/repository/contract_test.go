@@ -25,10 +25,10 @@ func TestContract_AI_CRUD(t *testing.T) {
 	for _, driver := range []string{"sqlite", "postgres", "mysql"} {
 		t.Run(driver, func(t *testing.T) {
 			gdb := openContractDB(t, driver)
-			if err := migration.Up(context.Background(), gdb, migration.Driver(db.NormalizeDriver(driver))); err != nil {
+			if err := migration.Up(context.Background(), gdb, migration.Driver(driver)); err != nil {
 				t.Fatalf("migration.Up(%s): %v", driver, err)
 			}
-			if err := migration.Up(context.Background(), gdb, migration.Driver(db.NormalizeDriver(driver))); err != nil {
+			if err := migration.Up(context.Background(), gdb, migration.Driver(driver)); err != nil {
 				t.Fatalf("idempotent migration.Up(%s): %v", driver, err)
 			}
 			for _, column := range []string{"artifact_format", "max_artifacts"} {
@@ -100,7 +100,7 @@ func TestContract_AI_CRUD(t *testing.T) {
 
 func openContractDB(t *testing.T, driver string) *gorm.DB {
 	t.Helper()
-	switch db.NormalizeDriver(driver) {
+	switch driver {
 	case "sqlite":
 		gdb, err := db.Open(&config.DatabaseConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "c.sqlite")})
 		if err != nil {

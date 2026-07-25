@@ -410,8 +410,8 @@ func parseGeneric(job *model.BuildJob, body []byte) (*webhookEvent, error) {
 }
 
 func extractBranchFromRef(ref string) string {
-	if strings.HasPrefix(ref, "refs/heads/") {
-		return strings.TrimPrefix(ref, "refs/heads/")
+	if after, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
+		return after
 	}
 	return ref
 }
@@ -444,7 +444,7 @@ func extractJSONValue(payload any, path string) (any, error) {
 		return nil, fmt.Errorf("JSONPath 不能为空")
 	}
 	current := payload
-	for _, token := range strings.Split(trimmed, ".") {
+	for token := range strings.SplitSeq(trimmed, ".") {
 		if token == "" {
 			continue
 		}

@@ -13,14 +13,6 @@ type PageQuery struct {
 	PageSize int `json:"page_size"`
 }
 
-// Offset returns SQL/GORM offset for the current page.
-func (p PageQuery) Offset() int {
-	if p.Page < 1 {
-		return 0
-	}
-	return (p.Page - 1) * p.PageSize
-}
-
 // PageResult is the standard list envelope: items/total/page/page_size/total_pages.
 type PageResult struct {
 	Items      interface{} `json:"items"`

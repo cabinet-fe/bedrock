@@ -202,7 +202,7 @@ func createWebhookJob(
 		RepositoryID:   repoID,
 		Name:           name,
 		Branch:         branch,
-		TriggerWebhook: boolPtr(triggerWebhook),
+		TriggerWebhook: new(triggerWebhook),
 		BuildScript:    "echo ok",
 	})
 	if err != nil {

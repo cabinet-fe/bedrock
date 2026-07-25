@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -187,10 +188,8 @@ func (s *ProjectService) MoveDocNode(actor AccessContext, id uint, input DocMove
 	}
 	descendants := docSubtreeIDs(nodes, node.ID)
 	if input.ParentID != nil {
-		for _, descendantID := range descendants {
-			if descendantID == *input.ParentID {
-				return nil, errors.New("节点不能移动到自己的子节点")
-			}
+		if slices.Contains(descendants, *input.ParentID) {
+			return nil, errors.New("节点不能移动到自己的子节点")
 		}
 	}
 	node.ParentID = input.ParentID
@@ -593,10 +592,9 @@ func (s *ProjectService) validateDocParent(projectID uint, parentID *uint) error
 }
 
 func (s *ProjectService) writeDraft(node *projectmodel.ApiDocNode, content string, userID uint) {
-	now := time.Now().UTC()
 	node.DraftContent = content
 	node.DraftBaseVersion = node.ContentVersion
-	node.DraftUpdatedAt = &now
+	node.DraftUpdatedAt = new(time.Now().UTC())
 	node.UpdatedBy = userID
 }
 
@@ -604,10 +602,9 @@ func (s *ProjectService) createImportedDocument(projectID uint, parentID *uint, 
 	if name == "" {
 		return nil, errors.New("无效 Markdown 文件名")
 	}
-	now := time.Now().UTC()
 	node := &projectmodel.ApiDocNode{
 		ProjectID: projectID, ParentID: parentID, Kind: projectmodel.DocNodeDocument, Name: name,
-		DraftContent: content, DraftBaseVersion: 0, DraftUpdatedAt: &now, CreatedBy: userID, UpdatedBy: userID,
+		DraftContent: content, DraftBaseVersion: 0, DraftUpdatedAt: new(time.Now().UTC()), CreatedBy: userID, UpdatedBy: userID,
 	}
 	if err := s.repo.CreateDocNode(node); err != nil {
 		return nil, err
@@ -818,13 +815,13 @@ func lineCount(content string) int {
 
 func changedLineCount(from, to string) int {
 	fromSet := make(map[string]int)
-	for _, line := range strings.Split(from, "\n") {
+	for line := range strings.SplitSeq(from, "\n") {
 		if line != "" || from != "" {
 			fromSet[line]++
 		}
 	}
 	changed := 0
-	for _, line := range strings.Split(to, "\n") {
+	for line := range strings.SplitSeq(to, "\n") {
 		if line == "" && to == "" {
 			continue
 		}
