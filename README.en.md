@@ -88,10 +88,6 @@ cp config.example.yaml config.yaml
 
 # Backend on :8080 (-tags dev) + Vite frontend proxy
 make dev
-
-# Or separately
-make dev-backend
-make dev-frontend
 ```
 
 Vite proxies API calls to the backend; open the local URL printed by Vite.

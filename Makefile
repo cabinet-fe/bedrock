@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend build build-frontend build-backend \
+.PHONY: dev build build-frontend build-backend \
 	build-linux build-linux-arm64 build-win \
 	build-agent-linux build-agent-linux-arm64 build-agent-win \
 	clean \
@@ -17,12 +17,6 @@ dev:
 	(cd cmd/server && go run -tags dev . --config ../../config.yaml) & \
 	(cd $(FRONTEND_DIR) && vp dev) & \
 	wait
-
-dev-backend:
-	cd cmd/server && go run -tags dev . --config ../../config.yaml
-
-dev-frontend:
-	cd $(FRONTEND_DIR) && vp dev
 
 build-frontend:
 	cd $(FRONTEND_DIR) && vp install && vp build

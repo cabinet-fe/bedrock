@@ -87,10 +87,6 @@ cp config.example.yaml config.yaml
 
 # 同时启动后端 :8080（-tags dev）+ 前端 Vite 代理
 make dev
-
-# 或分别启动
-make dev-backend
-make dev-frontend
 ```
 
 前端开发服务由 Vite 代理到后端 API；浏览器访问 Vite 给出的本地地址即可。
