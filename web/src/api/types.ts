@@ -249,7 +249,7 @@ export interface BuildJob {
   max_artifacts: number;
   artifact_format: string;
   agent_trigger_event: string;
-  agent_id?: number | null;
+  agent_ids?: number[];
   deploy_targets?: DeployTarget[];
   created_by: number;
   created_at: string;

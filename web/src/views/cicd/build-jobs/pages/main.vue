@@ -5,7 +5,9 @@ import { computed, onMounted, reactive, ref, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
+import type { CodeEditorLang } from "@veltra/desktop";
 
+import { listAgents } from "@/api/ai";
 import {
   createBuildJob,
   deleteBuildJob,
@@ -16,7 +18,7 @@ import {
   updateBuildJob,
 } from "@/api/cicd";
 import { listRepositories, listRepositoryBranches, listServers } from "@/api/resource";
-import type { BuildJob, BuildRun, DeployTarget, Repository, Server } from "@/api/types";
+import type { AiAgent, BuildJob, BuildRun, DeployTarget, Repository, Server } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusy, useBusyKey } from "@/composables/use-busy";
@@ -39,9 +41,36 @@ const METHOD_OPTIONS = [
 ];
 
 const ARTIFACT_OPTIONS = [
-  { label: "gzip", value: "gzip" },
   { label: "zip", value: "zip" },
+  { label: "gzip", value: "gzip" },
 ];
+
+/** 常用触发时区；filterable + creatable，仍可输入任意 IANA 时区 */
+const TIMEZONE_OPTIONS = [
+  { label: "Asia/Shanghai（北京）", value: "Asia/Shanghai" },
+  { label: "Asia/Tokyo（东京）", value: "Asia/Tokyo" },
+  { label: "Asia/Singapore（新加坡）", value: "Asia/Singapore" },
+  { label: "Europe/London（伦敦）", value: "Europe/London" },
+  { label: "Europe/Berlin（柏林）", value: "Europe/Berlin" },
+  { label: "America/New_York（纽约）", value: "America/New_York" },
+  { label: "America/Los_Angeles（洛杉矶）", value: "America/Los_Angeles" },
+  { label: "UTC", value: "UTC" },
+];
+
+const WEBHOOK_TYPE_OPTIONS = [
+  { label: "自动识别", value: "auto" },
+  { label: "GitHub", value: "github" },
+  { label: "自定义（generic）", value: "generic" },
+];
+
+const AGENT_EVENT_OPTIONS = [
+  { label: "制品就绪（默认）", value: "artifact_ready" },
+  { label: "分发完成", value: "distribution_finished" },
+  { label: "不触发", value: "none" },
+];
+
+const AGENT_EVENT_TIPS =
+  "制品就绪：构建产物打包成功后执行 Agent；分发完成：全部部署目标执行完后执行 Agent；不触发：不自动执行 Agent";
 
 const BUILD_SCRIPT_TYPE_OPTIONS = [
   { label: "Bash / sh", value: "bash" },
@@ -51,6 +80,14 @@ const BUILD_SCRIPT_TYPE_OPTIONS = [
   { label: "Windows PowerShell 5.x", value: "powershell" },
   { label: "CMD", value: "cmd" },
 ];
+
+/** 脚本类型 → 编辑器高亮语言；无对应语言则不指定 */
+const SCRIPT_TYPE_LANG: Record<string, CodeEditorLang | undefined> = {
+  bash: "bash",
+  node: "js",
+  pwsh: "powershell",
+  powershell: "powershell",
+};
 
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
@@ -68,6 +105,7 @@ const editing = ref<BuildJob | null>(null);
 const webhookInfo = reactive({ secret: "", url: "" });
 const repoOptions = ref<{ label: string; value: number }[]>([]);
 const serverOptions = ref<{ label: string; value: number }[]>([]);
+const agentOptions = ref<{ label: string; value: number }[]>([]);
 const branchOptions = ref<{ label: string; value: string }[]>([]);
 const branchesLoading = ref(false);
 const form = reactive({
@@ -92,14 +130,32 @@ const form = reactive({
   cron_expression: "",
   cron_timezone: "Asia/Shanghai",
   max_artifacts: 5,
-  artifact_format: "gzip",
+  artifact_format: "zip",
   agent_trigger_event: "artifact_ready",
-  agent_id: undefined as number | undefined,
+  agent_ids: [] as number[],
   deploy_targets: [] as DeployTarget[],
 });
 
 const branchPlaceholder = computed(() => (branchesLoading.value ? "加载分支…" : "选择或输入分支"));
-const showPs5Tip = computed(() => form.build_script_type === "powershell");
+
+/** 编辑器高亮语言跟随脚本类型；python / cmd 无对应语言则不指定 */
+const editorLangs = computed(() => {
+  const lang = SCRIPT_TYPE_LANG[form.build_script_type];
+  return lang ? [lang] : [];
+});
+const ps5Tip = computed(() =>
+  form.build_script_type === "powershell"
+    ? "Windows PowerShell 5.x 不支持 &&，请改用多行、pwsh 或 cmd"
+    : undefined,
+);
+
+const formGroups = [
+  { key: "basic", title: "基本信息" },
+  { key: "build", title: "构建配置" },
+  { key: "trigger", title: "触发方式" },
+  { key: "artifact", title: "制品与 Agent" },
+  { key: "deploy", title: "部署目标" },
+];
 
 const repoNameMap = computed(() => {
   const map = new Map<number, string>();
@@ -183,6 +239,16 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+  // 无 AI 模块权限时静默失败，Agent 选项留空
+  try {
+    const agents = await listAgents({ page: 1, page_size: 100 });
+    agentOptions.value = (agents.items ?? []).map((a: AiAgent) => ({
+      label: a.name,
+      value: a.id,
+    }));
+  } catch {
+    /* ignore */
+  }
 });
 
 function repoName(repositoryId: number): string {
@@ -224,6 +290,7 @@ async function openEdit(row: BuildJob) {
     editing.value = full;
     o(form).extend(full);
     form.env_var_names = (full.env_var_names ?? []).join(",");
+    form.agent_ids = full.agent_ids ?? [];
     form.deploy_targets = (full.deploy_targets ?? []).map((t) => ({ ...t }));
     dialogOpen.value = true;
   } catch (err) {
@@ -246,14 +313,14 @@ function removeTarget(idx: number) {
 }
 
 function buildBody(): Record<string, unknown> {
-  const { env_var_names, deploy_targets, agent_id, ...rest } = form;
+  const { env_var_names, deploy_targets, agent_ids, ...rest } = form;
   return {
     ...rest,
     env_var_names: env_var_names
       .split(/[,;\s]+/)
       .map((s) => s.trim())
       .filter(Boolean),
-    agent_id: agent_id || null,
+    agent_ids,
     deploy_targets: deploy_targets.map((t, i) => ({
       server_id: t.method === "local" ? null : t.server_id,
       remote_path: t.remote_path,
@@ -416,101 +483,121 @@ async function rotateWebhookSecret() {
       v-model="dialogOpen"
       :title="editing ? '编辑任务' : '新建任务'"
       :model="form"
+      :groups="formGroups"
       label-width="110px"
       style="width: 1180px"
       @submit="save"
     >
-      <u-select
-        label="仓库"
-        field="repository_id"
-        :options="repoOptions"
-        :disabled="!!editing"
-        :rules="{ required: '必填' }"
-      />
-      <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-      <u-input label="描述" field="description" />
-      <u-switch label="启用" field="enabled" />
-      <u-select
-        label="分支"
-        field="branch"
-        :options="branchOptions"
-        filterable
-        creatable
-        :disabled="!form.repository_id"
-        :placeholder="branchPlaceholder"
-      />
-      <u-switch label="浅克隆" field="shallow_clone" />
-      <u-select label="脚本类型" field="build_script_type" :options="BUILD_SCRIPT_TYPE_OPTIONS" />
-      <p v-if="showPs5Tip" class="script-tip">
-        Windows PowerShell 5.x 不支持 <code>&&</code>，请改用多行、<code>pwsh</code> 或
-        <code>cmd</code>
-      </p>
-      <u-code-editor
-        label="构建脚本"
-        field="build_script"
-        :langs="['js']"
-        :default-lines="12"
-        tips="语法高亮为 JavaScript 模式，不影响 bash / python 等脚本执行"
-      />
-      <u-input label="工作目录" field="work_dir" placeholder="相对仓库根" />
-      <u-input label="输出目录" field="output_dir" />
-      <u-input label="环境变量名" field="env_var_names" placeholder="逗号分隔，仅名称" />
-
-      <u-form-item label="触发方式">
-        <div class="trigger-row">
-          <u-checkbox v-model="form.trigger_manual">手动</u-checkbox>
-          <u-checkbox v-model="form.trigger_webhook">Webhook</u-checkbox>
-          <u-checkbox v-model="form.trigger_cron">Cron</u-checkbox>
-        </div>
-      </u-form-item>
-      <template v-if="form.trigger_cron">
-        <u-input label="Cron 表达式" field="cron_expression" placeholder="如 0 */6 * * *" />
-        <u-input label="时区" field="cron_timezone" placeholder="IANA，如 Asia/Shanghai" />
-      </template>
-      <template v-if="form.trigger_webhook">
-        <u-input label="Webhook 类型" field="webhook_type" placeholder="auto / github / generic" />
-        <u-input label="Ref JSONPath" field="webhook_ref_path" placeholder="generic 平台可选" />
-        <u-input label="Commit JSONPath" field="webhook_commit_path" />
-        <u-input label="Message JSONPath" field="webhook_message_path" />
-      </template>
-
-      <u-number-input label="制品保留" field="max_artifacts" />
-      <u-select label="制品格式" field="artifact_format" :options="ARTIFACT_OPTIONS" />
-      <u-select
-        label="Agent 事件"
-        field="agent_trigger_event"
-        :options="[
-          { label: 'artifact_ready（默认）', value: 'artifact_ready' },
-          { label: 'distribution_finished', value: 'distribution_finished' },
-          { label: 'none（不触发）', value: 'none' },
-        ]"
-      />
-      <u-number-input label="绑定 Agent ID" field="agent_id" placeholder="可选" />
-
-      <div class="targets-head">
-        <strong>部署目标（Job 私有）</strong>
-        <u-button size="small" @click="addTarget">添加</u-button>
-      </div>
-      <div v-for="(t, idx) in form.deploy_targets" :key="idx" class="target-block">
-        <div class="target-row">
-          <u-select v-model="t.method" :options="METHOD_OPTIONS" style="width: 110px" />
-          <u-select
-            v-if="t.method !== 'local'"
-            v-model="t.server_id"
-            :options="serverOptions"
-            placeholder="服务器"
-            style="width: 200px"
-          />
-          <u-input v-model="t.remote_path" placeholder="远程路径" style="flex: 1" />
-          <u-button size="small" @click="removeTarget(idx)">删</u-button>
-        </div>
-        <u-textarea
-          v-model="t.post_deploy_script"
-          :rows="2"
-          placeholder="部署后脚本（可选）"
-          class="post-script"
+      <template #group:basic>
+        <u-select
+          label="仓库"
+          field="repository_id"
+          :options="repoOptions"
+          :disabled="!!editing"
+          :rules="{ required: '必填' }"
         />
-      </div>
+        <u-input label="名称" field="name" :rules="{ required: '必填' }" />
+        <u-input label="描述" field="description" />
+        <u-switch label="启用" field="enabled" />
+      </template>
+
+      <template #group:build>
+        <u-select
+          label="分支"
+          field="branch"
+          :options="branchOptions"
+          filterable
+          creatable
+          :disabled="!form.repository_id"
+          :placeholder="branchPlaceholder"
+        />
+        <u-switch label="浅克隆" field="shallow_clone" />
+        <u-select label="脚本类型" field="build_script_type" :options="BUILD_SCRIPT_TYPE_OPTIONS" />
+        <u-code-editor
+          label="构建脚本"
+          field="build_script"
+          :langs="editorLangs"
+          :default-lines="12"
+          :tips="ps5Tip"
+          span="full"
+        />
+        <u-input label="工作目录" field="work_dir" placeholder="相对仓库根" />
+        <u-input label="输出目录" field="output_dir" />
+        <u-input label="环境变量名" field="env_var_names" placeholder="逗号分隔，仅名称" />
+      </template>
+
+      <template #group:trigger>
+        <u-form-item label="触发">
+          <div class="trigger-row">
+            <u-checkbox v-model="form.trigger_manual">手动</u-checkbox>
+            <u-checkbox v-model="form.trigger_webhook">Webhook</u-checkbox>
+            <u-checkbox v-model="form.trigger_cron">Cron</u-checkbox>
+          </div>
+        </u-form-item>
+        <template v-if="form.trigger_cron">
+          <u-input label="Cron 表达式" field="cron_expression" placeholder="如 0 */6 * * *" />
+          <u-select
+            label="时区"
+            field="cron_timezone"
+            :options="TIMEZONE_OPTIONS"
+            filterable
+            creatable
+          />
+        </template>
+        <template v-if="form.trigger_webhook">
+          <u-select label="Webhook 类型" field="webhook_type" :options="WEBHOOK_TYPE_OPTIONS" />
+          <u-input label="分支 JSONPath" field="webhook_ref_path" placeholder="generic 平台可选" />
+          <u-input label="提交 JSONPath" field="webhook_commit_path" />
+          <u-input label="消息 JSONPath" field="webhook_message_path" />
+        </template>
+      </template>
+
+      <template #group:artifact>
+        <u-number-input label="制品保留" field="max_artifacts" />
+        <u-select label="制品格式" field="artifact_format" :options="ARTIFACT_OPTIONS" />
+        <u-select
+          label="Agent 事件"
+          field="agent_trigger_event"
+          :options="AGENT_EVENT_OPTIONS"
+          :tips="AGENT_EVENT_TIPS"
+        />
+        <u-multi-select
+          label="执行 Agent"
+          field="agent_ids"
+          :options="agentOptions"
+          placeholder="选择事件触发时执行的 Agent"
+          filterable
+        />
+      </template>
+
+      <template #group:deploy>
+        <div class="deploy-targets">
+          <div class="targets-toolbar">
+            <span class="targets-hint">Job 私有部署目标，按顺序依次执行</span>
+            <u-button size="small" type="primary" @click="addTarget">添加目标</u-button>
+          </div>
+          <div v-if="!form.deploy_targets.length" class="targets-empty">尚未配置部署目标</div>
+          <div v-for="(t, idx) in form.deploy_targets" :key="idx" class="target-item">
+            <span class="target-item__index">{{ idx + 1 }}</span>
+            <div class="target-item__body">
+              <div class="target-item__row">
+                <u-select v-model="t.method" :options="METHOD_OPTIONS" style="width: 110px" />
+                <u-select
+                  v-if="t.method !== 'local'"
+                  v-model="t.server_id"
+                  :options="serverOptions"
+                  placeholder="选择服务器"
+                  style="width: 220px"
+                />
+                <u-input v-model="t.remote_path" placeholder="远程路径" style="flex: 1" />
+              </div>
+              <div class="target-item__script-caption">部署后脚本（可选）</div>
+              <u-code-editor v-model="t.post_deploy_script" :default-lines="4" />
+            </div>
+            <u-button text type="danger" size="small" @click="removeTarget(idx)">删除</u-button>
+          </div>
+        </div>
+      </template>
     </FormDialog>
 
     <u-dialog
@@ -569,7 +656,9 @@ async function rotateWebhookSecret() {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
+@use "pkg:@veltra/styles/functions" as fn;
+
 .mono {
   font-family: ui-monospace, monospace;
   word-break: break-all;
@@ -585,34 +674,61 @@ async function rotateWebhookSecret() {
   flex-wrap: wrap;
   gap: 4px;
 }
-.targets-head {
+// 自定义内容在 u-form 网格中默认只占一列，撑满整行
+.deploy-targets {
+  grid-column: 1 / -1;
+}
+.targets-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 12px 0 8px;
+  margin-bottom: fn.use-var(gap, default);
 }
-.target-block {
-  margin-bottom: 12px;
-  padding: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 6px;
+.targets-hint {
+  font-size: fn.use-var(font-size-assist, default);
+  color: fn.use-var(text-color, assist);
 }
-.target-row {
+.targets-empty {
+  padding: fn.use-var(gap, large) 0;
+  text-align: center;
+  font-size: fn.use-var(font-size-assist, default);
+  color: fn.use-var(text-color, placeholder);
+}
+.target-item {
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: fn.use-var(gap, default);
+  padding: fn.use-var(gap, default);
+  border-radius: fn.use-var(radius, default);
+  background-color: fn.use-var(bg-color, middle);
+
+  & + & {
+    margin-top: fn.use-var(gap, default);
+  }
 }
-.post-script {
-  margin-top: 8px;
-  width: 100%;
-}
-.script-tip {
-  margin: -4px 0 8px 110px;
+.target-item__index {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: fn.use-var(bg-color, top);
+  color: fn.use-var(text-color, assist);
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.55);
-  line-height: 1.5;
+  line-height: 18px;
+  text-align: center;
 }
-.script-tip code {
-  font-size: 11px;
+.target-item__body {
+  flex: 1;
+  min-width: 0;
+}
+.target-item__row {
+  display: flex;
+  align-items: center;
+  gap: fn.use-var(gap, default);
+}
+.target-item__script-caption {
+  margin: fn.use-var(gap, default) 0 4px;
+  font-size: fn.use-var(font-size-assist, default);
+  color: fn.use-var(text-color, assist);
 }
 </style>

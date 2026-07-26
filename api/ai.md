@@ -15,7 +15,7 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 - 每个 Agent 另有一个固定产出目录 `{agentRoot}/{output_dir}`（`output_dir` 默认为相对名 `output`）。CLI 注入 `BEDROCK_AGENT_WORKDIR`（根）与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）。不创建 `runs/run-{id}/output` 或任何 per-run 输出子目录；后续 Run 复用同一产出目录且不清空既有内容（便于缓存与增量写入），由 Agent/CLI 自行覆盖需要更新的文件。
 - Agent 可配置任意键值环境变量：AES-GCM 加密存于 `env_vars_cipher`；API 仅回显 `{key, has_value}`；Sync/Run 时解密写入 `{agentRoot}/.env`、注入 `cmd.Env`，并设置 `BEDROCK_AGENT_ENV_FILE`（工作区 `.env` 同 UID 可见）。
 - AgentRun 只保存状态、日志、文本输出和 `work_dir` 等运行记录，不绑定、归档或提供文件制品下载（无 `artifact_path` / `GET /ai/runs/:id/artifact`）。此约束不影响 CI/CD BuildRun 的制品归档与下载。
-- 构建事件触发（`AgentTrigger.build_event` / `BuildJob.agent_id`）与工作区绑定解耦，语义不变。
+- 构建事件触发（`AgentTrigger.build_event` / `BuildJob.agent_ids`）与工作区绑定解耦，语义不变。
 
 ### GET /ai/agents — 列出 Agents
 

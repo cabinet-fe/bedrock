@@ -275,7 +275,7 @@ flowchart TB
 | DevEnvJob | 同上 | running→interrupted/failed，保留日志；人工重试新任务 |
 | CLI 安装/升级/卸载 | — | **同步**在请求内执行；结果一次性返回（不落库、不保留历史任务） |
 
-构建事件默认：`artifact_ready`（归档成功且制品路径有效）。BuildJob.`agent_trigger_event` 可覆盖为 `distribution_finished`（本轮分发流程结束，无论成功失败）或 `none`。可选 `agent_id` 绑定默认智能体；亦可在 AgentTrigger 中按 Job 过滤。事件**异步**创建独立 AgentRun；Agent 失败**不**修改 BuildRun.status。流水线**禁止**内嵌同步 agent 阶段。
+构建事件默认：`artifact_ready`（归档成功且制品路径有效）。BuildJob.`agent_trigger_event` 可覆盖为 `distribution_finished`（本轮分发流程结束，无论成功失败）或 `none`。可选 `agent_ids` 绑定一个或多个智能体；亦可在 AgentTrigger 中按 Job 过滤。事件**异步**创建独立 AgentRun；Agent 失败**不**修改 BuildRun.status。流水线**禁止**内嵌同步 agent 阶段。
 
 Agent 工作区与记录规则：
 
@@ -285,7 +285,7 @@ Agent 工作区与记录规则：
 4. Agent 环境变量 AES-GCM 加密存储（`env_vars_cipher`）；API 不回显明文。Sync/Run 时解密写入工作区 `.env` 并注入进程环境（`BEDROCK_AGENT_ENV_FILE` 指向该文件）；同 UID 下明文可见。
 5. AgentRun 保留状态、日志、文本输出、`work_dir` 与关联上下文，不含 `artifact_path`，不创建归档，也没有文件制品下载 API。
 6. AgentRun 的无制品语义不影响 CI/CD：BuildRun 仍按 §5.2 完成输出归档、保留、下载与重新分发。
-7. 构建事件触发（`AgentTrigger.build_event` / `BuildJob.agent_id`）与上述仓库绑定解耦，语义不变。
+7. 构建事件触发（`AgentTrigger.build_event` / `BuildJob.agent_ids`）与上述仓库绑定解耦，语义不变。
 
 ### 5.4 文档节点双态
 

@@ -1,6 +1,53 @@
 package model
 
-import "time"
+import (
+	"database/sql/driver"
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+// UintList is a []uint persisted as a JSON array in a text column, so it is
+// transparently encoded/decoded at every layer (repository included).
+type UintList []uint
+
+// Value implements driver.Valuer. Empty lists are stored as NULL.
+func (l UintList) Value() (driver.Value, error) {
+	if len(l) == 0 {
+		return nil, nil
+	}
+	b, err := json.Marshal(l)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
+}
+
+// Scan implements sql.Scanner.
+func (l *UintList) Scan(src any) error {
+	var b []byte
+	switch v := src.(type) {
+	case nil:
+		*l = UintList{}
+		return nil
+	case string:
+		b = []byte(v)
+	case []byte:
+		b = v
+	default:
+		return fmt.Errorf("UintList: unsupported scan type %T", src)
+	}
+	if len(b) == 0 {
+		*l = UintList{}
+		return nil
+	}
+	var ids []uint
+	if err := json.Unmarshal(b, &ids); err != nil {
+		return fmt.Errorf("UintList: %w", err)
+	}
+	*l = ids
+	return nil
+}
 
 // BuildJob belongs to a Repository (1:N).
 type BuildJob struct {
@@ -31,7 +78,7 @@ type BuildJob struct {
 	MaxArtifacts      int       `json:"max_artifacts" gorm:"default:5"`
 	ArtifactFormat    string    `json:"artifact_format" gorm:"size:20;default:gzip"`
 	AgentTriggerEvent string    `json:"agent_trigger_event" gorm:"size:40;default:artifact_ready"`
-	AgentID           *uint     `json:"agent_id" gorm:"index"`
+	AgentIDs          UintList  `json:"agent_ids" gorm:"type:text"`
 	CreatedBy         uint      `json:"created_by" gorm:"index"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`

@@ -504,7 +504,7 @@ func (s *AgentService) OnBuildEvent(event string, job *cicdmodel.BuildJob, run *
 }
 
 func (s *AgentService) dispatchBuildEvent(event string, job *cicdmodel.BuildJob, run *cicdmodel.BuildRun) {
-	// Prefer explicit AgentTrigger rows; also support BuildJob.AgentID binding.
+	// Prefer explicit AgentTrigger rows; also support BuildJob.AgentIDs binding.
 	triggers, _ := s.repo.ListBuildEventTriggers(job.ID, event)
 	seen := map[uint]bool{}
 	for _, t := range triggers {
@@ -520,8 +520,12 @@ func (s *AgentService) dispatchBuildEvent(event string, job *cicdmodel.BuildJob,
 			s.logger.Warn("build event agent run failed", zap.Error(err), zap.Uint("agent_id", t.AgentID))
 		}
 	}
-	if job.AgentID != nil && !seen[*job.AgentID] {
-		_, err := s.CreateRun(*job.AgentID, CreateRunInput{
+	for _, agentID := range job.AgentIDs {
+		if seen[agentID] {
+			continue
+		}
+		seen[agentID] = true
+		_, err := s.CreateRun(agentID, CreateRunInput{
 			TriggerType: model.TriggerBuildEvent,
 			TriggeredBy: run.TriggeredBy, BuildRunID: &run.ID,
 		})

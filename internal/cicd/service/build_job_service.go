@@ -59,7 +59,7 @@ type CreateBuildJobInput struct {
 	MaxArtifacts       int                 `json:"max_artifacts"`
 	ArtifactFormat     string              `json:"artifact_format"`
 	AgentTriggerEvent  string              `json:"agent_trigger_event"`
-	AgentID            *uint               `json:"agent_id"`
+	AgentIDs           []uint              `json:"agent_ids"`
 	WebhookType        string              `json:"webhook_type"`
 	WebhookRefPath     string              `json:"webhook_ref_path"`
 	WebhookCommitPath  string              `json:"webhook_commit_path"`
@@ -87,7 +87,7 @@ type UpdateBuildJobInput struct {
 	MaxArtifacts       *int                 `json:"max_artifacts"`
 	ArtifactFormat     *string              `json:"artifact_format"`
 	AgentTriggerEvent  *string              `json:"agent_trigger_event"`
-	AgentID            *uint                `json:"agent_id"`
+	AgentIDs           *[]uint              `json:"agent_ids"`
 	WebhookType        *string              `json:"webhook_type"`
 	WebhookRefPath     *string              `json:"webhook_ref_path"`
 	WebhookCommitPath  *string              `json:"webhook_commit_path"`
@@ -136,7 +136,7 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 		MaxArtifacts:       intOr(in.MaxArtifacts, 5),
 		ArtifactFormat:     normalizeArtifactFormat(in.ArtifactFormat),
 		AgentTriggerEvent:  normalizeAgentEvent(in.AgentTriggerEvent),
-		AgentID:            in.AgentID,
+		AgentIDs:           cleanAgentIDs(in.AgentIDs),
 		CreatedBy:          createdBy,
 	}
 	if err := encodeEnvNames(job, in.EnvVarNames); err != nil {
@@ -238,12 +238,8 @@ func (s *BuildJobService) Update(id uint, in UpdateBuildJobInput) (*model.BuildJ
 	if in.AgentTriggerEvent != nil {
 		job.AgentTriggerEvent = normalizeAgentEvent(*in.AgentTriggerEvent)
 	}
-	if in.AgentID != nil {
-		if *in.AgentID == 0 {
-			job.AgentID = nil
-		} else {
-			job.AgentID = in.AgentID
-		}
+	if in.AgentIDs != nil {
+		job.AgentIDs = cleanAgentIDs(*in.AgentIDs)
 	}
 	if job.Name == "" {
 		return nil, errorsNew("名称不能为空")
@@ -407,6 +403,20 @@ func normalizeAgentEvent(e string) string {
 	default:
 		return "artifact_ready"
 	}
+}
+
+// cleanAgentIDs drops zero/duplicate IDs and always returns a non-nil list.
+func cleanAgentIDs(ids []uint) model.UintList {
+	out := make(model.UintList, 0, len(ids))
+	seen := map[uint]bool{}
+	for _, id := range ids {
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
 }
 
 func normalizeDeployMethod(m string) string {

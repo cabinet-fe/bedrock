@@ -18,7 +18,7 @@
 ### POST /build-jobs — 创建构建任务
 
 权限：`cicd_build_jobs:create`
-请求：{ repository_id*, name*, description, enabled, branch, shallow_clone, build_script_type, build_script, work_dir, output_dir, cache_paths, env_var_names, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_id, deploy_targets }
+请求：{ repository_id*, name*, description, enabled, branch, shallow_clone, build_script_type, build_script, work_dir, output_dir, cache_paths, env_var_names, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
 响应 201：data = BuildJob
 
 ### GET /build-jobs/{id} — 获取构建任务（含部署目标）
@@ -31,7 +31,7 @@
 
 权限：`cicd_build_jobs:update`
 路径参数：id*: integer
-请求：{ name, description, enabled, branch, shallow_clone, build_script_type, build_script, work_dir, output_dir, cache_paths, env_var_names, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_id, deploy_targets }
+请求：{ name, description, enabled, branch, shallow_clone, build_script_type, build_script, work_dir, output_dir, cache_paths, env_var_names, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
 响应 200：data = BuildJob
 
 ### DELETE /build-jobs/{id} — 删除构建任务
@@ -187,7 +187,7 @@
 | `max_artifacts` | `integer` |  |  |
 | `artifact_format` | `string` |  |  |
 | `agent_trigger_event` | `'artifact_ready' \| 'distribution_finished' \| 'none'` |  | Default artifact_ready; override distribution_finished or none |
-| `agent_id` | `integer` |  | Optional agent bound for build-event trigger |
+| `agent_ids` | `integer[]` |  | Agents executed on the build-event trigger |
 | `deploy_targets` | `DeployTarget[]` |  |  |
 | `created_by` | `integer` |  |  |
 | `created_at` | `string(date-time)` |  |  |
@@ -222,7 +222,7 @@
 | `max_artifacts` | `integer` |  |  |
 | `artifact_format` | `string` |  |  |
 | `agent_trigger_event` | `'artifact_ready' \| 'distribution_finished' \| 'none'` |  |  |
-| `agent_id` | `integer` |  |  |
+| `agent_ids` | `integer[]` |  |  |
 | `deploy_targets` | `DeployTarget[]` |  |  |
 
 ### BuildJobPage
@@ -266,7 +266,7 @@
 | `max_artifacts` | `integer` |  |  |
 | `artifact_format` | `string` |  |  |
 | `agent_trigger_event` | `'artifact_ready' \| 'distribution_finished' \| 'none'` |  |  |
-| `agent_id` | `integer` |  |  |
+| `agent_ids` | `integer[]` |  |  |
 | `deploy_targets` | `DeployTarget[]` |  |  |
 
 ### BuildRun

@@ -94,7 +94,7 @@ func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := &cicdmodel.BuildJob{ID: 99, AgentTriggerEvent: model.EventArtifactReady, AgentID: &agent.ID}
+	job := &cicdmodel.BuildJob{ID: 99, AgentTriggerEvent: model.EventArtifactReady, AgentIDs: cicdmodel.UintList{agent.ID}}
 	buildRun := &cicdmodel.BuildRun{ID: 77, BuildJobID: 99, Status: "success", TriggeredBy: 1, ArtifactPath: "/tmp/a.tgz"}
 	agents.OnBuildEvent(model.EventArtifactReady, job, buildRun)
 	deadline := time.Now().Add(2 * time.Second)
@@ -131,7 +131,7 @@ func TestAgentFailureDoesNotChangeBuildRun(t *testing.T) {
 	}
 	agent = waitWorkspaceStatus(t, agents, agent.ID, model.WorkspaceReady)
 	build := &cicdmodel.BuildRun{ID: 5, Status: "success", ArtifactPath: "/a"}
-	job := &cicdmodel.BuildJob{ID: 1, AgentID: &agent.ID, AgentTriggerEvent: model.EventArtifactReady}
+	job := &cicdmodel.BuildJob{ID: 1, AgentIDs: cicdmodel.UintList{agent.ID}, AgentTriggerEvent: model.EventArtifactReady}
 	agents.OnBuildEvent(model.EventArtifactReady, job, build)
 	time.Sleep(200 * time.Millisecond)
 	if build.Status != "success" {
