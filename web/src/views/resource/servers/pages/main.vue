@@ -53,6 +53,11 @@ const form = reactive({
   tags: "",
 });
 
+const formGroups = [
+  { key: "connection", title: "连接信息" },
+  { key: "auth", title: "认证" },
+];
+
 const columns = defineProTableColumns([
   { key: "name", name: "名称" },
   { key: "host", name: "主机" },
@@ -180,42 +185,47 @@ const onTest = bind(async (row: Server) => {
       v-model="dialogOpen"
       :title="editing ? '编辑服务器' : '新建服务器'"
       :model="form"
+      :groups="formGroups"
       label-width="110px"
       style="width: 560px"
       @submit="save"
     >
-      <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-      <u-input label="主机" field="host" :rules="{ required: '必填' }" />
-      <u-number-input label="端口" field="port" />
-      <u-select
-        label="OS"
-        field="os_type"
-        :options="[
-          { label: 'linux', value: 'linux' },
-          { label: 'windows', value: 'windows' },
-        ]"
-      />
-      <u-input label="用户名" field="username" />
-      <u-select
-        label="认证方式"
-        field="auth_type"
-        :options="[
-          { label: 'password', value: 'password' },
-          { label: 'key', value: 'key' },
-          { label: 'ssh_agent', value: 'ssh_agent' },
-          { label: 'agent', value: 'agent' },
-        ]"
-      />
-      <u-select label="凭证" field="credential_id" :options="credOptions" clearable />
-      <u-input v-if="form.auth_type === 'agent'" label="Agent URL" field="agent_url" />
-      <u-select
-        v-if="form.auth_type === 'agent'"
-        label="Agent 凭证"
-        field="agent_credential_id"
-        :options="credOptions"
-        clearable
-      />
-      <u-input label="描述" field="description" />
+      <template #group:connection>
+        <u-input label="名称" field="name" :rules="{ required: '必填' }" />
+        <u-input label="主机" field="host" :rules="{ required: '必填' }" />
+        <u-number-input label="端口" field="port" />
+        <u-select
+          label="OS"
+          field="os_type"
+          :options="[
+            { label: 'linux', value: 'linux' },
+            { label: 'windows', value: 'windows' },
+          ]"
+        />
+        <u-input label="描述" field="description" />
+      </template>
+      <template #group:auth>
+        <u-input label="用户名" field="username" />
+        <u-select
+          label="认证方式"
+          field="auth_type"
+          :options="[
+            { label: 'password', value: 'password' },
+            { label: 'key', value: 'key' },
+            { label: 'ssh_agent', value: 'ssh_agent' },
+            { label: 'agent', value: 'agent' },
+          ]"
+        />
+        <u-select label="凭证" field="credential_id" :options="credOptions" clearable />
+        <u-input v-if="form.auth_type === 'agent'" label="Agent URL" field="agent_url" />
+        <u-select
+          v-if="form.auth_type === 'agent'"
+          label="Agent 凭证"
+          field="agent_credential_id"
+          :options="credOptions"
+          clearable
+        />
+      </template>
     </FormDialog>
   </div>
 </template>

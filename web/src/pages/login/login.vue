@@ -1,39 +1,41 @@
 <script setup lang="ts">
-import { nextTick, reactive, ref, useTemplateRef } from "vue";
+import { reactive, ref, useTemplateRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@veltra/desktop";
 
 import { useAuthStore } from "@/stores/auth";
 
-import Atmosphere from "./components/atmosphere";
-
 const auth = useAuthStore();
 const router = useRouter();
 const route = useRoute();
 
-const formRef = useTemplateRef("form");
-const pageRef = useTemplateRef<HTMLElement>("page");
+const usernameInputRef = useTemplateRef<HTMLInputElement>("username");
+const passwordInputRef = useTemplateRef<HTMLInputElement>("password");
 const loading = ref(false);
 const formData = reactive({
   username: "",
   password: "",
 });
+const errors = reactive({
+  username: "",
+  password: "",
+});
 
-function pinPageScroll() {
-  const page = pageRef.value;
-  if (!page) return;
-  page.scrollTop = 0;
-  void nextTick(() => {
-    page.scrollTop = 0;
-  });
+function validate() {
+  errors.username = formData.username ? "" : "请输入用户名";
+  errors.password = formData.password ? "" : "请输入密码";
+  return !errors.username && !errors.password;
+}
+
+// 点击终端空白处时，聚焦第一个待填字段
+function focusFirstEmptyField(event: MouseEvent) {
+  if ((event.target as HTMLElement).closest("input, button")) return;
+  if (!formData.username) usernameInputRef.value?.focus();
+  else if (!formData.password) passwordInputRef.value?.focus();
 }
 
 async function handleSubmit() {
-  if (loading.value) return;
-
-  const valid = await formRef.value?.validate();
-  pinPageScroll();
-  if (!valid) return;
+  if (loading.value || !validate()) return;
 
   loading.value = true;
   try {
@@ -45,71 +47,77 @@ async function handleSubmit() {
     message.error(msg);
   } finally {
     loading.value = false;
-    pinPageScroll();
   }
 }
 </script>
 
 <template>
-  <div ref="page" class="login-page">
-    <Atmosphere />
+  <div class="login-page">
+    <!-- 栏外竖批，取《吕氏春秋》句，暗合「磐石」与「朱砂」 -->
+    <p class="side-quote side-quote--left" aria-hidden="true">石可破也，而不可夺坚</p>
+    <p class="side-quote side-quote--right" aria-hidden="true">丹可磨也，而不可夺赤</p>
 
     <div class="stage">
-      <header class="brand">
-        <p class="brand-en">BEDROCK</p>
-        <h1 class="brand-cn">磐石<span class="seal" aria-hidden="true">磐</span></h1>
-        <p class="brand-tag">磐石者，万物之基也</p>
-        <p class="brand-intro">代码托管 · 持续集成 · 部署运维 · 智能协同，诸事归一</p>
-      </header>
+      <section class="editorial">
+        <p class="kicker">
+          <span class="kicker-name">BEDROCK</span>
+          <span class="kicker-rule" aria-hidden="true" />
+          <span class="kicker-issue">VOL.01</span>
+        </p>
 
-      <div class="paper">
-        <span class="paper-corner paper-corner--tl" aria-hidden="true" />
-        <span class="paper-corner paper-corner--tr" aria-hidden="true" />
-        <span class="paper-corner paper-corner--bl" aria-hidden="true" />
-        <span class="paper-corner paper-corner--br" aria-hidden="true" />
+        <h1 class="masthead">磐石<span class="seal" aria-hidden="true">磐</span></h1>
 
-        <p class="paper-caption"><span class="paper-caption-text">准入</span></p>
+        <p class="motto">诸事归一</p>
+      </section>
 
-        <u-form
-          ref="form"
-          :model="formData"
-          label-position="top"
-          label-width="auto"
-          :cols="1"
-          class="login-form"
-          @keyup.enter="handleSubmit"
-        >
-          <u-input
-            label="用户名"
-            field="username"
-            placeholder="请输入用户名"
-            :rules="{ required: '请输入用户名' }"
+      <!-- 终端即登录入口 -->
+      <form class="code-note" @submit.prevent="handleSubmit" @click="focusFirstEmptyField">
+        <pre class="code-comment">
+/*
+ * 磐石 Bedrock · 诸事归一
+ * 代码托管 / 持续集成 / 部署运维 / 智能协同
+ */</pre>
+        <p class="term-line">$ bedrock login <span class="cursor" aria-hidden="true" /></p>
+
+        <label class="term-line term-field">
+          <span class="term-prompt">username:</span>
+          <input
+            ref="username"
+            v-model.trim="formData.username"
+            type="text"
+            autocomplete="username"
+            spellcheck="false"
+            @input="errors.username = ''"
           />
-          <u-password-input
-            label="密码"
-            field="password"
-            placeholder="请输入密码"
-            :rules="{ required: '请输入密码' }"
-          />
-        </u-form>
+        </label>
+        <p v-if="errors.username" class="term-error">✗ {{ errors.username }}</p>
 
-        <u-button type="primary" class="submit-btn" :loading="loading" @click="handleSubmit">
-          登录
-        </u-button>
-      </div>
+        <label class="term-line term-field">
+          <span class="term-prompt">password:</span>
+          <input
+            ref="password"
+            v-model="formData.password"
+            type="password"
+            autocomplete="current-password"
+            @input="errors.password = ''"
+          />
+        </label>
+        <p v-if="errors.password" class="term-error">✗ {{ errors.password }}</p>
+
+        <button class="term-submit" type="submit" :disabled="loading">
+          {{ loading ? "[ 验证中 … ]" : "[ 登 录 ]" }}
+        </button>
+      </form>
     </div>
   </div>
 </template>
 
 <style scoped lang="scss">
 .login-page {
-  --paper: #f6f2e6;
-  --paper-deep: #ede7d5;
-  --ink: #2b2a26;
-  --ink-soft: #7a7264;
-  --pine: #3d6b58;
-  --cinnabar: #b3452e;
-  --line: #d8cfb6;
+  // 品牌点缀色，主题 token 之外的唯一一处硬编码
+  --seal: #b3452e;
+  --serif: "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
   position: fixed;
   inset: 0;
@@ -117,208 +125,228 @@ async function handleSubmit() {
   height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  padding: clamp(28px, 7vh, 72px) 20px 28px;
+  display: grid;
+  place-items: center;
+  padding: 32px clamp(20px, 4vw, 56px);
   box-sizing: border-box;
-  background: var(--paper);
-  color: var(--ink);
+  background:
+    radial-gradient(ellipse 70% 42% at 50% 0%, var(--u-color-primary-light-9), transparent 75%),
+    // 纸纹肌理
+    repeating-linear-gradient(95deg, transparent 0 6px, rgb(64 54 32 / 1.1%) 6px 7px),
+    var(--u-bg-color-bottom);
+  color: var(--u-text-color-title);
+}
+
+/* 栏外竖批 */
+.side-quote {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  margin: 0;
+  writing-mode: vertical-rl;
+  font-family: var(--serif);
+  font-size: 15px;
+  letter-spacing: 0.5em;
+  color: var(--u-text-color-assist);
+
+  &--left {
+    left: clamp(20px, 3.5vw, 52px);
+  }
+
+  &--right {
+    right: clamp(20px, 3.5vw, 52px);
+  }
 }
 
 .stage {
   position: relative;
   z-index: 1;
-  width: min(400px, 100%);
+  display: grid;
+  grid-template-columns: 1fr minmax(280px, 380px);
+  align-items: center;
+  gap: clamp(40px, 6vw, 96px);
+  width: min(960px, 100%);
+}
+
+/* 刊头 */
+.editorial {
+  animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.kicker {
   display: flex;
-  flex-direction: column;
-  gap: 24px;
-  flex-shrink: 0;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 28px;
 }
 
-.brand {
-  text-align: center;
-  animation: brand-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.brand-en {
-  margin: 0 0 6px;
-  font-size: 11px;
+.kicker-name {
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.42em;
-  text-indent: 0.42em;
-  color: var(--ink-soft);
+  color: var(--u-text-color-assist);
 }
 
-.brand-cn {
+.kicker-rule {
+  width: 56px;
+  height: 1px;
+  background: var(--u-border-muted-color);
+}
+
+.kicker-issue {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--u-text-color-assist);
+}
+
+.masthead {
   position: relative;
   display: inline-block;
-  margin: 0;
-  font-family: "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif;
-  font-size: clamp(52px, 11vw, 72px);
+  margin: 0 0 20px;
+  font-family: var(--serif);
+  font-size: clamp(84px, 9.5vw, 144px);
   font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.18em;
-  text-indent: 0.18em;
-  color: var(--ink);
+  line-height: 1.05;
+  letter-spacing: 0.14em;
 }
 
 /* 朱砂小印，缀于题名之侧 */
 .seal {
   position: absolute;
-  right: -34px;
-  bottom: 4px;
+  right: -40px;
+  bottom: 10px;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 4px;
-  background: var(--cinnabar);
-  color: #f8f3e6;
-  font-family: "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif;
-  font-size: 15px;
-  font-weight: 700;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--u-radius-small);
+  background: var(--seal);
+  color: var(--u-bg-color-top);
+  font-size: 17px;
   letter-spacing: 0;
-  text-indent: 0;
   box-shadow: 0 1px 3px rgb(43 42 38 / 25%);
   transform: rotate(3deg);
 }
 
-.brand-tag {
-  margin: 14px 0 0;
-  font-family: "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif;
-  font-size: 14px;
-  letter-spacing: 0.32em;
-  text-indent: 0.32em;
-  color: var(--ink);
+.motto {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(15px, 1.6vw, 18px);
+  letter-spacing: 0.36em;
+  color: var(--u-text-color-main);
 }
 
-.brand-intro {
-  margin: 8px 0 0;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: var(--ink-soft);
-}
-
-/* 笺纸面板：双线边框 + 四角回纹 */
-.paper {
-  position: relative;
-  padding: 26px 22px 22px;
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 55%) 0%, transparent 30%), var(--paper-deep);
-  border: 1px solid var(--line);
-  box-shadow:
-    0 1px 0 rgb(255 255 255 / 60%) inset,
-    0 12px 32px rgb(64 54 32 / 12%);
-  animation: paper-settle 1.05s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
-
-  &::before {
-    content: "";
-    position: absolute;
-    inset: 5px;
-    border: 1px solid rgb(61 107 88 / 22%);
-    pointer-events: none;
-  }
-}
-
-.paper-corner {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--pine);
-  opacity: 0.55;
-  pointer-events: none;
-
-  &--tl {
-    top: -2px;
-    left: -2px;
-    border-right: none;
-    border-bottom: none;
-  }
-
-  &--tr {
-    top: -2px;
-    right: -2px;
-    border-left: none;
-    border-bottom: none;
-  }
-
-  &--bl {
-    bottom: -2px;
-    left: -2px;
-    border-right: none;
-    border-top: none;
-  }
-
-  &--br {
-    bottom: -2px;
-    right: -2px;
-    border-left: none;
-    border-top: none;
-  }
-}
-
-.paper-caption {
+/* 终端即登录入口：文档注释 + 命令行之下直接输入 */
+.code-note {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0 0 18px;
+  flex-direction: column;
+  padding: 14px 16px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--u-text-color-second);
+  background: var(--u-bg-color-middle);
+  border: var(--u-border);
+  border-radius: var(--u-radius-default);
+  cursor: text;
+  animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+}
 
-  &::before,
-  &::after {
-    content: "";
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--line));
-  }
+.code-comment {
+  margin: 0;
+  font: inherit;
+  color: var(--u-text-color-assist);
+}
 
-  &::after {
-    background: linear-gradient(270deg, transparent, var(--line));
+.term-line {
+  margin: 0;
+}
+
+.term-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.term-prompt {
+  flex: none;
+  width: 9ch;
+  color: var(--u-color-primary);
+}
+
+.term-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 0 2px;
+  font: inherit;
+  color: var(--u-text-color-title);
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--u-border-color);
+  border-radius: 0;
+  outline: none;
+  caret-color: var(--seal);
+  transition: border-color 0.2s;
+
+  &:focus {
+    border-bottom-color: var(--seal);
+    border-bottom-style: solid;
   }
 }
 
-.paper-caption-text {
-  font-family: "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif;
-  font-size: 14px;
-  letter-spacing: 0.42em;
-  text-indent: 0.42em;
-  color: var(--pine);
+.term-error {
+  margin: 0;
+  // 对齐输入列（prompt 宽 9ch + 间距 8px）
+  padding-left: calc(9ch + 8px);
+  color: var(--seal);
 }
 
-.login-form {
-  margin-bottom: 16px;
+.term-submit {
+  align-self: flex-end;
+  margin-top: 10px;
+  padding: 2px 10px;
+  font: inherit;
+  letter-spacing: 0.1em;
+  color: var(--seal);
+  background: transparent;
+  border: 1px solid var(--seal);
+  border-radius: var(--u-radius-small);
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
 
-  :deep(.u-form-item) {
-    margin-bottom: 4px;
+  &:hover:not(:disabled) {
+    color: var(--u-bg-color-top);
+    background: var(--seal);
   }
 
-  :deep(.u-form-item__label),
-  :deep(.u-form-item__label-text) {
-    color: var(--ink-soft) !important;
-  }
-
-  :deep(.u-form-item__error) {
-    min-height: 18px;
-  }
-
-  :deep(.u-form-item:not(.is-error) .u-form-item__content)::after {
-    content: "";
-    display: block;
-    height: 18px;
+  &:disabled {
+    opacity: 0.55;
+    cursor: default;
   }
 }
 
-.submit-btn {
-  width: 100%;
-  letter-spacing: 0.32em;
-  text-indent: 0.32em;
+/* 输入聚焦后隐去装饰光标，避免与原生 caret 争辉 */
+.code-note:focus-within .cursor {
+  animation: none;
+  opacity: 0;
 }
 
-@keyframes brand-rise {
+.cursor {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  vertical-align: -2px;
+  background: var(--u-color-primary);
+  animation: blink 1.1s steps(2, jump-none) infinite;
+}
+
+@keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(18px);
+    transform: translateY(16px);
   }
 
   to {
@@ -327,34 +355,42 @@ async function handleSubmit() {
   }
 }
 
-@keyframes paper-settle {
-  from {
+@keyframes blink {
+  50% {
     opacity: 0;
-    transform: translateY(22px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 
-@media (max-width: 480px) {
-  .login-page {
-    padding: 32px 16px 24px;
+@media (max-width: 1279px) {
+  .side-quote {
+    display: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  .stage {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    width: min(480px, 100%);
   }
 
-  .brand-cn {
-    letter-spacing: 0.12em;
-    text-indent: 0.12em;
+  .masthead {
+    font-size: clamp(64px, 16vw, 96px);
   }
 
   .seal {
-    right: -30px;
+    right: -32px;
+    bottom: 6px;
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
   }
+}
 
-  .paper {
-    padding: 22px 16px 16px;
+/* iOS 对小于 16px 的输入框会自动放大页面，触屏设备上抬高一档 */
+@media (pointer: coarse) {
+  .term-field input {
+    font-size: 16px;
   }
 }
 </style>

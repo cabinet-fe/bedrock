@@ -407,7 +407,10 @@ onMounted(() => {
       style="width: 480px"
       @submit="submitVersion"
     >
-      <u-input label="目标版本" field="version" placeholder="可留空，使用安装源默认版本" />
+      <template #prepend>
+        <p class="form-tip">可留空，将使用安装源默认版本。</p>
+      </template>
+      <u-input label="目标版本" field="version" placeholder="例如 1.0.0" />
     </FormDialog>
 
     <u-dialog v-model="failureDialogOpen" :title="failureTitle" style="width: 760px">
@@ -426,6 +429,12 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.form-tip {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: fn.use-var(text-color, secondary);
+  line-height: 1.5;
 }
 .risk {
   margin: 0;

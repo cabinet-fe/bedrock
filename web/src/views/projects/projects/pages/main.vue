@@ -209,6 +209,9 @@ async function onOwnerTransferred() {
       style="width: 560px"
       @submit="save"
     >
+      <template #prepend>
+        <p class="slug-tip">标识创建后通常作为稳定引用，请使用字母、数字与连字符。</p>
+      </template>
       <u-input label="名称" field="name" :rules="{ required: '必填' }" />
       <u-input
         label="标识"
@@ -240,6 +243,12 @@ async function onOwnerTransferred() {
 </template>
 
 <style scoped>
+.slug-tip {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--u-color-text-secondary, #666);
+  line-height: 1.5;
+}
 .tag-cell {
   display: inline-flex;
   flex-wrap: wrap;

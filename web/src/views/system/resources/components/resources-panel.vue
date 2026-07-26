@@ -62,6 +62,12 @@ const form = reactive({
   super_admin_only: false,
 });
 
+const formGroups = [
+  { key: "identity", title: "标识" },
+  { key: "display", title: "展示" },
+  { key: "flags", title: "开关" },
+];
+
 const columns = defineProTableColumns([
   { key: "title", name: "标题" },
   { key: "type", name: "类型", width: 90, align: "center" },
@@ -364,57 +370,72 @@ const remove = bind(async (row: RbacResource) => {
       v-model="dialogOpen"
       :title="editing ? '编辑资源' : '新建资源'"
       :model="form"
+      :groups="formGroups"
       label-width="104px"
       style="width: 540px"
       @submit="save"
     >
-      <u-input
-        label="Code"
-        field="code"
-        :disabled="!!editing"
-        :rules="{ required: '必填' }"
-        placeholder="如 system_users（不含 .）"
-      />
-      <u-select label="类型" field="type" :options="TYPE_OPTIONS" :disabled="!!editing" />
-      <u-select
-        v-if="isMenuType"
-        label="菜单分组"
-        field="group_id"
-        :options="groupOptions"
-        :rules="{ required: '必填' }"
-        placeholder="选择分组"
-      />
-      <u-select
-        v-if="!editing && isFeatureType"
-        label="所属菜单"
-        field="parent_id"
-        :options="parentMenuOptions"
-        :rules="{ required: '必填' }"
-        placeholder="选择菜单"
-      />
-      <u-input label="标题" field="title" />
-      <u-input v-if="isMenuType" label="路由" field="route" placeholder="空则按分组前缀自动预填" />
-      <u-form-item v-if="showIconUpload" label="菜单图标">
-        <div class="icon-field">
-          <img v-if="editingIconSrc" class="icon-preview" :src="editingIconSrc" alt="menu icon" />
-          <div class="icon-field__body">
-            <u-file-picker
-              accept="image/*"
-              :disabled="!hasPermission('system_resources:update') || uploading"
-              @pick="onIconPick"
-            >
-              <u-button :loading="uploading" :disabled="!hasPermission('system_resources:update')">
-                {{ editingIconSrc ? "更换图标" : "上传图标" }}
-              </u-button>
-            </u-file-picker>
-            <p class="icon-hint">原始体积 ≤ 32KB</p>
+      <template #group:identity>
+        <u-input
+          label="Code"
+          field="code"
+          :disabled="!!editing"
+          :rules="{ required: '必填' }"
+          placeholder="如 system_users（不含 .）"
+        />
+        <u-select label="类型" field="type" :options="TYPE_OPTIONS" :disabled="!!editing" />
+        <u-select
+          v-if="isMenuType"
+          label="菜单分组"
+          field="group_id"
+          :options="groupOptions"
+          :rules="{ required: '必填' }"
+          placeholder="选择分组"
+        />
+        <u-select
+          v-if="!editing && isFeatureType"
+          label="所属菜单"
+          field="parent_id"
+          :options="parentMenuOptions"
+          :rules="{ required: '必填' }"
+          placeholder="选择菜单"
+        />
+      </template>
+      <template #group:display>
+        <u-input label="标题" field="title" />
+        <u-input
+          v-if="isMenuType"
+          label="路由"
+          field="route"
+          placeholder="空则按分组前缀自动预填"
+        />
+        <u-form-item v-if="showIconUpload" label="菜单图标">
+          <div class="icon-field">
+            <img v-if="editingIconSrc" class="icon-preview" :src="editingIconSrc" alt="menu icon" />
+            <div class="icon-field__body">
+              <u-file-picker
+                accept="image/*"
+                :disabled="!hasPermission('system_resources:update') || uploading"
+                @pick="onIconPick"
+              >
+                <u-button
+                  :loading="uploading"
+                  :disabled="!hasPermission('system_resources:update')"
+                >
+                  {{ editingIconSrc ? "更换图标" : "上传图标" }}
+                </u-button>
+              </u-file-picker>
+              <p class="icon-hint">原始体积 ≤ 32KB</p>
+            </div>
           </div>
-        </div>
-      </u-form-item>
-      <u-number-input label="排序" field="sort_key" />
-      <u-switch v-if="isMenuType" label="隐藏" field="hidden" />
-      <u-switch label="仅超管" field="super_admin_only" :disabled="!canEditSuperOnly" />
-      <u-switch label="启用" field="enabled" />
+        </u-form-item>
+        <u-number-input label="排序" field="sort_key" />
+      </template>
+      <template #group:flags>
+        <u-switch v-if="isMenuType" label="隐藏" field="hidden" />
+        <u-switch label="仅超管" field="super_admin_only" :disabled="!canEditSuperOnly" />
+        <u-switch label="启用" field="enabled" />
+      </template>
     </FormDialog>
   </div>
 </template>

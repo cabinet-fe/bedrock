@@ -78,6 +78,11 @@ const form = reactive({
   tags: "",
 });
 
+const formGroups = [
+  { key: "meta", title: "基本信息" },
+  { key: "content", title: "描述" },
+];
+
 const canEditProjectContent = computed(
   () =>
     props.manageAll ||
@@ -375,25 +380,30 @@ onMounted(() => void loadRequirementStatuses());
       v-model="dialogOpen"
       :title="editing ? '编辑需求' : '新建需求'"
       :model="form"
+      :groups="formGroups"
       label-width="100px"
       style="width: 640px"
       @submit="save"
     >
-      <u-input label="标题" field="title" :rules="{ required: '必填' }" />
-      <u-select label="状态" field="status" :options="statusOptions" />
-      <u-select
-        label="优先级"
-        field="priority"
-        :options="[
-          { label: '低', value: 'low' },
-          { label: '普通', value: 'normal' },
-          { label: '高', value: 'high' },
-          { label: '紧急', value: 'urgent' },
-        ]"
-      />
-      <u-number-input label="负责人 ID" field="assignee_id" />
-      <u-input label="标签" field="tags" />
-      <u-textarea label="描述" field="description" :rows="6" />
+      <template #group:meta>
+        <u-input label="标题" field="title" :rules="{ required: '必填' }" />
+        <u-select label="状态" field="status" :options="statusOptions" />
+        <u-select
+          label="优先级"
+          field="priority"
+          :options="[
+            { label: '低', value: 'low' },
+            { label: '普通', value: 'normal' },
+            { label: '高', value: 'high' },
+            { label: '紧急', value: 'urgent' },
+          ]"
+        />
+        <u-number-input label="负责人 ID" field="assignee_id" />
+        <u-input label="标签" field="tags" />
+      </template>
+      <template #group:content>
+        <u-textarea label="描述" field="description" :rows="6" span="full" />
+      </template>
     </FormDialog>
 
     <u-dialog v-model="detailOpen" :title="selected?.title || '需求详情'" style="width: 760px">

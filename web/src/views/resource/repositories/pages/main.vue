@@ -45,6 +45,11 @@ const form = reactive({
   credential_id: undefined as number | undefined,
 });
 
+const formGroups = [
+  { key: "basic", title: "基本信息" },
+  { key: "auth", title: "认证" },
+];
+
 const columns = defineProTableColumns([
   { key: "name", name: "名称" },
   { key: "repo_url", name: "URL" },
@@ -228,28 +233,33 @@ async function onBatchSyncBranches() {
       v-model="dialogOpen"
       :title="editing ? '编辑仓库' : '新建仓库'"
       :model="form"
+      :groups="formGroups"
       label-width="110px"
       style="width: 560px"
       @submit="save"
     >
-      <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-      <u-input label="Git URL" field="repo_url" :rules="{ required: '必填' }" />
-      <u-select
-        label="认证"
-        field="auth_type"
-        :options="[
-          { label: '无', value: 'none' },
-          { label: '凭证', value: 'credential' },
-        ]"
-      />
-      <u-select
-        v-if="form.auth_type === 'credential'"
-        label="凭证"
-        field="credential_id"
-        :options="credOptions"
-      />
-      <u-input label="标签" field="tags" />
-      <u-input label="描述" field="description" />
+      <template #group:basic>
+        <u-input label="名称" field="name" :rules="{ required: '必填' }" />
+        <u-input label="Git URL" field="repo_url" :rules="{ required: '必填' }" />
+        <u-input label="标签" field="tags" />
+        <u-input label="描述" field="description" />
+      </template>
+      <template #group:auth>
+        <u-select
+          label="认证"
+          field="auth_type"
+          :options="[
+            { label: '无', value: 'none' },
+            { label: '凭证', value: 'credential' },
+          ]"
+        />
+        <u-select
+          v-if="form.auth_type === 'credential'"
+          label="凭证"
+          field="credential_id"
+          :options="credOptions"
+        />
+      </template>
     </FormDialog>
   </div>
 </template>

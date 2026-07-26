@@ -30,6 +30,11 @@ const form = reactive({
   role_ids: [] as number[],
 });
 
+const formGroups = [
+  { key: "basic", title: "账号信息" },
+  { key: "access", title: "权限与状态" },
+];
+
 const roleOptions = computed(() =>
   roles.value
     .filter((r) => r.type !== "builtin" && r.code !== "super_admin")
@@ -169,29 +174,34 @@ const remove = bind(async (row: User) => {
       v-model="dialogOpen"
       :title="editing ? '编辑用户' : '新建用户'"
       :model="form"
+      :groups="formGroups"
       label-width="88px"
       style="width: 520px"
       @submit="save"
     >
-      <u-input v-if="!editing" label="用户名" field="username" :rules="{ required: '必填' }" />
-      <u-password-input
-        label="密码"
-        field="password"
-        :placeholder="editing ? '留空则不修改' : '密码'"
-        :rules="editing ? undefined : { required: '必填' }"
-      />
-      <u-input label="显示名" field="display_name" />
-      <u-input label="邮箱" field="email" />
-      <u-multi-select
-        label="角色"
-        field="role_ids"
-        :options="roleOptions"
-        :disabled="!!editing?.is_super_admin"
-        placeholder="选择角色"
-        filterable
-        clearable
-      />
-      <u-switch label="启用" field="is_active" />
+      <template #group:basic>
+        <u-input v-if="!editing" label="用户名" field="username" :rules="{ required: '必填' }" />
+        <u-password-input
+          label="密码"
+          field="password"
+          :placeholder="editing ? '留空则不修改' : '密码'"
+          :rules="editing ? undefined : { required: '必填' }"
+        />
+        <u-input label="显示名" field="display_name" />
+        <u-input label="邮箱" field="email" />
+      </template>
+      <template #group:access>
+        <u-multi-select
+          label="角色"
+          field="role_ids"
+          :options="roleOptions"
+          :disabled="!!editing?.is_super_admin"
+          placeholder="选择角色"
+          filterable
+          clearable
+        />
+        <u-switch label="启用" field="is_active" />
+      </template>
     </FormDialog>
   </div>
 </template>

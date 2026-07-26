@@ -112,6 +112,13 @@ const form = reactive({
   timeout_sec: 600,
 });
 
+const formGroups = [
+  { key: "basic", title: "基本信息" },
+  { key: "bindings", title: "技能与绑定" },
+  { key: "runtime", title: "运行配置" },
+  { key: "triggers", title: "触发器" },
+];
+
 const TRIGGER_DRAFT_DEFAULTS = {
   type: "manual",
   cron_expression: "0 * * * *",
@@ -538,96 +545,104 @@ const remove = bind(async (row: AiAgent) => {
       v-model="dialogOpen"
       :title="editing ? '编辑智能体' : '新建智能体'"
       :model="form"
+      :groups="formGroups"
       label-width="110px"
       style="width: 1200px"
       @submit="save"
     >
-      <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-      <u-input label="描述" field="description" />
-      <u-select
-        label="CLI"
-        field="cli_key"
-        :options="[
-          { label: 'Claude Code', value: 'claude_code' },
-          { label: 'OpenCode', value: 'opencode' },
-          { label: 'Reasonix', value: 'reasonix' },
-          { label: 'Codex', value: 'codex' },
-        ]"
-        :rules="{ required: '必填' }"
-      />
-      <u-textarea
-        label="系统提示词"
-        field="system_prompt"
-        span="full"
-        :rows="6"
-        placeholder="描述任务目标；若需访问绑定仓库，请写相对路径，如 ./repo-12"
-      />
-      <u-multi-select
-        label="技能"
-        field="skill_ids"
-        :options="skillOptions"
-        placeholder="选择可访问的技能"
-        filterable
-        clearable
-      />
-      <u-group-input
-        field="repo_bindings"
-        label="仓库绑定"
-        span="full"
-        :item-default="{ repository_id: undefined, branch: 'main' }"
-        :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
-      >
-        <template #default="{ item }">
-          <u-select
-            v-model="item.repository_id"
-            :options="repoOptions"
-            filterable
-            clearable
-            placeholder="选择仓库"
-            @change="onRepoChange(item)"
-          />
-          <u-select
-            v-model="item.branch"
-            :options="branchOptionsFor(item.repository_id)"
-            filterable
-            creatable
-            :disabled="!item.repository_id"
-            :placeholder="branchPlaceholder(item.repository_id)"
-            @focus="loadBranches(item.repository_id)"
-          />
-          <u-button
-            text
-            size="small"
-            :disabled="!item.repository_id || branchesSyncingByRepo[item.repository_id]"
-            @click="refreshBranches(item.repository_id)"
-          >
-            同步
-          </u-button>
-        </template>
-      </u-group-input>
-      <u-group-input
-        field="env_vars"
-        label="环境变量"
-        span="full"
-        :item-default="{ key: '', value: '', has_value: false }"
-        :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
-      >
-        <template #default="{ item }">
-          <u-input v-model="item.key" placeholder="KEY" />
-          <u-password-input
-            v-model="item.value"
-            :placeholder="item.has_value ? '已设置，留空不改' : '值'"
-            autocomplete="new-password"
-          />
-        </template>
-      </u-group-input>
-      <u-input label="产出目录名" field="output_dir" placeholder="默认 output" />
-      <u-number-input label="超时(秒)" field="timeout_sec" :min="30" />
-      <u-switch label="流式输出" field="stream_output" />
+      <template #group:basic>
+        <u-input label="名称" field="name" :rules="{ required: '必填' }" />
+        <u-input label="描述" field="description" />
+        <u-select
+          label="CLI"
+          field="cli_key"
+          :options="[
+            { label: 'Claude Code', value: 'claude_code' },
+            { label: 'OpenCode', value: 'opencode' },
+            { label: 'Reasonix', value: 'reasonix' },
+            { label: 'Codex', value: 'codex' },
+          ]"
+          :rules="{ required: '必填' }"
+        />
+        <u-switch label="启用" field="enabled" />
+        <u-textarea
+          label="系统提示词"
+          field="system_prompt"
+          span="full"
+          :rows="6"
+          placeholder="描述任务目标；若需访问绑定仓库，请写相对路径，如 ./repo-12"
+        />
+      </template>
 
-      <u-switch label="启用" field="enabled" />
+      <template #group:bindings>
+        <u-multi-select
+          label="技能"
+          field="skill_ids"
+          :options="skillOptions"
+          placeholder="选择可访问的技能"
+          filterable
+          clearable
+        />
+        <u-group-input
+          field="repo_bindings"
+          label="仓库绑定"
+          span="full"
+          :item-default="{ repository_id: undefined, branch: 'main' }"
+          :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
+        >
+          <template #default="{ item }">
+            <u-select
+              v-model="item.repository_id"
+              :options="repoOptions"
+              filterable
+              clearable
+              placeholder="选择仓库"
+              @change="onRepoChange(item)"
+            />
+            <u-select
+              v-model="item.branch"
+              :options="branchOptionsFor(item.repository_id)"
+              filterable
+              creatable
+              :disabled="!item.repository_id"
+              :placeholder="branchPlaceholder(item.repository_id)"
+              @focus="loadBranches(item.repository_id)"
+            />
+            <u-button
+              text
+              size="small"
+              :disabled="!item.repository_id || branchesSyncingByRepo[item.repository_id]"
+              @click="refreshBranches(item.repository_id)"
+            >
+              同步
+            </u-button>
+          </template>
+        </u-group-input>
+        <u-group-input
+          field="env_vars"
+          label="环境变量"
+          span="full"
+          :item-default="{ key: '', value: '', has_value: false }"
+          :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
+        >
+          <template #default="{ item }">
+            <u-input v-model="item.key" placeholder="KEY" />
+            <u-password-input
+              v-model="item.value"
+              :placeholder="item.has_value ? '已设置，留空不改' : '值'"
+              autocomplete="new-password"
+            />
+          </template>
+        </u-group-input>
+      </template>
 
-      <u-form-item label="触发器" span="full">
+      <template #group:runtime>
+        <u-input label="产出目录名" field="output_dir" placeholder="默认 output" />
+        <u-number-input label="超时(秒)" field="timeout_sec" :min="30" />
+        <u-switch label="流式输出" field="stream_output" />
+      </template>
+
+      <template #group:triggers>
         <div class="trigger-section">
           <ul v-if="formTriggers.length" class="trigger-list">
             <li
@@ -694,7 +709,7 @@ const remove = bind(async (row: AiAgent) => {
             <u-button size="small" @click="addTriggerDraft">添加到列表</u-button>
           </div>
         </div>
-      </u-form-item>
+      </template>
     </FormDialog>
 
     <RunHistoryDialog v-model="historyOpen" :agent="historyAgent" />

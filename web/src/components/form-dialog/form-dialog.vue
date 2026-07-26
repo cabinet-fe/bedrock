@@ -162,15 +162,16 @@ function onClosed() {
   position: relative;
   border: fn.use-var(border);
   border-radius: fn.use-var(radius, default);
-  padding: fn.use-var(gap, default);
+  padding: fn.use-var(gap, large);
 
-  // 给压在边框上的标题留出空间，并与上一组拉开间距
+  // 组间距需容纳上一组底边到本组标题（标题上探出半边高度）
   & + & {
-    margin-top: fn.use-var(gap, default);
+    margin-top: calc(fn.use-var(gap, large) * 2);
   }
 
+  // 首组与 dialog 顶边之间给标题留位
   &:first-of-type {
-    margin-top: fn.use-var(gap, small);
+    margin-top: fn.use-var(gap, large);
   }
 }
 
@@ -184,5 +185,6 @@ function onClosed() {
   background-color: fn.use-var(bg-color, top);
   color: fn.use-var(text-color, title);
   font-size: fn.use-var(font-size-main, default);
+  font-weight: 500;
 }
 </style>

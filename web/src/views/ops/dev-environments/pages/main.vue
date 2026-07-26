@@ -84,6 +84,11 @@ const envForm = reactive({
   default_version: "",
 });
 
+const envFormGroups = [
+  { key: "basic", title: "基本信息" },
+  { key: "scripts", title: "命令行脚本" },
+];
+
 const sourceForm = reactive({
   name: "",
   base_url: "",
@@ -548,24 +553,31 @@ onUnmounted(stopJobPolling);
       v-model="envDialogOpen"
       :title="editingEnv ? '编辑自定义开发环境' : '新建自定义开发环境'"
       :model="envForm"
+      :groups="envFormGroups"
       label-width="120px"
       style="width: 720px"
       @submit="saveEnv"
     >
-      <div class="risk-warning">
-        高风险：自定义命令会以 Bedrock 进程 UID
-        直接执行，不是沙箱隔离。仅在完全理解命令及其权限影响时保存和执行。
-      </div>
-      <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-      <u-input label="可执行文件" field="executable" :rules="{ required: '必填' }" />
-      <u-input label="描述" field="description" />
-      <u-input label="默认版本" field="default_version" />
-      <u-textarea label="检测脚本" field="detect_script" />
-      <u-textarea label="安装脚本" field="install_script" />
-      <u-textarea label="升级脚本" field="upgrade_script" />
-      <u-textarea label="卸载脚本" field="uninstall_script" />
-      <u-textarea label="切版本脚本" field="switch_script" />
-      <u-textarea label="列版本脚本" field="versions_script" />
+      <template #prepend>
+        <div class="risk-warning">
+          高风险：自定义命令会以 Bedrock 进程 UID
+          直接执行，不是沙箱隔离。仅在完全理解命令及其权限影响时保存和执行。
+        </div>
+      </template>
+      <template #group:basic>
+        <u-input label="名称" field="name" :rules="{ required: '必填' }" />
+        <u-input label="可执行文件" field="executable" :rules="{ required: '必填' }" />
+        <u-input label="描述" field="description" />
+        <u-input label="默认版本" field="default_version" />
+      </template>
+      <template #group:scripts>
+        <u-textarea label="检测脚本" field="detect_script" />
+        <u-textarea label="安装脚本" field="install_script" />
+        <u-textarea label="升级脚本" field="upgrade_script" />
+        <u-textarea label="卸载脚本" field="uninstall_script" />
+        <u-textarea label="切版本脚本" field="switch_script" />
+        <u-textarea label="列版本脚本" field="versions_script" />
+      </template>
     </FormDialog>
 
     <FormDialog
@@ -577,9 +589,13 @@ onUnmounted(stopJobPolling);
       :confirm-text="scriptsReadOnly ? '关闭' : '保存'"
       @submit="saveScripts"
     >
-      <div v-if="!scriptsReadOnly" class="risk-warning">
-        占位符：<span v-pre>{{ name }} / {{ executable }} / {{ version }} / {{ source_url }}</span>
-      </div>
+      <template v-if="!scriptsReadOnly" #prepend>
+        <div class="risk-warning">
+          占位符：<span v-pre
+            >{{ name }} / {{ executable }} / {{ version }} / {{ source_url }}</span
+          >
+        </div>
+      </template>
       <u-textarea label="检测脚本" field="detect_script" :readonly="scriptsReadOnly" />
       <u-textarea label="安装脚本" field="install_script" :readonly="scriptsReadOnly" />
       <u-textarea label="升级脚本" field="upgrade_script" :readonly="scriptsReadOnly" />
@@ -659,7 +675,10 @@ onUnmounted(stopJobPolling);
       style="width: 480px"
       @submit="submitVersion"
     >
-      <u-input label="目标版本" field="version" placeholder="可留空，使用默认版本" />
+      <template #prepend>
+        <p class="form-tip">可留空，将使用环境默认版本。</p>
+      </template>
+      <u-input label="目标版本" field="version" placeholder="例如 1.22.0" />
     </FormDialog>
 
     <u-dialog v-model="logViewerOpen" :title="jobLogTitle" style="width: 760px">
@@ -807,6 +826,12 @@ onUnmounted(stopJobPolling);
 .job-status {
   font-size: 12px;
   color: fn.use-var(text-color, main);
+}
+.form-tip {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: fn.use-var(text-color, secondary);
+  line-height: 1.5;
 }
 .risk-warning {
   margin-bottom: 12px;

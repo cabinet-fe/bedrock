@@ -45,6 +45,11 @@ const form = reactive({
   expires_at: "",
 });
 
+const formGroups = [
+  { key: "basic", title: "基本信息" },
+  { key: "expire", title: "过期设置" },
+];
+
 type TokenStatus = "valid" | "expired" | "revoked";
 
 const STATUS_LABEL: Record<TokenStatus, string> = {
@@ -218,47 +223,64 @@ const remove = bind(async (row: PersonalAccessToken) => {
       v-model="dialogOpen"
       title="创建 PAT"
       :model="form"
+      :groups="formGroups"
       label-width="90px"
       style="width: 520px"
       @submit="save"
+      @closed="plaintext = ''"
     >
-      <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-      <u-form-item label="Scope">
-        <div class="scope-row">
-          <u-checkbox v-model="form.scopeSkills">skills:read</u-checkbox>
-          <u-checkbox v-model="form.scopeAgents">agents:run</u-checkbox>
-          <u-checkbox v-model="form.scopeDocsWrite">docs:write</u-checkbox>
-          <u-checkbox v-model="form.scopeDocsPublish">docs:publish</u-checkbox>
+      <template #prepend>
+        <p class="create-tip">创建后明文仅显示一次，请立即复制并妥善保管。</p>
+      </template>
+      <template #group:basic>
+        <u-input label="名称" field="name" :rules="{ required: '必填' }" />
+        <u-form-item label="Scope">
+          <div class="scope-row">
+            <u-checkbox v-model="form.scopeSkills">skills:read</u-checkbox>
+            <u-checkbox v-model="form.scopeAgents">agents:run</u-checkbox>
+            <u-checkbox v-model="form.scopeDocsWrite">docs:write</u-checkbox>
+            <u-checkbox v-model="form.scopeDocsPublish">docs:publish</u-checkbox>
+          </div>
+        </u-form-item>
+      </template>
+      <template #group:expire>
+        <u-radio-group label="过期时间" field="expireMode" :items="EXPIRE_MODE_OPTIONS" />
+        <u-select
+          v-if="form.expireMode === 'days'"
+          label="有效天数"
+          field="expireDays"
+          :options="EXPIRE_DAYS_OPTIONS"
+          :rules="{ required: '必填' }"
+        />
+        <u-date-picker
+          v-if="form.expireMode === 'date'"
+          label="过期日期"
+          field="expires_at"
+          placeholder="选择日期"
+          :disabled-date="disabledExpiresAt"
+          :rules="{ required: '必填' }"
+        />
+      </template>
+      <template v-if="plaintext" #append>
+        <div class="once">
+          <div class="once-head">
+            <strong>明文（仅此一次）：</strong>
+            <u-button size="small" @click="copyPlaintext">复制</u-button>
+          </div>
+          <code>{{ plaintext }}</code>
         </div>
-      </u-form-item>
-      <u-radio-group label="过期时间" field="expireMode" :items="EXPIRE_MODE_OPTIONS" />
-      <u-select
-        v-if="form.expireMode === 'days'"
-        label="有效天数"
-        field="expireDays"
-        :options="EXPIRE_DAYS_OPTIONS"
-        :rules="{ required: '必填' }"
-      />
-      <u-date-picker
-        v-if="form.expireMode === 'date'"
-        label="过期日期"
-        field="expires_at"
-        placeholder="选择日期"
-        :disabled-date="disabledExpiresAt"
-        :rules="{ required: '必填' }"
-      />
-      <div v-if="plaintext" class="once">
-        <div class="once-head">
-          <strong>明文（仅此一次）：</strong>
-          <u-button size="small" @click="copyPlaintext">复制</u-button>
-        </div>
-        <code>{{ plaintext }}</code>
-      </div>
+      </template>
     </FormDialog>
   </div>
 </template>
 
 <style scoped lang="scss">
+.create-tip {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--u-color-text-secondary, #666);
+  line-height: 1.5;
+}
 .scope-row {
   display: flex;
   flex-wrap: wrap;

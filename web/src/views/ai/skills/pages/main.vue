@@ -145,6 +145,9 @@ const remove = bind(async (row: SkillPackage) => {
       style="width: 480px"
       @submit="save"
     >
+      <template #prepend>
+        <p class="upload-tip">请上传符合 Skill 包规范的 ZIP；覆盖时将替换原有包内容。</p>
+      </template>
       <u-input label="名称" field="name" :rules="{ required: '必填' }" />
       <u-input label="描述" field="description" />
       <u-select
@@ -169,6 +172,12 @@ const remove = bind(async (row: SkillPackage) => {
 </template>
 
 <style scoped lang="scss">
+.upload-tip {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--u-color-text-secondary, #666);
+  line-height: 1.5;
+}
 .zip-field {
   display: flex;
   align-items: center;

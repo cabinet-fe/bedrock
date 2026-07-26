@@ -35,6 +35,11 @@ const form = reactive({
   description: "",
 });
 
+const formGroups = [
+  { key: "basic", title: "基本信息" },
+  { key: "secret", title: "密文" },
+];
+
 const columns = defineProTableColumns([
   { key: "name", name: "名称" },
   { key: "type", name: "类型", width: 100, align: "center" },
@@ -132,36 +137,41 @@ const remove = bind(async (row: Credential) => {
       v-model="dialogOpen"
       :title="editing ? '编辑凭证' : '新建凭证'"
       :model="form"
+      :groups="formGroups"
       label-width="110px"
       style="width: 520px"
       @submit="save"
     >
-      <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-      <u-select
-        label="类型"
-        field="type"
-        :options="[
-          { label: 'password', value: 'password' },
-          { label: 'token', value: 'token' },
-          { label: 'ssh_key', value: 'ssh_key' },
-          { label: 'api_key', value: 'api_key' },
-        ]"
-        :rules="{ required: '必填' }"
-      />
-      <u-input label="用户名" field="username" />
-      <u-password-input
-        :label="editing ? '密文（留空不改）' : '密文'"
-        field="secret"
-        autocomplete="new-password"
-        :rules="editing ? undefined : { required: '必填' }"
-      />
-      <u-password-input
-        v-if="form.type === 'ssh_key'"
-        label="口令（留空不改）"
-        field="passphrase"
-        autocomplete="new-password"
-      />
-      <u-input label="描述" field="description" />
+      <template #group:basic>
+        <u-input label="名称" field="name" :rules="{ required: '必填' }" />
+        <u-select
+          label="类型"
+          field="type"
+          :options="[
+            { label: 'password', value: 'password' },
+            { label: 'token', value: 'token' },
+            { label: 'ssh_key', value: 'ssh_key' },
+            { label: 'api_key', value: 'api_key' },
+          ]"
+          :rules="{ required: '必填' }"
+        />
+        <u-input label="用户名" field="username" />
+        <u-input label="描述" field="description" />
+      </template>
+      <template #group:secret>
+        <u-password-input
+          :label="editing ? '密文（留空不改）' : '密文'"
+          field="secret"
+          autocomplete="new-password"
+          :rules="editing ? undefined : { required: '必填' }"
+        />
+        <u-password-input
+          v-if="form.type === 'ssh_key'"
+          label="口令（留空不改）"
+          field="passphrase"
+          autocomplete="new-password"
+        />
+      </template>
     </FormDialog>
   </div>
 </template>

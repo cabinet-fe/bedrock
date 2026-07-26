@@ -24,6 +24,11 @@ const form = reactive({
   items: [] as DictItem[],
 });
 
+const formGroups = [
+  { key: "basic", title: "基本信息" },
+  { key: "items", title: "字典项" },
+];
+
 const columns = defineProTableColumns([
   { key: "name", name: "名称" },
   { key: "code", name: "编码" },
@@ -148,35 +153,37 @@ const remove = bind(async (row: Dictionary) => {
       v-model="dialogOpen"
       :title="editing ? '编辑字典' : '新建字典'"
       :model="form"
+      :groups="formGroups"
       label-width="72px"
       style="width: 640px"
       @submit="save"
     >
-      <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-      <u-input label="编码" field="code" :disabled="!!editing" :rules="{ required: '必填' }" />
-      <u-input label="描述" field="description" />
-
-      <div class="items-head">
-        <strong>字典项</strong>
-        <u-button size="small" @click="addItem">添加项</u-button>
-      </div>
-      <div v-if="!form.items.length" class="items-empty">暂无字典项</div>
-      <div v-for="(it, idx) in form.items" :key="idx" class="item-row">
-        <u-input v-model="it.label" placeholder="标签" style="flex: 1" />
-        <u-input v-model="it.value" placeholder="值" style="flex: 1" />
-        <u-switch v-model="it.enabled" />
-        <u-button size="small" @click="removeItem(idx)">删</u-button>
-      </div>
+      <template #group:basic>
+        <u-input label="名称" field="name" :rules="{ required: '必填' }" />
+        <u-input label="编码" field="code" :disabled="!!editing" :rules="{ required: '必填' }" />
+        <u-input label="描述" field="description" />
+      </template>
+      <template #group:items>
+        <div class="items-toolbar">
+          <u-button size="small" @click="addItem">添加项</u-button>
+        </div>
+        <div v-if="!form.items.length" class="items-empty">暂无字典项</div>
+        <div v-for="(it, idx) in form.items" :key="idx" class="item-row">
+          <u-input v-model="it.label" placeholder="标签" style="flex: 1" />
+          <u-input v-model="it.value" placeholder="值" style="flex: 1" />
+          <u-switch v-model="it.enabled" />
+          <u-button size="small" @click="removeItem(idx)">删</u-button>
+        </div>
+      </template>
     </FormDialog>
   </div>
 </template>
 
 <style scoped>
-.items-head {
+.items-toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 16px 0 8px;
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }
 .items-empty {
   color: #6b7280;
