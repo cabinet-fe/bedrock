@@ -622,8 +622,11 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		return
 	}
 	defer logFile.Close()
+	var logMu sync.Mutex
 	writeLog := func(line string) {
+		logMu.Lock()
 		_, _ = logFile.WriteString(line + "\n")
+		logMu.Unlock()
 		if s.hub != nil {
 			s.hub.BroadcastToChannel(fmt.Sprintf("ai-run:%d", run.ID), []byte(line))
 		}
@@ -714,30 +717,26 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		s.failRun(run, err)
 		return
 	}
-	// stdout/stderr 并发采集时必须串行写 Builder，否则会 data race（CI 上偶发空输出）
-	var (
-		outputMu sync.Mutex
-		output   strings.Builder
-	)
-	copyStream := func(r io.Reader) {
+	// 分通道采集后再合并，避免并发写同一 Builder；边读边打日志供 UI 流式展示
+	var stdoutBuf, stderrBuf strings.Builder
+	copyStream := func(r io.Reader, buf *strings.Builder) {
 		sc := bufio.NewScanner(r)
-		buf := make([]byte, 0, 64*1024)
-		sc.Buffer(buf, 1024*1024)
+		scanBuf := make([]byte, 0, 64*1024)
+		sc.Buffer(scanBuf, 1024*1024)
 		for sc.Scan() {
 			line := sc.Text()
 			writeLog(line)
-			outputMu.Lock()
-			output.WriteString(line)
-			output.WriteByte('\n')
-			outputMu.Unlock()
+			buf.WriteString(line)
+			buf.WriteByte('\n')
 		}
 	}
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); copyStream(stdout) }()
-	go func() { defer wg.Done(); copyStream(stderr) }()
+	go func() { defer wg.Done(); copyStream(stdout, &stdoutBuf) }()
+	go func() { defer wg.Done(); copyStream(stderr, &stderrBuf) }()
 	err = cmd.Wait()
 	wg.Wait()
+	outputText := stdoutBuf.String() + stderrBuf.String()
 
 	latest, _ := s.repo.FindRun(run.ID)
 	if latest != nil && latest.Status == model.JobCancelled {
@@ -751,7 +750,7 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	if run.StartedAt != nil {
 		run.DurationMs = finished.Sub(*run.StartedAt).Milliseconds()
 	}
-	run.OutputText = output.String()
+	run.OutputText = outputText
 	if err != nil {
 		run.Status = model.JobFailed
 		run.ErrorMessage = err.Error()

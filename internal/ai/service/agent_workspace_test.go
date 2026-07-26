@@ -64,6 +64,22 @@ func waitWorkspaceStatus(t *testing.T, agents *service.AgentService, agentID uin
 	return nil
 }
 
+func readRunLog(t *testing.T, path string) string {
+	t.Helper()
+	if path == "" {
+		return "<empty log path>"
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "<read log: " + err.Error() + ">"
+	}
+	const max = 2000
+	if len(data) > max {
+		return string(data[:max]) + "...(truncated)"
+	}
+	return string(data)
+}
+
 func setupAgentWorkspace(t *testing.T) (*service.AgentService, *service.SkillService, *resourcerepo.CLIRepository, string) {
 	t.Helper()
 	gdb, err := db.Open(&config.DatabaseConfig{
@@ -274,21 +290,25 @@ func TestAgentRunsReusePersistentWorkspace(t *testing.T) {
 
 	script := filepath.Join(t.TempDir(), "fake-cli.sh")
 	content := `#!/bin/sh
-if [ -z "$BEDROCK_AGENT_OUTPUT" ]; then
-  echo "BEDROCK_AGENT_OUTPUT missing"
+set -eu
+if [ -z "${BEDROCK_AGENT_OUTPUT:-}" ]; then
+  printf '%s\n' "BEDROCK_AGENT_OUTPUT missing" >&2
   exit 23
 fi
 case "$BEDROCK_AGENT_OUTPUT" in
-  /must-not-leak) echo "parent BEDROCK_AGENT_OUTPUT leaked"; exit 24 ;;
+  /must-not-leak)
+    printf '%s\n' "parent BEDROCK_AGENT_OUTPUT leaked" >&2
+    exit 24
+    ;;
 esac
 if [ ! -d "$BEDROCK_AGENT_OUTPUT" ]; then
-  echo "output dir missing"
+  printf '%s\n' "output dir missing" >&2
   exit 25
 fi
 if [ -f "$BEDROCK_AGENT_WORKDIR/note.txt" ]; then
   # Output dir is preserved across runs so caches can be reused.
   if [ ! -f "$BEDROCK_AGENT_OUTPUT/result.txt" ]; then
-    echo "output dir was cleared"
+    printf '%s\n' "output dir was cleared" >&2
     exit 26
   fi
   printf 'second' > "$BEDROCK_AGENT_OUTPUT/result.txt"
@@ -296,7 +316,7 @@ else
   printf 'first' > "$BEDROCK_AGENT_OUTPUT/result.txt"
   printf 'workspace-note' > "$BEDROCK_AGENT_WORKDIR/note.txt"
 fi
-echo "persistent output"
+printf '%s\n' "persistent output"
 `
 	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
@@ -367,13 +387,13 @@ echo "persistent output"
 	}
 	for _, finished := range finishedRuns {
 		if finished.Status != model.JobSuccess {
-			t.Fatalf("status=%s err=%s", finished.Status, finished.ErrorMessage)
+			t.Fatalf("status=%s err=%s log=%s", finished.Status, finished.ErrorMessage, readRunLog(t, finished.LogPath))
 		}
 		if finished.WorkDir != wantWork {
 			t.Fatalf("work_dir=%q want=%q", finished.WorkDir, wantWork)
 		}
 		if !strings.Contains(finished.OutputText, "persistent output") {
-			t.Fatalf("output_text=%q", finished.OutputText)
+			t.Fatalf("output_text=%q log=%s", finished.OutputText, readRunLog(t, finished.LogPath))
 		}
 	}
 	for _, path := range []string{keepPath, filepath.Join(wantWork, "note.txt"), filepath.Join(wantOutput, "result.txt")} {
