@@ -714,7 +714,11 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		s.failRun(run, err)
 		return
 	}
-	var output strings.Builder
+	// stdout/stderr 并发采集时必须串行写 Builder，否则会 data race（CI 上偶发空输出）
+	var (
+		outputMu sync.Mutex
+		output   strings.Builder
+	)
 	copyStream := func(r io.Reader) {
 		sc := bufio.NewScanner(r)
 		buf := make([]byte, 0, 64*1024)
@@ -722,8 +726,10 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		for sc.Scan() {
 			line := sc.Text()
 			writeLog(line)
+			outputMu.Lock()
 			output.WriteString(line)
 			output.WriteByte('\n')
+			outputMu.Unlock()
 		}
 	}
 	var wg sync.WaitGroup
