@@ -69,13 +69,14 @@ func (h *RoleHandler) Create(c *gin.Context) {
 		Name        string   `json:"name" binding:"required"`
 		Code        string   `json:"code" binding:"required"`
 		Description string   `json:"description"`
+		DataScope   string   `json:"data_scope"`
 		Permissions []string `json:"permissions"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-	role, err := h.roles.Create(req.Name, req.Code, req.Description, req.Permissions)
+	role, err := h.roles.Create(req.Name, req.Code, req.Description, req.DataScope, req.Permissions)
 	if err != nil {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return
@@ -92,12 +93,13 @@ func (h *RoleHandler) Update(c *gin.Context) {
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
+		DataScope   string `json:"data_scope"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-	role, err := h.roles.Update(uint(id), req.Name, req.Description)
+	role, err := h.roles.Update(uint(id), req.Name, req.Description, req.DataScope)
 	if err != nil {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return

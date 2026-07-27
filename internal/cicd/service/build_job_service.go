@@ -9,6 +9,7 @@ import (
 	"bedrock/internal/cicd/model"
 	"bedrock/internal/cicd/repository"
 	"bedrock/internal/pkg"
+	rbacmodel "bedrock/internal/rbac/model"
 	resourcerepo "bedrock/internal/resource/repository"
 )
 
@@ -64,6 +65,7 @@ type CreateBuildJobInput struct {
 	WebhookRefPath     string              `json:"webhook_ref_path"`
 	WebhookCommitPath  string              `json:"webhook_commit_path"`
 	WebhookMessagePath string              `json:"webhook_message_path"`
+	IsPublic           *bool               `json:"is_public"`
 	DeployTargets      []DeployTargetInput `json:"deploy_targets"`
 }
 
@@ -92,6 +94,7 @@ type UpdateBuildJobInput struct {
 	WebhookRefPath     *string              `json:"webhook_ref_path"`
 	WebhookCommitPath  *string              `json:"webhook_commit_path"`
 	WebhookMessagePath *string              `json:"webhook_message_path"`
+	IsPublic           *bool                `json:"is_public"`
 	DeployTargets      *[]DeployTargetInput `json:"deploy_targets"`
 }
 
@@ -137,6 +140,7 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 		ArtifactFormat:     normalizeArtifactFormat(in.ArtifactFormat),
 		AgentTriggerEvent:  normalizeAgentEvent(in.AgentTriggerEvent),
 		AgentIDs:           cleanAgentIDs(in.AgentIDs),
+		IsPublic:           boolOr(in.IsPublic, false),
 		CreatedBy:          createdBy,
 	}
 	if err := encodeEnvNames(job, in.EnvVarNames); err != nil {
@@ -154,7 +158,7 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 			return nil, err
 		}
 	}
-	out, err := s.Get(job.ID)
+	out, err := s.Get(job.ID, createdBy, rbacmodel.DataScopeAll)
 	if err != nil {
 		return nil, err
 	}
@@ -162,10 +166,13 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 	return out, nil
 }
 
-func (s *BuildJobService) Update(id uint, in UpdateBuildJobInput) (*model.BuildJob, error) {
+func (s *BuildJobService) Update(id uint, userID uint, dataScope string, in UpdateBuildJobInput) (*model.BuildJob, error) {
 	job, err := s.jobs.FindByID(id)
 	if err != nil {
 		return nil, NewNotFound("构建任务不存在")
+	}
+	if err := requireJobAccess(job, userID, dataScope); err != nil {
+		return nil, err
 	}
 	if in.Name != nil {
 		job.Name = strings.TrimSpace(*in.Name)
@@ -223,6 +230,9 @@ func (s *BuildJobService) Update(id uint, in UpdateBuildJobInput) (*model.BuildJ
 	if in.WebhookMessagePath != nil {
 		job.WebhookMessagePath = strings.TrimSpace(*in.WebhookMessagePath)
 	}
+	if in.IsPublic != nil {
+		job.IsPublic = *in.IsPublic
+	}
 	if in.CronExpression != nil {
 		job.CronExpression = strings.TrimSpace(*in.CronExpression)
 	}
@@ -256,7 +266,7 @@ func (s *BuildJobService) Update(id uint, in UpdateBuildJobInput) (*model.BuildJ
 			return nil, err
 		}
 	}
-	out, err := s.Get(id)
+	out, err := s.Get(id, userID, dataScope)
 	if err != nil {
 		return nil, err
 	}
@@ -264,9 +274,13 @@ func (s *BuildJobService) Update(id uint, in UpdateBuildJobInput) (*model.BuildJ
 	return out, nil
 }
 
-func (s *BuildJobService) Delete(id uint) error {
-	if _, err := s.jobs.FindByID(id); err != nil {
+func (s *BuildJobService) Delete(id uint, userID uint, dataScope string) error {
+	job, err := s.jobs.FindByID(id)
+	if err != nil {
 		return NewNotFound("构建任务不存在")
+	}
+	if err := requireJobAccess(job, userID, dataScope); err != nil {
+		return err
 	}
 	if err := s.jobs.Delete(id); err != nil {
 		return err
@@ -284,28 +298,37 @@ func (s *BuildJobService) syncCron(job *model.BuildJob) {
 	_ = s.cron.Add(*job)
 }
 
-func (s *BuildJobService) Get(id uint) (*model.BuildJob, error) {
+func (s *BuildJobService) Get(id uint, userID uint, dataScope string) (*model.BuildJob, error) {
 	job, err := s.jobs.FindByID(id)
 	if err != nil {
 		return nil, NewNotFound("构建任务不存在")
+	}
+	if err := requireJobRead(job, userID, dataScope); err != nil {
+		return nil, err
 	}
 	decodeEnvNames(job)
 	return publicJob(job, false), nil
 }
 
-func (s *BuildJobService) GetWithSecret(id uint) (*model.BuildJob, error) {
+func (s *BuildJobService) GetWithSecret(id uint, userID uint, dataScope string) (*model.BuildJob, error) {
 	job, err := s.jobs.FindByID(id)
 	if err != nil {
 		return nil, NewNotFound("构建任务不存在")
+	}
+	if err := requireJobWrite(job, userID, dataScope); err != nil {
+		return nil, err
 	}
 	decodeEnvNames(job)
 	return publicJob(job, true), nil
 }
 
-func (s *BuildJobService) RotateWebhookSecret(id uint) (*model.BuildJob, error) {
+func (s *BuildJobService) RotateWebhookSecret(id uint, userID uint, dataScope string) (*model.BuildJob, error) {
 	job, err := s.jobs.FindByID(id)
 	if err != nil {
 		return nil, NewNotFound("构建任务不存在")
+	}
+	if err := requireJobAccess(job, userID, dataScope); err != nil {
+		return nil, err
 	}
 	secret, err := generateWebhookSecret()
 	if err != nil {
@@ -319,8 +342,12 @@ func (s *BuildJobService) RotateWebhookSecret(id uint) (*model.BuildJob, error) 
 	return publicJob(job, true), nil
 }
 
-func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword string) ([]model.BuildJob, int64, error) {
-	items, total, err := s.jobs.List(q, repositoryID, keyword)
+func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword string, userID uint, dataScope string) ([]model.BuildJob, int64, error) {
+	var createdBy *uint
+	if dataScope != rbacmodel.DataScopeAll {
+		createdBy = &userID
+	}
+	items, total, err := s.jobs.List(q, repositoryID, keyword, createdBy)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -464,4 +491,23 @@ func generateWebhookSecret() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func requireJobRead(job *model.BuildJob, userID uint, dataScope string) error {
+	if dataScope == rbacmodel.DataScopeAll || job.IsPublic || job.CreatedBy == userID {
+		return nil
+	}
+	return NewForbidden("无权访问该构建任务")
+}
+
+func requireJobWrite(job *model.BuildJob, userID uint, dataScope string) error {
+	if dataScope == rbacmodel.DataScopeAll || job.CreatedBy == userID {
+		return nil
+	}
+	return NewForbidden("无权访问该构建任务")
+}
+
+// requireJobAccess keeps write semantics for mutate/execute paths.
+func requireJobAccess(job *model.BuildJob, userID uint, dataScope string) error {
+	return requireJobWrite(job, userID, dataScope)
 }

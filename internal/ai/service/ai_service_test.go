@@ -168,7 +168,7 @@ func TestSkillUploadRejectMissingSKILLMDAndOverwrite(t *testing.T) {
 	if s2.PackageDigest == s1.PackageDigest {
 		t.Fatal("overwrite should change digest")
 	}
-	_, rc, _, err := skills.OpenPackage(s2.ID, 1, true)
+	_, rc, _, err := skills.OpenPackage(s2.ID, 1, true, "all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,10 +193,10 @@ func TestPrivateSkillIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := skills.Get(s.ID, 2, false); err == nil {
+	if _, err := skills.Get(s.ID, 2, false, "self"); err == nil {
 		t.Fatal("non-creator must not see private skill")
 	}
-	items, _, err := skills.List(1, 20, 2, false)
+	items, _, err := skills.List(1, 20, 2, false, "self")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,14 +205,31 @@ func TestPrivateSkillIsolation(t *testing.T) {
 			t.Fatal("private skill leaked in list")
 		}
 	}
+	if _, err := skills.Get(s.ID, 2, false, "all"); err != nil {
+		t.Fatalf("data_scope=all must see private skill: %v", err)
+	}
+	allItems, _, err := skills.List(1, 20, 2, false, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range allItems {
+		if item.ID == s.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("data_scope=all must list private skill")
+	}
 }
 
 func TestInjectSkillsUsesNameAndStripsWrapper(t *testing.T) {
 	_, _, skills, _ := setupAI(t)
 	z := zipBytes(t, map[string]string{
-		"java-api-docs/SKILL.md":             "# nested-skill",
-		"java-api-docs/references/notes.md":  "refs",
-		"__MACOSX/java-api-docs/._SKILL.md":  "junk",
+		"java-api-docs/SKILL.md":            "# nested-skill",
+		"java-api-docs/references/notes.md": "refs",
+		"__MACOSX/java-api-docs/._SKILL.md": "junk",
 	})
 	s, err := skills.Create(service.SkillUploadInput{
 		Name: "java-api-docs", Visibility: model.SkillPublic, Filename: "java-api-docs.zip",

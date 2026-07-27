@@ -19,6 +19,7 @@ import (
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
 	_ "bedrock/internal/platform/migration/migrations"
+	rbacservice "bedrock/internal/rbac/service"
 	resourcerepo "bedrock/internal/resource/repository"
 	resourceservice "bedrock/internal/resource/service"
 )
@@ -67,7 +68,7 @@ func TestBuildRunHandler_ArtifactDownload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := runSvc.Enqueue(job.ID, 1, service.EnqueueRunInput{TriggerType: "manual"})
+	run, err := runSvc.Enqueue(job.ID, 1, "all", service.EnqueueRunInput{TriggerType: "manual"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,9 +83,13 @@ func TestBuildRunHandler_ArtifactDownload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := handler.NewBuildRunHandler(runSvc, nil)
+	h := handler.NewBuildRunHandler(runSvc, &rbacservice.PermissionService{})
 	r := gin.New()
-	r.GET("/build-runs/:id/artifact", h.Artifact)
+	r.GET("/build-runs/:id/artifact", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Set("is_super_admin", true)
+		c.Next()
+	}, h.Artifact)
 
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/build-runs/%d/artifact", run.ID), nil)
 	w := httptest.NewRecorder()

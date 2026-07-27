@@ -878,12 +878,21 @@ func (h *ProjectHandler) GenerateDocs(c *gin.Context) {
 }
 
 func (h *ProjectHandler) actor(c *gin.Context) (projectservice.AccessContext, bool) {
-	permissions, err := h.perm.ResolvePermissions(authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c))
+	userID := authmiddleware.GetUserID(c)
+	isSuper := authmiddleware.IsSuperAdmin(c)
+	permissions, err := h.perm.ResolvePermissions(userID, isSuper)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "权限校验失败")
 		return projectservice.AccessContext{}, false
 	}
-	return projectservice.NewAccessContext(authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c), permissions), true
+	scope, err := h.perm.ResolveDataScope(userID, isSuper)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "权限校验失败")
+		return projectservice.AccessContext{}, false
+	}
+	actor := projectservice.NewAccessContext(userID, isSuper, permissions)
+	actor.DataScope = scope
+	return actor, true
 }
 
 func (h *ProjectHandler) requirementActor(c *gin.Context, globalPermission string, write bool) (uint, uint, projectservice.AccessContext, bool) {

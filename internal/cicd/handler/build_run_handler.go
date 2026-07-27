@@ -34,7 +34,21 @@ func (h *BuildRunHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handler
 	g.POST("/:id/redeploy", rbacmw.RequirePermission(h.perm, "cicd_build_jobs:execute"), h.Redeploy)
 }
 
+func (h *BuildRunHandler) dataScope(c *gin.Context) (uint, string, bool) {
+	userID := authmiddleware.GetUserID(c)
+	scope, err := h.perm.ResolveDataScope(userID, authmiddleware.IsSuperAdmin(c))
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "权限校验失败")
+		return 0, "", false
+	}
+	return userID, scope, true
+}
+
 func (h *BuildRunHandler) List(c *gin.Context) {
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
 	q := pkg.ParseListQuery(c)
 	var jobID *uint
 	if v := c.Query("build_job_id"); v != "" {
@@ -43,7 +57,7 @@ func (h *BuildRunHandler) List(c *gin.Context) {
 			jobID = &u
 		}
 	}
-	items, total, err := h.svc.List(q, jobID, c.Query("status"))
+	items, total, err := h.svc.List(q, jobID, c.Query("status"), userID, scope)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return
@@ -57,7 +71,11 @@ func (h *BuildRunHandler) Get(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
-	item, err := h.svc.Get(id)
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.Get(id, userID, scope)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -71,7 +89,11 @@ func (h *BuildRunHandler) Cancel(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
-	item, err := h.svc.Cancel(id)
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.Cancel(id, userID, scope)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -85,7 +107,11 @@ func (h *BuildRunHandler) Retry(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
-	item, err := h.svc.Retry(id, authmiddleware.GetUserID(c))
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.Retry(id, userID, scope)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -99,9 +125,13 @@ func (h *BuildRunHandler) Redeploy(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
 	var req service.RedeployInput
 	_ = c.ShouldBindJSON(&req)
-	item, err := h.svc.Redeploy(id, req)
+	item, err := h.svc.Redeploy(id, userID, scope, req)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -115,7 +145,11 @@ func (h *BuildRunHandler) Artifact(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
-	path, filename, err := h.svc.ArtifactPath(id)
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
+	path, filename, err := h.svc.ArtifactPath(id, userID, scope)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -129,7 +163,11 @@ func (h *BuildRunHandler) Log(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
-	path, err := h.svc.LogPath(id)
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
+	path, err := h.svc.LogPath(id, userID, scope)
 	if err != nil {
 		writeServiceError(c, err)
 		return

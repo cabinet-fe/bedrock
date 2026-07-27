@@ -55,14 +55,23 @@ func (h *WSHandler) HandleBuildRunLogs(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
+	scope, err := h.perm.ResolveDataScope(claims.UserID, claims.IsSuperAdmin)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "permission check failed"})
+		return
+	}
 
 	runID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	run, err := h.runs.Get(uint(runID))
+	run, err := h.runs.Get(uint(runID), claims.UserID, scope)
 	if err != nil {
+		if cicdservice.IsForbidden(err) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}

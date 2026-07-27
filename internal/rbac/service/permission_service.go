@@ -40,6 +40,24 @@ func (s *PermissionService) ResolvePermissions(userID uint, isSuperAdmin bool) (
 	return s.filterSuperAdminOnly(uniqSorted(codes))
 }
 
+// ResolveDataScope returns the widest data_scope among the user's roles.
+// Super-admin is always all; otherwise any role with all wins, else self.
+func (s *PermissionService) ResolveDataScope(userID uint, isSuperAdmin bool) (string, error) {
+	if isSuperAdmin {
+		return model.DataScopeAll, nil
+	}
+	scopes, err := s.roles.ListDataScopesByUserID(userID)
+	if err != nil {
+		return "", err
+	}
+	for _, scope := range scopes {
+		if scope == model.DataScopeAll {
+			return model.DataScopeAll, nil
+		}
+	}
+	return model.DataScopeSelf, nil
+}
+
 // CheckAccess returns nil if the user may perform required permission.
 // Resources marked super_admin_only always require is_super_admin.
 func (s *PermissionService) CheckAccess(userID uint, isSuperAdmin bool, required string) error {

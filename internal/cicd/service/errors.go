@@ -33,3 +33,19 @@ func IsNotFound(err error) bool {
 	_, ok := errors.AsType[*NotFoundError](err)
 	return ok
 }
+
+// ForbiddenError maps to HTTP 403.
+type ForbiddenError struct {
+	Message string
+}
+
+func (e *ForbiddenError) Error() string { return e.Message }
+
+func NewForbidden(msg string) error {
+	return &ForbiddenError{Message: msg}
+}
+
+func IsForbidden(err error) bool {
+	_, ok := errors.AsType[*ForbiddenError](err)
+	return ok
+}

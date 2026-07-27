@@ -63,6 +63,7 @@ export interface Role {
   code: string;
   description: string;
   type?: RoleType;
+  data_scope?: "self" | "all";
   permissions?: RolePermission[];
 }
 
@@ -250,6 +251,7 @@ export interface BuildJob {
   artifact_format: string;
   agent_trigger_event: string;
   agent_ids?: number[];
+  is_public: boolean;
   deploy_targets?: DeployTarget[];
   created_by: number;
   created_at: string;
@@ -442,6 +444,7 @@ export interface ProductProject {
   owner_id: number;
   repository_id?: number | null;
   tags: string;
+  is_public: boolean;
   created_by: number;
   created_at: string;
   updated_at: string;

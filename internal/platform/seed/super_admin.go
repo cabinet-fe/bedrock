@@ -79,6 +79,7 @@ func ensureBuiltinSuperAdminRole(db *gorm.DB) error {
 			Code:        model.RoleCodeSuperAdmin,
 			Description: "内置超级管理员角色，与 is_super_admin 用户 1:1 同步",
 			Type:        model.RoleTypeBuiltin,
+			DataScope:   model.DataScopeAll,
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}

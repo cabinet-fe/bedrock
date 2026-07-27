@@ -20,8 +20,8 @@
 | D1 | 交付切片 | 分阶段完成全量 2.0 GA：P0→P1→P2→P3→P4→P5（见 ROADMAP） |
 | D2 | 用户角色 | 多角色；权限取**并集**；**不支持**显式 deny |
 | D3 | 1.x 升级 | **仅全新安装**；不提供 1.x 数据迁移 |
-| D4 | 对象 ACL | **仅产品项目**使用成员 ACL；CI/CD、AI、凭证等只依赖全局 RBAC |
-| D5 | 全局项目权限 | 显式 `project_projects:view_all` / `manage_all`；普通 `:update` 不隐含全局越权 |
+| D4 | 对象 ACL | **仅产品项目**使用成员 ACL；CI/CD 另受角色 `data_scope` 约束；运维/凭证/AI 等仍为全局 RBAC |
+| D5 | 全局项目权限 | 显式 `project_projects:view_all` / `manage_all`；普通 `:update` 不隐含全局越权；角色 `data_scope=all` 与 `view_all` 并存（只提升读） |
 | D6 | AI 文档发布 | 同节点双态草稿；人工确认发布；`expected_version` 乐观锁 |
 | D7 | AI CLI | Claude Code / OpenCode / Reasonix / Codex **并行**交付，均为 GA 条件 |
 | D8 | 构建事件触发 Agent | 默认 `artifact_ready`；BuildJob 可覆盖为 `distribution_finished` |
@@ -173,7 +173,7 @@ RbacResource
 - 图标：原始体积 ≤ 32KB；超限 400。
 - `super_admin_only`：服务端拒绝写入角色权限；生效时非超管一律拒绝（不再硬编码 `ops` 前缀）。
 
-### 4.4 项目 ACL（唯一对象级 ACL）
+### 4.4 项目 ACL 与角色数据权限
 
 | 项目角色 | 能力 |
 | --- | --- |
@@ -182,21 +182,29 @@ RbacResource
 | Member | 按细则创建/编辑需求与文档、评论 |
 | Readonly | 只读 |
 
-鉴权公式：
+角色级字段 `data_scope`：`self` | `all`。多角色取**最宽**（任一为 `all` 或超管 → 有效范围为 `all`）。新建角色默认 `self`；已有角色 migration 置 `all`（避免 CI/CD 行为突变）。
+
+项目鉴权公式：
 
 ```text
 允许 = 全局功能权限(full_code)
      AND (
            超管
+        OR 有效 data_scope = all（仅读侧，等同 view_all；不授予写）
         OR 持有 project_projects:view_all/manage_all（按动作）
         OR 是项目成员且项目角色允许该动作
+        OR（读侧）资源标记公开：项目/BuildJob 的 is_public，或 Skill visibility=public
          )
 ```
 
-- 无 `view_all`：列表仅返回自己加入的项目。
+- `data_scope=self` 且无 `view_all`：列表返回自己加入的项目，以及 `is_public` 项目；创建人创建时已入 `project_members`。
+- `data_scope=all`：可读全部项目，**不**授予写（写仍靠成员角色或 `manage_all`）；与 `view_all` 并存、不替换。
 - `manage_all`：可管理全部项目成员与内容，**无需**加入项目。
 - Owner 转让：仅当前 Owner 或 `manage_all`。
-- **唯一对象级 ACL**：仅产品项目（`ProductProject` / 成员）使用对象级成员 ACL；CI/CD、运维、凭证、AI 等域仍为全局 RBAC only。
+- **公开只读**：`ProductProject.is_public` / `BuildJob.is_public` / Skill `visibility=public` 仅放宽读（列表/详情）；写、执行、成员管理不因公开放宽。
+- **对象级成员 ACL**：仅产品项目（`ProductProject` / 成员）。
+- **CI/CD**：无成员表；`data_scope=self` 时可见 `created_by=自己` 或 `is_public` 的 BuildJob；BuildRun 跟随 Job；写/执行仍仅本人或 `data_scope=all`。
+- **AI Skill**：列表/详情遵循 `data_scope=all OR visibility=public OR created_by=自己`；改删仍仅创建者/超管。运维、凭证等域仍为全局 RBAC only。
 
 ### 4.5 凭证
 

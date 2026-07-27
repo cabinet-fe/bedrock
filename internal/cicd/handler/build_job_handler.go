@@ -36,7 +36,21 @@ func (h *BuildJobHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handler
 	g.POST("/:id/runs", rbacmw.RequirePermission(h.perm, "cicd_build_jobs:execute"), h.EnqueueRun)
 }
 
+func (h *BuildJobHandler) dataScope(c *gin.Context) (uint, string, bool) {
+	userID := authmiddleware.GetUserID(c)
+	scope, err := h.perm.ResolveDataScope(userID, authmiddleware.IsSuperAdmin(c))
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "权限校验失败")
+		return 0, "", false
+	}
+	return userID, scope, true
+}
+
 func (h *BuildJobHandler) List(c *gin.Context) {
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
 	q := pkg.ParseListQuery(c)
 	var repoID *uint
 	if v := c.Query("repository_id"); v != "" {
@@ -45,7 +59,7 @@ func (h *BuildJobHandler) List(c *gin.Context) {
 			repoID = &u
 		}
 	}
-	items, total, err := h.svc.List(q, repoID, c.Query("keyword"))
+	items, total, err := h.svc.List(q, repoID, c.Query("keyword"), userID, scope)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return
@@ -59,7 +73,11 @@ func (h *BuildJobHandler) Get(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
-	item, err := h.svc.Get(id)
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.Get(id, userID, scope)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -87,12 +105,16 @@ func (h *BuildJobHandler) Update(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
 	var req service.UpdateBuildJobInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-	item, err := h.svc.Update(id, req)
+	item, err := h.svc.Update(id, userID, scope, req)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -106,7 +128,11 @@ func (h *BuildJobHandler) Delete(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
-	if err := h.svc.Delete(id); err != nil {
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
+	if err := h.svc.Delete(id, userID, scope); err != nil {
 		writeServiceError(c, err)
 		return
 	}
@@ -119,9 +145,13 @@ func (h *BuildJobHandler) EnqueueRun(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
 	var req service.EnqueueRunInput
 	_ = c.ShouldBindJSON(&req)
-	run, err := h.runs.Enqueue(id, authmiddleware.GetUserID(c), req)
+	run, err := h.runs.Enqueue(id, userID, scope, req)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -135,7 +165,11 @@ func (h *BuildJobHandler) GetWebhookSecret(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
-	item, err := h.svc.GetWithSecret(id)
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.GetWithSecret(id, userID, scope)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -152,7 +186,11 @@ func (h *BuildJobHandler) RotateWebhookSecret(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 ID")
 		return
 	}
-	item, err := h.svc.RotateWebhookSecret(id)
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.RotateWebhookSecret(id, userID, scope)
 	if err != nil {
 		writeServiceError(c, err)
 		return

@@ -13,6 +13,8 @@ func writeServiceError(c *gin.Context, err error) {
 	switch {
 	case service.IsConflict(err):
 		pkg.Error(c, http.StatusConflict, err.Error())
+	case service.IsForbidden(err):
+		pkg.Error(c, http.StatusForbidden, err.Error())
 	case service.IsNotFound(err):
 		pkg.Error(c, http.StatusNotFound, err.Error())
 	default:

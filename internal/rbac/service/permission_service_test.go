@@ -72,11 +72,11 @@ func TestPermissionUnion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r1, err := roles.Create("A", "role_a", "", []string{"system_users:view", "resource_repositories:view"})
+	r1, err := roles.Create("A", "role_a", "", "", []string{"system_users:view", "resource_repositories:view"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := roles.Create("B", "role_b", "", []string{"system_roles:view", "resource_repositories:create"})
+	r2, err := roles.Create("B", "role_b", "", "", []string{"system_roles:view", "resource_repositories:create"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +95,45 @@ func TestPermissionUnion(t *testing.T) {
 		if !rbac.HasPermission(set, want) {
 			t.Fatalf("missing %s in %v", want, codes)
 		}
+	}
+}
+
+func TestResolveDataScopeWidestWins(t *testing.T) {
+	perm, roles, _, users, _ := setupRBAC(t)
+
+	hash, _ := pkg.HashPassword("pass")
+	u := &authmodel.User{Username: "scope_user", PasswordHash: hash, IsActive: true}
+	if err := users.Create(u); err != nil {
+		t.Fatal(err)
+	}
+
+	selfRole, err := roles.Create("SelfOnly", "self_only", "", model.DataScopeSelf, []string{"system_users:view"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := roles.SetUserRoles(u.ID, []uint{selfRole.ID}); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := perm.ResolveDataScope(u.ID, false)
+	if err != nil || scope != model.DataScopeSelf {
+		t.Fatalf("expected self, got %q err=%v", scope, err)
+	}
+
+	allRole, err := roles.Create("AllScope", "all_scope", "", model.DataScopeAll, []string{"system_roles:view"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := roles.SetUserRoles(u.ID, []uint{selfRole.ID, allRole.ID}); err != nil {
+		t.Fatal(err)
+	}
+	scope, err = perm.ResolveDataScope(u.ID, false)
+	if err != nil || scope != model.DataScopeAll {
+		t.Fatalf("expected all from union, got %q err=%v", scope, err)
+	}
+
+	scope, err = perm.ResolveDataScope(u.ID, true)
+	if err != nil || scope != model.DataScopeAll {
+		t.Fatalf("super-admin must be all, got %q err=%v", scope, err)
 	}
 }
 
@@ -128,7 +167,7 @@ func TestProjectScopeActionsAreSeededAndResolvable(t *testing.T) {
 	if err := users.Create(user); err != nil {
 		t.Fatal(err)
 	}
-	role, err := roles.Create("项目范围管理员", "project_scope_admin", "", []string{
+	role, err := roles.Create("项目范围管理员", "project_scope_admin", "", "", []string{
 		"project_projects:view",
 		"project_projects:view_all",
 		"project_projects:update",
@@ -165,13 +204,13 @@ func TestSuperAdminOnlyGate(t *testing.T) {
 	}
 
 	// Binding super_admin_only features must be rejected.
-	if _, err := roles.Create("OpsMistaken", "ops_mistaken", "", []string{
+	if _, err := roles.Create("OpsMistaken", "ops_mistaken", "", "", []string{
 		"ops_processes:view", "system_users:view",
 	}); err == nil {
 		t.Fatal("expected reject binding ops_processes:view")
 	}
 
-	r, err := roles.Create("OpsMistaken", "ops_mistaken", "", []string{"system_users:view"})
+	r, err := roles.Create("OpsMistaken", "ops_mistaken", "", "", []string{"system_users:view"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +254,7 @@ func TestMenuTrimTwoLevelGroups(t *testing.T) {
 	if err := users.Create(u); err != nil {
 		t.Fatal(err)
 	}
-	r, err := roles.Create("Viewer", "viewer", "", []string{"system_users:view"})
+	r, err := roles.Create("Viewer", "viewer", "", "", []string{"system_users:view"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +273,7 @@ func TestMenuTrimTwoLevelGroups(t *testing.T) {
 		t.Fatalf("expected 用户 leaf, got %+v", menus[0].Children)
 	}
 
-	r2, err := roles.Create("NoView", "noview", "", []string{"system_users:create"})
+	r2, err := roles.Create("NoView", "noview", "", "", []string{"system_users:create"})
 	if err != nil {
 		t.Fatal(err)
 	}

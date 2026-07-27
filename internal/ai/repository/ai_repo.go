@@ -224,9 +224,9 @@ func (r *AIRepository) FindSkill(id uint) (*model.SkillPackage, error) {
 	return &skill, nil
 }
 
-func (r *AIRepository) ListSkills(page, pageSize int, userID uint, isSuperAdmin bool) ([]model.SkillPackage, int64, error) {
+func (r *AIRepository) ListSkills(page, pageSize int, userID uint, isSuperAdmin bool, dataScopeAll bool) ([]model.SkillPackage, int64, error) {
 	q := r.db.Model(&model.SkillPackage{})
-	if !isSuperAdmin {
+	if !isSuperAdmin && !dataScopeAll {
 		q = q.Where("visibility = ? OR created_by = ?", model.SkillPublic, userID)
 	}
 	var total int64

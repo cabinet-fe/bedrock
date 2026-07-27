@@ -166,6 +166,7 @@
 | `name` | `string` |  |  |
 | `description` | `string` |  |  |
 | `enabled` | `boolean` |  |  |
+| `is_public` | `boolean` |  |  |
 | `branch` | `string` |  |  |
 | `shallow_clone` | `boolean` |  |  |
 | `build_script_type` | `string` |  |  |
@@ -188,6 +189,7 @@
 | `artifact_format` | `string` |  |  |
 | `agent_trigger_event` | `'artifact_ready' \| 'distribution_finished' \| 'none'` |  | Default artifact_ready; override distribution_finished or none |
 | `agent_ids` | `integer[]` |  | Agents executed on the build-event trigger |
+| `is_public` | `boolean` |  | 公开只读；默认 false |
 | `deploy_targets` | `DeployTarget[]` |  |  |
 | `created_by` | `integer` |  |  |
 | `created_at` | `string(date-time)` |  |  |
@@ -201,6 +203,7 @@
 | `name` | `string` | 是 |  |
 | `description` | `string` |  |  |
 | `enabled` | `boolean` |  |  |
+| `is_public` | `boolean` |  |  |
 | `branch` | `string` |  |  |
 | `shallow_clone` | `boolean` |  |  |
 | `build_script_type` | `string` |  |  |

@@ -133,6 +133,7 @@ const form = reactive({
   artifact_format: "zip",
   agent_trigger_event: "artifact_ready",
   agent_ids: [] as number[],
+  is_public: false,
   deploy_targets: [] as DeployTarget[],
 });
 
@@ -281,6 +282,7 @@ function triggerParts(job: BuildJob): { label: string; type: TagType }[] {
 
 function openCreate() {
   editing.value = null;
+  form.is_public = false;
   dialogOpen.value = true;
 }
 
@@ -499,6 +501,11 @@ async function rotateWebhookSecret() {
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
         <u-input label="描述" field="description" />
         <u-switch label="启用" field="enabled" />
+        <u-switch
+          label="公开"
+          field="is_public"
+          tips="开启后，仅自己数据权限的用户也可查看该任务与执行记录；不授予改/删/触发"
+        />
       </template>
 
       <template #group:build>
@@ -511,7 +518,11 @@ async function rotateWebhookSecret() {
           :disabled="!form.repository_id"
           :placeholder="branchPlaceholder"
         />
-        <u-switch label="浅克隆" field="shallow_clone" />
+        <u-switch
+          label="浅克隆"
+          field="shallow_clone"
+          tips="只拉取最近提交，加快克隆；需要完整历史时关闭"
+        />
         <u-select label="脚本类型" field="build_script_type" :options="BUILD_SCRIPT_TYPE_OPTIONS" />
         <u-code-editor
           label="构建脚本"
@@ -523,7 +534,12 @@ async function rotateWebhookSecret() {
         />
         <u-input label="工作目录" field="work_dir" placeholder="相对仓库根" />
         <u-input label="输出目录" field="output_dir" />
-        <u-input label="环境变量名" field="env_var_names" placeholder="逗号分隔，仅名称" />
+        <u-input
+          label="环境变量名"
+          field="env_var_names"
+          placeholder="逗号分隔，仅名称"
+          tips="仅填写变量名；运行时从服务器环境注入，密文不入库"
+        />
       </template>
 
       <template #group:trigger>
@@ -546,14 +562,31 @@ async function rotateWebhookSecret() {
         </template>
         <template v-if="form.trigger_webhook">
           <u-select label="Webhook 类型" field="webhook_type" :options="WEBHOOK_TYPE_OPTIONS" />
-          <u-input label="分支 JSONPath" field="webhook_ref_path" placeholder="generic 平台可选" />
-          <u-input label="提交 JSONPath" field="webhook_commit_path" />
-          <u-input label="消息 JSONPath" field="webhook_message_path" />
+          <u-input
+            label="分支 JSONPath"
+            field="webhook_ref_path"
+            placeholder="generic 平台可选"
+            tips="generic Webhook 从 JSON 取分支的路径，如 $.ref"
+          />
+          <u-input
+            label="提交 JSONPath"
+            field="webhook_commit_path"
+            tips="generic Webhook 取 commit hash 的 JSONPath"
+          />
+          <u-input
+            label="消息 JSONPath"
+            field="webhook_message_path"
+            tips="generic Webhook 取提交说明的 JSONPath"
+          />
         </template>
       </template>
 
       <template #group:artifact>
-        <u-number-input label="制品保留" field="max_artifacts" />
+        <u-number-input
+          label="制品保留"
+          field="max_artifacts"
+          tips="每个任务最多保留的历史制品数，超出后自动清理最旧的"
+        />
         <u-select label="制品格式" field="artifact_format" :options="ARTIFACT_OPTIONS" />
         <u-select
           label="Agent 事件"
@@ -567,6 +600,7 @@ async function rotateWebhookSecret() {
           :options="agentOptions"
           placeholder="选择事件触发时执行的 Agent"
           filterable
+          tips="构建事件触发时执行的 AI Agent；可多选，空则不触发"
         />
       </template>
 

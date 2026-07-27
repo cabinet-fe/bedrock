@@ -382,6 +382,7 @@ const remove = bind(async (row: RbacResource) => {
           :disabled="!!editing"
           :rules="{ required: '必填' }"
           placeholder="如 system_users（不含 .）"
+          tips="菜单/功能短码；菜单 full_code 即 code，功能 full_code 为 {菜单}:{功能}"
         />
         <u-select label="类型" field="type" :options="TYPE_OPTIONS" :disabled="!!editing" />
         <u-select
@@ -399,6 +400,7 @@ const remove = bind(async (row: RbacResource) => {
           :options="parentMenuOptions"
           :rules="{ required: '必填' }"
           placeholder="选择菜单"
+          tips="功能挂在菜单下；权限码为 菜单code:功能code"
         />
       </template>
       <template #group:display>
@@ -432,8 +434,18 @@ const remove = bind(async (row: RbacResource) => {
         <u-number-input label="排序" field="sort_key" />
       </template>
       <template #group:flags>
-        <u-switch v-if="isMenuType" label="隐藏" field="hidden" />
-        <u-switch label="仅超管" field="super_admin_only" :disabled="!canEditSuperOnly" />
+        <u-switch
+          v-if="isMenuType"
+          label="隐藏"
+          field="hidden"
+          tips="隐藏后不出现在侧栏，但仍可按权限码鉴权"
+        />
+        <u-switch
+          label="仅超管"
+          field="super_admin_only"
+          :disabled="!canEditSuperOnly"
+          tips="开启后非超管不可访问；不可写入普通角色权限"
+        />
         <u-switch label="启用" field="enabled" />
       </template>
     </FormDialog>

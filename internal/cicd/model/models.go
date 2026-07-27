@@ -51,20 +51,20 @@ func (l *UintList) Scan(src any) error {
 
 // BuildJob belongs to a Repository (1:N).
 type BuildJob struct {
-	ID                uint      `json:"id" gorm:"primaryKey"`
-	RepositoryID      uint      `json:"repository_id" gorm:"index;not null"`
-	Name              string    `json:"name" gorm:"size:100;not null"`
-	Description       string    `json:"description" gorm:"size:500"`
-	Enabled           bool      `json:"enabled" gorm:"not null;default:true"`
-	Branch            string    `json:"branch" gorm:"size:200;default:main"`
-	ShallowClone      bool      `json:"shallow_clone" gorm:"not null;default:true"`
-	BuildScriptType   string    `json:"build_script_type" gorm:"size:20;default:bash"`
-	BuildScript       string    `json:"build_script" gorm:"type:text"`
-	WorkDir           string    `json:"work_dir" gorm:"size:300"`
-	OutputDir         string    `json:"output_dir" gorm:"size:300"`
-	CachePaths        string    `json:"cache_paths" gorm:"type:text"`
-	EnvVarNamesJSON   string    `json:"-" gorm:"type:text"`
-	EnvVarNames       []string  `json:"env_var_names" gorm:"-"`
+	ID                 uint      `json:"id" gorm:"primaryKey"`
+	RepositoryID       uint      `json:"repository_id" gorm:"index;not null"`
+	Name               string    `json:"name" gorm:"size:100;not null"`
+	Description        string    `json:"description" gorm:"size:500"`
+	Enabled            bool      `json:"enabled" gorm:"not null;default:true"`
+	Branch             string    `json:"branch" gorm:"size:200;default:main"`
+	ShallowClone       bool      `json:"shallow_clone" gorm:"not null;default:true"`
+	BuildScriptType    string    `json:"build_script_type" gorm:"size:20;default:bash"`
+	BuildScript        string    `json:"build_script" gorm:"type:text"`
+	WorkDir            string    `json:"work_dir" gorm:"size:300"`
+	OutputDir          string    `json:"output_dir" gorm:"size:300"`
+	CachePaths         string    `json:"cache_paths" gorm:"type:text"`
+	EnvVarNamesJSON    string    `json:"-" gorm:"type:text"`
+	EnvVarNames        []string  `json:"env_var_names" gorm:"-"`
 	TriggerManual      bool      `json:"trigger_manual" gorm:"not null;default:true"`
 	TriggerWebhook     bool      `json:"trigger_webhook" gorm:"not null;default:false"`
 	TriggerCron        bool      `json:"trigger_cron" gorm:"not null;default:false"`
@@ -73,15 +73,16 @@ type BuildJob struct {
 	WebhookRefPath     string    `json:"webhook_ref_path" gorm:"size:300"`
 	WebhookCommitPath  string    `json:"webhook_commit_path" gorm:"size:300"`
 	WebhookMessagePath string    `json:"webhook_message_path" gorm:"size:300"`
-	CronExpression    string    `json:"cron_expression" gorm:"size:100"`
-	CronTimezone      string    `json:"cron_timezone" gorm:"size:100;default:UTC"`
-	MaxArtifacts      int       `json:"max_artifacts" gorm:"default:5"`
-	ArtifactFormat    string    `json:"artifact_format" gorm:"size:20;default:gzip"`
-	AgentTriggerEvent string    `json:"agent_trigger_event" gorm:"size:40;default:artifact_ready"`
-	AgentIDs          UintList  `json:"agent_ids" gorm:"type:text"`
-	CreatedBy         uint      `json:"created_by" gorm:"index"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	CronExpression     string    `json:"cron_expression" gorm:"size:100"`
+	CronTimezone       string    `json:"cron_timezone" gorm:"size:100;default:UTC"`
+	MaxArtifacts       int       `json:"max_artifacts" gorm:"default:5"`
+	ArtifactFormat     string    `json:"artifact_format" gorm:"size:20;default:gzip"`
+	AgentTriggerEvent  string    `json:"agent_trigger_event" gorm:"size:40;default:artifact_ready"`
+	AgentIDs           UintList  `json:"agent_ids" gorm:"type:text"`
+	IsPublic           bool      `json:"is_public" gorm:"not null;default:false;index"`
+	CreatedBy          uint      `json:"created_by" gorm:"index"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 
 	DeployTargets []DeployTarget `json:"deploy_targets,omitempty" gorm:"foreignKey:BuildJobID"`
 }

@@ -280,7 +280,7 @@ func TestBuildJob_and_BuildRun_enqueue(t *testing.T) {
 		t.Fatalf("env names=%v", job.EnvVarNames)
 	}
 
-	run, err := runSvc.Enqueue(job.ID, 1, service.EnqueueRunInput{TriggerType: "manual"})
+	run, err := runSvc.Enqueue(job.ID, 1, "all", service.EnqueueRunInput{TriggerType: "manual"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestBuildJob_and_BuildRun_enqueue(t *testing.T) {
 	if run.SnapshotJSON == "" {
 		t.Fatal("expected snapshot")
 	}
-	got, err := runSvc.Get(run.ID)
+	got, err := runSvc.Get(run.ID, 1, "all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,11 +320,11 @@ func TestBuildJob_TwoJobsSameRepo_EachEnqueue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runA, err := runSvc.Enqueue(jobA.ID, 1, service.EnqueueRunInput{TriggerType: "manual"})
+	runA, err := runSvc.Enqueue(jobA.ID, 1, "all", service.EnqueueRunInput{TriggerType: "manual"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	runB, err := runSvc.Enqueue(jobB.ID, 1, service.EnqueueRunInput{TriggerType: "manual"})
+	runB, err := runSvc.Enqueue(jobB.ID, 1, "all", service.EnqueueRunInput{TriggerType: "manual"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestBuildRun_RetryAfterInterrupted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prev, err := runSvc.Enqueue(job.ID, 1, service.EnqueueRunInput{TriggerType: "manual", Branch: "main"})
+	prev, err := runSvc.Enqueue(job.ID, 1, "all", service.EnqueueRunInput{TriggerType: "manual", Branch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +364,7 @@ func TestBuildRun_RetryAfterInterrupted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	next, err := runSvc.Retry(prev.ID, 1)
+	next, err := runSvc.Retry(prev.ID, 1, "all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +396,7 @@ func TestBuildRun_ArtifactPathDownloadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := runSvc.Enqueue(job.ID, 1, service.EnqueueRunInput{TriggerType: "manual"})
+	run, err := runSvc.Enqueue(job.ID, 1, "all", service.EnqueueRunInput{TriggerType: "manual"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +414,7 @@ func TestBuildRun_ArtifactPathDownloadable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path, filename, err := runSvc.ArtifactPath(run.ID)
+	path, filename, err := runSvc.ArtifactPath(run.ID, 1, "all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,5 +424,106 @@ func TestBuildRun_ArtifactPathDownloadable(t *testing.T) {
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != "fake-tar-gz-bytes" {
 		t.Fatalf("download content: %s %v", got, err)
+	}
+}
+
+func TestBuildJob_DataScopeFiltersListAndMutate(t *testing.T) {
+	_, repoSvc, _, jobSvc, runSvc, _ := setupCICD(t)
+	repo, err := repoSvc.Create(1, resourceservice.CreateRepositoryInput{
+		Name: "scope-repo", RepoURL: "https://example.com/scope.git",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, err := jobSvc.Create(1, service.CreateBuildJobInput{
+		RepositoryID: repo.ID, Name: "mine", BuildScript: "echo 1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := jobSvc.Create(2, service.CreateBuildJobInput{
+		RepositoryID: repo.ID, Name: "theirs", BuildScript: "echo 2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", 1, "self")
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != mine.ID {
+		t.Fatalf("self list = %#v total=%d err=%v", items, total, err)
+	}
+	allItems, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", 1, "all")
+	if err != nil || total != 2 || len(allItems) != 2 {
+		t.Fatalf("all list = %#v total=%d err=%v", allItems, total, err)
+	}
+	if _, err := jobSvc.Get(theirs.ID, 1, "self"); !service.IsForbidden(err) {
+		t.Fatalf("self get other = %v, want forbidden", err)
+	}
+	if _, err := jobSvc.Update(theirs.ID, 1, "self", service.UpdateBuildJobInput{}); !service.IsForbidden(err) {
+		t.Fatalf("self update other = %v, want forbidden", err)
+	}
+	if err := jobSvc.Delete(theirs.ID, 1, "self"); !service.IsForbidden(err) {
+		t.Fatalf("self delete other = %v, want forbidden", err)
+	}
+
+	if _, err := runSvc.Enqueue(theirs.ID, 1, "self", service.EnqueueRunInput{TriggerType: "manual"}); !service.IsForbidden(err) {
+		t.Fatalf("self enqueue other = %v, want forbidden", err)
+	}
+	run, err := runSvc.Enqueue(theirs.ID, 2, "all", service.EnqueueRunInput{TriggerType: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, total, err := runSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", 1, "self")
+	if err != nil || total != 0 || len(runs) != 0 {
+		t.Fatalf("self run list must hide other job runs = %#v total=%d err=%v", runs, total, err)
+	}
+	if _, err := runSvc.Get(run.ID, 1, "self"); !service.IsForbidden(err) {
+		t.Fatalf("self get other run = %v, want forbidden", err)
+	}
+	if _, err := runSvc.Get(run.ID, 1, "all"); err != nil {
+		t.Fatalf("all get other run: %v", err)
+	}
+}
+
+func TestBuildJob_PublicReadableBySelfScope(t *testing.T) {
+	_, repoSvc, _, jobSvc, runSvc, _ := setupCICD(t)
+	repo, err := repoSvc.Create(1, resourceservice.CreateRepositoryInput{
+		Name: "pub-repo", RepoURL: "https://example.com/pub.git",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := true
+	job, err := jobSvc.Create(2, service.CreateBuildJobInput{
+		RepositoryID: repo.ID, Name: "public-job", BuildScript: "echo 1", IsPublic: &pub,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", 1, "self")
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != job.ID {
+		t.Fatalf("self list public = %#v total=%d err=%v", items, total, err)
+	}
+	if _, err := jobSvc.Get(job.ID, 1, "self"); err != nil {
+		t.Fatalf("self get public: %v", err)
+	}
+	if _, err := jobSvc.Update(job.ID, 1, "self", service.UpdateBuildJobInput{}); !service.IsForbidden(err) {
+		t.Fatalf("public must not grant write, got %v", err)
+	}
+	if _, err := runSvc.Enqueue(job.ID, 1, "self", service.EnqueueRunInput{TriggerType: "manual"}); !service.IsForbidden(err) {
+		t.Fatalf("public must not grant execute, got %v", err)
+	}
+	run, err := runSvc.Enqueue(job.ID, 2, "all", service.EnqueueRunInput{TriggerType: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runSvc.Cancel(run.ID, 1, "self"); !service.IsForbidden(err) {
+		t.Fatalf("public must not grant cancel, got %v", err)
+	}
+	if _, err := runSvc.Retry(run.ID, 1, "self"); !service.IsForbidden(err) {
+		t.Fatalf("public must not grant retry, got %v", err)
+	}
+	if _, err := runSvc.Redeploy(run.ID, 1, "self", service.RedeployInput{}); !service.IsForbidden(err) {
+		t.Fatalf("public must not grant redeploy, got %v", err)
 	}
 }

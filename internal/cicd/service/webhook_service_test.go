@@ -208,12 +208,12 @@ func createWebhookJob(
 	if err != nil {
 		t.Fatal(err)
 	}
-	revealed, err := jobSvc.GetWithSecret(job.ID)
+	revealed, err := jobSvc.GetWithSecret(job.ID, 1, "all")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if revealed.WebhookSecret == "" {
-		rotated, err := jobSvc.RotateWebhookSecret(job.ID)
+		rotated, err := jobSvc.RotateWebhookSecret(job.ID, 1, "all")
 		if err != nil {
 			t.Fatal(err)
 		}

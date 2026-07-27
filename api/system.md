@@ -57,9 +57,10 @@
 ### POST /roles — 创建角色
 
 权限：`system_roles:create`
-请求：{ name*, code*, description, permissions }
+请求：{ name*, code*, description, data_scope, permissions }
 响应 201：data = Role
 错误：400 / 403
+说明：`data_scope` 为 `self` | `all`，缺省 `self`。
 
 ### GET /roles/{id} — 获取角色
 
@@ -72,9 +73,10 @@
 
 权限：`system_roles:update`
 路径参数：id*: integer
-请求：{ name, description }
+请求：{ name, description, data_scope }
 响应 200：data = Role
 错误：400
+说明：内置角色不可改；`data_scope` 为 `self` | `all`。
 
 ### DELETE /roles/{id} — 删除角色
 
@@ -479,6 +481,7 @@
 | `code` | `string` |  |  |
 | `description` | `string` |  |  |
 | `type` | `'builtin' \| 'custom'` |  | 内置超管为 `builtin` |
+| `data_scope` | `'self' \| 'all'` |  | 数据权限；多角色取最宽（任一 `all` 即 `all`） |
 | `permissions` | `RolePermission[]` |  |  |
 | `created_at` | `string(date-time)` |  |  |
 | `updated_at` | `string(date-time)` |  |  |
@@ -490,6 +493,7 @@
 | `name` | `string` | 是 |  |
 | `code` | `string` | 是 |  |
 | `description` | `string` |  |  |
+| `data_scope` | `'self' \| 'all'` |  | 缺省 `self` |
 | `permissions` | `string[]` |  |  |
 
 ### RolePage

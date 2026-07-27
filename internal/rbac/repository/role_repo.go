@@ -89,6 +89,16 @@ func (r *RoleRepository) ListPermissionsByUserID(userID uint) ([]string, error) 
 	return perms, err
 }
 
+// ListDataScopesByUserID returns data_scope values of roles assigned to the user.
+func (r *RoleRepository) ListDataScopesByUserID(userID uint) ([]string, error) {
+	var scopes []string
+	err := r.db.Model(&model.Role{}).
+		Joins("JOIN user_roles ON user_roles.role_id = roles.id").
+		Where("user_roles.user_id = ?", userID).
+		Pluck("roles.data_scope", &scopes).Error
+	return scopes, err
+}
+
 func (r *RoleRepository) ListRoleIDsByUserID(userID uint) ([]uint, error) {
 	var ids []uint
 	err := r.db.Model(&model.UserRole{}).Where("user_id = ?", userID).Pluck("role_id", &ids).Error

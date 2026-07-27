@@ -13,6 +13,7 @@ import (
 	"bedrock/internal/cicd/repository"
 	"bedrock/internal/engine"
 	"bedrock/internal/pkg"
+	rbacmodel "bedrock/internal/rbac/model"
 )
 
 // BuildRunService provides enqueue/cancel/retry/redeploy and artifact paths.
@@ -41,19 +42,33 @@ type RedeployInput struct {
 	TargetIDs []uint `json:"target_ids"`
 }
 
-func (s *BuildRunService) List(q pkg.ListQuery, buildJobID *uint, status string) ([]model.BuildRun, int64, error) {
-	return s.runs.List(q, buildJobID, status)
+func (s *BuildRunService) List(q pkg.ListQuery, buildJobID *uint, status string, userID uint, dataScope string) ([]model.BuildRun, int64, error) {
+	var jobCreatedBy *uint
+	if dataScope != rbacmodel.DataScopeAll {
+		jobCreatedBy = &userID
+	}
+	return s.runs.List(q, buildJobID, status, jobCreatedBy)
 }
 
-func (s *BuildRunService) Get(id uint) (*model.BuildRun, error) {
+func (s *BuildRunService) Get(id uint, userID uint, dataScope string) (*model.BuildRun, error) {
 	run, err := s.runs.FindByID(id)
 	if err != nil {
 		return nil, NewNotFound("构建执行不存在")
 	}
+	if err := s.requireRunAccess(run, userID, dataScope); err != nil {
+		return nil, err
+	}
 	return run, nil
 }
 
-func (s *BuildRunService) Enqueue(jobID, triggeredBy uint, in EnqueueRunInput) (*model.BuildRun, error) {
+func (s *BuildRunService) Enqueue(jobID, triggeredBy uint, dataScope string, in EnqueueRunInput) (*model.BuildRun, error) {
+	job, err := s.jobs.FindByID(jobID)
+	if err != nil {
+		return nil, NewNotFound("构建任务不存在")
+	}
+	if err := requireJobAccess(job, triggeredBy, dataScope); err != nil {
+		return nil, err
+	}
 	return s.EnqueueInternal(jobID, triggeredBy, engine.EnqueueParams{
 		Branch:        in.Branch,
 		TriggerType:   in.TriggerType,
@@ -120,10 +135,13 @@ func (s *BuildRunService) EnqueueInternal(jobID, triggeredBy uint, in engine.Enq
 	return run, nil
 }
 
-func (s *BuildRunService) Cancel(id uint) (*model.BuildRun, error) {
+func (s *BuildRunService) Cancel(id uint, userID uint, dataScope string) (*model.BuildRun, error) {
 	run, err := s.runs.FindByID(id)
 	if err != nil {
 		return nil, NewNotFound("构建执行不存在")
+	}
+	if err := s.requireRunWrite(run, userID, dataScope); err != nil {
+		return nil, err
 	}
 	switch run.Status {
 	case "queued":
@@ -155,10 +173,13 @@ func (s *BuildRunService) Cancel(id uint) (*model.BuildRun, error) {
 	return s.runs.FindByID(id)
 }
 
-func (s *BuildRunService) Retry(id, triggeredBy uint) (*model.BuildRun, error) {
+func (s *BuildRunService) Retry(id, triggeredBy uint, dataScope string) (*model.BuildRun, error) {
 	prev, err := s.runs.FindByID(id)
 	if err != nil {
 		return nil, NewNotFound("构建执行不存在")
+	}
+	if err := s.requireRunWrite(prev, triggeredBy, dataScope); err != nil {
+		return nil, err
 	}
 	return s.EnqueueInternal(prev.BuildJobID, triggeredBy, engine.EnqueueParams{
 		Branch:        prev.Branch,
@@ -168,10 +189,13 @@ func (s *BuildRunService) Retry(id, triggeredBy uint) (*model.BuildRun, error) {
 	})
 }
 
-func (s *BuildRunService) Redeploy(id uint, in RedeployInput) (*model.BuildRun, error) {
+func (s *BuildRunService) Redeploy(id uint, userID uint, dataScope string, in RedeployInput) (*model.BuildRun, error) {
 	run, err := s.runs.FindByID(id)
 	if err != nil {
 		return nil, NewNotFound("构建执行不存在")
+	}
+	if err := s.requireRunWrite(run, userID, dataScope); err != nil {
+		return nil, err
 	}
 	if run.Status != "success" {
 		return nil, NewConflict("仅成功的构建可重新分发")
@@ -207,10 +231,13 @@ func (s *BuildRunService) Redeploy(id uint, in RedeployInput) (*model.BuildRun, 
 }
 
 // ArtifactPath returns absolute path for download; empty if unavailable.
-func (s *BuildRunService) ArtifactPath(id uint) (path string, filename string, err error) {
+func (s *BuildRunService) ArtifactPath(id uint, userID uint, dataScope string) (path string, filename string, err error) {
 	run, err := s.runs.FindByID(id)
 	if err != nil {
 		return "", "", NewNotFound("构建执行不存在")
+	}
+	if err := s.requireRunAccess(run, userID, dataScope); err != nil {
+		return "", "", err
 	}
 	if run.Status != "success" && run.ArtifactPath == "" {
 		return "", "", NewConflict("制品不可用")
@@ -226,15 +253,40 @@ func (s *BuildRunService) ArtifactPath(id uint) (path string, filename string, e
 }
 
 // LogPath returns the build log file path if present.
-func (s *BuildRunService) LogPath(id uint) (string, error) {
+func (s *BuildRunService) LogPath(id uint, userID uint, dataScope string) (string, error) {
 	run, err := s.runs.FindByID(id)
 	if err != nil {
 		return "", NewNotFound("构建执行不存在")
+	}
+	if err := s.requireRunAccess(run, userID, dataScope); err != nil {
+		return "", err
 	}
 	if strings.TrimSpace(run.LogPath) == "" {
 		return "", NewNotFound("日志不存在")
 	}
 	return run.LogPath, nil
+}
+
+func (s *BuildRunService) requireRunAccess(run *model.BuildRun, userID uint, dataScope string) error {
+	if dataScope == rbacmodel.DataScopeAll {
+		return nil
+	}
+	job, err := s.jobs.FindByID(run.BuildJobID)
+	if err != nil {
+		return NewNotFound("构建任务不存在")
+	}
+	return requireJobRead(job, userID, dataScope)
+}
+
+func (s *BuildRunService) requireRunWrite(run *model.BuildRun, userID uint, dataScope string) error {
+	if dataScope == rbacmodel.DataScopeAll {
+		return nil
+	}
+	job, err := s.jobs.FindByID(run.BuildJobID)
+	if err != nil {
+		return NewNotFound("构建任务不存在")
+	}
+	return requireJobWrite(job, userID, dataScope)
 }
 
 // Ensure Compile-time interface satisfaction.

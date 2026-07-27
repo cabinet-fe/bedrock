@@ -215,15 +215,28 @@ const onTest = bind(async (row: Server) => {
             { label: 'ssh_agent', value: 'ssh_agent' },
             { label: 'agent', value: 'agent' },
           ]"
+          tips="password/key 用下方凭证；ssh_agent 走本机 agent；agent 经远端 Deploy Agent"
         />
-        <u-select label="凭证" field="credential_id" :options="credOptions" clearable />
-        <u-input v-if="form.auth_type === 'agent'" label="Agent URL" field="agent_url" />
+        <u-select
+          label="凭证"
+          field="credential_id"
+          :options="credOptions"
+          clearable
+          tips="绑定已录入的凭证；引用时需具备 credentials:use"
+        />
+        <u-input
+          v-if="form.auth_type === 'agent'"
+          label="Agent URL"
+          field="agent_url"
+          tips="远端 Deploy Agent 的 HTTP 地址"
+        />
         <u-select
           v-if="form.auth_type === 'agent'"
           label="Agent 凭证"
           field="agent_credential_id"
           :options="credOptions"
           clearable
+          tips="访问 Deploy Agent 时使用的凭证"
         />
       </template>
     </FormDialog>

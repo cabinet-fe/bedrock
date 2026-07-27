@@ -30,12 +30,14 @@ const form = reactive({
   slug: "",
   description: "",
   tags: "",
+  is_public: false,
 });
 
 const columns = defineProTableColumns([
   { key: "name", name: "项目", sortable: true },
   { key: "slug", name: "标识" },
   { key: "status", name: "状态", width: 100, align: "center" },
+  { key: "is_public", name: "公开", width: 80, align: "center" },
   { key: "tags", name: "标签" },
   {
     key: "updated_at",
@@ -50,6 +52,7 @@ const columns = defineProTableColumns([
 
 function openCreate() {
   editing.value = null;
+  o(form).extend({ name: "", slug: "", description: "", tags: "", is_public: false });
   dialogOpen.value = true;
 }
 
@@ -154,6 +157,9 @@ async function onOwnerTransferred() {
           {{ (rowData as ProductProject).name }}
         </u-action>
       </template>
+      <template #column:is_public="{ rowData }">
+        {{ (rowData as ProductProject).is_public ? "是" : "否" }}
+      </template>
       <template #column:status="{ rowData }">
         <u-tag
           size="small"
@@ -221,6 +227,11 @@ async function onOwnerTransferred() {
         :rules="{ required: '必填' }"
       />
       <u-input label="标签" field="tags" placeholder="逗号分隔" />
+      <u-switch
+        label="公开"
+        field="is_public"
+        tips="开启后，仅自己数据权限的用户也可读取该项目（含需求/文档）；不授予写权限"
+      />
       <u-textarea label="描述" field="description" :rows="4" />
     </FormDialog>
 

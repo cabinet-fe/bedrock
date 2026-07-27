@@ -44,6 +44,7 @@ type CreateProjectInput struct {
 	Description  string `json:"description"`
 	RepositoryID *uint  `json:"repository_id"`
 	Tags         string `json:"tags"`
+	IsPublic     *bool  `json:"is_public"`
 }
 
 type UpdateProjectInput struct {
@@ -54,6 +55,7 @@ type UpdateProjectInput struct {
 	RepositoryID    *uint   `json:"repository_id"`
 	ClearRepository bool    `json:"clear_repository"`
 	Tags            *string `json:"tags"`
+	IsPublic        *bool   `json:"is_public"`
 }
 
 type ProjectListFilter struct {
@@ -99,6 +101,7 @@ func (s *ProjectService) CreateProject(actor AccessContext, input CreateProjectI
 		Name: name, Slug: slug, Description: strings.TrimSpace(input.Description),
 		Status: projectmodel.ProjectStatusActive, OwnerID: actor.UserID, CreatedBy: actor.UserID,
 		RepositoryID: input.RepositoryID, Tags: strings.TrimSpace(input.Tags),
+		IsPublic: input.IsPublic != nil && *input.IsPublic,
 	}
 	if err := s.repo.CreateProjectWithOwner(project); err != nil {
 		if isUniqueError(err) {
@@ -212,7 +215,7 @@ func (s *ProjectService) ListRequirementStatuses(actor AccessContext) ([]project
 	if !actor.Has("project_requirements:view") {
 		return nil, NewForbidden("缺少全局权限: project_requirements:view")
 	}
-	if !actor.SuperAdmin && !actor.Has("project_projects:view_all") && !actor.Has("project_projects:manage_all") {
+	if !actor.SuperAdmin && !actor.Has("project_projects:view_all") && !actor.Has("project_projects:manage_all") && !actor.HasDataScopeAll() {
 		member, err := s.repo.HasProjectMembership(actor.UserID)
 		if err != nil {
 			return nil, err
@@ -257,6 +260,9 @@ func (s *ProjectService) UpdateProject(actor AccessContext, id uint, input Updat
 	}
 	if input.Tags != nil {
 		project.Tags = strings.TrimSpace(*input.Tags)
+	}
+	if input.IsPublic != nil {
+		project.IsPublic = *input.IsPublic
 	}
 	if input.ClearRepository {
 		project.RepositoryID = nil

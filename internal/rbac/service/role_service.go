@@ -20,7 +20,7 @@ func NewRoleService(roles *repository.RoleRepository, resources *repository.Reso
 	return &RoleService{roles: roles, resources: resources}
 }
 
-func (s *RoleService) Create(name, code, description string, permissions []string) (*model.Role, error) {
+func (s *RoleService) Create(name, code, description, dataScope string, permissions []string) (*model.Role, error) {
 	name = strings.TrimSpace(name)
 	code = strings.TrimSpace(code)
 	if name == "" || code == "" {
@@ -29,10 +29,17 @@ func (s *RoleService) Create(name, code, description string, permissions []strin
 	if code == model.RoleCodeSuperAdmin {
 		return nil, errors.New("不能创建与内置超级管理员同编码的角色")
 	}
+	scope, err := normalizeDataScope(dataScope, model.DataScopeSelf)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.validateBindablePermissions(permissions); err != nil {
 		return nil, err
 	}
-	role := &model.Role{Name: name, Code: code, Description: description, Type: model.RoleTypeCustom}
+	role := &model.Role{
+		Name: name, Code: code, Description: description,
+		Type: model.RoleTypeCustom, DataScope: scope,
+	}
 	if err := s.roles.Create(role); err != nil {
 		return nil, fmt.Errorf("创建角色失败: %w", err)
 	}
@@ -50,7 +57,7 @@ func (s *RoleService) List(q pkg.ListQuery) ([]model.Role, int64, error) {
 	return s.roles.List(q)
 }
 
-func (s *RoleService) Update(id uint, name, description string) (*model.Role, error) {
+func (s *RoleService) Update(id uint, name, description, dataScope string) (*model.Role, error) {
 	role, err := s.roles.FindByID(id)
 	if err != nil {
 		return nil, err
@@ -62,6 +69,13 @@ func (s *RoleService) Update(id uint, name, description string) (*model.Role, er
 		role.Name = name
 	}
 	role.Description = description
+	if strings.TrimSpace(dataScope) != "" {
+		scope, err := normalizeDataScope(dataScope, role.DataScope)
+		if err != nil {
+			return nil, err
+		}
+		role.DataScope = scope
+	}
 	if err := s.roles.Update(role); err != nil {
 		return nil, err
 	}
@@ -160,4 +174,20 @@ func (s *RoleService) validateBindablePermissions(permissions []string) error {
 		}
 	}
 	return nil
+}
+
+func normalizeDataScope(raw, fallback string) (string, error) {
+	scope := strings.TrimSpace(raw)
+	if scope == "" {
+		if fallback == "" {
+			return model.DataScopeSelf, nil
+		}
+		return fallback, nil
+	}
+	switch scope {
+	case model.DataScopeSelf, model.DataScopeAll:
+		return scope, nil
+	default:
+		return "", errors.New("data_scope 必须为 self 或 all")
+	}
 }

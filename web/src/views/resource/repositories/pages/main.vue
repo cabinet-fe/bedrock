@@ -252,12 +252,14 @@ async function onBatchSyncBranches() {
             { label: '无', value: 'none' },
             { label: '凭证', value: 'credential' },
           ]"
+          tips="公开仓库选无；私有仓库绑定下方凭证"
         />
         <u-select
           v-if="form.auth_type === 'credential'"
           label="凭证"
           field="credential_id"
           :options="credOptions"
+          tips="用于 git clone/fetch 的凭证；引用时需 credentials:use"
         />
       </template>
     </FormDialog>

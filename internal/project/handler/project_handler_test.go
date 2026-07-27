@@ -148,7 +148,7 @@ func TestListRequirementStatusesAllowsLeastPrivilegeMember(t *testing.T) {
 	if err := users.Create(member); err != nil {
 		t.Fatal(err)
 	}
-	role, err := roleService.Create("需求只读", "requirement_reader", "", []string{"project_requirements:view"})
+	role, err := roleService.Create("需求只读", "requirement_reader", "", "", []string{"project_requirements:view"})
 	if err != nil {
 		t.Fatal(err)
 	}

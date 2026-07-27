@@ -346,6 +346,7 @@
 | `owner_id` | `integer` |  |  |
 | `repository_id` | `integer` |  |  |
 | `tags` | `string` |  |  |
+| `is_public` | `boolean` |  | 公开只读；默认 false |
 | `created_by` | `integer` |  |  |
 | `created_at` | `string(date-time)` |  |  |
 | `updated_at` | `string(date-time)` |  |  |
@@ -359,6 +360,7 @@
 | `description` | `string` |  |  |
 | `repository_id` | `integer` |  |  |
 | `tags` | `string` |  |  |
+| `is_public` | `boolean` |  |  |
 
 ### ProductProjectPage
 
@@ -384,6 +386,7 @@
 | `repository_id` | `integer` |  |  |
 | `clear_repository` | `boolean` |  |  |
 | `tags` | `string` |  |  |
+| `is_public` | `boolean` |  |  |
 
 ### ProductProjectView
 
@@ -399,6 +402,7 @@
 | `owner_id` | `integer` |  |  |
 | `repository_id` | `integer` |  |  |
 | `tags` | `string` |  |  |
+| `is_public` | `boolean` |  |  |
 | `created_by` | `integer` |  |  |
 | `created_at` | `string(date-time)` |  |  |
 | `updated_at` | `string(date-time)` |  |  |

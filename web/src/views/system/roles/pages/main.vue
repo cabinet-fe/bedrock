@@ -32,13 +32,29 @@ const listRef = useTemplateRef("list");
 const dialogOpen = ref(false);
 const permOpen = ref(false);
 const editing = ref<Role | null>(null);
-const form = reactive({ name: "", code: "", description: "" });
+const form = reactive({
+  name: "",
+  code: "",
+  description: "",
+  data_scope: "self" as "self" | "all",
+});
 const catalog = ref<PermissionCatalogGroup[]>([]);
 const checked = ref<Set<string>>(new Set());
+
+const DATA_SCOPE_OPTIONS = [
+  { label: "仅自己", value: "self" },
+  { label: "全部", value: "all" },
+];
+
+const DATA_SCOPE_LABEL: Record<string, string> = {
+  self: "仅自己",
+  all: "全部",
+};
 
 const columns = defineProTableColumns([
   { key: "name", name: "名称" },
   { key: "code", name: "编码" },
+  { key: "data_scope", name: "数据权限", width: 100, align: "center" },
   { key: "type", name: "类型", width: 90, align: "center" },
   { key: "description", name: "描述" },
   { key: "action", name: "操作", width: 280, align: "center", fixed: "right" },
@@ -52,6 +68,7 @@ function isBuiltinRole(row: Role) {
 
 function openCreate() {
   editing.value = null;
+  o(form).extend({ name: "", code: "", description: "", data_scope: "self" });
   dialogOpen.value = true;
 }
 
@@ -117,7 +134,11 @@ function toggleMenu(menu: PermissionCatalogMenu, on: boolean) {
 async function save() {
   try {
     if (editing.value) {
-      await updateRole(editing.value.id, { name: form.name, description: form.description });
+      await updateRole(editing.value.id, {
+        name: form.name,
+        description: form.description,
+        data_scope: form.data_scope,
+      });
       message.success("已更新");
     } else {
       await createRole({ ...form, permissions: [] });
@@ -170,6 +191,9 @@ const remove = bind(async (row: Role) => {
           新建角色
         </u-button>
       </template>
+      <template #column:data_scope="{ rowData }">
+        {{ DATA_SCOPE_LABEL[(rowData as Role).data_scope || "self"] || "仅自己" }}
+      </template>
       <template #column:type="{ rowData }">
         <u-tag size="small" :type="isBuiltinRole(rowData as Role) ? 'warning' : 'info'">
           {{ isBuiltinRole(rowData as Role) ? "内置" : "自定义" }}
@@ -216,7 +240,20 @@ const remove = bind(async (row: Role) => {
       @submit="save"
     >
       <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-      <u-input label="编码" field="code" :disabled="!!editing" :rules="{ required: '必填' }" />
+      <u-input
+        label="编码"
+        field="code"
+        :disabled="!!editing"
+        :rules="{ required: '必填' }"
+        tips="唯一标识，创建后不可修改；用于程序引用，不含空格"
+      />
+      <u-select
+        label="数据权限"
+        field="data_scope"
+        :options="DATA_SCOPE_OPTIONS"
+        :rules="{ required: '必填' }"
+        tips="仅自己：项目可见成员所在项目，CI/CD 仅自己创建的任务；全部：可读全部项目/任务（写权限仍靠成员角色或 manage_all）。与 view_all 并存，多角色取最宽"
+      />
       <u-input label="描述" field="description" />
     </FormDialog>
 

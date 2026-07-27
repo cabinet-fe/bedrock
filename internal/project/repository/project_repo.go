@@ -54,8 +54,13 @@ func (r *ProjectRepository) FindProjectBySlug(slug string) (*model.ProductProjec
 func (r *ProjectRepository) ListProjects(q pkg.ListQuery, keyword, status string, userID uint, all bool) ([]model.ProductProject, int64, error) {
 	db := r.db.Model(&model.ProductProject{})
 	if !all {
-		db = db.Joins("JOIN project_members ON project_members.project_id = product_projects.id").
-			Where("project_members.user_id = ?", userID)
+		// 成员 / 公开 / 创建人（创建人通常已是成员，兜底非成员场景）
+		db = db.Where(
+			`product_projects.id IN (SELECT project_id FROM project_members WHERE user_id = ?)
+				OR product_projects.is_public = ?
+				OR product_projects.created_by = ?`,
+			userID, true, userID,
+		)
 	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		like := "%" + keyword + "%"

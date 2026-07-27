@@ -235,7 +235,12 @@ func (h *Handler) CancelRun(c *gin.Context) {
 func (h *Handler) ListSkills(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	items, total, err := h.skills.List(page, pageSize, authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c))
+	scope, err := h.perm.ResolveDataScope(authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c))
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items, total, err := h.skills.List(page, pageSize, authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c), scope)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -245,7 +250,12 @@ func (h *Handler) ListSkills(c *gin.Context) {
 
 func (h *Handler) GetSkill(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	item, err := h.skills.Get(uint(id), authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c))
+	scope, err := h.perm.ResolveDataScope(authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c))
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	item, err := h.skills.Get(uint(id), authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c), scope)
 	if err != nil {
 		writeSkillErr(c, err)
 		return
@@ -316,7 +326,12 @@ func (h *Handler) DownloadSkill(c *gin.Context) {
 		return
 	}
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	skill, rc, filename, err := h.skills.OpenPackage(uint(id), authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c))
+	scope, err := h.perm.ResolveDataScope(authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c))
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	skill, rc, filename, err := h.skills.OpenPackage(uint(id), authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c), scope)
 	if err != nil {
 		writeSkillErr(c, err)
 		return

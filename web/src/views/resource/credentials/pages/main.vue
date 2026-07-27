@@ -154,6 +154,7 @@ const remove = bind(async (row: Credential) => {
             { label: 'api_key', value: 'api_key' },
           ]"
           :rules="{ required: '必填' }"
+          tips="决定密文字段语义；被仓库/服务器引用时按类型校验"
         />
         <u-input label="用户名" field="username" />
         <u-input label="描述" field="description" />
@@ -164,12 +165,14 @@ const remove = bind(async (row: Credential) => {
           field="secret"
           autocomplete="new-password"
           :rules="editing ? undefined : { required: '必填' }"
+          tips="AES-GCM 加密存储，API 永不回显明文"
         />
         <u-password-input
           v-if="form.type === 'ssh_key'"
           label="口令（留空不改）"
           field="passphrase"
           autocomplete="new-password"
+          tips="私钥口令（passphrase），同样加密存储"
         />
       </template>
     </FormDialog>

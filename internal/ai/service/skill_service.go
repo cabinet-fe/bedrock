@@ -13,6 +13,7 @@ import (
 
 	"bedrock/internal/ai/model"
 	"bedrock/internal/ai/repository"
+	rbacmodel "bedrock/internal/rbac/model"
 	storagemodel "bedrock/internal/storage/model"
 	storageservice "bedrock/internal/storage/service"
 )
@@ -55,16 +56,16 @@ type SkillUploadInput struct {
 	IsSuperAdmin bool
 }
 
-func (s *SkillService) List(page, pageSize int, userID uint, isSuperAdmin bool) ([]model.SkillPackage, int64, error) {
-	return s.repo.ListSkills(page, pageSize, userID, isSuperAdmin)
+func (s *SkillService) List(page, pageSize int, userID uint, isSuperAdmin bool, dataScope string) ([]model.SkillPackage, int64, error) {
+	return s.repo.ListSkills(page, pageSize, userID, isSuperAdmin, dataScope == rbacmodel.DataScopeAll)
 }
 
-func (s *SkillService) Get(id, userID uint, isSuperAdmin bool) (*model.SkillPackage, error) {
+func (s *SkillService) Get(id, userID uint, isSuperAdmin bool, dataScope string) (*model.SkillPackage, error) {
 	skill, err := s.repo.FindSkill(id)
 	if err != nil {
 		return nil, ErrSkillNotFound
 	}
-	if !canViewSkill(skill, userID, isSuperAdmin) {
+	if !canViewSkill(skill, userID, isSuperAdmin, dataScope) {
 		return nil, ErrSkillForbidden
 	}
 	return skill, nil
@@ -156,8 +157,8 @@ func (s *SkillService) Delete(id, userID uint, isSuperAdmin bool) error {
 	return nil
 }
 
-func (s *SkillService) OpenPackage(id, userID uint, isSuperAdmin bool) (*model.SkillPackage, io.ReadCloser, string, error) {
-	skill, err := s.Get(id, userID, isSuperAdmin)
+func (s *SkillService) OpenPackage(id, userID uint, isSuperAdmin bool, dataScope string) (*model.SkillPackage, io.ReadCloser, string, error) {
+	skill, err := s.Get(id, userID, isSuperAdmin, dataScope)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -185,7 +186,7 @@ func (s *SkillService) InjectSkills(workspaceDir string, skillIDs []uint, userID
 		if err != nil {
 			return nil, fmt.Errorf("skill %d: %w", id, ErrSkillNotFound)
 		}
-		if !canViewSkill(skill, userID, isSuperAdmin) {
+		if !canViewSkill(skill, userID, isSuperAdmin, rbacmodel.DataScopeSelf) {
 			return nil, fmt.Errorf("skill %d: %w", id, ErrSkillForbidden)
 		}
 		f, obj, err := s.storage.Open(skill.StorageObjectID)
@@ -423,8 +424,8 @@ func validateVisibility(v string) error {
 	}
 }
 
-func canViewSkill(skill *model.SkillPackage, userID uint, isSuperAdmin bool) bool {
-	if isSuperAdmin {
+func canViewSkill(skill *model.SkillPackage, userID uint, isSuperAdmin bool, dataScope string) bool {
+	if isSuperAdmin || dataScope == rbacmodel.DataScopeAll {
 		return true
 	}
 	if skill.Visibility == model.SkillPublic {

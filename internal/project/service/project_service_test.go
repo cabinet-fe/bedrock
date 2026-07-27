@@ -18,6 +18,7 @@ import (
 	"bedrock/internal/platform/seed"
 	projectmodel "bedrock/internal/project/model"
 	projectrepo "bedrock/internal/project/repository"
+	rbacmodel "bedrock/internal/rbac/model"
 	rbacrepo "bedrock/internal/rbac/repository"
 	rbacservice "bedrock/internal/rbac/service"
 	storagemodel "bedrock/internal/storage/model"
@@ -58,6 +59,34 @@ func TestProjectACLListAndGlobalBypass(t *testing.T) {
 	ordinary := actor(6, "project_projects:update")
 	if _, err := svc.AddMember(ordinary, project.ID, MemberInput{UserID: 7, Role: projectmodel.ProjectRoleMember}); !IsNotFound(err) {
 		t.Fatalf("ordinary update must not bypass membership, got %v", err)
+	}
+}
+
+func TestProjectDataScopeAllListsWithoutViewAll(t *testing.T) {
+	svc := newProjectService(t)
+	owner := actor(1, "project_projects:create", "project_projects:view", "project_projects:update")
+	project := createProject(t, svc, owner, "data-scope-all")
+
+	scoped := actorWithScope(8, rbacmodel.DataScopeAll, "project_projects:view")
+	items, total, err := svc.ListProjects(scoped, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != project.ID {
+		t.Fatalf("data_scope=all list = %#v total=%d err=%v", items, total, err)
+	}
+	if _, err := svc.GetProject(scoped, project.ID); err != nil {
+		t.Fatalf("data_scope=all must read project: %v", err)
+	}
+	writer := actorWithScope(8, rbacmodel.DataScopeAll, "project_projects:view", "project_projects:update")
+	if _, err := svc.UpdateProject(writer, project.ID, UpdateProjectInput{}); !IsNotFound(err) {
+		t.Fatalf("data_scope=all must not grant write, got %v", err)
+	}
+
+	selfOnly := actorWithScope(9, rbacmodel.DataScopeSelf, "project_projects:view")
+	items, total, err = svc.ListProjects(selfOnly, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
+	if err != nil || total != 0 || len(items) != 0 {
+		t.Fatalf("data_scope=self non-member list = %#v total=%d err=%v", items, total, err)
+	}
+	if _, err := svc.GetProject(selfOnly, project.ID); !IsNotFound(err) {
+		t.Fatalf("data_scope=self non-member get = %v, want not found", err)
 	}
 }
 
@@ -148,7 +177,7 @@ func TestProjectACLUsesResolvedRolePermissions(t *testing.T) {
 	if err := users.Create(user); err != nil {
 		t.Fatal(err)
 	}
-	role, err := roleService.Create("项目范围管理员", "project_scope_admin", "", []string{
+	role, err := roleService.Create("项目范围管理员", "project_scope_admin", "", "", []string{
 		"project_projects:view",
 		"project_projects:view_all",
 		"project_projects:update",
@@ -410,6 +439,12 @@ func actor(userID uint, permissions ...string) AccessContext {
 	return NewAccessContext(userID, false, permissions)
 }
 
+func actorWithScope(userID uint, scope string, permissions ...string) AccessContext {
+	a := NewAccessContext(userID, false, permissions)
+	a.DataScope = scope
+	return a
+}
+
 func makeZIP(t *testing.T, entries map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -444,4 +479,27 @@ func makeZIPBomb(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+func TestProjectPublicReadableBySelfScope(t *testing.T) {
+	svc := newProjectService(t)
+	owner := actor(1, "project_projects:create", "project_projects:view", "project_projects:update")
+	project := createProject(t, svc, owner, "public-project")
+	pub := true
+	if _, err := svc.UpdateProject(owner, project.ID, UpdateProjectInput{IsPublic: &pub}); err != nil {
+		t.Fatalf("mark public: %v", err)
+	}
+
+	selfOnly := actorWithScope(9, rbacmodel.DataScopeSelf, "project_projects:view")
+	items, total, err := svc.ListProjects(selfOnly, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != project.ID {
+		t.Fatalf("self list public = %#v total=%d err=%v", items, total, err)
+	}
+	if _, err := svc.GetProject(selfOnly, project.ID); err != nil {
+		t.Fatalf("self get public: %v", err)
+	}
+	writer := actorWithScope(9, rbacmodel.DataScopeSelf, "project_projects:view", "project_projects:update")
+	if _, err := svc.UpdateProject(writer, project.ID, UpdateProjectInput{}); !IsNotFound(err) {
+		t.Fatalf("public must not grant write, got %v", err)
+	}
 }

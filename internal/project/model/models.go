@@ -28,6 +28,7 @@ type ProductProject struct {
 	OwnerID      uint           `json:"owner_id" gorm:"not null;index"`
 	RepositoryID *uint          `json:"repository_id,omitempty" gorm:"index"`
 	Tags         string         `json:"tags"`
+	IsPublic     bool           `json:"is_public" gorm:"not null;default:false;index"`
 	CreatedBy    uint           `json:"created_by" gorm:"index"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`

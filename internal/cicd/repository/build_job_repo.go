@@ -40,10 +40,13 @@ func (r *BuildJobRepository) FindByID(id uint) (*model.BuildJob, error) {
 	return &job, nil
 }
 
-func (r *BuildJobRepository) List(q pkg.ListQuery, repositoryID *uint, keyword string) ([]model.BuildJob, int64, error) {
+func (r *BuildJobRepository) List(q pkg.ListQuery, repositoryID *uint, keyword string, createdBy *uint) ([]model.BuildJob, int64, error) {
 	db := r.db.Model(&model.BuildJob{})
 	if repositoryID != nil && *repositoryID > 0 {
 		db = db.Where("repository_id = ?", *repositoryID)
+	}
+	if createdBy != nil {
+		db = db.Where("created_by = ? OR is_public = ?", *createdBy, true)
 	}
 	if keyword != "" {
 		like := "%" + keyword + "%"

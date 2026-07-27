@@ -234,7 +234,10 @@ const remove = bind(async (row: PersonalAccessToken) => {
       </template>
       <template #group:basic>
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-        <u-form-item label="Scope">
+        <u-form-item
+          label="Scope"
+          tips="skills:read 读技能；agents:run 触发 Agent；docs:write/publish 写与发布文档"
+        >
           <div class="scope-row">
             <u-checkbox v-model="form.scopeSkills">skills:read</u-checkbox>
             <u-checkbox v-model="form.scopeAgents">agents:run</u-checkbox>
@@ -244,7 +247,12 @@ const remove = bind(async (row: PersonalAccessToken) => {
         </u-form-item>
       </template>
       <template #group:expire>
-        <u-radio-group label="过期时间" field="expireMode" :items="EXPIRE_MODE_OPTIONS" />
+        <u-radio-group
+          label="过期时间"
+          field="expireMode"
+          :items="EXPIRE_MODE_OPTIONS"
+          tips="到期后令牌自动失效；永不过期需自行妥善保管"
+        />
         <u-select
           v-if="form.expireMode === 'days'"
           label="有效天数"

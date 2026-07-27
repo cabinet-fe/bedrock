@@ -154,9 +154,10 @@ const remove = bind(async (row: SkillPackage) => {
         label="可见性"
         field="visibility"
         :options="[
-          { label: 'public', value: 'public' },
-          { label: 'private', value: 'private' },
+          { label: '公开', value: 'public' },
+          { label: '私有', value: 'private' },
         ]"
+        tips="公开：有技能查看权限即可读；私有：仅创建者，或角色数据权限为全部时可读"
         :rules="{ required: '必填' }"
       />
       <u-form-item label="ZIP">

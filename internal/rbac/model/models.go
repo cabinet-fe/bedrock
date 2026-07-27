@@ -11,6 +11,11 @@ const (
 	RoleTypeCustom  = "custom"
 
 	RoleCodeSuperAdmin = "super_admin"
+
+	// DataScopeSelf：仅自己创建的数据（项目另含成员例外）
+	DataScopeSelf = "self"
+	// DataScopeAll：可读全部（项目写权限仍靠成员 / manage_all）
+	DataScopeAll = "all"
 )
 
 // MenuGroup organizes menus for navigation and resource admin (not permission-checked).
@@ -34,6 +39,7 @@ type Role struct {
 	Code        string           `json:"code" gorm:"size:100;uniqueIndex;not null"`
 	Description string           `json:"description" gorm:"size:500"`
 	Type        string           `json:"type" gorm:"size:20;not null;default:custom"`
+	DataScope   string           `json:"data_scope" gorm:"size:20;not null;default:self"`
 	CreatedAt   time.Time        `json:"created_at"`
 	UpdatedAt   time.Time        `json:"updated_at"`
 	Permissions []RolePermission `json:"permissions,omitempty" gorm:"foreignKey:RoleID"`

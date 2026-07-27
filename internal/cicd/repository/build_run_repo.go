@@ -27,21 +27,25 @@ func (r *BuildRunRepository) FindByID(id uint) (*model.BuildRun, error) {
 	return &run, nil
 }
 
-func (r *BuildRunRepository) List(q pkg.ListQuery, buildJobID *uint, status string) ([]model.BuildRun, int64, error) {
+func (r *BuildRunRepository) List(q pkg.ListQuery, buildJobID *uint, status string, jobCreatedBy *uint) ([]model.BuildRun, int64, error) {
 	db := r.db.Model(&model.BuildRun{})
 	if buildJobID != nil && *buildJobID > 0 {
 		db = db.Where("build_job_id = ?", *buildJobID)
 	}
+	if jobCreatedBy != nil {
+		db = db.Joins("JOIN build_jobs ON build_jobs.id = build_runs.build_job_id").
+			Where("build_jobs.created_by = ? OR build_jobs.is_public = ?", *jobCreatedBy, true)
+	}
 	if status != "" {
-		db = db.Where("status = ?", status)
+		db = db.Where("build_runs.status = ?", status)
 	}
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	order := pkg.OrderBy(q.Sort, map[string]string{
-		"created_at": "created_at",
-	}, "id", "id DESC")
+		"created_at": "build_runs.created_at",
+	}, "build_runs.id", "build_runs.id DESC")
 	var items []model.BuildRun
 	err := db.Order(order).Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
 	return items, total, err
