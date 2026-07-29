@@ -17,9 +17,10 @@ import (
 )
 
 var (
-	ErrPATInvalid    = errors.New("invalid or expired token")
-	ErrPATWrongScope = errors.New("token scope insufficient")
-	ErrPATBadScope   = errors.New("scope 仅允许 skills:read、agents:run、docs:write、docs:publish")
+	ErrPATInvalid     = errors.New("invalid or expired token")
+	ErrPATWrongScope  = errors.New("token scope insufficient")
+	ErrPATBadScope    = errors.New("scope 仅允许 skills:read、agents:run、docs:read、docs:write")
+	ErrPATNotCopyable = errors.New("该令牌创建于加密存储启用前，无法复制明文，请删除后重建")
 )
 
 // Allowed PAT expires_in_days presets (UI / API whitelist).
@@ -46,8 +47,12 @@ type CreatePATInput struct {
 }
 
 type CreatePATResult struct {
-	Token    string                    `json:"token"` // plaintext, only in create response
+	Token    string                    `json:"token"`
 	Metadata model.PersonalAccessToken `json:"metadata"`
+}
+
+type RevealPATResult struct {
+	TokenCipher string `json:"token_cipher"`
 }
 
 func resolvePATExpiresAt(in CreatePATInput) (*time.Time, error) {
@@ -87,6 +92,10 @@ func (s *PATService) Create(userID uint, in CreatePATInput) (*CreatePATResult, e
 	if err != nil {
 		return nil, err
 	}
+	cipher, err := pkg.Encrypt(plain)
+	if err != nil {
+		return nil, err
+	}
 	hash := hashToken(plain)
 	scopesJSON, _ := json.Marshal(scopes)
 	item := &model.PersonalAccessToken{
@@ -94,8 +103,10 @@ func (s *PATService) Create(userID uint, in CreatePATInput) (*CreatePATResult, e
 		Name:        name,
 		TokenPrefix: plain[:12],
 		TokenHash:   hash,
+		TokenCipher: cipher,
 		ScopesJSON:  string(scopesJSON),
 		Scopes:      scopes,
+		Copyable:    true,
 		ExpiresAt:   expiresAt,
 	}
 	if err := s.repo.Create(item); err != nil {
@@ -115,8 +126,30 @@ func (s *PATService) List(userID uint, q pkg.ListQuery) ([]model.PersonalAccessT
 	}
 	for i := range items {
 		decodeScopes(&items[i])
+		items[i].Copyable = items[i].TokenCipher != ""
+		items[i].TokenCipher = "" // never leak ciphertext via list JSON
 	}
 	return items, total, nil
+}
+
+// Reveal returns the stored AES-GCM ciphertext for the owner (client decrypts).
+// Legacy hash-only rows return ErrPATNotCopyable.
+func (s *PATService) Reveal(userID uint, id uint) (*RevealPATResult, error) {
+	token, err := s.repo.Find(id)
+	if err != nil {
+		return nil, err
+	}
+	if token.UserID != userID {
+		return nil, ErrPATInvalid
+	}
+	if token.TokenCipher == "" {
+		return nil, ErrPATNotCopyable
+	}
+	if s.audit != nil {
+		_ = s.audit.Write(userID, "", "pat_reveal", "personal_access_token", fmt.Sprintf("%d", id),
+			fmt.Sprintf("name=%s", token.Name), "")
+	}
+	return &RevealPATResult{TokenCipher: token.TokenCipher}, nil
 }
 
 func (s *PATService) Delete(userID uint, id uint) error {
@@ -177,7 +210,7 @@ func normalizeScopes(scopes []string) ([]string, error) {
 	for _, sc := range scopes {
 		sc = strings.TrimSpace(sc)
 		switch sc {
-		case model.ScopeSkillsRead, model.ScopeAgentsRun, model.ScopeDocsWrite, model.ScopeDocsPublish:
+		case model.ScopeSkillsRead, model.ScopeAgentsRun, model.ScopeDocsRead, model.ScopeDocsWrite:
 		default:
 			return nil, ErrPATBadScope
 		}
@@ -191,6 +224,20 @@ func normalizeScopes(scopes []string) ([]string, error) {
 
 func decodeScopes(token *model.PersonalAccessToken) {
 	_ = json.Unmarshal([]byte(token.ScopesJSON), &token.Scopes)
+	seen := map[string]bool{}
+	out := make([]string, 0, len(token.Scopes))
+	for _, sc := range token.Scopes {
+		// Legacy docs:publish → docs:write (publish concept removed).
+		if sc == "docs:publish" {
+			sc = model.ScopeDocsWrite
+		}
+		if sc == "" || seen[sc] {
+			continue
+		}
+		seen[sc] = true
+		out = append(out, sc)
+	}
+	token.Scopes = out
 }
 
 func generatePATPlaintext() (string, error) {

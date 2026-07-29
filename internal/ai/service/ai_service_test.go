@@ -278,7 +278,7 @@ func TestDocsGenerateWritesDraftOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent = waitWorkspaceStatus(t, agents, agent.ID, model.WorkspaceReady)
-	// Seed a fake successful run writing draft via bridge callback.
+	// Seed a fake successful run writing content via bridge callback.
 	node := &projectmodel.ApiDocNode{
 		ProjectID: project.ID, Kind: projectmodel.DocNodeDocument, Name: "api",
 		CreatedBy: 1, UpdatedBy: 1,
@@ -286,7 +286,7 @@ func TestDocsGenerateWritesDraftOnly(t *testing.T) {
 	if err := projectrepo.NewProjectRepository(gdb).CreateDocNode(node); err != nil {
 		t.Fatal(err)
 	}
-	content := "# Draft From Agent\n"
+	content := "# From Agent\n"
 	if err := projectSvc.WriteDraftFromAgentRun(project.ID, node.ID, 123, content, 1); err != nil {
 		t.Fatal(err)
 	}
@@ -294,11 +294,8 @@ func TestDocsGenerateWritesDraftOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DraftContent != content {
-		t.Fatalf("draft=%q", got.DraftContent)
-	}
-	if got.PublishedContent != "" {
-		t.Fatal("must not auto-publish")
+	if got.Content != content {
+		t.Fatalf("content=%q", got.Content)
 	}
 	if got.DraftSourceRunID == nil || *got.DraftSourceRunID != 123 {
 		t.Fatalf("draft_source_run_id=%v", got.DraftSourceRunID)

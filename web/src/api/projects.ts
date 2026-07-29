@@ -2,7 +2,6 @@ import { saveBlob } from "@cat-kit/fe";
 
 import { http } from "./http";
 import type {
-  ApiDocDiff,
   ApiDocNode,
   ProductProject,
   ProjectMember,
@@ -278,20 +277,4 @@ export async function importDocsZIP(
 ): Promise<ApiDocNode[]> {
   const body = await uploadDocFile(`/projects/${projectID}/docs/import-zip`, parentID, file);
   return "items" in body ? (body.items ?? []) : [];
-}
-
-export async function publishDocNode(
-  projectID: number,
-  nodeID: number,
-  expectedVersion: number,
-): Promise<ApiDocNode> {
-  const { body } = await http.post<ApiDocNode>(`/projects/${projectID}/docs/${nodeID}/publish`, {
-    expected_version: expectedVersion,
-  });
-  return body;
-}
-
-export async function getDocDiff(projectID: number, nodeID: number): Promise<ApiDocDiff> {
-  const { body } = await http.get<ApiDocDiff>(`/projects/${projectID}/docs/${nodeID}/diff`);
-  return body;
 }

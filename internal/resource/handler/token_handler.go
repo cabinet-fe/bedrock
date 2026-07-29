@@ -14,7 +14,7 @@ import (
 	"bedrock/internal/resource/service"
 )
 
-// TokenHandler exposes personal access tokens (user_id-scoped: list/create/delete self only).
+// TokenHandler exposes personal access tokens (user_id-scoped: list/create/reveal/delete self only).
 type TokenHandler struct {
 	svc  *service.PATService
 	perm *rbacservice.PermissionService
@@ -28,6 +28,7 @@ func (h *TokenHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFun
 	g := rg.Group("/resource/tokens", authMW)
 	g.GET("", rbacmw.RequirePermission(h.perm, "resource_tokens:view"), h.List)
 	g.POST("", rbacmw.RequirePermission(h.perm, "resource_tokens:create"), h.Create)
+	g.GET("/:id/reveal", rbacmw.RequirePermission(h.perm, "resource_tokens:view"), h.Reveal)
 	g.DELETE("/:id", rbacmw.RequirePermission(h.perm, "resource_tokens:delete"), h.Delete)
 }
 
@@ -55,6 +56,20 @@ func (h *TokenHandler) Create(c *gin.Context) {
 	pkg.Created(c, result)
 }
 
+func (h *TokenHandler) Reveal(c *gin.Context) {
+	id, err := parseID(c)
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "无效 ID")
+		return
+	}
+	result, err := h.svc.Reveal(authmiddleware.GetUserID(c), id)
+	if err != nil {
+		writeTokenError(c, err)
+		return
+	}
+	pkg.Success(c, result)
+}
+
 func (h *TokenHandler) Delete(c *gin.Context) {
 	id, err := parseID(c)
 	if err != nil {
@@ -71,6 +86,10 @@ func (h *TokenHandler) Delete(c *gin.Context) {
 func writeTokenError(c *gin.Context, err error) {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		pkg.Error(c, http.StatusNotFound, "资源不存在")
+		return
+	}
+	if errors.Is(err, service.ErrPATNotCopyable) {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	if errors.Is(err, service.ErrPATInvalid) {

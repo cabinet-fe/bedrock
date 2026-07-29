@@ -518,23 +518,9 @@ export interface ApiDocNode {
   name: string;
   sort_order: number;
   repository_id?: number | null;
-  published_content: string;
-  draft_content: string;
-  content_version: number;
-  draft_base_version: number;
-  draft_updated_at?: string | null;
+  content?: string;
   draft_source_run_id?: number | null;
   children?: ApiDocNode[];
-}
-
-export interface ApiDocDiff {
-  node_id: number;
-  content_version: number;
-  has_draft: boolean;
-  published_lines: number;
-  draft_lines: number;
-  added_lines: number;
-  removed_lines: number;
 }
 
 export interface CliRuntimeDefinition {
@@ -656,6 +642,7 @@ export interface PersonalAccessToken {
   name: string;
   token_prefix: string;
   scopes: string[];
+  copyable: boolean;
   expires_at?: string | null;
   revoked_at?: string | null;
   last_used_at?: string | null;

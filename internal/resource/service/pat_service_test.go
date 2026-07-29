@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,6 +20,9 @@ import (
 
 func setupPAT(t *testing.T) *service.PATService {
 	t.Helper()
+	if err := pkg.InitEncryption(strings.Repeat("ab", 32)); err != nil {
+		t.Fatal(err)
+	}
 	gdb, err := db.Open(&config.DatabaseConfig{
 		Driver: "sqlite",
 		Path:   filepath.Join(t.TempDir(), "pat.sqlite"),
@@ -47,9 +51,31 @@ func TestPATPlaintextOnceAndScopes(t *testing.T) {
 	if err != nil || len(list) != 1 {
 		t.Fatalf("list: %v %#v", err, list)
 	}
-	// Metadata list must not include plaintext.
-	if strings.Contains(list[0].TokenHash, created.Token) {
-		t.Fatal("plaintext must not be stored")
+	if !list[0].Copyable {
+		t.Fatal("new PAT must be copyable")
+	}
+	if list[0].TokenCipher != "" {
+		t.Fatal("list must not expose token_cipher")
+	}
+	if list[0].TokenHash != "" && strings.Contains(list[0].TokenHash, created.Token) {
+		t.Fatal("plaintext must not appear in hash field of list")
+	}
+	revealed, err := pats.Reveal(1, created.Metadata.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revealed.TokenCipher == "" {
+		t.Fatal("reveal must return token_cipher")
+	}
+	plain, err := pkg.Decrypt(revealed.TokenCipher)
+	if err != nil {
+		t.Fatalf("decrypt reveal cipher: %v", err)
+	}
+	if plain != created.Token {
+		t.Fatalf("reveal cipher mismatch: got %q want %q", plain, created.Token)
+	}
+	if _, err := pats.Reveal(2, created.Metadata.ID); err == nil {
+		t.Fatal("other user must not reveal")
 	}
 	if _, _, err := pats.ValidateBearer("br_deadbeef"); err == nil {
 		t.Fatal("invalid PAT must fail")
@@ -79,6 +105,39 @@ func TestPATPlaintextOnceAndScopes(t *testing.T) {
 	}
 }
 
+func TestPATLegacyHashOnlyNotCopyable(t *testing.T) {
+	t.Helper()
+	if err := pkg.InitEncryption(strings.Repeat("ab", 32)); err != nil {
+		t.Fatal(err)
+	}
+	gdb, err := db.Open(&config.DatabaseConfig{
+		Driver: "sqlite",
+		Path:   filepath.Join(t.TempDir(), "pat-legacy.sqlite"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migration.Up(context.Background(), gdb, migration.Driver("sqlite")); err != nil {
+		t.Fatalf("migration: %v", err)
+	}
+	repo := repository.NewPATRepository(gdb)
+	legacy := &model.PersonalAccessToken{
+		UserID: 1, Name: "legacy", TokenPrefix: "br_deadbeef00",
+		TokenHash: "deadbeef", ScopesJSON: `["skills:read"]`,
+	}
+	if err := repo.Create(legacy); err != nil {
+		t.Fatal(err)
+	}
+	pats := service.NewPATService(repo)
+	list, _, err := pats.List(1, pkg.ListQuery{Page: 1, PageSize: 20})
+	if err != nil || len(list) != 1 || list[0].Copyable {
+		t.Fatalf("legacy must list as not copyable: %v %#v", err, list)
+	}
+	if _, err := pats.Reveal(1, legacy.ID); !errors.Is(err, service.ErrPATNotCopyable) {
+		t.Fatalf("want ErrPATNotCopyable, got %v", err)
+	}
+}
+
 func TestPATDocsScopesAndExpiresAt(t *testing.T) {
 	pats := setupPAT(t)
 	past := time.Now().UTC().Add(-time.Hour)
@@ -89,7 +148,7 @@ func TestPATDocsScopesAndExpiresAt(t *testing.T) {
 	}
 	future := time.Now().UTC().Add(time.Hour)
 	created, err := pats.Create(1, service.CreatePATInput{
-		Name: "docs", Scopes: []string{model.ScopeDocsWrite, model.ScopeDocsPublish}, ExpiresAt: &future,
+		Name: "docs", Scopes: []string{model.ScopeDocsWrite, model.ScopeDocsRead}, ExpiresAt: &future,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +160,7 @@ func TestPATDocsScopesAndExpiresAt(t *testing.T) {
 	if err := pats.RequireScope(scopes, model.ScopeDocsWrite); err != nil {
 		t.Fatal(err)
 	}
-	if err := pats.RequireScope(scopes, model.ScopeDocsPublish); err != nil {
+	if err := pats.RequireScope(scopes, model.ScopeDocsRead); err != nil {
 		t.Fatal(err)
 	}
 }

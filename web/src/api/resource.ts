@@ -1,3 +1,4 @@
+import { decryptAESGCM } from "@/lib/login-crypto";
 import { http } from "./http";
 import type {
   CliCheckUpdateResult,
@@ -229,6 +230,11 @@ export async function createToken(input: {
     input,
   );
   return body;
+}
+
+export async function revealToken(id: number): Promise<string> {
+  const { body } = await http.get<{ token_cipher: string }>(`/resource/tokens/${id}/reveal`);
+  return decryptAESGCM(body.token_cipher);
 }
 
 export async function deleteToken(id: number): Promise<void> {

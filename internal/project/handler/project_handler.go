@@ -64,18 +64,16 @@ func (h *ProjectHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerF
 
 	g.GET("/:id/docs", rbacmw.RequirePermission(h.perm, "project_docs:view"), h.ListDocTree)
 	g.POST("/:id/docs", rbacmw.RequirePermission(h.perm, "project_docs:create"), h.CreateDocNode)
+	g.POST("/:id/docs/upload", rbacmw.RequirePermission(h.perm, "project_docs:create"), h.UploadMarkdown)
+	g.POST("/:id/docs/import-zip", rbacmw.RequirePermission(h.perm, "project_docs:create"), h.ImportZIP)
+	// External push/pull: PAT scope or JWT RBAC checked inside handler (see APIRun pattern).
+	g.POST("/:id/docs/push", h.PushDocByPath)
+	g.GET("/:id/docs/pull", h.PullDocByPath)
+	g.POST("/:id/docs/generate", rbacmw.RequirePermission(h.perm, "project_docs:execute"), h.GenerateDocs)
 	g.GET("/:id/docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_docs:view"), h.GetDocNode)
 	g.PUT("/:id/docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_docs:update"), h.UpdateDocNode)
 	g.POST("/:id/docs/:nodeID/move", rbacmw.RequirePermission(h.perm, "project_docs:update"), h.MoveDocNode)
 	g.DELETE("/:id/docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_docs:delete"), h.DeleteDocNode)
-	g.POST("/:id/docs/upload", rbacmw.RequirePermission(h.perm, "project_docs:create"), h.UploadMarkdown)
-	g.POST("/:id/docs/import-zip", rbacmw.RequirePermission(h.perm, "project_docs:create"), h.ImportZIP)
-	// External push/publish: PAT scope or JWT RBAC checked inside handler (see APIRun pattern).
-	g.POST("/:id/docs/push", h.PushDocByPath)
-	g.POST("/:id/docs/publish-path", h.PublishDocByPath)
-	g.POST("/:id/docs/:nodeID/publish", rbacmw.RequirePermission(h.perm, "project_docs:update"), h.PublishDocNode)
-	g.GET("/:id/docs/:nodeID/diff", rbacmw.RequirePermission(h.perm, "project_docs:view"), h.GetDocDiff)
-	g.POST("/:id/docs/generate", rbacmw.RequirePermission(h.perm, "project_docs:execute"), h.GenerateDocs)
 }
 
 func (h *ProjectHandler) ListProjects(c *gin.Context) {
@@ -770,23 +768,17 @@ func (h *ProjectHandler) PushDocByPath(c *gin.Context) {
 	pkg.Success(c, node)
 }
 
-func (h *ProjectHandler) PublishDocByPath(c *gin.Context) {
-	if !h.requireDocsAuth(c, "docs:publish", "project_docs:update") {
+func (h *ProjectHandler) PullDocByPath(c *gin.Context) {
+	if !h.requireDocsAuth(c, "docs:read", "project_docs:view") {
 		return
 	}
 	projectID, ok := h.resolveProjectID(c)
 	if !ok {
 		return
 	}
-	var input struct {
-		ApiDir     string `json:"api_dir"`
-		ApiDocName string `json:"api_doc_name"`
-	}
-	if err := c.ShouldBindJSON(&input); err != nil {
-		pkg.Error(c, http.StatusBadRequest, "无效发布参数")
-		return
-	}
-	if strings.TrimSpace(input.ApiDocName) == "" {
+	apiDir := c.Query("api_dir")
+	apiDocName := strings.TrimSpace(c.Query("api_doc_name"))
+	if apiDocName == "" {
 		pkg.Error(c, http.StatusBadRequest, "api_doc_name 不能为空")
 		return
 	}
@@ -795,9 +787,9 @@ func (h *ProjectHandler) PublishDocByPath(c *gin.Context) {
 		return
 	}
 	if authmiddleware.IsPAT(c) {
-		actor.Permissions["project_docs:update"] = struct{}{}
+		actor.Permissions["project_docs:view"] = struct{}{}
 	}
-	node, err := h.svc.PublishDocByPath(actor, projectID, input.ApiDir, input.ApiDocName)
+	node, err := h.svc.GetDocByPath(actor, projectID, apiDir, apiDocName)
 	if err != nil {
 		writeServiceError(c, err)
 		return
@@ -819,43 +811,6 @@ func (h *ProjectHandler) requireDocsAuth(c *gin.Context, patScope, rbacPermissio
 		return false
 	}
 	return true
-}
-
-func (h *ProjectHandler) PublishDocNode(c *gin.Context) {
-	_, nodeID, actor, ok := h.docActor(c, "project_docs:update", true)
-	if !ok {
-		return
-	}
-	var input struct {
-		ExpectedVersion *int `json:"expected_version"`
-	}
-	if err := c.ShouldBindJSON(&input); err != nil {
-		pkg.Error(c, http.StatusBadRequest, "无效发布参数")
-		return
-	}
-	if input.ExpectedVersion == nil {
-		pkg.Error(c, http.StatusBadRequest, "expected_version 为必填项")
-		return
-	}
-	node, err := h.svc.PublishDocNode(actor, nodeID, *input.ExpectedVersion)
-	if err != nil {
-		writeServiceError(c, err)
-		return
-	}
-	pkg.Success(c, node)
-}
-
-func (h *ProjectHandler) GetDocDiff(c *gin.Context) {
-	_, nodeID, actor, ok := h.docActor(c, "project_docs:view", false)
-	if !ok {
-		return
-	}
-	diff, err := h.svc.GetDocDiff(actor, nodeID)
-	if err != nil {
-		writeServiceError(c, err)
-		return
-	}
-	pkg.Success(c, diff)
 }
 
 func (h *ProjectHandler) GenerateDocs(c *gin.Context) {
@@ -944,7 +899,7 @@ func parseID(c *gin.Context, name string) (uint, bool) {
 	return uint(value), true
 }
 
-// resolveProjectID 支持数字 ID 或项目 slug（供 docs/push、publish-path 开放 API）。
+// resolveProjectID 支持数字 ID 或项目 slug（供 docs/push、docs/pull 开放 API）。
 func (h *ProjectHandler) resolveProjectID(c *gin.Context) (uint, bool) {
 	id, err := h.svc.ResolveProjectRef(c.Param("id"))
 	if err != nil {

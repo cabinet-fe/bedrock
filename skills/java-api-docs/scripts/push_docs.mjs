@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * 将 <out> 下 Markdown 镜像推送到 Bedrock 产品项目文档（草稿；可选发布）。
+ * 将 <out> 下 Markdown 镜像推送到 Bedrock 产品项目文档。
  *
  * 典型用法（工作区根，智能体已写入 .env）:
  *   node scripts/push_docs.mjs --slug my-project
- *   node scripts/push_docs.mjs --slug my-project --out output --publish
+ *   node scripts/push_docs.mjs --slug my-project --out output
  *   node scripts/push_docs.mjs --slug my-project --dry-run
  */
 
@@ -20,10 +20,10 @@ function usage() {
 
 把产出根下全部 .md 推送到 Bedrock 产品项目文档（POST /projects/{slug}/docs/push）。
 相对 --out 的路径镜像为 api_dir + api_doc_name（如 ic-upms-biz/sys-user.md）。
-默认只写草稿；--publish 时再调 publish-path。不推送 .sync.json。
+不推送 .sync.json。
 
 所需环境变量（来自 env 文件或 process.env）:
-  PAT             访问令牌（需 docs:write；--publish 另需 docs:publish）
+  PAT             访问令牌（需 docs:write）
   BEDROCK_HOST    服务根地址，无尾斜杠（请求 {host}/api/v1/...）
 
 env 文件加载顺序（第一个存在的）:
@@ -34,7 +34,6 @@ env 文件加载顺序（第一个存在的）:
   --slug <id>           产品项目标识（必需；路径参数，可为数字 ID 或 slug）
   --out <dir>           输出根目录（默认: 自动发现已有 output/api-docs，否则 ${DEFAULT_OUT}）
   --env-file <path>     显式指定 .env 路径（也可用 --env-file=path）
-  --publish             推送成功后按路径发布（需 PAT 含 docs:publish + 项目 ACL）
   --dry-run             只列出将推送的文件，不发请求
   -h, --help            显示帮助
 
@@ -51,7 +50,6 @@ function parseArgs(argv) {
     slug: null,
     out: null,
     envFile: null,
-    publish: false,
     dryRun: false,
   };
   for (let i = 0; i < args.length; i += 1) {
@@ -71,7 +69,7 @@ function parseArgs(argv) {
     } else if (a.startsWith('--envFile=')) {
       opts.envFile = a.slice('--envFile='.length);
     } else if (a === '--publish') {
-      opts.publish = true;
+      console.error('警告: --publish 已移除（文档不再有发布概念），已忽略');
     } else if (a === '--dry-run') {
       opts.dryRun = true;
     } else if (a === '-h' || a === '--help') {
@@ -92,7 +90,6 @@ function parseArgs(argv) {
     slug: String(opts.slug).trim(),
     out: opts.out,
     envFile: opts.envFile,
-    publish: opts.publish,
     dryRun: opts.dryRun,
   };
 }
@@ -149,7 +146,7 @@ function toApiPath(outRoot, absFile) {
   return { api_dir: apiDir, api_doc_name: apiDocName, rel: parts.join('/') };
 }
 
-async function pushOne({ host, pat, slug, apiDir, apiDocName, apiDoc, publish }) {
+async function pushOne({ host, pat, slug, apiDir, apiDocName, apiDoc }) {
   const enc = encodeURIComponent(slug);
   const pushURL = apiURL(host, `/projects/${enc}/docs/push`);
   const pushRes = await postJSON(pushURL, {
@@ -163,38 +160,16 @@ async function pushOne({ host, pat, slug, apiDir, apiDocName, apiDoc, publish })
   if (!pushRes.ok) {
     return {
       ok: false,
-      step: 'push',
       status: pushRes.status,
       error: errorMessage(pushRes),
     };
   }
-  if (!publish) {
-    return { ok: true, step: 'push', status: pushRes.status };
-  }
-  const pubURL = apiURL(host, `/projects/${enc}/docs/publish-path`);
-  const pubRes = await postJSON(pubURL, {
-    token: pat,
-    body: {
-      api_dir: apiDir,
-      api_doc_name: apiDocName,
-    },
-  });
-  if (!pubRes.ok) {
-    return {
-      ok: false,
-      step: 'publish',
-      status: pubRes.status,
-      error: errorMessage(pubRes),
-      pushed: true,
-    };
-  }
-  return { ok: true, step: 'publish', status: pubRes.status };
+  return { ok: true, status: pushRes.status };
 }
 
 async function main() {
   const opts = parseArgs(process.argv);
 
-  // 1. 先加载 env 文件（不覆盖已有 process.env）
   const envInfo = loadEnvFile(opts.envFile);
 
   const pat = (process.env.PAT || '').trim();
@@ -219,7 +194,6 @@ async function main() {
     process.exit(1);
   }
 
-  // 3. 解析 --out
   const outRoot = resolveOutRoot(opts.out, { discover: true });
   const cwd = process.cwd();
 
@@ -252,7 +226,6 @@ async function main() {
         api_dir: it.api_dir,
         api_doc_name: it.api_doc_name,
         dryRun: true,
-        publish: opts.publish,
       });
     }
     process.stdout.write(
@@ -261,7 +234,6 @@ async function main() {
           dryRun: true,
           slug: opts.slug,
           outRoot: displayPath(cwd, outRoot),
-          publish: opts.publish,
           envFile: envInfo.loaded ? displayPath(cwd, envInfo.path) : null,
           host,
           pushed,
@@ -310,7 +282,6 @@ async function main() {
         apiDir: it.api_dir,
         apiDocName: it.api_doc_name,
         apiDoc: content,
-        publish: opts.publish,
       });
       if (result.ok) {
         pushed.push({
@@ -318,17 +289,14 @@ async function main() {
           api_dir: it.api_dir,
           api_doc_name: it.api_doc_name,
           status: result.status,
-          step: result.step,
         });
       } else {
         failed.push({
           file: it.file,
           api_dir: it.api_dir,
           api_doc_name: it.api_doc_name,
-          step: result.step,
           status: result.status,
           error: result.error,
-          pushed: result.pushed || false,
         });
       }
     } catch (err) {
@@ -347,7 +315,6 @@ async function main() {
         dryRun: false,
         slug: opts.slug,
         outRoot: displayPath(cwd, outRoot),
-        publish: opts.publish,
         envFile: envInfo.loaded ? displayPath(cwd, envInfo.path) : null,
         host,
         pushed,

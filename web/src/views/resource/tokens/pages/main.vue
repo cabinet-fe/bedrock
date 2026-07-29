@@ -2,10 +2,11 @@
 defineOptions({ name: "ResourceTokens" });
 
 import { date, type Dater } from "@cat-kit/core";
+import { clipboard } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
-import { reactive, ref, useTemplateRef } from "vue";
+import { computed, reactive, ref, useTemplateRef } from "vue";
 
-import { createToken, deleteToken } from "@/api/resource";
+import { createToken, deleteToken, revealToken } from "@/api/resource";
 import type { PersonalAccessToken } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
@@ -38,8 +39,8 @@ const form = reactive({
   name: "",
   scopeSkills: true,
   scopeAgents: false,
+  scopeDocsRead: false,
   scopeDocsWrite: false,
-  scopeDocsPublish: false,
   expireMode: "days" as ExpireMode,
   expireDays: 30,
   expires_at: "",
@@ -49,6 +50,9 @@ const formGroups = [
   { key: "basic", title: "基本信息" },
   { key: "expire", title: "过期设置" },
 ];
+
+const created = computed(() => Boolean(plaintext.value));
+const confirmText = computed(() => (created.value ? "完成" : "创建"));
 
 type TokenStatus = "valid" | "expired" | "revoked";
 
@@ -90,7 +94,7 @@ const columns = defineProTableColumns([
     align: "center",
     render: ({ val }) => formatDateTime(val),
   },
-  { key: "action", name: "操作", width: 120, align: "center", fixed: "right" },
+  { key: "action", name: "操作", width: 160, align: "center", fixed: "right" },
 ]);
 
 function tokenStatus(row: PersonalAccessToken): TokenStatus {
@@ -108,8 +112,8 @@ function openCreate() {
   form.name = "";
   form.scopeSkills = true;
   form.scopeAgents = false;
+  form.scopeDocsRead = false;
   form.scopeDocsWrite = false;
-  form.scopeDocsPublish = false;
   form.expireMode = "days";
   form.expireDays = 30;
   form.expires_at = "";
@@ -117,11 +121,15 @@ function openCreate() {
 }
 
 async function save() {
+  if (created.value) {
+    dialogOpen.value = false;
+    return;
+  }
   const scopes: string[] = [];
   if (form.scopeSkills) scopes.push("skills:read");
   if (form.scopeAgents) scopes.push("agents:run");
+  if (form.scopeDocsRead) scopes.push("docs:read");
   if (form.scopeDocsWrite) scopes.push("docs:write");
-  if (form.scopeDocsPublish) scopes.push("docs:publish");
   if (!scopes.length) {
     message.error("至少选择一个 scope");
     return;
@@ -147,8 +155,13 @@ async function save() {
     }
     const result = await createToken(payload);
     plaintext.value = result.token;
-    message.success("令牌已创建，请立即复制明文（仅显示一次）");
     table.value?.reload();
+    try {
+      await clipboard.copy(result.token);
+      message.success("令牌已创建并复制到剪贴板");
+    } catch {
+      message.success("令牌已创建，请复制明文");
+    }
   } catch (error) {
     message.error(error instanceof Error ? error.message : "创建失败");
   }
@@ -157,12 +170,26 @@ async function save() {
 async function copyPlaintext() {
   if (!plaintext.value) return;
   try {
-    await navigator.clipboard.writeText(plaintext.value);
+    await clipboard.copy(plaintext.value);
     message.success("已复制");
   } catch {
     message.error("复制失败");
   }
 }
+
+const copyRow = bind(async (row: PersonalAccessToken) => {
+  if (!row.copyable) {
+    message.warn("该令牌创建于加密存储启用前，无法复制，请删除后重建");
+    return;
+  }
+  try {
+    const token = await revealToken(row.id);
+    await clipboard.copy(token);
+    message.success("已复制");
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "复制失败");
+  }
+});
 
 const remove = bind(async (row: PersonalAccessToken) => {
   try {
@@ -208,6 +235,12 @@ const remove = bind(async (row: PersonalAccessToken) => {
       <template #column:action="{ rowData }">
         <u-action-group :max="2" :loading="busyKey === (rowData as PersonalAccessToken).id">
           <u-action
+            v-if="hasPermission('resource_tokens:view')"
+            @run="copyRow(rowData as PersonalAccessToken)"
+          >
+            复制
+          </u-action>
+          <u-action
             v-if="hasPermission('resource_tokens:delete')"
             need-confirm
             type="danger"
@@ -223,30 +256,31 @@ const remove = bind(async (row: PersonalAccessToken) => {
       v-model="dialogOpen"
       title="创建 PAT"
       :model="form"
-      :groups="formGroups"
+      :groups="created ? undefined : formGroups"
+      :confirm-text="confirmText"
       label-width="90px"
       style="width: 520px"
       @submit="save"
       @closed="plaintext = ''"
     >
-      <template #prepend>
-        <p class="create-tip">创建后明文仅显示一次，请立即复制并妥善保管。</p>
+      <template v-if="!created" #prepend>
+        <p class="create-tip">创建后可随时在列表中复制明文；请妥善保管令牌。</p>
       </template>
-      <template #group:basic>
+      <template v-if="!created" #group:basic>
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
         <u-form-item
           label="Scope"
-          tips="skills:read 读技能；agents:run 触发 Agent；docs:write/publish 写与发布文档"
+          tips="skills:read 读技能；agents:run 触发 Agent；docs:read/write 读与写文档"
         >
           <div class="scope-row">
             <u-checkbox v-model="form.scopeSkills">skills:read</u-checkbox>
             <u-checkbox v-model="form.scopeAgents">agents:run</u-checkbox>
+            <u-checkbox v-model="form.scopeDocsRead">docs:read</u-checkbox>
             <u-checkbox v-model="form.scopeDocsWrite">docs:write</u-checkbox>
-            <u-checkbox v-model="form.scopeDocsPublish">docs:publish</u-checkbox>
           </div>
         </u-form-item>
       </template>
-      <template #group:expire>
+      <template v-if="!created" #group:expire>
         <u-radio-group
           label="过期时间"
           field="expireMode"
@@ -269,11 +303,11 @@ const remove = bind(async (row: PersonalAccessToken) => {
           :rules="{ required: '必填' }"
         />
       </template>
-      <template v-if="plaintext" #append>
-        <div class="once">
+      <template #append>
+        <div v-if="plaintext" class="once">
           <div class="once-head">
-            <strong>明文（仅此一次）：</strong>
-            <u-button size="small" @click="copyPlaintext">复制</u-button>
+            <strong>明文：</strong>
+            <u-button size="small" type="primary" @click="copyPlaintext">复制</u-button>
           </div>
           <code>{{ plaintext }}</code>
         </div>

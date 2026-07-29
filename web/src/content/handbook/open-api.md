@@ -9,24 +9,26 @@
 
 ## 1. 个人访问令牌（PAT）
 
-- 形态：`br_` 前缀 + hex；服务端只存哈希，**明文仅在创建时回显一次**，不可再读、不落日志。
+- 形态：`br_` 前缀 + hex；服务端存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 reveal 取密文，前端用与登录相同密钥解密后复制）；明文不落日志。
 - 使用：`Authorization: Bearer br_...`，与登录 JWT 分流校验；PAT 以属主用户身份生效。
-- scope 白名单（创建时多选）：`skills:read`、`agents:run`、`docs:write`、`docs:publish`。每个 scope 映射固定的开放端点（见「3. 开放接口一览」），scope 不足返回 `403 token scope insufficient`。
+- scope 白名单（创建时多选）：`skills:read`、`agents:run`、`docs:read`、`docs:write`。每个 scope 映射固定的开放端点（见「3. 开放接口一览」），scope 不足返回 `403 token scope insufficient`。
 - 有效期三选一：`expires_in_days`（仅 `30|90|180|365`）、`expires_at`（UTC 绝对时间，须晚于当前，与 `expires_in_days` 互斥）、都不传 = 永不过期。
 - 吊销：删除令牌即吊销；元数据中的 `last_used_at` 记录最近使用时间。
+- 历史仅哈希、无密文的令牌无法再复制，需删除后重建。
 - **不替代 HTTPS/TLS**：生产环境务必经 HTTPS 调用，否则令牌可能被窃听。
 
 ## 2. 获取 PAT
 
-页面：资源管理 → 访问令牌 → 创建。
+页面：资源管理 → 访问令牌 → 创建 / 列表复制。
 
 也可通过 API 管理（登录 JWT 鉴权，适合自动化）：
 
-| 方法   | 路径                    | 权限                     | 说明                                                           |
-| ------ | ----------------------- | ------------------------ | -------------------------------------------------------------- |
-| GET    | `/resource/tokens`      | `resource_tokens:view`   | 列出本人令牌（分页，仅元数据）                                 |
-| POST   | `/resource/tokens`      | `resource_tokens:create` | 创建，201；`data.token` 明文仅此一次，`data.metadata` 为元数据 |
-| DELETE | `/resource/tokens/{id}` | `resource_tokens:delete` | 删除（吊销）                                                   |
+| 方法   | 路径                           | 权限                     | 说明                                                   |
+| ------ | ------------------------------ | ------------------------ | ------------------------------------------------------ |
+| GET    | `/resource/tokens`             | `resource_tokens:view`   | 列出本人令牌（分页元数据，含 `copyable`）              |
+| POST   | `/resource/tokens`             | `resource_tokens:create` | 创建，201；`data.token` 明文，`data.metadata` 为元数据 |
+| GET    | `/resource/tokens/{id}/reveal` | `resource_tokens:view`   | 返回 AES-GCM 密文；客户端解密后复制；无密文时 422      |
+| DELETE | `/resource/tokens/{id}`        | `resource_tokens:delete` | 删除（吊销）                                           |
 
 ```bash
 # 登录换取 JWT（脚本调试可用明文 password；Web 端只发 password_cipher）
@@ -40,25 +42,30 @@ curl -fsS -X POST "$HOST/api/v1/resource/tokens" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"ci-bot","scopes":["agents:run"],"expires_in_days":90}'
-# → 保存响应 data.token（br_...），仅此一次可见
+# → 响应 data.token（br_...）；之后可用 reveal 取密文并由客户端解密
+
+# 获取已有 PAT 密文（Web 端解密后复制；脚本更宜创建时保存 data.token）
+curl -fsS "$HOST/api/v1/resource/tokens/1/reveal" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+# → 响应 data.token_cipher（hex）
 ```
 
 ## 3. 开放接口一览
 
-| scope          | 方法 | 路径                               | 说明                                                   |
-| -------------- | ---- | ---------------------------------- | ------------------------------------------------------ |
-| `agents:run`   | POST | `/ai/agents/{id}/api-runs`         | 触发 Agent 运行（202 异步）                            |
-| `skills:read`  | GET  | `/skills/{id}/package`             | 下载技能包（二进制 ZIP）                               |
-| `docs:write`   | POST | `/projects/{id}/docs/push`         | 按路径 upsert 文档草稿；`{id}` 可为数字 ID 或项目 slug |
-| `docs:publish` | POST | `/projects/{id}/docs/publish-path` | 按路径发布文档草稿；`{id}` 可为数字 ID 或项目 slug     |
+| scope         | 方法 | 路径                       | 说明                                               |
+| ------------- | ---- | -------------------------- | -------------------------------------------------- |
+| `agents:run`  | POST | `/ai/agents/{id}/api-runs` | 触发 Agent 运行（202 异步）                        |
+| `skills:read` | GET  | `/skills/{id}/package`     | 下载技能包（二进制 ZIP）                           |
+| `docs:write`  | POST | `/projects/{id}/docs/push` | 按路径 upsert 文档；`{id}` 可为数字 ID 或项目 slug |
+| `docs:read`   | GET  | `/projects/{id}/docs/pull` | 按路径读取文档；`{id}` 可为数字 ID 或项目 slug     |
 
-以上接口也接受登录 JWT（此时校验 RBAC 权限而非 scope）：`api-runs` 需 `ai_agents:execute`，`package` 需 `ai_skills:download`，`push` 需 `project_docs:create`，`publish-path` 需 `project_docs:update`；项目文档接口另要求项目 ACL。
+以上接口也接受登录 JWT（此时校验 RBAC 权限而非 scope）：`api-runs` 需 `ai_agents:execute`，`package` 需 `ai_skills:download`，`push` 需 `project_docs:create`，`pull` 需 `project_docs:view`；项目文档接口另要求项目 ACL。
 
 ## 4. 通用约定
 
 - **响应信封**：`{ "code": 0, "message": "success", "data": {} }`；成功 `code=0`，失败 `code` 等于 HTTP 状态码且附带 `request_id`。二进制下载（技能包）不经过信封。
 - **异步触发**：返回 `202`，`data` 为运行记录（含 `id` 与当前 `status`）。
-- **错误码**：`400` 参数无效 / `401` PAT 无效或过期 / `403` scope 不足或无权限 / `404` 资源不存在 / `409` 版本冲突 / `422` 语义校验失败。
+- **错误码**：`400` 参数无效 / `401` PAT 无效或过期 / `403` scope 不足或无权限 / `404` 资源不存在 / `422` 语义校验失败。
 
 ---
 
@@ -87,9 +94,9 @@ curl -fsS -OJ "$HOST/api/v1/skills/3/package" \
   -H "Authorization: Bearer br_..."
 ```
 
-### 5.3 按路径推送文档草稿 — scope `docs:write`
+### 5.3 按路径推送文档 — scope `docs:write`
 
-`POST /projects/{id}/docs/push` — 按 `api_dir` + `api_doc_name` upsert 草稿，**只写草稿、不自动发布**。路径参数 `{id}` 为正整数时按项目 ID；否则按 slug 解析（找不到 → 404）。
+`POST /projects/{id}/docs/push` — 按 `api_dir` + `api_doc_name` upsert 文档内容。路径参数 `{id}` 为正整数时按项目 ID；否则按 slug 解析（找不到 → 404）。
 
 | 字段           | 必填 | 说明                                                                            |
 | -------------- | ---- | ------------------------------------------------------------------------------- |
@@ -97,7 +104,7 @@ curl -fsS -OJ "$HOST/api/v1/skills/3/package" \
 | `api_doc_name` | *    | 文档名；缺 `.md` 后缀时服务端补齐                                               |
 | `api_doc`      | *    | Markdown 内容                                                                   |
 
-- 响应：`201` 新建节点 / `200` 更新已有草稿。
+- 响应：`201` 新建节点 / `200` 更新已有文档。
 - 错误：`400` 参数无效；`403` scope 不足或不满足项目 ACL；`404` 项目不存在。
 
 ```bash
@@ -107,17 +114,22 @@ curl -fsS -X POST "$HOST/api/v1/projects/my-product/docs/push" \
   -d '{"api_dir":"guides","api_doc_name":"getting-started","api_doc":"# 快速上手\n..."}'
 ```
 
-### 5.4 按路径发布文档草稿 — scope `docs:publish`
+### 5.4 按路径读取文档 — scope `docs:read`
 
-`POST /projects/{id}/docs/publish-path` — 解析路径后以当前 `content_version` 发布草稿。路径参数 `{id}` 规则同 push（ID 或 slug）。
+`GET /projects/{id}/docs/pull` — 按路径读取文档节点（含 `content`）。路径参数 `{id}` 规则同 push。
 
-| 字段           | 必填 | 说明               |
+| 查询参数       | 必填 | 说明               |
 | -------------- | ---- | ------------------ |
 | `api_dir`      |      | 目录路径，规则同上 |
 | `api_doc_name` | *    | 文档名             |
 
-- 响应：`200` 已发布。
-- 错误：`400` 无草稿；`404` 路径不存在；`409` 版本冲突（草稿已被他人更新，重新 push 后再发布）。
+- 响应：`200`，`data` 为 ApiDocNode。
+- 错误：`400` 缺 `api_doc_name`；`404` 路径不存在。
+
+```bash
+curl -fsS "$HOST/api/v1/projects/my-product/docs/pull?api_dir=guides&api_doc_name=getting-started" \
+  -H "Authorization: Bearer br_..."
+```
 
 ---
 
@@ -137,17 +149,16 @@ curl -fsS -X POST "$HOST/api/v1/projects/my-product/docs/push" \
 
 ```bash
 HOST=https://bedrock.example.com
-PAT=br_...   # scopes: docs:write, docs:publish, agents:run
+PAT=br_...   # scopes: docs:read, docs:write, agents:run
 
-# 1. 推送接口文档草稿（也可用数字项目 ID）
+# 1. 推送接口文档（也可用数字项目 ID）
 curl -fsS -X POST "$HOST/api/v1/projects/my-product/docs/push" \
   -H "Authorization: Bearer $PAT" -H 'Content-Type: application/json' \
   -d '{"api_dir":"openapi","api_doc_name":"v2","api_doc":"# API v2\n..."}'
 
-# 2. 发布
-curl -fsS -X POST "$HOST/api/v1/projects/my-product/docs/publish-path" \
-  -H "Authorization: Bearer $PAT" -H 'Content-Type: application/json' \
-  -d '{"api_dir":"openapi","api_doc_name":"v2"}'
+# 2. 读取校验
+curl -fsS "$HOST/api/v1/projects/my-product/docs/pull?api_dir=openapi&api_doc_name=v2" \
+  -H "Authorization: Bearer $PAT"
 
 # 3. 触发 Agent 运行并记录 run id
 RUN_ID=$(curl -fsS -X POST "$HOST/api/v1/ai/agents/1/api-runs" \

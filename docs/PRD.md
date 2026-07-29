@@ -896,7 +896,7 @@ flowchart TB
 
 | 类别   | 要求                                                            |
 | ------ | --------------------------------------------------------------- |
-| 安全   | 敏感字段加密存储；密钥不落日志；PAT 仅显示一次；RBAC 服务端强制；`access_token` 存 Web Storage + Bearer，`refresh_token` 仅 Set-Cookie（HttpOnly、不设 Secure），以支持非 HTTPS 部署 |
+| 安全   | 敏感字段加密存储；密钥不落日志；PAT 哈希鉴权 + AES-GCM 密文（reveal 返密文、前端解密复制）；RBAC 服务端强制；`access_token` 存 Web Storage + Bearer，`refresh_token` 仅 Set-Cookie（HttpOnly、不设 Secure），以支持非 HTTPS 部署 |
 | 可靠性 | 服务重启后非终态 Build Run / Agent Run 标记失败或恢复策略明确   |
 | 可观测 | 构建与智能体日志可检索；安装任务可追踪                          |
 | 性能   | 列表分页；仪表盘刷新节流；并发构建可配置上限                    |
@@ -940,7 +940,7 @@ flowchart TB
 | 仪表盘 | 可排序显隐；权限过滤 | — |
 | 运维 | 进程查询终止；开发环境检测安装升级卸载切版本；每环境源优先级回退 | 自定义脚本仅超管；同 UID 风险提示 |
 | CI/CD | 一仓多任务多执行；部署失败不改构建成功；凭证 RBAC | `distribution_summary`；禁止流水线内同步 Agent |
-| 项目 | 成员角色；需求 CRUD；文档树上传；智能体生成 | 生成只写 draft；publish + `expected_version` |
+| 项目 | 成员角色；需求 CRUD；文档树上传；智能体生成 | 文档单态 `content`；开放 push/pull |
 | AI | 独立运行；手动/API/定时/构建事件；上下文=提示词+仓库；每 Agent 持久根工作区 + 固定产出目录跨 Run 复用；记录输入输出日志，不提供 Agent 文件制品 | AgentRun 独立状态机；失败不改 BuildRun；BuildRun 制品不受影响 |
 | Skills | 开放规范 ZIP；公私；覆盖更新；PAT 下载 | 无私有对象 ACL 外的非项目 ACL |
 | 系统 | 用户角色资源字典操作日志 | — |

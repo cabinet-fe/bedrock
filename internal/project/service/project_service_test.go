@@ -254,28 +254,25 @@ func TestOwnerTransferIsOwnerOrManageAllOnly(t *testing.T) {
 	}
 }
 
-func TestDocumentPublishConflictAndImportDraftOnly(t *testing.T) {
+func TestDocumentContentUpsertAndImport(t *testing.T) {
 	svc := newProjectService(t)
 	owner := actor(1,
 		"project_projects:create", "project_projects:update",
 		"project_docs:create", "project_docs:view", "project_docs:update",
 	)
 	project := createProject(t, svc, owner, "docs")
-	published := "published"
+	content := "hello"
 	node, err := svc.CreateDocNode(owner, project.ID, DocNodeInput{
-		Kind: projectmodel.DocNodeDocument, Name: "doc.md", DraftContent: &published,
+		Kind: projectmodel.DocNodeDocument, Name: "doc.md", Content: &content,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.PublishDocNode(owner, node.ID, 9); !IsConflict(err) {
-		t.Fatalf("publish stale expected version = %v", err)
-	}
-	if _, err := svc.PublishDocNode(owner, node.ID, 0); err != nil {
-		t.Fatal(err)
+	if node.Content != "hello" {
+		t.Fatalf("created content: %#v", node)
 	}
 
-	payload := makeZIP(t, map[string]string{"doc.md": "new draft"})
+	payload := makeZIP(t, map[string]string{"doc.md": "imported"})
 	if _, err := svc.ImportZIP(owner, project.ID, nil, "docs.zip", "application/zip", bytes.NewReader(payload), int64(len(payload))); err != nil {
 		t.Fatal(err)
 	}
@@ -283,12 +280,12 @@ func TestDocumentPublishConflictAndImportDraftOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.PublishedContent != "published" || updated.DraftContent != "new draft" || updated.DraftUpdatedAt == nil {
-		t.Fatalf("import must leave published unchanged: %#v", updated)
+	if updated.Content != "imported" {
+		t.Fatalf("import must overwrite content: %#v", updated)
 	}
 }
 
-func TestUpsertAndPublishDocByPath(t *testing.T) {
+func TestUpsertAndPullDocByPath(t *testing.T) {
 	svc := newProjectService(t)
 	owner := actor(1,
 		"project_projects:create",
@@ -307,8 +304,8 @@ func TestUpsertAndPublishDocByPath(t *testing.T) {
 	if err != nil || !isNew {
 		t.Fatalf("create upsert = %#v new=%v err=%v", created, isNew, err)
 	}
-	if created.Name != "UserController.md" || created.DraftContent != "# v1" || created.PublishedContent != "" {
-		t.Fatalf("created draft: %#v", created)
+	if created.Name != "UserController.md" || created.Content != "# v1" {
+		t.Fatalf("created: %#v", created)
 	}
 	tree, err := svc.ListDocTree(owner, project.ID)
 	if err != nil {
@@ -322,22 +319,19 @@ func TestUpsertAndPublishDocByPath(t *testing.T) {
 	if err != nil || isNew || updated.ID != created.ID {
 		t.Fatalf("update upsert = %#v new=%v err=%v", updated, isNew, err)
 	}
-	if updated.DraftContent != "# v2" || updated.PublishedContent != "" {
-		t.Fatalf("upsert must overwrite draft only: %#v", updated)
+	if updated.Content != "# v2" {
+		t.Fatalf("upsert must overwrite content: %#v", updated)
 	}
 
-	if _, err := svc.PublishDocByPath(owner, project.ID, "missing/dir", "UserController"); !IsNotFound(err) {
+	if _, err := svc.GetDocByPath(owner, project.ID, "missing/dir", "UserController"); !IsNotFound(err) {
 		t.Fatalf("missing path = %v", err)
 	}
-	published, err := svc.PublishDocByPath(owner, project.ID, "ic-common-resource/controllers", "UserController")
+	pulled, err := svc.GetDocByPath(owner, project.ID, "ic-common-resource/controllers", "UserController")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.PublishedContent != "# v2" || published.DraftUpdatedAt != nil {
-		t.Fatalf("publish-path: %#v", published)
-	}
-	if _, err := svc.PublishDocByPath(owner, project.ID, "ic-common-resource/controllers", "UserController"); err == nil {
-		t.Fatal("publish without draft must fail")
+	if pulled.Content != "# v2" || pulled.ID != created.ID {
+		t.Fatalf("pull-path: %#v", pulled)
 	}
 
 	// Conflict: dir name occupied by a document.
@@ -353,10 +347,10 @@ func TestUpsertAndPublishDocByPath(t *testing.T) {
 	}
 }
 
-func TestMarkdownUploadWritesDraftOnly(t *testing.T) {
+func TestMarkdownUploadWritesContent(t *testing.T) {
 	svc := newProjectService(t)
 	owner := actor(1, "project_projects:create", "project_docs:create")
-	project := createProject(t, svc, owner, "markdown-draft")
+	project := createProject(t, svc, owner, "markdown-content")
 
 	node, err := svc.UploadMarkdown(
 		owner,
@@ -364,14 +358,14 @@ func TestMarkdownUploadWritesDraftOnly(t *testing.T) {
 		nil,
 		"guide.md",
 		"text/markdown",
-		bytes.NewReader([]byte("# Draft guide")),
-		int64(len("# Draft guide")),
+		bytes.NewReader([]byte("# Guide")),
+		int64(len("# Guide")),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if node.PublishedContent != "" || node.DraftContent != "# Draft guide" || node.DraftUpdatedAt == nil {
-		t.Fatalf("Markdown upload must create only a draft: %#v", node)
+	if node.Content != "# Guide" {
+		t.Fatalf("Markdown upload must write content: %#v", node)
 	}
 }
 

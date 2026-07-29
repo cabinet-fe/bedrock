@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: "ProjectDetail" });
 
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { message } from "@veltra/desktop";
 import { useRoute, useRouter } from "vue-router";
 
@@ -18,7 +18,18 @@ const { hasPermission } = usePermission();
 const project = ref<ProductProject | null>(null);
 const tab = ref("requirements");
 
-const projectID = computed(() => Number(route.params.id));
+function parseRouteId(raw: unknown): number | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const id = typeof value === "number" ? value : Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+// Layout keys detail by path and keep-alive caches the instance. Freeze path/id at
+// setup so deactivated instances do not re-read the global route (e.g. /ai/runs/:id)
+// and call getProject with a foreign id → 「项目不存在」.
+const detailPath = route.path;
+const projectID = parseRouteId(route.params.id);
+
 const projectRole = computed(() => project.value?.my_role);
 const canManageAll = computed(() => hasPermission("project_projects:manage_all"));
 const tabs = computed(
@@ -35,31 +46,43 @@ function resolveTab(preferred?: unknown): string {
   return tabs.value[0]?.key ?? "";
 }
 
+function isThisDetailActive() {
+  return route.path === detailPath;
+}
+
 async function load() {
-  if (!Number.isSafeInteger(projectID.value) || projectID.value <= 0) {
+  if (projectID == null) {
     project.value = null;
     return;
   }
   try {
-    project.value = await getProject(projectID.value);
-    tab.value = resolveTab(route.query.tab);
+    project.value = await getProject(projectID);
+    if (isThisDetailActive()) {
+      tab.value = resolveTab(route.query.tab);
+    }
   } catch (error) {
     project.value = null;
-    message.error(error instanceof Error ? error.message : "读取项目失败");
+    if (isThisDetailActive()) {
+      message.error(error instanceof Error ? error.message : "读取项目失败");
+    }
   }
 }
 
-watch(projectID, () => void load(), { immediate: true });
+onMounted(() => {
+  void load();
+});
 
 watch(
   () => route.query.tab,
   (next) => {
+    if (!isThisDetailActive()) return;
     const resolved = resolveTab(next);
     if (tab.value !== resolved) tab.value = resolved;
   },
 );
 
 watch(tab, (next) => {
+  if (!isThisDetailActive()) return;
   if (!next || route.query.tab === next) return;
   void router.replace({ query: { ...route.query, tab: next } });
 });

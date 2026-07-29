@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,31 +35,7 @@ import (
 	storageservice "bedrock/internal/storage/service"
 )
 
-func TestPublishDocNodeRequiresExpectedVersion(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	handler, service := newProjectHandlerForTest(t)
-	owner := projectservice.NewAccessContext(1, true, nil)
-	project, err := service.CreateProject(owner, projectservice.CreateProjectInput{Name: "Docs", Slug: "docs"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	draft := "draft"
-	node, err := service.CreateDocNode(owner, project.ID, projectservice.DocNodeInput{
-		Kind: "doc", Name: "guide.md", DraftContent: &draft,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got := publishDocNodeRequest(t, handler, project.ID, node.ID, `{}`); got != http.StatusBadRequest {
-		t.Fatalf("missing expected_version status = %d, want %d", got, http.StatusBadRequest)
-	}
-	if got := publishDocNodeRequest(t, handler, project.ID, node.ID, `{"expected_version":1}`); got != http.StatusConflict {
-		t.Fatalf("stale expected_version status = %d, want %d", got, http.StatusConflict)
-	}
-}
-
-func TestPushAndPublishPathPATScope(t *testing.T) {
+func TestPushAndPullPathPATScope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler, service := newProjectHandlerForTest(t)
 	owner := projectservice.NewAccessContext(1, true, nil)
@@ -82,12 +59,11 @@ func TestPushAndPublishPathPATScope(t *testing.T) {
 		t.Fatalf("PAT docs:write upsert = %d, want 200", got)
 	}
 
-	pubBody := `{"api_dir":"a/b","api_doc_name":"Doc"}`
-	if got := docsPathRequest(t, handler, http.MethodPost, "/docs/publish-path", projectID, pubBody, true, []string{"docs:write"}); got != http.StatusForbidden {
-		t.Fatalf("PAT without docs:publish = %d, want 403", got)
+	if got := docsPathRequest(t, handler, http.MethodGet, "/docs/pull?api_dir=a/b&api_doc_name=Doc", projectID, "", true, []string{"docs:write"}); got != http.StatusForbidden {
+		t.Fatalf("PAT without docs:read = %d, want 403", got)
 	}
-	if got := docsPathRequest(t, handler, http.MethodPost, "/docs/publish-path", projectID, pubBody, true, []string{"docs:publish"}); got != http.StatusOK {
-		t.Fatalf("PAT docs:publish = %d, want 200", got)
+	if got := docsPathRequest(t, handler, http.MethodGet, "/docs/pull?api_dir=a/b&api_doc_name=Doc", projectID, "", true, []string{"docs:read"}); got != http.StatusOK {
+		t.Fatalf("PAT docs:read pull = %d, want 200", got)
 	}
 }
 
@@ -113,8 +89,15 @@ func docsPathRequest(t *testing.T, handler *ProjectHandler, method, suffix, proj
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(method, "/api/v1/projects/"+projectID+suffix, bytes.NewBufferString(body))
-	c.Request.Header.Set("Content-Type", "application/json")
+	path := "/api/v1/projects/" + projectID + suffix
+	var req *http.Request
+	if body != "" {
+		req = httptest.NewRequest(method, path, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req = httptest.NewRequest(method, path, nil)
+	}
+	c.Request = req
 	c.Params = gin.Params{{Key: "id", Value: projectID}}
 	c.Set("user_id", uint(1))
 	c.Set("is_super_admin", !isPAT)
@@ -122,11 +105,11 @@ func docsPathRequest(t *testing.T, handler *ProjectHandler, method, suffix, proj
 	if scopes != nil {
 		c.Set("pat_scopes", scopes)
 	}
-	switch suffix {
-	case "/docs/push":
+	switch {
+	case strings.HasPrefix(suffix, "/docs/push"):
 		handler.PushDocByPath(c)
-	case "/docs/publish-path":
-		handler.PublishDocByPath(c)
+	case strings.HasPrefix(suffix, "/docs/pull"):
+		handler.PullDocByPath(c)
 	default:
 		t.Fatalf("unknown suffix %s", suffix)
 	}
@@ -258,28 +241,6 @@ func TestGenerateDocsWiredReturnsAccepted(t *testing.T) {
 	if !bytes.Contains(recorder.Body.Bytes(), []byte(`"agent_run_id"`)) {
 		t.Fatalf("expected agent_run_id in response: %s", recorder.Body.String())
 	}
-}
-
-func publishDocNodeRequest(t *testing.T, handler *ProjectHandler, projectID, nodeID uint, body string) int {
-	t.Helper()
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(
-		http.MethodPost,
-		"/api/v1/projects/1/docs/1/publish",
-		bytes.NewBufferString(body),
-	)
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Params = gin.Params{
-		{Key: "id", Value: "1"},
-		{Key: "nodeID", Value: "1"},
-	}
-	c.Params[0].Value = strconv.FormatUint(uint64(projectID), 10)
-	c.Params[1].Value = strconv.FormatUint(uint64(nodeID), 10)
-	c.Set("user_id", uint(1))
-	c.Set("is_super_admin", true)
-	handler.PublishDocNode(c)
-	return recorder.Code
 }
 
 func newProjectHandlerForTest(t *testing.T) (*ProjectHandler, *projectservice.ProjectService) {

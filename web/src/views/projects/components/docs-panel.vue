@@ -1,21 +1,19 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
-import { message, messageConfirm, type TabItem } from "@veltra/desktop";
+import { message } from "@veltra/desktop";
 import { Books, Folder } from "@veltra/icons/normal";
 
 import {
   createDocNode,
   deleteDocNode,
-  getDocDiff,
   getDocNode,
   importDocsZIP,
   listDocTree,
   moveDocNode,
-  publishDocNode,
   updateDocNode,
   uploadMarkdown,
 } from "@/api/projects";
-import type { ApiDocDiff, ApiDocNode, ProductProject, ProjectRole } from "@/api/types";
+import type { ApiDocNode, ProductProject, ProjectRole } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import MarkdownViewer from "@/components/markdown-viewer";
 import { usePermission } from "@/composables/use-permission";
@@ -30,9 +28,8 @@ const { hasPermission } = usePermission();
 const tree = ref<ApiDocNode[]>([]);
 const selectedID = ref<number>();
 const selected = ref<ApiDocNode | null>(null);
-const draftContent = ref("");
+const content = ref("");
 const docPane = ref("preview");
-const diff = ref<ApiDocDiff | null>(null);
 const nodeDialogOpen = ref(false);
 const moveDialogOpen = ref(false);
 const creatingKind = ref<"dir" | "doc">("doc");
@@ -61,7 +58,7 @@ const canUpdate = computed(
 const canDelete = computed(
   () => hasPermission("project_docs:delete") && canAdminProjectContent.value,
 );
-const docPaneTabs = computed<TabItem[]>(() =>
+const docPaneTabs = computed(() =>
   canUpdate.value
     ? [
         { key: "preview", name: "预览" },
@@ -69,9 +66,7 @@ const docPaneTabs = computed<TabItem[]>(() =>
       ]
     : [{ key: "preview", name: "预览" }],
 );
-const renderedContent = computed(
-  () => draftContent.value || selected.value?.published_content || "",
-);
+
 /** 移动弹框可选父目录：仅目录节点 */
 const moveDirTree = computed(() => filterDirNodes(tree.value));
 /** 不可选为父目录的节点（自身及其子孙） */
@@ -106,19 +101,16 @@ async function loadTree() {
 
 async function selectNode(id?: number) {
   selectedID.value = id;
-  diff.value = null;
   if (!id) {
     selected.value = null;
-    draftContent.value = "";
+    content.value = "";
     return;
   }
   try {
     const node = await getDocNode(props.project.id, id);
     selected.value = node;
-    draftContent.value = node.draft_content ?? "";
-    // 默认预览；编辑需用户主动切换
+    content.value = node.content ?? "";
     docPane.value = "preview";
-    if (node.kind === "doc") diff.value = await getDocDiff(props.project.id, node.id);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "读取文档失败");
   }
@@ -150,47 +142,24 @@ async function createNode() {
     nodeDialogOpen.value = false;
     await loadTree();
     await selectNode(node.id);
-    message.success(creatingKind.value === "dir" ? "目录已创建" : "文档草稿已创建");
+    message.success(creatingKind.value === "dir" ? "目录已创建" : "文档已创建");
   } catch (error) {
     message.error(error instanceof Error ? error.message : "创建失败");
   }
 }
 
-async function saveDraft() {
+async function saveContent() {
   if (!selected.value || selected.value.kind !== "doc") return;
   try {
     const node = await updateDocNode(props.project.id, selected.value.id, {
-      draft_content: draftContent.value,
+      content: content.value,
     });
     selected.value = node;
-    diff.value = await getDocDiff(props.project.id, node.id);
+    content.value = node.content ?? "";
     await loadTree();
     message.success("已保存");
   } catch (error) {
     message.error(error instanceof Error ? error.message : "保存失败");
-  }
-}
-
-async function saveAndPublish() {
-  if (!selected.value || selected.value.kind !== "doc") return;
-  const action = await messageConfirm.warning(`确认保存并发布文档「${selected.value.name}」？`, {
-    cancelButtonText: "取消",
-  }).onClosed;
-  if (action !== "confirm") return;
-  try {
-    const saved = await updateDocNode(props.project.id, selected.value.id, {
-      draft_content: draftContent.value,
-    });
-    const node = await publishDocNode(props.project.id, saved.id, saved.content_version);
-    selected.value = node;
-    draftContent.value = "";
-    diff.value = await getDocDiff(props.project.id, node.id);
-    await loadTree();
-    message.success("文档已保存并发布");
-  } catch (error) {
-    const text = error instanceof Error ? error.message : "保存并发布失败";
-    message.error(text.includes("版本冲突") ? "版本冲突：请刷新文档后重试" : text);
-    if (text.includes("版本冲突") && selected.value) await selectNode(selected.value.id);
   }
 }
 
@@ -238,7 +207,7 @@ async function uploadMarkdownFile(files: File[]) {
     const node = await uploadMarkdown(props.project.id, selectedDirectoryID(), file);
     await loadTree();
     await selectNode(node.id);
-    message.success("Markdown 已导入为草稿");
+    message.success("Markdown 已导入");
   } catch (error) {
     message.error(error instanceof Error ? error.message : "Markdown 导入失败");
   }
@@ -251,7 +220,7 @@ async function importZIPFile(files: File[]) {
     const items = await importDocsZIP(props.project.id, selectedDirectoryID(), file);
     await loadTree();
     if (items[0]) await selectNode(items[0].id);
-    message.success(`已导入 ${items.length} 个 Markdown 草稿`);
+    message.success(`已导入 ${items.length} 个 Markdown`);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "ZIP 导入失败");
   }
@@ -328,7 +297,6 @@ watch(canUpdate, (ok) => {
               <u-tag size="small" :type="selected.kind === 'dir' ? undefined : 'primary'">{{
                 selected.kind === "dir" ? "目录" : "文档"
               }}</u-tag>
-              <span v-if="selected.kind === 'doc'">已发布版本 {{ selected.content_version }}</span>
             </p>
           </div>
           <u-action-group v-if="canDelete" :max="4">
@@ -337,10 +305,6 @@ watch(canUpdate, (ok) => {
         </div>
 
         <template v-if="selected.kind === 'doc'">
-          <div v-if="diff" class="diff-summary">
-            草稿 {{ diff.draft_lines }} 行，已发布 {{ diff.published_lines }} 行，新增
-            {{ diff.added_lines }} 行，移除 {{ diff.removed_lines }} 行。
-          </div>
           <u-tabs
             v-model="docPane"
             :items="docPaneTabs"
@@ -350,21 +314,15 @@ watch(canUpdate, (ok) => {
           >
             <template #preview>
               <u-scroll class="doc-pane">
-                <MarkdownViewer :content="renderedContent" />
+                <MarkdownViewer :content="content" />
               </u-scroll>
             </template>
             <template v-if="canUpdate" #edit>
-              <u-code-editor
-                v-model="draftContent"
-                :langs="['markdown']"
-                class="doc-pane doc-editor"
-              />
+              <u-code-editor v-model="content" :langs="['markdown']" class="doc-pane doc-editor" />
             </template>
           </u-tabs>
-          <!-- 仅编辑态展示；固定在内容区底部 -->
           <div v-if="canUpdate && docPane === 'edit'" class="doc-footer">
-            <u-button type="primary" @click="saveDraft">保存</u-button>
-            <u-button type="success" @click="saveAndPublish">保存并发布</u-button>
+            <u-button type="primary" @click="saveContent">保存</u-button>
           </div>
         </template>
         <u-empty v-else text="目录不包含 Markdown 内容" />
@@ -516,7 +474,6 @@ watch(canUpdate, (ok) => {
 }
 
 .editor-head,
-.diff-summary,
 .doc-footer {
   flex-shrink: 0;
 }
@@ -533,11 +490,6 @@ watch(canUpdate, (ok) => {
   font-size: 13px;
 }
 
-.diff-summary {
-  color: var(--u-text-color-second, #626b7d);
-  font-size: 13px;
-}
-
 .doc-tabs {
   flex: 1;
   height: 100%;
@@ -547,24 +499,15 @@ watch(canUpdate, (ok) => {
 .doc-pane {
   flex: 1 1 auto;
   width: 100%;
-  min-width: 0;
   min-height: 0;
 }
 
 .doc-editor {
   height: 100%;
-  max-height: none;
 }
 
 .doc-footer {
   gap: 8px;
-  padding-top: 10px;
-  border-top: 1px solid var(--u-border-color, #e8eaef);
-}
-
-@media (max-width: 900px) {
-  .docs {
-    grid-template-columns: 1fr;
-  }
+  justify-content: flex-end;
 }
 </style>

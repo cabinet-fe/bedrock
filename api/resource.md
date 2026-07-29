@@ -218,18 +218,26 @@
 
 PAT 按 `user_id` 隔离：仅能列出/创建/删除本人令牌。Bearer PAT 的鉴权消费方式见 [auth.md](auth.md)。
 
-### GET /resource/tokens — 列出个人访问令牌（仅元数据）
+### GET /resource/tokens — 列出个人访问令牌（元数据）
 
 权限：`resource_tokens:view`
 查询：`page`、`page_size`（标准分页）
 响应 200：data = 分页信封（`items`、`total`、`page`、`page_size`、`total_pages`）
+说明：列表不返回明文；`copyable=true` 表示可通过 reveal 取密文并由客户端解密复制。历史仅哈希、无密文的令牌 `copyable=false`。
 
 ### POST /resource/tokens — 创建个人访问令牌
 
 权限：`resource_tokens:create`
 请求：{ name*, scopes*, expires_at?, expires_in_days? }
 响应 201：data = PATCreateResponse
-说明：明文 token 仅在创建响应中返回一次，之后不可再读。服务端只存哈希。明文前缀为 `br_`+hex（不兼容旧 `br_pat_`）。scopes 限于 `skills:read`、`agents:run`、`docs:write`、`docs:publish`。过期三选一：都不传 = 永不过期；`expires_in_days` 仅允许 `30` / `90` / `180` / `365`（服务端换算为 UTC 绝对时间写入 `expires_at`）；`expires_at` 为自定义绝对时间且必须晚于当前 UTC。`expires_at` 与 `expires_in_days` 不可同时传。不能替代 HTTPS/TLS。
+说明：创建响应含明文 `token`；服务端同时存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 reveal 返回密文，由客户端解密复制）。明文前缀为 `br_`+hex（不兼容旧 `br_pat_`）。scopes 限于 `skills:read`、`agents:run`、`docs:read`、`docs:write`。过期三选一：都不传 = 永不过期；`expires_in_days` 仅允许 `30` / `90` / `180` / `365`（服务端换算为 UTC 绝对时间写入 `expires_at`）；`expires_at` 为自定义绝对时间且必须晚于当前 UTC。`expires_at` 与 `expires_in_days` 不可同时传。不能替代 HTTPS/TLS。
+
+### GET /resource/tokens/{id}/reveal — 获取个人访问令牌密文
+
+权限：`resource_tokens:view`（仅属主）
+路径参数：id*: integer
+响应 200：data = PATRevealResponse
+说明：返回 AES-GCM 密文（`token_cipher`）；前端用与登录相同的 `encryption.key`（`window.__BEDROCK_ENCRYPTION_KEY__` / `VITE_BEDROCK_ENCRYPTION_KEY`）解密后再复制。格式与 `internal/pkg.Encrypt` 一致：`hex(nonce(12) || ciphertext||tag)`。服务端不解密、不返回明文。历史无密文令牌返回 422（无法复制，需删除后重建）。非属主按无效处理。密文/明文均不落审计详情。
 
 ### DELETE /resource/tokens/{id} — 删除个人访问令牌
 
@@ -474,8 +482,14 @@ Metadata only; secret never returned
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `token` | `string` |  | 明文仅展示一次；不落日志、不可再读 |
+| `token` | `string` |  | 明文；仅创建响应返回；之后通过 reveal 取密文并由客户端解密 |
 | `metadata` | `PersonalAccessToken` |  |  |
+
+### PATRevealResponse
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `token_cipher` | `string` |  | AES-GCM 密文 hex（nonce\|\|ct\|\|tag）；客户端解密 |
 
 ### PersonalAccessToken
 
@@ -485,7 +499,8 @@ Metadata only; secret never returned
 | `user_id` | `integer` |  |  |
 | `name` | `string` |  |  |
 | `token_prefix` | `string` |  |  |
-| `scopes` | `('skills:read' \| 'agents:run' \| 'docs:write' \| 'docs:publish')[]` |  |  |
+| `scopes` | `('skills:read' \| 'agents:run' \| 'docs:read' \| 'docs:write')[]` |  |  |
+| `copyable` | `boolean` |  | 是否存有可解密密文；`false` 时无法 reveal（历史哈希-only） |
 | `expires_at` | `string(date-time)` |  |  |
 | `revoked_at` | `string(date-time)` |  |  |
 | `last_used_at` | `string(date-time)` |  |  |

@@ -51,7 +51,7 @@ description: >-
 | `resolve_types`：字段树、继承、`needs_source` | 前端友好表格；泛型/Map；解释字段含义 |
 | `changed_since` / `stamp_commit`：变更范围、`docFiles`、同步提交号、`repoRel` | 判断改哪些 `<kebab>.md`；核对文档与源码意图 |
 | `ensure_conventions`：生成唯一 `_conventions.md` | 保持 `project-conventions.md` 为规范源 |
-| `push_docs`：镜像推送 `<out>/**/*.md` 到产品项目文档 | 确认 `--slug`、PAT scope 与项目 ACL；决定是否 `--publish` |
+| `push_docs`：镜像推送 `<out>/**/*.md` 到产品项目文档 | 确认 `--slug`、PAT scope 与项目 ACL |
 
 **脚本边界**：列接口路径、文档文件名、类型字段、变更范围；网关前缀来自手维 JSON 查找。**不再**解析 Spring Gateway YAML，也不解释 StripPrefix / RewritePath 等网关细节。
 
@@ -174,7 +174,7 @@ node scripts/list_endpoints.mjs <srcRoot> [--files a.java,b.java] [--project nam
 node scripts/resolve_types.mjs <srcRoot> TypeA,TypeB
 node scripts/changed_since.mjs <repoRoot> [baseCommit] [--out <dir>] [--project <name>] [--workspace <dir>]
 node scripts/stamp_commit.mjs <repoRoot> [--out <dir>] [--project <name>] [--workspace <dir>] [--docs a.md,b.md] [--gateway-prefix /x] [--gateway-service name] [--dry-run]
-node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--env-file <path>] [--publish] [--dry-run]
+node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--env-file <path>] [--dry-run]
 ```
 
 | 脚本 | 标准输出 |
@@ -198,7 +198,6 @@ node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--env-file <path
 | `[baseCommit]` | `changed_since` | 覆盖 `.sync.json` 中的上次提交 |
 | `--slug <id>` | `push_docs` | Bedrock 产品项目标识（路径参数；可为数字 ID 或 slug） |
 | `--env-file <path>` | `push_docs` | 显式 `.env`；否则按 `$BEDROCK_AGENT_ENV_FILE` → `$BEDROCK_AGENT_WORKDIR/.env` → `./.env` |
-| `--publish` | `push_docs` | 推送后再调 `publish-path`（默认只写草稿） |
 
 ### 推送到产品项目（`push_docs`）
 
@@ -211,7 +210,7 @@ node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--env-file <path
 
 | 变量 | 说明 |
 |------|------|
-| `PAT` | 访问令牌；至少 `docs:write`；`--publish` 另需 `docs:publish` |
+| `PAT` | 访问令牌；至少 `docs:write` |
 | `BEDROCK_HOST` | 服务根地址，**无尾斜杠**（请求 `{host}/api/v1/projects/{slug}/docs/push`） |
 
 PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已存在的 `process.env`（便于本机调试）。
@@ -234,7 +233,7 @@ PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已�
 6. **写文档** — 每个 Controller 写到 `<out>/<project>/<docFile>`（如 `sys-user.md`），模块头链接 `../_conventions.md`；path 用脚本的完整 `path`。
 7. **更新同步记录** — `stamp_commit.mjs … --docs common.md,table-info.md`（可加 `--gateway-prefix` / `--gateway-service`）；可用 `--dry-run` 核对。会写入 `repoRel`。
 8. **核对** — `METHOD path` 唯一；无描述性斜体占位（`_(继承 …)_` 等）；非对象 body/data 已用 `_(body)_`/`_(data)_`；鉴权为人话；表格与源码一致；约定页存在且被引用；`.sync.json` 为当前 HEAD 且 `docs` 齐全；网关未匹配处已标注。
-9. **推送到产品项目文档**（可选）— `push_docs.mjs --slug <项目标识> [--out …] [--publish] [--dry-run]`。需工作区 `.env`（或 `--env-file`）含 `PAT`、`BEDROCK_HOST`；默认只写草稿；确认 scope / ACL 后再加 `--publish`。
+9. **推送到产品项目文档**（可选）— `push_docs.mjs --slug <项目标识> [--out …] [--dry-run]`。需工作区 `.env`（或 `--env-file`）含 `PAT`、`BEDROCK_HOST`；确认 scope / ACL。
 
 ### `.sync.json`
 
@@ -273,5 +272,5 @@ PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已�
 - [ ] Markdown 在 <out>/<project>/，模块头链接 ../_conventions.md
 - [ ] 已 stamp（含 --docs）当前提交到该项目 .sync.json（含 repoRel）
 - [ ] METHOD+path 唯一；无臆造字段 / 无臆造网关前缀
-- [ ] 若需入库：已 push_docs（--slug；PAT/BEDROCK_HOST；按需 --publish）；failed 为空
+- [ ] 若需入库：已 push_docs（--slug；PAT/BEDROCK_HOST）；failed 为空
 ```

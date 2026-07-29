@@ -137,7 +137,7 @@ const onSyncBranches = bind(async (row: Repository) => {
 
 async function onBatchSyncBranches() {
   if (!checked.value.length) {
-    message.warning("请先勾选要同步的仓库");
+    message.warn("请先勾选要同步的仓库");
     return;
   }
   await runBatch(async () => {
@@ -148,7 +148,7 @@ async function onBatchSyncBranches() {
       if (fail === 0) {
         message.success(`已同步 ${ok} 个仓库`);
       } else {
-        message.warning(`同步完成：成功 ${ok}，失败 ${fail}`);
+        message.warn(`同步完成：成功 ${ok}，失败 ${fail}`);
       }
       checked.value = [];
       await listRef.value?.reload();

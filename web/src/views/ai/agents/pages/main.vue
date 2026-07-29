@@ -228,7 +228,7 @@ async function refreshBranches(repositoryId?: number) {
       [repositoryId]: items.map((b) => ({ label: b, value: b })),
     };
     if (!items.length) {
-      message.warning("未获取到分支，请检查仓库 URL / 凭证");
+      message.warn("未获取到分支，请检查仓库 URL / 凭证");
     }
   } catch (error) {
     message.error(error instanceof Error ? error.message : "同步分支失败");

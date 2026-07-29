@@ -38,7 +38,7 @@
 | D14 | 凭证授权时点 | **绑定/修改**时校验 `resource_credentials:use`；之后执行仅需任务 `execute` |
 | D15 | Webhook | 优先平台签名头 + delivery ID 去重；保留 URL secret 兼容；日志脱敏 |
 | D16 | Cron | 每任务 IANA 时区；禁止同任务重叠；停机错过的触发**跳过** |
-| D17 | PAT scope | 固定白名单：`skills:read`、`agents:run`、`docs:write`、`docs:publish`；前缀 `br_`+hex（不兼容旧 `br_pat_`）；哈希存储、一次性回显、可过期/吊销；**不替代 HTTPS/TLS**；供 Skill 安装器、`agents:run` 与文档推送/发布 API 对接 |
+| D17 | PAT scope | 固定白名单：`skills:read`、`agents:run`、`docs:read`、`docs:write`；前缀 `br_`+hex（不兼容旧 `br_pat_`）；SHA-256 哈希鉴权 + AES-GCM 密文（属主 `GET .../reveal` 返回密文，前端用与登录相同的 `encryption.key` 解密后复制）、可过期/吊销；**不替代 HTTPS/TLS**；供 Skill 安装器、`agents:run` 与文档读写开放 API 对接 |
 | D18 | 重启恢复 | `queued` 恢复调度；`running` → `interrupted`（可人工重试）；不做断点续跑 |
 | D19 | 平台支持 | 生产：Linux amd64/arm64；macOS 仅开发；部署目标继续支持 Linux/Windows |
 | D20 | 非功能验收 | **仅功能 Gate**；不设容量/延迟 SLO |
@@ -151,7 +151,7 @@ docs/
 - **User**：可禁用；绑定 **多个 Role**；权限 = 各角色权限码并集。
 - **Super Admin**：`users.is_super_admin` 为鉴权真源；内置角色 `code=super_admin`（`type=builtin`）与唯一超管用户 1:1 同步；不可删、不可改权限、不可通过用户角色绑定 API 赋给他人。
 - **自定义 Role**：`type=custom`；绑定功能 `full_code` 集合。
-- **PAT**：属于 User；scope ⊆ {`skills:read`,`agents:run`,`docs:write`,`docs:publish`}；明文前缀 `br_`+hex；存储哈希；创建时明文回显一次。
+- **PAT**：属于 User；scope ⊆ {`skills:read`,`agents:run`,`docs:read`,`docs:write`}；明文前缀 `br_`+hex；存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 `GET .../reveal` 返回密文，前端解密）；列表仅元数据 + `copyable`；历史无密文不可复制。
 
 ### 4.2 权限码
 
@@ -295,22 +295,17 @@ Agent 工作区与记录规则：
 6. AgentRun 的无制品语义不影响 CI/CD：BuildRun 仍按 §5.2 完成输出归档、保留、下载与重新分发。
 7. 构建事件触发（`AgentTrigger.build_event` / `BuildJob.agent_ids`）与上述仓库绑定解耦，语义不变。
 
-### 5.4 文档节点双态
+### 5.4 文档节点
 
 ```text
 ApiDocNode:
-  published_content
-  draft_content
-  content_version      # 已发布版本号
-  draft_base_version   # 生成/编辑草稿时所基于的已发布版本
-  draft_updated_at
-  draft_source_run_id  # 可选，关联 AgentRun
+  content               # Markdown 正文（无草稿/发布分态、无版本号）
+  draft_source_run_id   # 可选，关联生成该内容的 AgentRun
 ```
 
-- 生成/导入更新草稿：只写 `draft_content`。
-- `POST .../docs/{id}/publish`：body 含 `expected_version`；匹配则 draft→published，`content_version++`，清空 draft；冲突 409。
-- 提供 diff 摘要 API（published vs draft）。
-- `POST .../docs/generate` 契约归属项目管理域；接通 `AgentRun` 见 **P4**。P3 可返回明确的「依赖 AI 域」错误/501，**不得**绕过草稿模型直接写 published。
+- 创建/更新/导入/开放 push：直接写 `content`。
+- `GET .../docs/pull`：按路径读取文档（开放 API，PAT `docs:read`）。
+- `POST .../docs/generate` 契约归属项目管理域；接通 `AgentRun` 见 **P4**。成功后写入 `content`。
 
 ### 5.5 Skill 可见性
 
@@ -531,7 +526,7 @@ web/src/
 1. UI **优先** Veltra；无合适组件再自建。
 2. HTTP **只**经统一 client；401 refresh 语义对齐 DESIGN。
 3. 两层分组菜单与功能 `full_code` 来自 `/auth/me`；侧栏 `u-group-nav`；路由守卫 + 按钮级 `hasPermission`。
-4. 登录仅 `password_cipher`；密钥：`window.__BEDROCK_ENCRYPTION_KEY__` > env。
+4. 登录仅 `password_cipher`；密钥：`window.__BEDROCK_ENCRYPTION_KEY__` > env。PAT reveal 返回 AES-GCM 密文，前端用同一密钥解密（不夸大隔离：密钥本就注入浏览器）。
 5. 避免巨型 SFC（参考 vue-best-practices）；重型编辑器/终端可局部引入。
 6. 开发端口代理 `/api`、`/ws` → `:8080`；embed 仍输出到构建产物并由 Go 注入加密密钥。
 

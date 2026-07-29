@@ -398,20 +398,6 @@ func (r *ProjectRepository) DeleteDocNodes(ids []uint) error {
 	return r.db.Where("id IN ?", ids).Delete(&model.ApiDocNode{}).Error
 }
 
-func (r *ProjectRepository) PublishDocNode(id uint, expectedVersion int) (bool, error) {
-	result := r.db.Model(&model.ApiDocNode{}).
-		Where("id = ? AND content_version = ? AND kind = ?", id, expectedVersion, model.DocNodeDocument).
-		Updates(map[string]interface{}{
-			"published_content":   gorm.Expr("draft_content"),
-			"draft_content":       "",
-			"content_version":     gorm.Expr("content_version + ?", 1),
-			"draft_base_version":  0,
-			"draft_updated_at":    nil,
-			"draft_source_run_id": nil,
-		})
-	return result.RowsAffected == 1, result.Error
-}
-
 func (r *ProjectRepository) RequirementStatusExists(value string) (bool, error) {
 	var count int64
 	err := r.db.Table("dict_items").

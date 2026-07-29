@@ -108,8 +108,8 @@ type RequirementAttachment struct {
 
 func (RequirementAttachment) TableName() string { return "requirement_attachments" }
 
-// ApiDocNode models both directory and Markdown document nodes. Draft fields
-// are deliberately separate from published fields; imports must not publish.
+// ApiDocNode models both directory and Markdown document nodes.
+// Document bodies live in Content (no draft/published split, no version).
 type ApiDocNode struct {
 	ID               uint           `json:"id" gorm:"primaryKey"`
 	ProjectID        uint           `json:"project_id" gorm:"not null;index"`
@@ -118,11 +118,7 @@ type ApiDocNode struct {
 	Name             string         `json:"name" gorm:"size:300;not null"`
 	SortOrder        int            `json:"sort_order" gorm:"not null;default:0;index"`
 	RepositoryID     *uint          `json:"repository_id,omitempty" gorm:"index"`
-	PublishedContent string         `json:"published_content" gorm:"type:text"`
-	DraftContent     string         `json:"draft_content,omitempty" gorm:"type:text"`
-	ContentVersion   int            `json:"content_version" gorm:"not null;default:0"`
-	DraftBaseVersion int            `json:"draft_base_version" gorm:"not null;default:0"`
-	DraftUpdatedAt   *time.Time     `json:"draft_updated_at,omitempty"`
+	Content          string         `json:"content,omitempty" gorm:"type:text"`
 	DraftSourceRunID *uint          `json:"draft_source_run_id,omitempty" gorm:"index"`
 	CreatedBy        uint           `json:"created_by" gorm:"index"`
 	UpdatedBy        uint           `json:"updated_by" gorm:"index"`

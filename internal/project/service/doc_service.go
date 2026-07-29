@@ -8,7 +8,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"time"
 
 	projectmodel "bedrock/internal/project/model"
 	storagemodel "bedrock/internal/storage/model"
@@ -27,22 +26,12 @@ type DocNodeInput struct {
 	Name         string  `json:"name"`
 	SortOrder    int     `json:"sort_order"`
 	RepositoryID *uint   `json:"repository_id"`
-	DraftContent *string `json:"draft_content"`
+	Content      *string `json:"content"`
 }
 
 type DocMoveInput struct {
 	ParentID  *uint `json:"parent_id"`
 	SortOrder int   `json:"sort_order"`
-}
-
-type DocDiff struct {
-	NodeID         uint `json:"node_id"`
-	ContentVersion int  `json:"content_version"`
-	HasDraft       bool `json:"has_draft"`
-	PublishedLines int  `json:"published_lines"`
-	DraftLines     int  `json:"draft_lines"`
-	AddedLines     int  `json:"added_lines"`
-	RemovedLines   int  `json:"removed_lines"`
 }
 
 func (s *ProjectService) ListDocTree(actor AccessContext, projectID uint) ([]projectmodel.ApiDocNode, error) {
@@ -113,11 +102,8 @@ func (s *ProjectService) CreateDocNode(actor AccessContext, projectID uint, inpu
 		ProjectID: projectID, ParentID: input.ParentID, Kind: kind, Name: name, SortOrder: input.SortOrder,
 		RepositoryID: input.RepositoryID, CreatedBy: actor.UserID, UpdatedBy: actor.UserID,
 	}
-	if kind == projectmodel.DocNodeDocument && input.DraftContent != nil {
-		now := time.Now().UTC()
-		node.DraftContent = *input.DraftContent
-		node.DraftBaseVersion = 0
-		node.DraftUpdatedAt = &now
+	if kind == projectmodel.DocNodeDocument && input.Content != nil {
+		node.Content = *input.Content
 	}
 	if err := s.repo.CreateDocNode(node); err != nil {
 		return nil, err
@@ -149,11 +135,11 @@ func (s *ProjectService) UpdateDocNode(actor AccessContext, id uint, input DocNo
 	if input.RepositoryID != nil {
 		node.RepositoryID = input.RepositoryID
 	}
-	if input.DraftContent != nil {
+	if input.Content != nil {
 		if node.Kind != projectmodel.DocNodeDocument {
 			return nil, errors.New("目录不能编辑 Markdown 内容")
 		}
-		s.writeDraft(node, *input.DraftContent, actor.UserID)
+		s.writeContent(node, *input.Content, actor.UserID)
 	}
 	node.UpdatedBy = actor.UserID
 	if err := s.repo.UpdateDocNode(node); err != nil {
@@ -341,7 +327,7 @@ func (s *ProjectService) ImportZIP(actor AccessContext, projectID uint, parentID
 				return nil, fmt.Errorf("导入路径与目录节点冲突: %s", documentName)
 			}
 			node := existing
-			s.writeDraft(&node, string(content), actor.UserID)
+			s.writeContent(&node, string(content), actor.UserID)
 			if err := s.repo.UpdateDocNode(&node); err != nil {
 				return nil, err
 			}
@@ -359,7 +345,7 @@ func (s *ProjectService) ImportZIP(actor AccessContext, projectID uint, parentID
 	return imported, nil
 }
 
-// UpsertDocByPath creates missing directories under api_dir and upserts a draft document by name.
+// UpsertDocByPath creates missing directories under api_dir and upserts a document by name.
 // created is true when a new document node was inserted.
 func (s *ProjectService) UpsertDocByPath(actor AccessContext, projectID uint, apiDir, apiDocName, content string) (*projectmodel.ApiDocNode, bool, error) {
 	if _, err := s.acl.Require(projectID, actor, "project_docs:create", capDocEdit); err != nil {
@@ -414,7 +400,7 @@ func (s *ProjectService) UpsertDocByPath(actor AccessContext, projectID uint, ap
 			return nil, false, fmt.Errorf("路径与目录节点冲突: %s", docName)
 		}
 		node := existing
-		s.writeDraft(&node, content, actor.UserID)
+		s.writeContent(&node, content, actor.UserID)
 		if err := s.repo.UpdateDocNode(&node); err != nil {
 			return nil, false, err
 		}
@@ -427,12 +413,9 @@ func (s *ProjectService) UpsertDocByPath(actor AccessContext, projectID uint, ap
 	return node, true, nil
 }
 
-// PublishDocByPath publishes the draft at api_dir/api_doc_name using the node's current ContentVersion.
-func (s *ProjectService) PublishDocByPath(actor AccessContext, projectID uint, apiDir, apiDocName string) (*projectmodel.ApiDocNode, error) {
-	if _, err := s.acl.Require(projectID, actor, "project_docs:update", capDocEdit); err != nil {
-		return nil, err
-	}
-	if err := s.requireActiveProject(projectID); err != nil {
+// GetDocByPath resolves api_dir/api_doc_name and returns the document node (open read API).
+func (s *ProjectService) GetDocByPath(actor AccessContext, projectID uint, apiDir, apiDocName string) (*projectmodel.ApiDocNode, error) {
+	if _, err := s.acl.Require(projectID, actor, "project_docs:view", capDocView); err != nil {
 		return nil, err
 	}
 	dirs, err := parseDocDirPath(apiDir)
@@ -461,54 +444,7 @@ func (s *ProjectService) PublishDocByPath(actor AccessContext, projectID uint, a
 	if !ok || existing.Kind != projectmodel.DocNodeDocument {
 		return nil, NewNotFound("文档路径不存在")
 	}
-	return s.PublishDocNode(actor, existing.ID, existing.ContentVersion)
-}
-
-func (s *ProjectService) PublishDocNode(actor AccessContext, id uint, expectedVersion int) (*projectmodel.ApiDocNode, error) {
-	node, err := s.repo.FindDocNode(id)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, NewNotFound("文档节点不存在")
-	}
-	if err != nil {
-		return nil, err
-	}
-	if _, err := s.acl.Require(node.ProjectID, actor, "project_docs:update", capDocEdit); err != nil {
-		return nil, err
-	}
-	if node.Kind != projectmodel.DocNodeDocument {
-		return nil, errors.New("目录不能发布")
-	}
-	if node.DraftUpdatedAt == nil {
-		return nil, errors.New("没有待发布草稿")
-	}
-	if expectedVersion != node.ContentVersion {
-		return nil, NewConflict("文档版本冲突，请刷新后重试")
-	}
-	published, err := s.repo.PublishDocNode(id, expectedVersion)
-	if err != nil {
-		return nil, err
-	}
-	if !published {
-		return nil, NewConflict("文档版本冲突，请刷新后重试")
-	}
-	return s.repo.FindDocNode(id)
-}
-
-func (s *ProjectService) GetDocDiff(actor AccessContext, id uint) (*DocDiff, error) {
-	node, err := s.GetDocNode(actor, id)
-	if err != nil {
-		return nil, err
-	}
-	if node.Kind != projectmodel.DocNodeDocument {
-		return nil, errors.New("目录没有 Markdown 差异")
-	}
-	draft := node.DraftContent
-	return &DocDiff{
-		NodeID: node.ID, ContentVersion: node.ContentVersion, HasDraft: node.DraftUpdatedAt != nil,
-		PublishedLines: lineCount(node.PublishedContent), DraftLines: lineCount(draft),
-		AddedLines:   changedLineCount(node.PublishedContent, draft),
-		RemovedLines: changedLineCount(draft, node.PublishedContent),
-	}, nil
+	return &existing, nil
 }
 
 type GenerateDocsInput struct {
@@ -542,8 +478,8 @@ func (s *ProjectService) GenerateDocs(actor AccessContext, projectID uint, input
 		}
 		nodeID = node.ID
 	} else {
-		// Create an empty draft document to receive generated content.
-		node, err := s.createImportedDocument(projectID, nil, "AI Generated Draft", "", actor.UserID)
+		// Create an empty document to receive generated content.
+		node, err := s.createImportedDocument(projectID, nil, "AI Generated", "", actor.UserID)
 		if err != nil {
 			return nil, err
 		}
@@ -556,7 +492,7 @@ func (s *ProjectService) GenerateDocs(actor AccessContext, projectID uint, input
 	return &GenerateDocsResult{AgentRunID: runID, NodeID: nodeID}, nil
 }
 
-// WriteDraftFromAgentRun writes only draft fields after a successful AgentRun (never publishes).
+// WriteDraftFromAgentRun writes document content after a successful AgentRun.
 func (s *ProjectService) WriteDraftFromAgentRun(projectID, nodeID, runID uint, content string, userID uint) error {
 	node, err := s.repo.FindDocNode(nodeID)
 	if err != nil {
@@ -565,7 +501,7 @@ func (s *ProjectService) WriteDraftFromAgentRun(projectID, nodeID, runID uint, c
 	if node.ProjectID != projectID {
 		return errors.New("文档节点不属于当前项目")
 	}
-	s.writeDraft(node, content, userID)
+	s.writeContent(node, content, userID)
 	rid := runID
 	node.DraftSourceRunID = &rid
 	return s.repo.UpdateDocNode(node)
@@ -591,10 +527,8 @@ func (s *ProjectService) validateDocParent(projectID uint, parentID *uint) error
 	return nil
 }
 
-func (s *ProjectService) writeDraft(node *projectmodel.ApiDocNode, content string, userID uint) {
-	node.DraftContent = content
-	node.DraftBaseVersion = node.ContentVersion
-	node.DraftUpdatedAt = new(time.Now().UTC())
+func (s *ProjectService) writeContent(node *projectmodel.ApiDocNode, content string, userID uint) {
+	node.Content = content
 	node.UpdatedBy = userID
 }
 
@@ -604,7 +538,7 @@ func (s *ProjectService) createImportedDocument(projectID uint, parentID *uint, 
 	}
 	node := &projectmodel.ApiDocNode{
 		ProjectID: projectID, ParentID: parentID, Kind: projectmodel.DocNodeDocument, Name: name,
-		DraftContent: content, DraftBaseVersion: 0, DraftUpdatedAt: new(time.Now().UTC()), CreatedBy: userID, UpdatedBy: userID,
+		Content: content, CreatedBy: userID, UpdatedBy: userID,
 	}
 	if err := s.repo.CreateDocNode(node); err != nil {
 		return nil, err
@@ -804,32 +738,4 @@ func importParentPath(nodes []projectmodel.ApiDocNode, parentID *uint) string {
 		return parentPath + "/" + node.Name
 	}
 	return nodePath(*parentID)
-}
-
-func lineCount(content string) int {
-	if content == "" {
-		return 0
-	}
-	return len(strings.Split(content, "\n"))
-}
-
-func changedLineCount(from, to string) int {
-	fromSet := make(map[string]int)
-	for line := range strings.SplitSeq(from, "\n") {
-		if line != "" || from != "" {
-			fromSet[line]++
-		}
-	}
-	changed := 0
-	for line := range strings.SplitSeq(to, "\n") {
-		if line == "" && to == "" {
-			continue
-		}
-		if fromSet[line] > 0 {
-			fromSet[line]--
-		} else {
-			changed++
-		}
-	}
-	return changed
 }

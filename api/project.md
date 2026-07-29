@@ -192,16 +192,16 @@
 
 权限：`project_docs:view`
 路径参数：id*: integer
-响应 200：Tree with published and draft content; Markdown must be sanitized at render time
+响应 200：文档树；Markdown 渲染前须消毒
 
 ### POST /projects/{id}/docs — 创建目录或文档节点
 
 权限：`project_docs:create`
 路径参数：id*: integer
-请求：{ parent_id, kind*, name*, sort_order, repository_id, draft_content }
+请求：{ parent_id, kind*, name*, sort_order, repository_id, content }
 响应 201
 
-### POST /projects/{id}/docs/upload — 上传单个 Markdown 为草稿文档
+### POST /projects/{id}/docs/upload — 上传单个 Markdown 文档
 
 权限：`project_docs:create`
 路径参数：id*: integer
@@ -209,7 +209,7 @@
 响应 201
 错误：413
 
-### POST /projects/{id}/docs/import-zip — 导入 Markdown zip 为草稿文档
+### POST /projects/{id}/docs/import-zip — 导入 Markdown zip
 
 权限：`project_docs:create`
 路径参数：id*: integer
@@ -218,23 +218,23 @@
 错误：400 / 413
 说明：ZIP 条目有 Zip Slip、条目数、体积与压缩比防护。默认包限额 100MB。
 
-### POST /projects/{id}/docs/push — 按路径推送文档草稿（外部 API）
+### POST /projects/{id}/docs/push — 按路径推送文档（外部 API）
 
 鉴权：JWT 需 `project_docs:create` + 项目 ACL；或 PAT scope `docs:write` + 项目 ACL
 路径参数：id*: integer | string（正整数按项目 ID；否则按 slug 解析，找不到 → 404）
 请求：{ api_dir, api_doc_name*, api_doc* }
-响应 201：新建文档节点；200：更新已有草稿
+响应 201：新建文档节点；200：更新已有文档
 错误：400 / 403 / 404
-说明：按 `api_dir` + `api_doc_name` upsert 草稿，不自动发布。`api_dir` 为空表示根；`/` 分隔；拒绝 `..`、绝对路径、空段。目录不存在则创建。`api_doc_name` 无 `.md` 后缀时服务端补齐。
+说明：按 `api_dir` + `api_doc_name` upsert `content`。`api_dir` 为空表示根；`/` 分隔；拒绝 `..`、绝对路径、空段。目录不存在则创建。`api_doc_name` 无 `.md` 后缀时服务端补齐。
 
-### POST /projects/{id}/docs/publish-path — 按路径发布文档草稿（外部 API）
+### GET /projects/{id}/docs/pull — 按路径读取文档（外部 API）
 
-鉴权：JWT 需 `project_docs:update` + 项目 ACL；或 PAT scope `docs:publish` + 项目 ACL
+鉴权：JWT 需 `project_docs:view` + 项目 ACL；或 PAT scope `docs:read` + 项目 ACL
 路径参数：id*: integer | string（正整数按项目 ID；否则按 slug 解析，找不到 → 404）
-请求：{ api_dir, api_doc_name* }
-响应 200：Published
-错误：400 / 403 / 404 / 409
-说明：解析路径后用当前 `content_version` 发布；无草稿 → 400；路径不存在 → 404；版本冲突 → 409。
+查询参数：api_dir, api_doc_name*
+响应 200：ApiDocNode（含 `content`）
+错误：400 / 403 / 404
+说明：路径规则同 push。
 
 ### POST /projects/{id}/docs/generate — 通过 AI 生成文档（异步）
 
@@ -243,7 +243,7 @@
 请求：{ agent_id*, node_id }
 响应 202：data = object
 错误：400 / 501
-说明：创建异步 AgentRun。成功时只写入 `draft_content`（以及草稿元数据 / 可选 `draft_source_run_id`），不会自动发布。AI CLI 与 Bedrock 同 UID，无沙箱。
+说明：创建异步 AgentRun。成功时写入 `content`（以及可选 `draft_source_run_id`）。AI CLI 与 Bedrock 同 UID，无沙箱。
 
 ### GET /projects/{id}/docs/{nodeID} — 获取文档节点
 
@@ -252,11 +252,11 @@
 响应 200
 错误：404
 
-### PUT /projects/{id}/docs/{nodeID} — 重命名节点或写入文档草稿
+### PUT /projects/{id}/docs/{nodeID} — 重命名节点或写入文档内容
 
 权限：`project_docs:update`
 路径参数：id*: integer, nodeID*: integer
-请求：{ name, repository_id, draft_content }
+请求：{ name, repository_id, content }
 响应 200
 
 ### DELETE /projects/{id}/docs/{nodeID} — 删除文档节点及其子节点
@@ -272,33 +272,7 @@
 请求：{ parent_id, sort_order }
 响应 200
 
-### POST /projects/{id}/docs/{nodeID}/publish — 发布文档草稿
-
-权限：`project_docs:update`
-路径参数：id*: integer, nodeID*: integer
-请求：{ expected_version* }
-响应 200：Published
-错误：409
-
-### GET /projects/{id}/docs/{nodeID}/diff — 比较草稿与已发布文档
-
-权限：`project_docs:view`
-路径参数：id*: integer, nodeID*: integer
-响应 200：data = ApiDocDiff
-
 ## 对象形状
-
-### ApiDocDiff
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `node_id` | `integer` |  |  |
-| `content_version` | `integer` |  |  |
-| `has_draft` | `boolean` |  |  |
-| `published_lines` | `integer` |  |  |
-| `draft_lines` | `integer` |  |  |
-| `added_lines` | `integer` |  |  |
-| `removed_lines` | `integer` |  |  |
 
 ### ApiDocNodeMoveRequest
 
@@ -316,7 +290,7 @@
 | `name` | `string` | 是 |  |
 | `sort_order` | `integer` |  |  |
 | `repository_id` | `integer` |  |  |
-| `draft_content` | `string` |  |  |
+| `content` | `string` |  |  |
 
 ### ApiDocNodeUpdateRequest
 
@@ -324,7 +298,7 @@
 | --- | --- | --- | --- |
 | `name` | `string` |  |  |
 | `repository_id` | `integer` |  |  |
-| `draft_content` | `string` |  |  |
+| `content` | `string` |  |  |
 
 ### Error
 

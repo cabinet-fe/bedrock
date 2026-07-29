@@ -696,7 +696,7 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	}
 	hint := agentWorkspaceScopeHint()
 	if run.TriggerType == model.TriggerDocsGen {
-		args = append(args, "Generate API documentation draft based on the workspace. Output Markdown only. "+hint)
+		args = append(args, "Generate API documentation based on the workspace. Output Markdown only. "+hint)
 	} else if strings.TrimSpace(agent.SystemPrompt) != "" {
 		args = append(args, agent.SystemPrompt+"\n\n"+hint)
 	} else {
@@ -773,7 +773,7 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		if err := s.docs.WriteDraftFromAgentRun(*run.ProjectID, *run.DocNodeID, run.ID, content, run.TriggeredBy); err != nil {
 			writeLog("docs draft write failed: " + err.Error())
 		} else {
-			writeLog("docs draft written (not published)")
+			writeLog("docs content written")
 		}
 	}
 	s.notifyTerminal(run, model.JobSuccess)
