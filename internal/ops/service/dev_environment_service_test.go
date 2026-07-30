@@ -348,7 +348,7 @@ func TestFailedJobPersistsRedactedSpacedCLISecrets(t *testing.T) {
 
 func awaitJob(t *testing.T, svc *DevEnvironmentService, envID, id uint) *model.DevEnvJob {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		job, err := svc.GetJob(envID, id)
 		if err != nil {

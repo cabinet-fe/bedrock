@@ -52,10 +52,10 @@ curl -fsS "$HOST/api/v1/resource/tokens/1/reveal" \
 
 ## 3. 开放接口一览
 
-| scope         | 方法 | 路径                       | 说明                                               |
-| ------------- | ---- | -------------------------- | -------------------------------------------------- |
-| `agents:run`  | POST | `/ai/agents/{id}/api-runs` | 触发 Agent 运行（202 异步）                        |
-| `skills:read` | GET  | `/skills/{id}/package`     | 下载技能包（二进制 ZIP）                           |
+| scope         | 方法 | 路径                         | 说明                                               |
+| ------------- | ---- | ---------------------------- | -------------------------------------------------- |
+| `agents:run`  | POST | `/ai/agents/{id}/api-runs`   | 触发 Agent 运行（202 异步）                        |
+| `skills:read` | GET  | `/skills/{id}/package`       | 下载技能包（二进制 ZIP）                           |
 | `docs:write`  | POST | `/projects/{id}/docs/push`   | 按路径 upsert 文档；`{id}` 可为数字 ID 或项目 slug |
 | `docs:read`   | GET  | `/projects/{id}/docs/pull`   | 按路径读取单篇文档；`{id}` 可为数字 ID 或项目 slug |
 | `docs:read`   | GET  | `/projects/{id}/docs/export` | 按目录导出文档列表（全量同步）；`{id}` 同 push     |
@@ -136,9 +136,9 @@ curl -fsS "$HOST/api/v1/projects/my-product/docs/pull?api_dir=guides&api_doc_nam
 
 `GET /projects/{id}/docs/export` — 一次返回扁平 `{ path, content }` 列表，供 sync-docs 全量对齐。路径参数 `{id}` 规则同 push。不新增 PAT scope（沿用 `docs:read`）。
 
-| 查询参数  | 必填 | 说明                                                                                         |
-| --------- | ---- | -------------------------------------------------------------------------------------------- |
-| `api_dir` |      | 导出根目录；空表示项目根；规则同 push/pull。合法但目录不存在时返回空列表                     |
+| 查询参数  | 必填 | 说明                                                                     |
+| --------- | ---- | ------------------------------------------------------------------------ |
+| `api_dir` |      | 导出根目录；空表示项目根；规则同 push/pull。合法但目录不存在时返回空列表 |
 
 - 响应：`200`，`data.items` 为数组；每项 `path` 相对导出根（含 `.md`），仅文档无目录行；按 `path` 字典序排序。
 - 错误：`400` 非法 `api_dir`（如 `..`）；`403` scope 不足或不满足项目 ACL；`404` 项目不存在。
