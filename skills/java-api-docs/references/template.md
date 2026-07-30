@@ -61,12 +61,14 @@ GET /admin/users/info/{username}
 
 **响应体**（即信封里的 `data`）:
 
-`data` 为对象时展开真实字段：
+`data` 为对象时**必须展开真实字段**（来自 `resolve_types`）。禁止只写「返回 `UserInfo` 对象」而不给表。
 
 | 字段名 | 类型   | 说明   |
 | ------ | ------ | ------ |
 | id     | string | 记录 ID |
 | name   | string | 名称   |
+
+同一 DTO 在本文多处出现时：可在文末 `## 数据模型` 写全定义，此处写「见 [UserInfo](#userinfo)」。
 
 `data` 不为对象（标量 / 数组等）时，字段名用 `_(data)_`：
 
@@ -83,3 +85,15 @@ GET /admin/users/info/{username}
   "data": true
 }
 ```
+
+---
+
+## 数据模型（可选；同 Controller 内 DTO 复用时）
+
+### UserInfo
+
+| 字段名   | 类型     | 说明     |
+| -------- | -------- | -------- |
+| userId   | string   | 用户 ID  |
+| username | string   | 登录名   |
+| roles    | string[] | 角色列表 |

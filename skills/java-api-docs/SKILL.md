@@ -27,6 +27,7 @@ description: >-
 4. **多仓工作区按项目选对 `repoRoot`。** `stamp` 会写入 `repoRel`；`sync_status` / `changed_since` 会校验。用错仓会出现 `wrong_repo`，不是全量信号。
 5. **path 字符级照抄脚本，禁止「规范化」。** 不得按英语习惯、`@Tag`、类名把 path 段改成单数/复数（如 `/users` → `/user`）。写完后必须跑 `verify_docs.mjs`；未通过禁止 `stamp` / `push`。
 6. **多模块单体仓的 `--repo-root` 必须指到具体模块**（含该模块 `application.yml` 的目录），或显式传 `--service` / `--project`。禁止把整仓根当唯一线索却不传 project（脚本遇多个 `spring.application.name` 会拒绝静默取第一个）。
+7. **对象必须展开字段。** 禁止「返回 `UserInfo` / `XxxDTO`」却无字段表；写对象请求/响应前必须 `resolve_types`；同名 DTO 可集中到本文 `## 数据模型`，接口处锚点引用。
 
 ## 必须遵守
 
@@ -72,6 +73,7 @@ description: >-
 
 ### 禁止
 
+- **只点名类型、不展开字段**：禁止「返回 `UserInfo` 对象」「`body` 为 `XxxDTO`」这类空话却不写字段表。读者必须能在**同一文档**里看到每个对象字段（名 / 类型 / 说明）
 - 斜体占位字段名（描述性伪字段）：如 `_(继承 BaseDTO)_`、`_(见约定)_` 等——不得用斜体占位代替真实字段或省略展开
 - 把 `@PreAuthorize(...)` / SpEL 原文塞进文档
 - 把 `_extends_*`、`needs_source` 当表格「字段名」粘贴
@@ -88,12 +90,15 @@ description: >-
 
 ### 类型与表格
 
+- **每个对象必须有字段表**：请求体 / 响应 `data` / 嵌套对象（如 `records[]` 单条）均须先 `resolve_types`，再写成 Markdown 表。Java 类型名可写在说明或小节标题里，**不能代替**字段表
+- **同一 DTO 多处复用**：可在文末（或「通用说明」后）设 `## 数据模型`，把 `UserInfo` 等定义**写全一次**；各接口响应处写「见 [UserInfo](#userinfo)」并仍可用一行类型提示——但定义本身必须在本文内可点开，禁止只留裸类型名
 - 字段名：真实 JSON 名；整段 body/data 为标量/数组等非对象时，字段名用 `_(body)_` / `_(data)_`
 - 类型：`string` / `number` / `boolean` / `object` / `T[]` / `Record<string, T>`
 - 继承：合并父类字段，或写「另含父类字段，见 [API 约定](../_conventions.md)」
 - `Map<String, Object>` → `Record<string, object>`，并说明 key/value
 - `R<T>`：模块头写信封；接口响应表只写 `data` 内容
 - 分页：按约定展开；无源码时写「见 [API 约定](../_conventions.md) · 分页」
+- `needs_source`：只打开那一个源文件补字段；仍解析不出则标注「未解析」并列出已知字段，禁止用一句话搪塞
 
 ### Path（网关 + 服务）
 
@@ -198,7 +203,7 @@ node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--env-file <path
 | `list_endpoints.mjs` | 接口 JSON：`path`/`servicePath`/`docFile`、`controllers[]`、`gateway` |
 | `resolve_types.mjs` | 字段树；未解析 → `needs_source`；父类无源码 → `extendsUnresolved` |
 | `changed_since.mjs` | `{ action, mode, upToDate, files[], controllers[], docFiles[], agentHint, … }` |
-| `verify_docs.mjs` | `{ ok, missingInDocs[], extraInDocs[], missingDocs[], … }`；失败退出码 1 |
+| `verify_docs.mjs` | `{ ok, missingInDocs[], extraInDocs[], missingDocs[], unresolvedTypes[], … }`；失败退出码 1 |
 | `stamp_commit.mjs` | 已写入（或预览）的 `.sync.json`（含 `repoRel`） |
 | `push_docs.mjs` | `{ pushed[], failed[], dryRun, summary }`；失败非 0 退出 |
 
@@ -244,11 +249,11 @@ PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已�
      - `action: "wrong_repo"` → 换 `suggestedRepoRoot` 重跑
      - `action: "update_docs"` → `list_endpoints … --files …`，只改 `docFiles`
      - `action: "full_scan"` → 全量 `list_endpoints`（不带 `--files`）
-5. **解析类型** — 仅对要写的接口：`resolve_types.mjs <api-srcRoot> TypeA,TypeB`（api 模块 srcRoot，见「双 srcRoot」）
-6. **写文档** — 每个 Controller 写到 `<out>/<project>/<docFile>`（如 `sys-user.md`），模块头链接 `../_conventions.md`；path **字符级**用脚本的完整 `path`（禁止改单复数）。
+5. **解析类型** — 仅对要写的接口：`resolve_types.mjs <api-srcRoot> TypeA,TypeB`（api 模块 srcRoot，见「双 srcRoot」）。**写 md 前必须已拿到字段树**；未跑 `resolve_types` 不得写对象响应/请求体。
+6. **写文档** — 每个 Controller 写到 `<out>/<project>/<docFile>`（如 `sys-user.md`），模块头链接 `../_conventions.md`；path **字符级**用脚本的完整 `path`（禁止改单复数）。对象字段必须落表（或落 `## 数据模型` 再锚点引用），禁止「返回 `Xxx`」空话。
 7. **校验 path** — `verify_docs.mjs <srcRoot> --project … --repo-root <模块目录> [--docs …]`；`ok: false` → 按 `missingInDocs` / `extraInDocs` 改 MD 后重跑，**禁止** stamp。
 8. **更新同步记录** — `stamp_commit.mjs … --docs common.md,table-info.md`（可加 `--gateway-prefix` / `--gateway-service`）；可用 `--dry-run` 核对。会写入 `repoRel`。
-9. **核对** — `METHOD path` 唯一且已通过 `verify_docs`；无描述性斜体占位（`_(继承 …)_` 等）；非对象 body/data 已用 `_(body)_`/`_(data)_`；鉴权为人话；表格与源码一致；约定页存在且被引用；`.sync.json` 为当前 HEAD 且 `docs` 齐全；网关未匹配处已标注。
+9. **核对** — `METHOD path` 唯一且已通过 `verify_docs`；每个对象请求/响应都能看到字段表（无「只提类型名」）；无描述性斜体占位（`_(继承 …)_` 等）；非对象 body/data 已用 `_(body)_`/`_(data)_`；鉴权为人话；表格与源码一致；约定页存在且被引用；`.sync.json` 为当前 HEAD 且 `docs` 齐全；网关未匹配处已标注。
 10. **推送到产品项目文档**（可选）— `push_docs.mjs --slug <项目标识> [--out …] [--dry-run]`。需工作区 `.env`（或 `--env-file`）含 `PAT`、`BEDROCK_HOST`；确认 scope / ACL。
 
 ### `.sync.json`
@@ -284,8 +289,9 @@ PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已�
 - [ ] 未在 action=noop / allUpToDate 时继续 list_endpoints 或写 md
 - [ ] 需要写入时已跑 list_endpoints；核对 gateway.matched；已 resolve_types 并读过源码
 - [ ] 每个 Controller 一个 <kebab>.md；path 字符级来自脚本；未匹配已标注；未改单复数
-- [ ] 已跑 verify_docs 且 ok:true（失败已按 missing/extra 修正）
+- [ ] 已跑 verify_docs 且 ok:true（失败已按 missing/extra/unresolvedTypes 修正）
 - [ ] 说明与示例是中文人话；无描述性斜体占位；非对象 body/data 用 `_(body)_`/`_(data)_`；鉴权为可读摘要
+- [ ] 每个对象请求/响应已展开字段表（或本文 `## 数据模型` 锚点）；无「返回 `Xxx` 对象」却无定义
 - [ ] Markdown 在 <out>/<project>/，模块头链接 ../_conventions.md
 - [ ] 已 stamp（含 --docs）当前提交到该项目 .sync.json（含 repoRel）
 - [ ] METHOD+path 唯一；无臆造字段 / 无臆造网关前缀
