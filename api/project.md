@@ -234,7 +234,16 @@
 查询参数：api_dir, api_doc_name*
 响应 200：ApiDocNode（含 `content`）
 错误：400 / 403 / 404
-说明：路径规则同 push。
+说明：路径规则同 push。单篇读取用 pull；全量同步用 export。
+
+### GET /projects/{id}/docs/export — 按目录导出文档列表（外部 API）
+
+鉴权：JWT 需 `project_docs:view` + 项目 ACL；或 PAT scope `docs:read` + 项目 ACL（同 pull）
+路径参数：id*: integer | string（正整数按项目 ID；否则按 slug 解析，找不到 → 404）
+查询参数：api_dir
+响应 200：`{ items: [{ path, content }] }`
+错误：400 / 403 / 404
+说明：一次返回扁平文档列表，供 sync 全量对齐。`api_dir` 为空表示项目根；规则同 push/pull（拒绝 `..`、绝对路径、空段）。`path` 相对导出根（有 `api_dir` 则相对该子树），`/` 分隔，含 `.md` 文件名；仅 `kind=doc`，无目录行。合法但目录不存在时返回 `items: []`。按 `path` 字典序稳定排序。
 
 ### POST /projects/{id}/docs/generate — 通过 AI 生成文档（异步）
 

@@ -56,10 +56,11 @@ curl -fsS "$HOST/api/v1/resource/tokens/1/reveal" \
 | ------------- | ---- | -------------------------- | -------------------------------------------------- |
 | `agents:run`  | POST | `/ai/agents/{id}/api-runs` | 触发 Agent 运行（202 异步）                        |
 | `skills:read` | GET  | `/skills/{id}/package`     | 下载技能包（二进制 ZIP）                           |
-| `docs:write`  | POST | `/projects/{id}/docs/push` | 按路径 upsert 文档；`{id}` 可为数字 ID 或项目 slug |
-| `docs:read`   | GET  | `/projects/{id}/docs/pull` | 按路径读取文档；`{id}` 可为数字 ID 或项目 slug     |
+| `docs:write`  | POST | `/projects/{id}/docs/push`   | 按路径 upsert 文档；`{id}` 可为数字 ID 或项目 slug |
+| `docs:read`   | GET  | `/projects/{id}/docs/pull`   | 按路径读取单篇文档；`{id}` 可为数字 ID 或项目 slug |
+| `docs:read`   | GET  | `/projects/{id}/docs/export` | 按目录导出文档列表（全量同步）；`{id}` 同 push     |
 
-以上接口也接受登录 JWT（此时校验 RBAC 权限而非 scope）：`api-runs` 需 `ai_agents:execute`，`package` 需 `ai_skills:download`，`push` 需 `project_docs:create`，`pull` 需 `project_docs:view`；项目文档接口另要求项目 ACL。
+以上接口也接受登录 JWT（此时校验 RBAC 权限而非 scope）：`api-runs` 需 `ai_agents:execute`，`package` 需 `ai_skills:download`，`push` 需 `project_docs:create`，`pull` / `export` 需 `project_docs:view`；项目文档接口另要求项目 ACL。
 
 ## 4. 通用约定
 
@@ -116,7 +117,7 @@ curl -fsS -X POST "$HOST/api/v1/projects/my-product/docs/push" \
 
 ### 5.4 按路径读取文档 — scope `docs:read`
 
-`GET /projects/{id}/docs/pull` — 按路径读取文档节点（含 `content`）。路径参数 `{id}` 规则同 push。
+`GET /projects/{id}/docs/pull` — 按路径读取文档节点（含 `content`）。路径参数 `{id}` 规则同 push。单篇读取用本接口；全量同步用 export。
 
 | 查询参数       | 必填 | 说明               |
 | -------------- | ---- | ------------------ |
@@ -128,6 +129,27 @@ curl -fsS -X POST "$HOST/api/v1/projects/my-product/docs/push" \
 
 ```bash
 curl -fsS "$HOST/api/v1/projects/my-product/docs/pull?api_dir=guides&api_doc_name=getting-started" \
+  -H "Authorization: Bearer br_..."
+```
+
+### 5.5 导出文档列表 — scope `docs:read`
+
+`GET /projects/{id}/docs/export` — 一次返回扁平 `{ path, content }` 列表，供 sync-docs 全量对齐。路径参数 `{id}` 规则同 push。不新增 PAT scope（沿用 `docs:read`）。
+
+| 查询参数  | 必填 | 说明                                                                                         |
+| --------- | ---- | -------------------------------------------------------------------------------------------- |
+| `api_dir` |      | 导出根目录；空表示项目根；规则同 push/pull。合法但目录不存在时返回空列表                     |
+
+- 响应：`200`，`data.items` 为数组；每项 `path` 相对导出根（含 `.md`），仅文档无目录行；按 `path` 字典序排序。
+- 错误：`400` 非法 `api_dir`（如 `..`）；`403` scope 不足或不满足项目 ACL；`404` 项目不存在。
+
+```bash
+# 全量（项目根）
+curl -fsS "$HOST/api/v1/projects/my-product/docs/export" \
+  -H "Authorization: Bearer br_..."
+
+# 子树：远程 openapi/controllers/User.md → path=controllers/User.md
+curl -fsS "$HOST/api/v1/projects/my-product/docs/export?api_dir=openapi" \
   -H "Authorization: Bearer br_..."
 ```
 
@@ -156,8 +178,12 @@ curl -fsS -X POST "$HOST/api/v1/projects/my-product/docs/push" \
   -H "Authorization: Bearer $PAT" -H 'Content-Type: application/json' \
   -d '{"api_dir":"openapi","api_doc_name":"v2","api_doc":"# API v2\n..."}'
 
-# 2. 读取校验
+# 2. 单篇读取校验（全量同步改用 docs/export）
 curl -fsS "$HOST/api/v1/projects/my-product/docs/pull?api_dir=openapi&api_doc_name=v2" \
+  -H "Authorization: Bearer $PAT"
+
+# 2b. 全量导出（sync）
+curl -fsS "$HOST/api/v1/projects/my-product/docs/export?api_dir=openapi" \
   -H "Authorization: Bearer $PAT"
 
 # 3. 触发 Agent 运行并记录 run id

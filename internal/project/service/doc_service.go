@@ -447,6 +447,58 @@ func (s *ProjectService) GetDocByPath(actor AccessContext, projectID uint, apiDi
 	return &existing, nil
 }
 
+// DocExportItem is one document in a flat export listing (relative path + content).
+type DocExportItem struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+// ExportDocs returns all document nodes under api_dir (empty = project root) as a flat list.
+// Missing api_dir yields an empty list; invalid api_dir yields a parse error.
+func (s *ProjectService) ExportDocs(actor AccessContext, projectID uint, apiDir string) ([]DocExportItem, error) {
+	if _, err := s.acl.Require(projectID, actor, "project_docs:view", capDocView); err != nil {
+		return nil, err
+	}
+	dirs, err := parseDocDirPath(apiDir)
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := s.repo.ListDocNodes(projectID)
+	if err != nil {
+		return nil, err
+	}
+	index := newDocImportIndex(nodes, nil)
+	exportRoot := "root"
+	for _, directory := range dirs {
+		exportRoot = exportRoot + "/" + directory
+	}
+	if len(dirs) > 0 {
+		existing, ok := index[exportRoot]
+		if !ok || existing.Kind != projectmodel.DocNodeDirectory {
+			return []DocExportItem{}, nil
+		}
+	}
+	prefix := exportRoot + "/"
+	items := make([]DocExportItem, 0)
+	for key, node := range index {
+		if node.Kind != projectmodel.DocNodeDocument {
+			continue
+		}
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		rel := strings.TrimPrefix(key, prefix)
+		if rel == "" {
+			continue
+		}
+		items = append(items, DocExportItem{Path: rel, Content: node.Content})
+	}
+	slices.SortFunc(items, func(a, b DocExportItem) int {
+		return strings.Compare(a.Path, b.Path)
+	})
+	return items, nil
+}
+
 type GenerateDocsInput struct {
 	AgentID uint  `json:"agent_id"`
 	NodeID  *uint `json:"node_id"`

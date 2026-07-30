@@ -66,9 +66,10 @@ func (h *ProjectHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerF
 	g.POST("/:id/docs", rbacmw.RequirePermission(h.perm, "project_docs:create"), h.CreateDocNode)
 	g.POST("/:id/docs/upload", rbacmw.RequirePermission(h.perm, "project_docs:create"), h.UploadMarkdown)
 	g.POST("/:id/docs/import-zip", rbacmw.RequirePermission(h.perm, "project_docs:create"), h.ImportZIP)
-	// External push/pull: PAT scope or JWT RBAC checked inside handler (see APIRun pattern).
+	// External push/pull/export: PAT scope or JWT RBAC checked inside handler (see APIRun pattern).
 	g.POST("/:id/docs/push", h.PushDocByPath)
 	g.GET("/:id/docs/pull", h.PullDocByPath)
+	g.GET("/:id/docs/export", h.ExportDocs)
 	g.POST("/:id/docs/generate", rbacmw.RequirePermission(h.perm, "project_docs:execute"), h.GenerateDocs)
 	g.GET("/:id/docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_docs:view"), h.GetDocNode)
 	g.PUT("/:id/docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_docs:update"), h.UpdateDocNode)
@@ -797,6 +798,29 @@ func (h *ProjectHandler) PullDocByPath(c *gin.Context) {
 	pkg.Success(c, node)
 }
 
+func (h *ProjectHandler) ExportDocs(c *gin.Context) {
+	if !h.requireDocsAuth(c, "docs:read", "project_docs:view") {
+		return
+	}
+	projectID, ok := h.resolveProjectID(c)
+	if !ok {
+		return
+	}
+	actor, ok := h.actor(c)
+	if !ok {
+		return
+	}
+	if authmiddleware.IsPAT(c) {
+		actor.Permissions["project_docs:view"] = struct{}{}
+	}
+	items, err := h.svc.ExportDocs(actor, projectID, c.Query("api_dir"))
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"items": items})
+}
+
 // requireDocsAuth mirrors AI APIRun: PAT needs scope; JWT needs RBAC permission.
 func (h *ProjectHandler) requireDocsAuth(c *gin.Context, patScope, rbacPermission string) bool {
 	if authmiddleware.IsPAT(c) {
@@ -899,7 +923,7 @@ func parseID(c *gin.Context, name string) (uint, bool) {
 	return uint(value), true
 }
 
-// resolveProjectID 支持数字 ID 或项目 slug（供 docs/push、docs/pull 开放 API）。
+// resolveProjectID 支持数字 ID 或项目 slug（供 docs/push、docs/pull、docs/export 开放 API）。
 func (h *ProjectHandler) resolveProjectID(c *gin.Context) (uint, bool) {
 	id, err := h.svc.ResolveProjectRef(c.Param("id"))
 	if err != nil {

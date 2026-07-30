@@ -347,6 +347,77 @@ func TestUpsertAndPullDocByPath(t *testing.T) {
 	}
 }
 
+func TestExportDocs(t *testing.T) {
+	svc := newProjectService(t)
+	owner := actor(1,
+		"project_projects:create",
+		"project_docs:create", "project_docs:view",
+	)
+	project := createProject(t, svc, owner, "docs-export")
+
+	seeds := []struct {
+		dir, name, content string
+	}{
+		{"openapi/controllers", "User", "# User"},
+		{"openapi/controllers", "Order", "# Order"},
+		{"guides", "intro", "# Intro"},
+		{"", "root-note", "# Root"},
+	}
+	for _, seed := range seeds {
+		if _, _, err := svc.UpsertDocByPath(owner, project.ID, seed.dir, seed.name, seed.content); err != nil {
+			t.Fatalf("seed %s/%s: %v", seed.dir, seed.name, err)
+		}
+	}
+
+	if _, err := svc.ExportDocs(owner, project.ID, ".."); err == nil {
+		t.Fatal("path traversal must be rejected")
+	}
+
+	all, err := svc.ExportDocs(owner, project.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAll := []DocExportItem{
+		{Path: "guides/intro.md", Content: "# Intro"},
+		{Path: "openapi/controllers/Order.md", Content: "# Order"},
+		{Path: "openapi/controllers/User.md", Content: "# User"},
+		{Path: "root-note.md", Content: "# Root"},
+	}
+	if len(all) != len(wantAll) {
+		t.Fatalf("full export len=%d want %d: %#v", len(all), len(wantAll), all)
+	}
+	for i, item := range all {
+		if item.Path != wantAll[i].Path || item.Content != wantAll[i].Content {
+			t.Fatalf("full export[%d]=%#v want %#v", i, item, wantAll[i])
+		}
+	}
+
+	subtree, err := svc.ExportDocs(owner, project.ID, "openapi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSubtree := []DocExportItem{
+		{Path: "controllers/Order.md", Content: "# Order"},
+		{Path: "controllers/User.md", Content: "# User"},
+	}
+	if len(subtree) != len(wantSubtree) {
+		t.Fatalf("subtree export len=%d want %d: %#v", len(subtree), len(wantSubtree), subtree)
+	}
+	for i, item := range subtree {
+		if item.Path != wantSubtree[i].Path || item.Content != wantSubtree[i].Content {
+			t.Fatalf("subtree[%d]=%#v want %#v", i, item, wantSubtree[i])
+		}
+	}
+
+	empty, err := svc.ExportDocs(owner, project.ID, "missing/dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("missing api_dir must be empty, got %#v", empty)
+	}
+}
+
 func TestMarkdownUploadWritesContent(t *testing.T) {
 	svc := newProjectService(t)
 	owner := actor(1, "project_projects:create", "project_docs:create")

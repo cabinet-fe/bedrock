@@ -65,6 +65,13 @@ func TestPushAndPullPathPATScope(t *testing.T) {
 	if got := docsPathRequest(t, handler, http.MethodGet, "/docs/pull?api_dir=a/b&api_doc_name=Doc", projectID, "", true, []string{"docs:read"}); got != http.StatusOK {
 		t.Fatalf("PAT docs:read pull = %d, want 200", got)
 	}
+
+	if got := docsPathRequest(t, handler, http.MethodGet, "/docs/export", projectID, "", true, []string{"docs:write"}); got != http.StatusForbidden {
+		t.Fatalf("PAT without docs:read export = %d, want 403", got)
+	}
+	if got := docsPathRequest(t, handler, http.MethodGet, "/docs/export", projectID, "", true, []string{"docs:read"}); got != http.StatusOK {
+		t.Fatalf("PAT docs:read export = %d, want 200", got)
+	}
 }
 
 func TestPushDocByPathAcceptsSlug(t *testing.T) {
@@ -85,7 +92,46 @@ func TestPushDocByPathAcceptsSlug(t *testing.T) {
 	}
 }
 
+func TestExportDocsPATScopeAndSlug(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler, service := newProjectHandlerForTest(t)
+	owner := projectservice.NewAccessContext(1, true, nil)
+	project, err := service.CreateProject(owner, projectservice.CreateProjectInput{Name: "Export Docs", Slug: "export-docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushBody := `{"api_dir":"openapi/controllers","api_doc_name":"User","api_doc":"# User"}`
+	if got := docsPathRequest(t, handler, http.MethodPost, "/docs/push", project.Slug, pushBody, true, []string{"docs:write"}); got != http.StatusCreated {
+		t.Fatalf("seed push = %d, want 201", got)
+	}
+
+	code, body := docsPathRequestBody(t, handler, http.MethodGet, "/docs/export?api_dir=openapi", project.Slug, "", true, []string{"docs:read"})
+	if code != http.StatusOK {
+		t.Fatalf("slug export = %d, want 200 body=%s", code, body)
+	}
+	if !strings.Contains(body, `"path":"controllers/User.md"`) || !strings.Contains(body, `"content":"# User"`) {
+		t.Fatalf("export items missing expected path/content: %s", body)
+	}
+
+	if got := docsPathRequest(t, handler, http.MethodGet, "/docs/export?api_dir=..", project.Slug, "", true, []string{"docs:read"}); got != http.StatusBadRequest {
+		t.Fatalf("illegal api_dir = %d, want 400", got)
+	}
+	code, body = docsPathRequestBody(t, handler, http.MethodGet, "/docs/export?api_dir=missing", project.Slug, "", true, []string{"docs:read"})
+	if code != http.StatusOK {
+		t.Fatalf("missing api_dir = %d, want 200", code)
+	}
+	if !strings.Contains(body, `"items":[]`) && !strings.Contains(body, `"items": []`) {
+		t.Fatalf("missing api_dir should return empty items: %s", body)
+	}
+}
+
 func docsPathRequest(t *testing.T, handler *ProjectHandler, method, suffix, projectID, body string, isPAT bool, scopes []string) int {
+	t.Helper()
+	code, _ := docsPathRequestBody(t, handler, method, suffix, projectID, body, isPAT, scopes)
+	return code
+}
+
+func docsPathRequestBody(t *testing.T, handler *ProjectHandler, method, suffix, projectID, body string, isPAT bool, scopes []string) (int, string) {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -110,10 +156,12 @@ func docsPathRequest(t *testing.T, handler *ProjectHandler, method, suffix, proj
 		handler.PushDocByPath(c)
 	case strings.HasPrefix(suffix, "/docs/pull"):
 		handler.PullDocByPath(c)
+	case strings.HasPrefix(suffix, "/docs/export"):
+		handler.ExportDocs(c)
 	default:
 		t.Fatalf("unknown suffix %s", suffix)
 	}
-	return recorder.Code
+	return recorder.Code, recorder.Body.String()
 }
 
 func TestListRequirementStatusesAllowsLeastPrivilegeMember(t *testing.T) {
