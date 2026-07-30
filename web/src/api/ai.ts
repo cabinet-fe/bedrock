@@ -1,5 +1,13 @@
 import { http } from "./http";
-import type { AgentRun, AgentTrigger, AiAgent, PageResult, SkillPackage } from "./types";
+import type {
+  AgentRun,
+  AgentTrigger,
+  AiAgent,
+  PageResult,
+  SkillFileContent,
+  SkillFileNode,
+  SkillPackage,
+} from "./types";
 
 type Query = Record<string, string | number | boolean | undefined>;
 
@@ -74,6 +82,11 @@ export async function listSkills(query?: Query): Promise<PageResult<SkillPackage
   return body;
 }
 
+export async function getSkill(id: number): Promise<SkillPackage> {
+  const { body } = await http.get<SkillPackage>(`/skills/${id}`);
+  return body;
+}
+
 export async function uploadSkill(form: FormData): Promise<SkillPackage> {
   const { body } = await http.post<SkillPackage>("/skills", form);
   return body;
@@ -90,5 +103,53 @@ export async function deleteSkill(id: number): Promise<void> {
 
 export async function downloadSkill(id: number): Promise<Blob> {
   const { body } = await http.get<Blob>(`/skills/${id}/package`, { responseType: "blob" });
+  return body;
+}
+
+export async function listSkillFiles(id: number): Promise<SkillFileNode[]> {
+  const { body } = await http.get<SkillFileNode[]>(`/skills/${id}/files`);
+  return body;
+}
+
+export async function readSkillFile(id: number, path: string): Promise<SkillFileContent> {
+  const { body } = await http.get<SkillFileContent>(`/skills/${id}/files/content`, {
+    query: { path },
+  });
+  return body;
+}
+
+export async function writeSkillFile(
+  id: number,
+  path: string,
+  content: string,
+): Promise<SkillFileContent> {
+  const { body } = await http.put<SkillFileContent>(`/skills/${id}/files/content`, {
+    path,
+    content,
+  });
+  return body;
+}
+
+export async function createSkillEntry(
+  id: number,
+  input: { path: string; kind: "file" | "dir"; content?: string },
+): Promise<SkillFileNode> {
+  const { body } = await http.post<SkillFileNode>(`/skills/${id}/files`, input);
+  return body;
+}
+
+export async function deleteSkillEntry(id: number, path: string): Promise<void> {
+  await http.delete(`/skills/${id}/files`, { query: { path } });
+}
+
+export async function renameSkillEntry(
+  id: number,
+  fromPath: string,
+  toPath: string,
+): Promise<SkillFileNode> {
+  const { body } = await http.post<SkillFileNode>(`/skills/${id}/files/rename`, {
+    from_path: fromPath,
+    to_path: toPath,
+  });
   return body;
 }

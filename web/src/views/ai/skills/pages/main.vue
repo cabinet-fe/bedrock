@@ -2,6 +2,7 @@
 defineOptions({ name: "AiSkills" });
 
 import { reactive, ref, useTemplateRef } from "vue";
+import { useRouter } from "vue-router";
 import { o } from "@cat-kit/core";
 import { saveBlob } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
@@ -13,6 +14,7 @@ import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 
+const router = useRouter();
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
 const table = useTemplateRef("table");
@@ -27,10 +29,11 @@ const form = reactive({
 
 const columns = defineProTableColumns([
   { key: "name", name: "名称" },
+  { key: "source", name: "来源", width: 100, align: "center" },
   { key: "visibility", name: "可见性", width: 100, align: "center" },
   { key: "package_digest", name: "Digest" },
   { key: "size_bytes", name: "大小" },
-  { key: "action", name: "操作", width: 280, align: "center", fixed: "right" },
+  { key: "action", name: "操作", width: 320, align: "center", fixed: "right" },
 ]);
 
 function openUpload() {
@@ -44,6 +47,10 @@ function openOverwrite(row: SkillPackage) {
   o(form).extend(row);
   file.value = null;
   dialogOpen.value = true;
+}
+
+function openDetail(row: SkillPackage) {
+  void router.push({ name: "ai-skill-detail", params: { id: String(row.id) } });
 }
 
 function onFilePick(files: File[]) {
@@ -94,15 +101,22 @@ const remove = bind(async (row: SkillPackage) => {
 <template>
   <div>
     <ProTable ref="table" url="/skills" pagination :columns="columns">
-      <template #filters>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('ai_skills:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openUpload"
         >
           上传
         </u-button>
+      </template>
+      <template #column:source="{ rowData }">
+        <u-tag
+          size="small"
+          :type="(rowData as SkillPackage).source === 'builtin' ? undefined : 'success'"
+        >
+          {{ (rowData as SkillPackage).source === "builtin" ? "内置" : "上传" }}
+        </u-tag>
       </template>
       <template #column:visibility="{ rowData }">
         <u-tag
@@ -113,7 +127,10 @@ const remove = bind(async (row: SkillPackage) => {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3" :loading="busyKey === (rowData as SkillPackage).id">
+        <u-action-group :max="4" :loading="busyKey === (rowData as SkillPackage).id">
+          <u-action @run="openDetail(rowData as SkillPackage)">
+            {{ (rowData as SkillPackage).editable ? "编辑" : "查看" }}
+          </u-action>
           <u-action
             v-if="hasPermission('ai_skills:download')"
             @run="onDownload(rowData as SkillPackage)"
@@ -121,13 +138,15 @@ const remove = bind(async (row: SkillPackage) => {
             下载
           </u-action>
           <u-action
-            v-if="hasPermission('ai_skills:update')"
+            v-if="hasPermission('ai_skills:update') && (rowData as SkillPackage).editable"
             @run="openOverwrite(rowData as SkillPackage)"
           >
             覆盖
           </u-action>
           <u-action
-            v-if="hasPermission('ai_skills:delete')"
+            v-if="
+              hasPermission('ai_skills:delete') && (rowData as SkillPackage).source !== 'builtin'
+            "
             type="danger"
             @run="remove(rowData as SkillPackage)"
           >

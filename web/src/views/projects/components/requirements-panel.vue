@@ -332,12 +332,9 @@ onMounted(() => void loadRequirementStatuses());
           ]"
           style="width: 120px"
         />
-        <u-button
-          v-if="canCreateRequirement"
-          type="primary"
-          style="margin-left: auto"
-          @click.prevent="openCreate"
-        >
+      </template>
+      <template #toolbar>
+        <u-button v-if="canCreateRequirement" type="primary" @click.prevent="openCreate">
           新建需求
         </u-button>
       </template>

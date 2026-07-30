@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -192,7 +193,8 @@ func main() {
 	projectHandler := projecthandler.NewProjectHandler(projectSvc, permSvc)
 
 	aiRepo := airepo.NewAIRepository(gdb)
-	skillSvc := aiservice.NewSkillService(aiRepo, storageSvc, auditSvc)
+	skillsRoot := filepath.Join(cfg.Storage.Root, "skills")
+	skillSvc := aiservice.NewSkillService(aiRepo, storageSvc, skillsRoot, auditSvc)
 
 	hub := ws.NewHub()
 	notifRepo := systemrepo.NewNotificationRepository(gdb)

@@ -629,11 +629,29 @@ export interface SkillPackage {
   name: string;
   description: string;
   visibility: "public" | "private";
+  source: "uploaded" | "builtin";
+  editable: boolean;
   package_digest: string;
   size_bytes: number;
   created_by: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface SkillFileNode {
+  name: string;
+  path: string;
+  kind: "file" | "dir";
+  size?: number;
+  children?: SkillFileNode[];
+}
+
+export interface SkillFileContent {
+  path: string;
+  content: string;
+  size: number;
+  binary: boolean;
+  editable: boolean;
 }
 
 export interface PersonalAccessToken {

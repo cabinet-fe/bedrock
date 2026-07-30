@@ -126,6 +126,7 @@ function main() {
   const paths = resolveProjectPaths(opts.repoRoot, {
     out: opts.out,
     project: opts.project,
+    workspace: opts.workspace,
   });
   const syncPath = paths.syncJsonPath;
   const prev = readJsonIfExists(syncPath) || {};

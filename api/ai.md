@@ -11,7 +11,7 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 工作区与制品语义：
 
 - 每个 Agent 唯一对应持久根工作区 `{workspace}/agents/agent-{id}/`；所有 Run 直接在该根目录执行，跨 Run 复用，启动新 Run 时不清空根目录已有文件。
-- 绑定仓库以 `{agentRoot}/repo-{repositoryID}/` 目录存在；创建/更新 Agent 后**异步**通过 `GitCloneOrPull` 初始化工作区（`workspace_status`：`pending` → `ready` / `failed`），每次 Run 执行前再增量同步；不再软链构建任务工作区。仅 `workspace_status=ready` 时可创建 Run。
+- 绑定仓库以 `{agentRoot}/repo-{repositoryID}-{sanitizedBranch}/` 目录存在（分支名中的 `/`、空格等不安全字符归一为 `-`）；创建/更新 Agent 后**异步**通过 `GitCloneOrPull` 初始化工作区（`workspace_status`：`pending` → `ready` / `failed`），每次 Run 执行前再增量同步；不再软链构建任务工作区。仅 `workspace_status=ready` 时可创建 Run。
 - 每个 Agent 另有一个固定产出目录 `{agentRoot}/{output_dir}`（`output_dir` 默认为相对名 `output`）。CLI 注入 `BEDROCK_AGENT_WORKDIR`（根）与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）。不创建 `runs/run-{id}/output` 或任何 per-run 输出子目录；后续 Run 复用同一产出目录且不清空既有内容（便于缓存与增量写入），由 Agent/CLI 自行覆盖需要更新的文件。
 - Agent 可配置任意键值环境变量：AES-GCM 加密存于 `env_vars_cipher`；API 仅回显 `{key, has_value}`；Sync/Run 时解密写入 `{agentRoot}/.env`、注入 `cmd.Env`，并设置 `BEDROCK_AGENT_ENV_FILE`（工作区 `.env` 同 UID 可见）。
 - AgentRun 只保存状态、日志、文本输出和 `work_dir` 等运行记录，不绑定、归档或提供文件制品下载（无 `artifact_path` / `GET /ai/runs/:id/artifact`）。此约束不影响 CI/CD BuildRun 的制品归档与下载。
@@ -28,7 +28,7 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 权限：`ai_agents:create`
 请求：{ name, description, enabled, cli_key, system_prompt, skill_ids, repo_bindings, env_vars, output_dir, stream_output, timeout_sec }
 响应 201
-说明：持久化元数据与 bindings 后立即返回，`workspace_status=pending`；后台异步初始化持久根工作区 `{workspace}/agents/agent-{id}/`（技能解压到 `.agents/skills`，每个 `repo_bindings` 项 checkout 到 `repo-{repository_id}/`，环境变量写入 `.env`）。成功 → `ready`，失败 → `failed` 并写入 `workspace_error`（不回滚删除 Agent）。`output_dir` 为相对产出目录名，默认 `output`。同一 Agent 内 `repository_id` 唯一；`branch` 缺省为 `main`。保存时不校验远程分支是否存在。`env_vars` 为全量键列表：`[{key, value?}]`，带 `value` 则写入；响应不回显明文。
+说明：持久化元数据与 bindings 后立即返回，`workspace_status=pending`；后台异步初始化持久根工作区 `{workspace}/agents/agent-{id}/`（技能解压到 `.agents/skills`，每个 `repo_bindings` 项 checkout 到 `repo-{repository_id}-{sanitizedBranch}/`，环境变量写入 `.env`）。成功 → `ready`，失败 → `failed` 并写入 `workspace_error`（不回滚删除 Agent）。`output_dir` 为相对产出目录名，默认 `output`。同一 Agent 内 `(repository_id, branch)` 唯一；`branch` 缺省为 `main`。保存时不校验远程分支是否存在。`env_vars` 为全量键列表：`[{key, value?}]`，带 `value` 则写入；响应不回显明文。
 
 ### GET /ai/agents/{id} — 获取 Agent
 
@@ -158,7 +158,95 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 错误：401 / 403
 说明：JWT 需 `ai_skills:download`，或 PAT scope `skills:read`。
 
+### GET /skills/{id}/files — 技能文件树
+
+权限：`ai_skills:view`
+路径参数：id*: integer
+响应 200：`SkillFileNode[]`
+说明：返回工作副本目录树（目录优先、名称排序）。内置与上传技能均可读。首次访问时若工作副本缺失，会从 ZIP 解压到 `{storage.root}/skills/{id}/`。
+
+### GET /skills/{id}/files/content — 读取技能文件
+
+权限：`ai_skills:view`
+路径参数：id*: integer
+查询参数：path*: string（相对技能根，禁止 `..`）
+响应 200：`SkillFileContent`
+错误：400 / 403 / 404
+说明：文本文件返回 `content`；含空字节或非 UTF-8 时 `binary=true` 且 `content` 为空。单文件上限 2MB。
+
+### PUT /skills/{id}/files/content — 写入技能文件
+
+权限：`ai_skills:update`
+路径参数：id*: integer
+请求：`{ path*, content }`
+响应 200：`SkillFileContent`
+错误：403 / 404 / 422
+说明：仅 `source=uploaded` 且创建者/超管可写。直接覆盖磁盘工作副本，并重打包 ZIP 更新 `package_digest`。内置技能返回 403。
+
+### POST /skills/{id}/files — 新建文件或目录
+
+权限：`ai_skills:update`
+路径参数：id*: integer
+请求：`{ path*, kind*: 'file' | 'dir', content? }`
+响应 201：`SkillFileNode`
+错误：403 / 409
+说明：同写入权限；`kind=file` 时可带初始 `content`。
+
+### DELETE /skills/{id}/files — 删除文件或目录
+
+权限：`ai_skills:update`
+路径参数：id*: integer
+查询参数：path*: string
+响应 200：`{ deleted: true }`
+错误：403 / 404
+说明：不可删除根目录或 `SKILL.md`（含包含它的目录）。
+
+### POST /skills/{id}/files/rename — 重命名/移动
+
+权限：`ai_skills:update`
+路径参数：id*: integer
+请求：`{ from_path*, to_path* }`
+响应 200：`SkillFileNode`
+错误：403 / 404 / 409
+说明：不可将 `SKILL.md` 改名为其他名称；目标路径已存在返回 409。
+
 ## 对象形状
+
+### SkillPackage
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `integer` |  |
+| `name` | `string` |  |
+| `description` | `string` |  |
+| `visibility` | `'public' \| 'private'` |  |
+| `source` | `'uploaded' \| 'builtin'` | 上传可编辑；内置只读 |
+| `editable` | `boolean` | 当前调用方是否可改文件（API 计算字段） |
+| `package_digest` | `string` |  |
+| `size_bytes` | `integer` |  |
+| `created_by` | `integer` |  |
+| `created_at` | `string` |  |
+| `updated_at` | `string` |  |
+
+### SkillFileNode
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `name` | `string` |  |
+| `path` | `string` | 相对技能根的 POSIX 路径 |
+| `kind` | `'file' \| 'dir'` |  |
+| `size` | `integer` | 文件大小（字节）；目录可省略 |
+| `children` | `SkillFileNode[]` | 仅目录 |
+
+### SkillFileContent
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `path` | `string` |  |
+| `content` | `string` | 文本内容；二进制时为空 |
+| `size` | `integer` |  |
+| `binary` | `boolean` |  |
+| `editable` | `boolean` |  |
 
 ### AgentTriggerInput
 
@@ -203,7 +291,7 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 | `cli_key` | `string` |  |  |
 | `system_prompt` | `string` |  |  |
 | `skill_ids` | `integer[]` |  | 解压到工作区 `.agents/skills/{name}/`（按 Skill 名称；ZIP 内含 SKILL.md 的包装目录与 `__MACOSX` 会剥离） |
-| `repo_bindings` | `{ repository_id: integer, branch: string }[]` |  | 在 `{agentRoot}/repo-{repository_id}/` checkout 指定分支；同 Agent 内 `repository_id` 唯一；`branch` 默认 `main` |
+| `repo_bindings` | `{ repository_id: integer, branch: string }[]` |  | 在 `{agentRoot}/repo-{repository_id}-{sanitizedBranch}/` checkout 指定分支；同 Agent 内 `(repository_id, branch)` 唯一；`branch` 默认 `main` |
 | `env_vars` | `{ key: string, value?: string }[]` |  | 全量键列表；带 `value` 则设置/更新；已有键未带 `value` 则保留；请求中消失的键删除；key 非空且不得含 `=` / 换行 |
 | `output_dir` | `string` |  | 相对产出目录名；默认 `output`；路径为 `{agentRoot}/{output_dir}`，跨 Run 固定复用 |
 | `stream_output` | `boolean` |  | 启用后使用 CLI 默认可读流式输出；关闭时部分 CLI 仅输出最终摘要（如 Reasonix `-p`），默认 `false` |

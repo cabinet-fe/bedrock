@@ -172,6 +172,8 @@ async function onBatchSyncBranches() {
     >
       <template #filters>
         <u-input v-model="query.keyword" placeholder="名称/URL" style="width: 200px" />
+      </template>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('resource_repositories:update')"
           :loading="batchBusy"
@@ -182,7 +184,6 @@ async function onBatchSyncBranches() {
         <u-button
           v-if="hasPermission('resource_repositories:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           新建仓库

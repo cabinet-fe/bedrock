@@ -119,11 +119,10 @@ const remove = bind(async (row: Dictionary) => {
 <template>
   <div>
     <ProTable ref="list" url="/dictionaries" :columns="columns" pagination>
-      <template #filters>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('system_dictionaries:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           新建字典

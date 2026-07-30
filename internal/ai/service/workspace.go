@@ -89,8 +89,49 @@ func (s *AgentService) finishWorkspaceInit(agentID uint, gen uint64, syncErr err
 	_ = s.repo.UpdateAgentFields(agentID, fields)
 }
 
+// repoDirName returns the checkout directory name for a repository+branch binding:
+// repo-{repositoryID}-{sanitizedBranch}.
+func repoDirName(repositoryID uint, branch string) string {
+	return fmt.Sprintf("repo-%d-%s", repositoryID, sanitizeBranchForDir(branch))
+}
+
+// sanitizeBranchForDir turns a git branch name into a safe single path segment.
+func sanitizeBranchForDir(branch string) string {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		branch = "main"
+	}
+	var b strings.Builder
+	prevDash := false
+	for _, r := range branch {
+		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '.' || r == '_'
+		if ok {
+			b.WriteRune(r)
+			prevDash = false
+			continue
+		}
+		if !prevDash {
+			b.WriteByte('-')
+			prevDash = true
+		}
+	}
+	s := strings.Trim(b.String(), "-")
+	if s == "" {
+		s = "branch"
+	}
+	const maxLen = 100
+	if len(s) > maxLen {
+		s = strings.Trim(s[:maxLen], "-")
+		if s == "" {
+			s = "branch"
+		}
+	}
+	return s
+}
+
 // SyncAgentWorkspace ensures the persistent agent directory layout:
-// skills under .agents/skills, repo-{id} checkouts for bindings, SYSTEM_PROMPT.md.
+// skills under .agents/skills, repo-{id}-{branch} checkouts for bindings, SYSTEM_PROMPT.md.
 // repoDirs are absolute paths of successfully synced repository checkouts (for run logs).
 func (s *AgentService) SyncAgentWorkspace(agent *model.AiAgent, userID uint, isSuperAdmin bool) (digests map[uint]string, repoDirs []string, err error) {
 	if agent == nil {
@@ -137,7 +178,7 @@ func (s *AgentService) SyncAgentWorkspace(agent *model.AiAgent, userID uint, isS
 func (s *AgentService) syncRepoCheckouts(agentRoot string, bindings []model.RepoBinding) ([]string, error) {
 	wanted := map[string]bool{}
 	for _, b := range bindings {
-		wanted[fmt.Sprintf("repo-%d", b.RepositoryID)] = true
+		wanted[repoDirName(b.RepositoryID, b.Branch)] = true
 	}
 
 	entries, err := os.ReadDir(agentRoot)
@@ -177,7 +218,7 @@ func (s *AgentService) syncRepoCheckouts(agentRoot string, bindings []model.Repo
 		if err != nil {
 			return nil, fmt.Errorf("仓库 %d 凭证错误: %w", b.RepositoryID, err)
 		}
-		dest := filepath.Join(agentRoot, fmt.Sprintf("repo-%d", b.RepositoryID))
+		dest := filepath.Join(agentRoot, repoDirName(b.RepositoryID, b.Branch))
 		logFn := func(line string) {
 			if s.logger != nil {
 				s.logger.Info("agent git", zap.Uint("repository_id", b.RepositoryID), zap.String("line", line))
@@ -254,12 +295,12 @@ func appendFullPermissionArgs(cliKey string, args []string) []string {
 func agentWorkspaceScopeHint() string {
 	return "你的工作目录是 $BEDROCK_AGENT_WORKDIR（agents 下本智能体目录）。" +
 		"该目录是跨 Run 复用的持久工作区；不要删除其中已有文件，除非明确需要。" +
-		"只能在该目录内读写；通过 ./repo-{id} 访问绑定仓库代码。" +
+		"只能在该目录内读写；通过 ./repo-{id}-{branch} 访问绑定仓库代码。" +
 		"禁止访问该目录之外的任意路径。" +
 		"请将需交付的文件写入 $BEDROCK_AGENT_OUTPUT（本智能体固定产出目录，默认 ./output；跨 Run 保留，不清空）。" +
 		" Your working directory is $BEDROCK_AGENT_WORKDIR (this agent under agents/)." +
 		" This persistent workspace is reused across runs; do not delete existing files unless required." +
-		" Read/write only inside it; access bound repository code via ./repo-{id}." +
+		" Read/write only inside it; access bound repository code via ./repo-{id}-{branch}." +
 		" Do not access any path outside this directory." +
 		" Write deliverable files into $BEDROCK_AGENT_OUTPUT (this agent's fixed output directory; preserved across runs)."
 }
@@ -319,20 +360,25 @@ func (s *AgentService) normalizeRepoBindings(in []model.RepoBinding) ([]model.Re
 	if in == nil {
 		return []model.RepoBinding{}, nil
 	}
-	seen := map[uint]struct{}{}
+	type bindingKey struct {
+		repoID uint
+		branch string
+	}
+	seen := map[bindingKey]struct{}{}
 	out := make([]model.RepoBinding, 0, len(in))
 	for _, b := range in {
 		if b.RepositoryID == 0 {
 			return nil, fmt.Errorf("repository_id 不能为空")
 		}
-		if _, dup := seen[b.RepositoryID]; dup {
-			return nil, fmt.Errorf("同一智能体内仓库不能重复绑定")
-		}
-		seen[b.RepositoryID] = struct{}{}
 		branch := strings.TrimSpace(b.Branch)
 		if branch == "" {
 			branch = "main"
 		}
+		key := bindingKey{repoID: b.RepositoryID, branch: branch}
+		if _, dup := seen[key]; dup {
+			return nil, fmt.Errorf("同一智能体内仓库与分支不能重复绑定")
+		}
+		seen[key] = struct{}{}
 		if s.repos != nil {
 			if _, err := s.repos.FindByID(b.RepositoryID); err != nil {
 				return nil, fmt.Errorf("仓库不存在: %d", b.RepositoryID)

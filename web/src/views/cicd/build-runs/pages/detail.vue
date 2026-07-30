@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { saveBlob } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
+import type { ColorType } from "@veltra/utils";
 
 import {
   buildRunArtifactURL,
@@ -25,6 +26,15 @@ import {
   TRIGGER_TYPE_TAG,
   tagType,
 } from "@/lib/tag";
+
+/** 与 BuildRun.stage 对齐（不含终态 idle） */
+const PIPELINE_STEPS: { key: string; label: string }[] = [
+  { key: "pending", label: "排队" },
+  { key: "cloning", label: "克隆" },
+  { key: "building", label: "构建" },
+  { key: "archiving", label: "归档" },
+  { key: "distributing", label: "分发" },
+];
 
 const route = useRoute();
 const router = useRouter();
@@ -79,6 +89,45 @@ const shortCommit = computed(() => {
   const hash = run.value?.commit_hash?.trim();
   if (!hash) return "—";
   return hash.length > 12 ? hash.slice(0, 12) : hash;
+});
+
+function stageStepIndex(stage: string): number {
+  const idx = PIPELINE_STEPS.findIndex((s) => s.key === stage);
+  return idx >= 0 ? idx : 0;
+}
+
+/** u-steps：undefined = 全部完成；否则为当前活动步索引 */
+const stepCurrent = computed<number | undefined>(() => {
+  const r = run.value;
+  if (!r) return undefined;
+  const { stage, status, distribution_summary: dist } = r;
+
+  if (stage === "idle") {
+    if (status === "success") {
+      if (dist === "all_failed" || dist === "partial" || dist === "cancelled") {
+        return PIPELINE_STEPS.length - 1;
+      }
+      return undefined;
+    }
+    // 排队中取消会直接落到 idle
+    if (status === "cancelled" || status === "interrupted") return 0;
+    return undefined;
+  }
+
+  return stageStepIndex(stage);
+});
+
+const currentStepType = computed<ColorType | undefined>(() => {
+  const r = run.value;
+  if (!r || stepCurrent.value === undefined) return undefined;
+  const { status, distribution_summary: dist } = r;
+
+  if (status === "failed") return "danger";
+  if (status === "cancelled" || status === "interrupted") return "warning";
+  if (dist === "all_failed") return "danger";
+  if (dist === "partial" || dist === "cancelled") return "warning";
+  if (status === "queued") return "info";
+  return "primary";
 });
 
 async function load() {
@@ -177,9 +226,6 @@ onMounted(async () => {
     <div class="page">
       <header class="page-header">
         <div class="page-header__lead">
-          <u-button type="primary" plain @click="router.push({ name: 'cicd-build-runs' })">
-            返回列表
-          </u-button>
           <div v-if="run" class="page-header__title">
             <h2>构建 #{{ run.build_number }}</h2>
             <u-tag size="small" :type="tagType(run.status, JOB_STATUS_TAG)">{{ run.status }}</u-tag>
@@ -209,6 +255,16 @@ onMounted(async () => {
 
       <div v-if="loading" class="state">加载中…</div>
       <template v-else-if="run">
+        <section class="panel steps-panel">
+          <u-steps
+            align-center
+            :items="PIPELINE_STEPS"
+            :current="stepCurrent"
+            :current-step-type="currentStepType"
+            finished-step-type="success"
+          />
+        </section>
+
         <section class="panel meta-panel">
           <div class="meta-grid">
             <div class="meta-item">
@@ -359,6 +415,10 @@ onMounted(async () => {
   padding: fn.use-var(gap, default);
   border-radius: fn.use-var(radius, default);
   background: fn.use-var(bg-color, top);
+}
+
+.steps-panel {
+  overflow-x: auto;
 }
 
 .panel--empty {

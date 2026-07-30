@@ -111,7 +111,7 @@ function buildDocFiles(controllers) {
 
 function main() {
   const { repoRoot, baseCommitArg, out, project, workspace } = parseArgs(process.argv);
-  const paths = resolveProjectPaths(repoRoot, { out, project });
+  const paths = resolveProjectPaths(repoRoot, { out, project, workspace });
   const syncPath = paths.syncJsonPath;
   const sync = readJsonIfExists(syncPath);
   const syncFile = displayPath(workspace, syncPath);

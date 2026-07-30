@@ -416,10 +416,11 @@ async function rotateWebhookSecret() {
           style="width: 180px"
         />
         <u-input v-model="query.keyword" placeholder="名称" style="width: 160px" />
+      </template>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('cicd_build_jobs:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           新建任务

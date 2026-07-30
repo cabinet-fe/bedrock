@@ -85,8 +85,12 @@ function extractAnnotationArgs(src, atIndex) {
   let i = atIndex + 1;
   while (i < src.length && /[A-Za-z0-9_.]/.test(src[i])) i += 1;
   const name = src.slice(atIndex + 1, i);
+  const nameEnd = i;
   while (i < src.length && /\s/.test(src[i])) i += 1;
-  if (src[i] !== '(') return { name, args: '', end: i };
+  if (src[i] !== '(') {
+    // 无参注解 end 止于注解名；若吞掉其后空白，下一行 public 会使 end > methodIndex
+    return { name, args: '', end: nameEnd };
+  }
   const bal = matchBalanced(src, i);
   if (!bal) return { name, args: '', end: i };
   return { name, args: bal.inner, end: bal.end + 1 };

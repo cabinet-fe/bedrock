@@ -52,7 +52,7 @@ func setupAI(t *testing.T) (*gorm.DB, *service.AgentService, *service.SkillServi
 	if err != nil {
 		t.Fatal(err)
 	}
-	skills := service.NewSkillService(repo, storageSvc)
+	skills := service.NewSkillService(repo, storageSvc, filepath.Join(storageRoot, "skills"))
 	work := filepath.Join(t.TempDir(), "work")
 	logs := filepath.Join(t.TempDir(), "logs")
 	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, logs)

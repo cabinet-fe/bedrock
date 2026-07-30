@@ -300,10 +300,11 @@ const remove = bind(async (row: RbacResource) => {
           :options="ENABLED_OPTIONS"
           style="width: 120px"
         />
+      </template>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('system_resources:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate()"
         >
           新建资源

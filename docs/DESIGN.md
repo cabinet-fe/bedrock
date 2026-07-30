@@ -288,7 +288,7 @@ flowchart TB
 Agent 工作区与记录规则：
 
 1. 每个 Agent 的唯一执行目录为 `{workspace}/agents/agent-{id}/`。同一 Agent 的所有 Run 直接复用该持久根工作区，开始新 Run 时不清空根目录已有文件；不同 Agent 以各自根目录为边界。
-2. 工作区代码绑定为多组 `{repository_id, branch}`（同 Agent 内 `repository_id` 唯一）。创建/更新 Agent 后将 `workspace_status` 置为 `pending` 并**异步**初始化工作区（技能注入 + `GitCloneOrPull` checkout）；成功 → `ready`，失败 → `failed`（写入 `workspace_error`，不回滚删除配置）。仅 `workspace_status=ready` 时可创建 Run（手动 / API / cron / 构建事件）。每次 Run 执行前仍增量同步绑定分支。不再软链构建任务 `job-*` 工作区。分支存在性保存时不校验。
+2. 工作区代码绑定为多组 `{repository_id, branch}`（同 Agent 内 `(repository_id, branch)` 唯一；checkout 目录为 `repo-{repository_id}-{sanitizedBranch}/`）。创建/更新 Agent 后将 `workspace_status` 置为 `pending` 并**异步**初始化工作区（技能注入 + `GitCloneOrPull` checkout）；成功 → `ready`，失败 → `failed`（写入 `workspace_error`，不回滚删除配置）。仅 `workspace_status=ready` 时可创建 Run（手动 / API / cron / 构建事件）。每次 Run 执行前仍增量同步绑定分支。不再软链构建任务 `job-*` 工作区。分支存在性保存时不校验。
 3. 每个 Agent 另有一个固定产出目录 `{agentRoot}/{output_dir}`（配置字段 `output_dir`，默认相对名 `output`）。CLI 注入 `BEDROCK_AGENT_WORKDIR`（根）与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）。不创建 `runs/run-{id}/output` 或任何 per-run 输出子目录；后续 Run 复用同一产出目录且不清空既有内容（便于缓存与增量写入），由 Agent/CLI 自行覆盖需要更新的文件。
 4. Agent 环境变量 AES-GCM 加密存储（`env_vars_cipher`）；API 不回显明文。Sync/Run 时解密写入工作区 `.env` 并注入进程环境（`BEDROCK_AGENT_ENV_FILE` 指向该文件）；同 UID 下明文可见。
 5. AgentRun 保留状态、日志、文本输出、`work_dir` 与关联上下文，不含 `artifact_path`，不创建归档，也没有文件制品下载 API。

@@ -96,10 +96,11 @@ const remove = bind(async (row: Credential) => {
     <ProTable ref="list" url="/resource/credentials" :query="query" :columns="columns" pagination>
       <template #filters>
         <u-input v-model="query.keyword" placeholder="名称关键词" style="width: 200px" />
+      </template>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('resource_credentials:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           新建凭证

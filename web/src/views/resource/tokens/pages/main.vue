@@ -205,11 +205,10 @@ const remove = bind(async (row: PersonalAccessToken) => {
 <template>
   <div>
     <ProTable ref="table" url="/resource/tokens" pagination :columns="columns">
-      <template #filters>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('resource_tokens:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           创建令牌

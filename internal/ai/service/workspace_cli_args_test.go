@@ -49,7 +49,7 @@ func TestAgentWorkspaceScopeHint(t *testing.T) {
 	for _, want := range []string{
 		"$BEDROCK_AGENT_WORKDIR",
 		"$BEDROCK_AGENT_OUTPUT",
-		"./repo-{id}",
+		"./repo-{id}-{branch}",
 		"固定产出目录",
 		"只能在该目录内读写",
 		"禁止访问该目录之外的任意路径",
@@ -59,6 +59,35 @@ func TestAgentWorkspaceScopeHint(t *testing.T) {
 		if !strings.Contains(hint, want) {
 			t.Fatalf("scope hint missing %q; got:\n%s", want, hint)
 		}
+	}
+}
+
+func TestRepoDirName(t *testing.T) {
+	cases := []struct {
+		repoID uint
+		branch string
+		want   string
+	}{
+		{4, "master", "repo-4-master"},
+		{4, "refactor", "repo-4-refactor"},
+		{4, "feature/foo", "repo-4-feature-foo"},
+		{4, "a  b", "repo-4-a-b"},
+		{4, "a---b", "repo-4-a-b"},
+		{4, "  ", "repo-4-main"},
+		{4, "../evil", "repo-4-..-evil"},
+	}
+	for _, tc := range cases {
+		if got := repoDirName(tc.repoID, tc.branch); got != tc.want {
+			t.Fatalf("repoDirName(%d, %q)=%q want %q", tc.repoID, tc.branch, got, tc.want)
+		}
+	}
+	long := strings.Repeat("x", 150)
+	got := repoDirName(1, long)
+	if !strings.HasPrefix(got, "repo-1-") {
+		t.Fatalf("unexpected prefix: %q", got)
+	}
+	if len(got) > len("repo-1-")+100 {
+		t.Fatalf("branch segment not truncated: len=%d", len(got))
 	}
 }
 

@@ -46,24 +46,35 @@ function resolveProjectName(repoRoot, projectOpt) {
 /**
  * 解析输出根目录。
  * - 绝对路径：原样 resolve
- * - 相对路径 / 默认值：相对 `process.cwd()`（工作区根），便于多仓共享
+ * - 相对路径 / 默认值：相对 `opts.workspace`（若提供）或 `process.cwd()`
  * @param {string|null|undefined} outOpt
- * @param {{ discover?: boolean, project?: string|null }} [opts]
+ * @param {{ discover?: boolean, project?: string|null, workspace?: string|null }} [opts]
  *   discover=true（默认）且未显式传 out 时：若工作区已有 `output/` / `api-docs/` 等
  *   下的 `.sync.json`，优先复用，避免默认落到空的 `api-docs` 而误判全量。
  */
 function resolveOutRoot(outOpt, opts = {}) {
   const explicit = outOpt != null && String(outOpt).trim() ? String(outOpt).trim() : null;
+  const workspace = opts.workspace ? path.resolve(opts.workspace) : null;
+  const cwd = process.cwd();
+  const base = workspace || cwd;
+
   if (explicit) {
     if (path.isAbsolute(explicit)) return path.resolve(explicit);
-    return path.resolve(process.cwd(), explicit);
+    const fromCwd = path.resolve(cwd, explicit);
+    if (workspace && path.resolve(workspace) !== path.resolve(cwd)) {
+      const fromWs = path.resolve(workspace, explicit);
+      if (fs.existsSync(fromWs) && !fs.existsSync(fromCwd)) return fromWs;
+    }
+    return fromCwd;
   }
   const discover = opts.discover !== false;
   if (discover) {
-    const found = discoverExistingOutRoot(process.cwd(), opts.project);
-    if (found) return found;
+    for (const root of [workspace, cwd].filter(Boolean)) {
+      const found = discoverExistingOutRoot(root, opts.project);
+      if (found) return found;
+    }
   }
-  return path.resolve(process.cwd(), DEFAULT_OUT);
+  return path.resolve(base, DEFAULT_OUT);
 }
 
 /**
@@ -140,6 +151,7 @@ function resolveProjectPaths(repoRoot, opts = {}) {
   const outRoot = resolveOutRoot(opts.out, {
     discover: opts.discoverOut !== false,
     project,
+    workspace: opts.workspace,
   });
   const projectRoot = path.join(outRoot, project);
   return {

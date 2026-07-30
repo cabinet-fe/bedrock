@@ -33,15 +33,34 @@ function serviceNameCandidates(name) {
 }
 
 /**
- * 从仓库 / 源码树读取 spring.application.name。
- * @param {string} root
+ * 从单个 yml/yaml 文本提取 spring.application.name。
+ * @param {string} text
  * @returns {string|null}
  */
-function readSpringApplicationName(root) {
+function extractSpringApplicationName(text) {
+  const flat = text.match(/^\s*spring\.application\.name\s*:\s*['"]?([^\s#'"]+)/m);
+  if (flat) return flat[1].trim();
+  const nested = text.match(
+    /(?:^|\n)spring\s*:\s*\n(?:[ \t]+.+\n)*?[ \t]+application\s*:\s*\n(?:[ \t]+.+\n)*?[ \t]+name\s*:\s*['"]?([^\s#'"]+)/,
+  );
+  return nested ? nested[1].trim() : null;
+}
+
+/**
+ * 从仓库 / 源码树读取 spring.application.name。
+ *
+ * 优先读 root 自身的 application/bootstrap；若无，再扫一级子模块。
+ * **多模块仓若扫到多个不同服务名 → 返回 null**（禁止静默取第一个，否则会配错网关前缀）。
+ *
+ * @param {string} root
+ * @returns {{ name: string|null, ambiguous: boolean, found: string[] }}
+ */
+function readSpringApplicationNameDetailed(root) {
   const abs = path.resolve(root);
-  const candidates = [];
-  const pushIf = (p) => {
-    if (fs.existsSync(p)) candidates.push(p);
+  const directFiles = [];
+  const nestedFiles = [];
+  const pushIf = (list, p) => {
+    if (fs.existsSync(p)) list.push(p);
   };
 
   for (const rel of [
@@ -52,7 +71,7 @@ function readSpringApplicationName(root) {
     'application.yml',
     'application.yaml',
   ]) {
-    pushIf(path.join(abs, rel));
+    pushIf(directFiles, path.join(abs, rel));
   }
 
   try {
@@ -62,28 +81,52 @@ function readSpringApplicationName(root) {
         continue;
       }
       for (const f of ['application.yml', 'application.yaml', 'bootstrap.yml', 'bootstrap.yaml']) {
-        pushIf(path.join(abs, ent.name, 'src', 'main', 'resources', f));
+        pushIf(nestedFiles, path.join(abs, ent.name, 'src', 'main', 'resources', f));
       }
     }
   } catch {
     /* ignore */
   }
 
-  for (const file of candidates) {
-    let text;
-    try {
-      text = fs.readFileSync(file, 'utf8');
-    } catch {
-      continue;
+  const readNames = (files) => {
+    const names = [];
+    for (const file of files) {
+      let text;
+      try {
+        text = fs.readFileSync(file, 'utf8');
+      } catch {
+        continue;
+      }
+      const n = extractSpringApplicationName(text);
+      if (n && !names.includes(n)) names.push(n);
     }
-    const flat = text.match(/^\s*spring\.application\.name\s*:\s*['"]?([^\s#'"]+)/m);
-    if (flat) return flat[1].trim();
-    const nested = text.match(
-      /(?:^|\n)spring\s*:\s*\n(?:[ \t]+.+\n)*?[ \t]+application\s*:\s*\n(?:[ \t]+.+\n)*?[ \t]+name\s*:\s*['"]?([^\s#'"]+)/,
-    );
-    if (nested) return nested[1].trim();
+    return names;
+  };
+
+  const directNames = readNames(directFiles);
+  if (directNames.length === 1) {
+    return { name: directNames[0], ambiguous: false, found: directNames };
   }
-  return null;
+  if (directNames.length > 1) {
+    return { name: null, ambiguous: true, found: directNames };
+  }
+
+  const nestedNames = readNames(nestedFiles);
+  if (nestedNames.length === 1) {
+    return { name: nestedNames[0], ambiguous: false, found: nestedNames };
+  }
+  if (nestedNames.length > 1) {
+    return { name: null, ambiguous: true, found: nestedNames };
+  }
+  return { name: null, ambiguous: false, found: [] };
+}
+
+/**
+ * @param {string} root
+ * @returns {string|null}
+ */
+function readSpringApplicationName(root) {
+  return readSpringApplicationNameDetailed(root).name;
 }
 
 /**
@@ -262,28 +305,68 @@ function joinGatewayPath(gatewayPrefix, servicePath) {
 
 /**
  * 收集用于匹配的服务名候选。
+ *
+ * 优先级（先试先命中）：
+ * 1. 显式 `--service`
+ * 2. `--project`
+ * 3. srcRoot 上的 spring.application.name（模块自身）
+ * 4. repoRoot 上的 spring.application.name（仅当不歧义；多模块仓多个 name 时跳过）
+ *
+ * 禁止把单体仓根扫到的「第一个」子模块名排在 project 前面（会把 /admin 配成 /auth）。
+ *
  * @param {{ repoRoot?: string, srcRoot?: string, service?: string|null, project?: string|null }} opts
+ * @returns {{ names: string[], warnings: string[] }}
+ */
+function collectServiceNamesDetailed(opts = {}) {
+  const names = [];
+  const warnings = [];
+  const push = (n) => {
+    const s = String(n || '').trim();
+    if (s && !names.includes(s)) names.push(s);
+  };
+
+  if (opts.service) push(opts.service);
+  if (opts.project) push(opts.project);
+
+  const roots = [];
+  if (opts.srcRoot) roots.push({ label: 'srcRoot', root: opts.srcRoot });
+  if (opts.repoRoot && path.resolve(opts.repoRoot) !== path.resolve(opts.srcRoot || '')) {
+    roots.push({ label: 'repoRoot', root: opts.repoRoot });
+  }
+
+  for (const { label, root } of roots) {
+    const detail = readSpringApplicationNameDetailed(root);
+    if (detail.ambiguous) {
+      warnings.push(
+        `${label} 下发现多个 spring.application.name [${detail.found.join(', ')}]，已忽略以免配错网关前缀；请传 --service 或把 --repo-root 指到具体模块目录`,
+      );
+      continue;
+    }
+    if (detail.name) push(detail.name);
+  }
+
+  return { names, warnings };
+}
+
+/**
+ * @param {{ repoRoot?: string, srcRoot?: string, service?: string|null, project?: string|null }} opts
+ * @returns {string[]}
  */
 function collectServiceNames(opts = {}) {
-  const names = [];
-  if (opts.service) names.push(String(opts.service).trim());
-  const roots = [opts.srcRoot, opts.repoRoot].filter(Boolean);
-  for (const r of roots) {
-    const app = readSpringApplicationName(r);
-    if (app) names.push(app);
-  }
-  if (opts.project) names.push(String(opts.project).trim());
-  return [...new Set(names.filter(Boolean))];
+  return collectServiceNamesDetailed(opts).names;
 }
 
 export {
   DEFAULT_GATEWAY_JSON,
   normalizeServiceKey,
   serviceNameCandidates,
+  extractSpringApplicationName,
   readSpringApplicationName,
+  readSpringApplicationNameDetailed,
   resolveGatewayJsonPath,
   loadGatewayConfig,
   resolveGatewayPrefix,
   joinGatewayPath,
   collectServiceNames,
+  collectServiceNamesDetailed,
 };

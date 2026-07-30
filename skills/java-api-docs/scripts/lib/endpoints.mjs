@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { walkJavaFiles, readText } from './fs-utils.mjs';
 import {
@@ -14,11 +15,12 @@ import {
 } from './java-parse.mjs';
 import { controllerToKebab, controllerDocFileName } from './names.mjs';
 import {
-  collectServiceNames,
+  collectServiceNamesDetailed,
   joinGatewayPath,
   resolveGatewayPrefix,
   resolveGatewayJsonPath,
 } from './gateway.mjs';
+
 const MAPPING_NAMES = new Set([
   'GetMapping',
   'PostMapping',
@@ -58,6 +60,12 @@ function extractAuth(annos) {
       hits.push({ kind: a.name, value: firstStringLiteral(a.args) || a.args.trim() });
     } else if (a.name === 'HasPermission' || a.name === 'Secured' || a.name === 'RolesAllowed') {
       hits.push({ kind: a.name, value: firstStringLiteral(a.args) || a.args.trim() });
+    } else if (a.name === 'SecurityRequirement') {
+      const nameLit = firstStringLiteral(a.args);
+      const nameArg = (nameLit || a.args.match(/\bname\s*=\s*([^,)]+)/)?.[1] || '').trim();
+      hits.push({ kind: a.name, value: nameArg });
+    } else if (a.name === 'AnonymousAccess') {
+      hits.push({ kind: a.name, value: '' });
     }
   }
   return hits;
@@ -69,8 +77,18 @@ function extractAuth(annos) {
  */
 function summarizeAuth(hits) {
   if (!hits || !hits.length) return '无需登录（本接口无鉴权注解）';
+  if (hits.some((h) => h.kind === 'AnonymousAccess')) return '无需登录（@AnonymousAccess）';
   const parts = [];
   for (const h of hits) {
+    if (h.kind === 'SecurityRequirement') {
+      const v = (h.value || '').trim();
+      if (!v || /AUTHORIZATION/i.test(v)) {
+        parts.push('需要登录');
+      } else {
+        parts.push('需要登录（见 SecurityRequirement）');
+      }
+      continue;
+    }
     const v = (h.value || '').trim();
     if (!v) {
       parts.push('需要登录');
@@ -208,6 +226,14 @@ function classRequestMapping(classAnnos) {
   return mappingPathFromArgs(rm.args);
 }
 
+/** methodRe 可能把 @PostMapping 等无参注解名误吞进「返回类型」；此类匹配须跳过并重扫。 */
+function isFalseMethodMatch(src, m) {
+  if (m.index > 0 && src[m.index - 1] === '@') return true;
+  if (MAPPING_NAMES.has(m[3])) return true;
+  if (/\b(?:Get|Post|Put|Delete|Patch|Request)Mapping\b/.test(m[2] || '')) return true;
+  return false;
+}
+
 function parseControllerFile(filePath, srcRaw) {
   const src = stripComments(srcRaw);
   const cls = findClassDeclaration(src);
@@ -223,6 +249,10 @@ function parseControllerFile(filePath, srcRaw) {
   let m;
   while ((m = methodRe.exec(src))) {
     if (m.index < cls.bodyStart) continue;
+    if (isFalseMethodMatch(src, m)) {
+      methodRe.lastIndex = m.index + 1;
+      continue;
+    }
     const methodName = m[3];
     if (methodName === cls.className) continue; // 构造函数
     const returnType = m[2].trim();
@@ -289,7 +319,13 @@ function listEndpoints(srcRoot, opts = {}) {
   const root = path.resolve(srcRoot);
   let javaFiles;
   if (files && files.length) {
-    javaFiles = files.map((f) => (path.isAbsolute(f) ? f : path.resolve(root, f)));
+    javaFiles = files.map((f) => {
+      if (path.isAbsolute(f)) return f;
+      const underRoot = path.resolve(root, f);
+      if (fs.existsSync(underRoot)) return underRoot;
+      // 相对 cwd 的路径（Agent 常传仓库相对路径）
+      return path.resolve(process.cwd(), f);
+    });
   } else {
     javaFiles = walkJavaFiles(root, {
       filter: (f) => /Controller\.java$/.test(f) || /controller\//i.test(f),
@@ -305,16 +341,24 @@ function listEndpoints(srcRoot, opts = {}) {
     javaFiles.sort();
   }
 
-  const serviceNames = collectServiceNames({
+  const collected = collectServiceNamesDetailed({
     repoRoot: opts.repoRoot || root,
     srcRoot: root,
     service: opts.service,
     project: opts.project,
   });
+  const serviceNames = collected.names;
   const gateway = resolveGatewayPrefix({
     serviceNames,
     gatewayJson: opts.gatewayJson ?? opts.gateway,
   });
+  // 多模块歧义警告挂到 gateway（matched 仍可能因 --project 命中而为 true）
+  if (collected.warnings.length) {
+    gateway.serviceWarnings = collected.warnings;
+    const extra = collected.warnings.join('；');
+    gateway.warning = gateway.warning ? `${gateway.warning}；${extra}` : extra;
+  }
+
   const endpoints = [];
   const errors = [];
   /** @type {Map<string, { controller: string, docFile: string, file: string, endpoints: any[] }>} */

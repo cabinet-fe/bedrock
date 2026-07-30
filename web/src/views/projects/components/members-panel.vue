@@ -177,12 +177,11 @@ const transfer = bind(async (member: ProjectMember) => {
       :height="height"
       @loaded="onLoaded"
     >
-      <template #filters>
+      <template #toolbar>
         <u-button
           v-if="canManageMembers"
           type="primary"
           :loading="addBusy"
-          style="margin-left: auto"
           @click.prevent="openAdd"
         >
           添加成员

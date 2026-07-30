@@ -26,6 +26,11 @@ const (
 )
 
 const (
+	SkillSourceUploaded = "uploaded"
+	SkillSourceBuiltin  = "builtin"
+)
+
+const (
 	EventArtifactReady        = "artifact_ready"
 	EventDistributionFinished = "distribution_finished"
 	EventNone                 = "none"
@@ -54,7 +59,7 @@ type AgentRepoBinding struct {
 	ID           uint      `json:"id" gorm:"primaryKey"`
 	AgentID      uint      `json:"agent_id" gorm:"not null;uniqueIndex:uidx_agent_repo;index"`
 	RepositoryID uint      `json:"repository_id" gorm:"not null;uniqueIndex:uidx_agent_repo;index"`
-	Branch       string    `json:"branch" gorm:"size:200;not null;default:main"`
+	Branch       string    `json:"branch" gorm:"size:200;not null;default:main;uniqueIndex:uidx_agent_repo"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -135,6 +140,7 @@ type SkillPackage struct {
 	Name            string    `json:"name" gorm:"size:200;not null"`
 	Description     string    `json:"description" gorm:"size:1000"`
 	Visibility      string    `json:"visibility" gorm:"size:20;not null;default:private;index"`
+	Source          string    `json:"source" gorm:"size:20;not null;default:uploaded;index"` // uploaded | builtin
 	StorageObjectID uint      `json:"storage_object_id" gorm:"not null;index"`
 	PackageDigest   string    `json:"package_digest" gorm:"size:64;not null;index"`
 	SizeBytes       int64     `json:"size_bytes" gorm:"not null"`
@@ -142,6 +148,8 @@ type SkillPackage struct {
 	UpdatedBy       uint      `json:"updated_by" gorm:"index"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+	// Editable is API-only: true when source=uploaded and caller may mutate files.
+	Editable bool `json:"editable" gorm:"-"`
 }
 
 func (SkillPackage) TableName() string { return "skill_packages" }

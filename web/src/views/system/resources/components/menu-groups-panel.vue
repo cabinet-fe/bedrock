@@ -73,11 +73,10 @@ const remove = bind(async (row: MenuGroup) => {
 <template>
   <div>
     <ProTable ref="list" url="/menu-groups" :columns="columns">
-      <template #filters>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('system_resources:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           新建分组

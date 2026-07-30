@@ -141,10 +141,11 @@ const onTest = bind(async (row: Server) => {
     <ProTable ref="list" url="/resource/servers" :query="query" :columns="columns" pagination>
       <template #filters>
         <u-input v-model="query.keyword" placeholder="名称/主机" style="width: 200px" />
+      </template>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('resource_servers:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           新建服务器

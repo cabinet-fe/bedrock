@@ -57,6 +57,12 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	skills.PUT("/:id", rbacmw.RequirePermission(h.perm, "ai_skills:update"), h.OverwriteSkill)
 	skills.DELETE("/:id", rbacmw.RequirePermission(h.perm, "ai_skills:delete"), h.DeleteSkill)
 	skills.GET("/:id/package", h.DownloadSkill)
+	skills.GET("/:id/files", rbacmw.RequirePermission(h.perm, "ai_skills:view"), h.ListSkillFiles)
+	skills.GET("/:id/files/content", rbacmw.RequirePermission(h.perm, "ai_skills:view"), h.ReadSkillFile)
+	skills.PUT("/:id/files/content", rbacmw.RequirePermission(h.perm, "ai_skills:update"), h.WriteSkillFile)
+	skills.POST("/:id/files", rbacmw.RequirePermission(h.perm, "ai_skills:update"), h.CreateSkillEntry)
+	skills.DELETE("/:id/files", rbacmw.RequirePermission(h.perm, "ai_skills:update"), h.DeleteSkillEntry)
+	skills.POST("/:id/files/rename", rbacmw.RequirePermission(h.perm, "ai_skills:update"), h.RenameSkillEntry)
 }
 
 func (h *Handler) ListAgents(c *gin.Context) {
@@ -342,6 +348,119 @@ func (h *Handler) DownloadSkill(c *gin.Context) {
 	c.DataFromReader(http.StatusOK, skill.SizeBytes, "application/zip", rc, nil)
 }
 
+func (h *Handler) ListSkillFiles(c *gin.Context) {
+	id, scope, ok := h.skillScope(c)
+	if !ok {
+		return
+	}
+	items, err := h.skills.ListFiles(id, authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c), scope)
+	if err != nil {
+		writeSkillErr(c, err)
+		return
+	}
+	pkg.Success(c, items)
+}
+
+func (h *Handler) ReadSkillFile(c *gin.Context) {
+	id, scope, ok := h.skillScope(c)
+	if !ok {
+		return
+	}
+	path := strings.TrimSpace(c.Query("path"))
+	if path == "" {
+		pkg.Error(c, http.StatusBadRequest, "缺少 path")
+		return
+	}
+	item, err := h.skills.ReadFile(id, authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c), scope, path)
+	if err != nil {
+		writeSkillErr(c, err)
+		return
+	}
+	pkg.Success(c, item)
+}
+
+func (h *Handler) WriteSkillFile(c *gin.Context) {
+	id, scope, ok := h.skillScope(c)
+	if !ok {
+		return
+	}
+	var input service.SkillWriteFileInput
+	if err := c.ShouldBindJSON(&input); err != nil || strings.TrimSpace(input.Path) == "" {
+		pkg.Error(c, http.StatusBadRequest, "无效请求")
+		return
+	}
+	item, err := h.skills.WriteFile(id, authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c), scope, input)
+	if err != nil {
+		writeSkillErr(c, err)
+		return
+	}
+	pkg.Success(c, item)
+}
+
+func (h *Handler) CreateSkillEntry(c *gin.Context) {
+	id, scope, ok := h.skillScope(c)
+	if !ok {
+		return
+	}
+	var input service.SkillCreateEntryInput
+	if err := c.ShouldBindJSON(&input); err != nil || strings.TrimSpace(input.Path) == "" {
+		pkg.Error(c, http.StatusBadRequest, "无效请求")
+		return
+	}
+	item, err := h.skills.CreateEntry(id, authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c), scope, input)
+	if err != nil {
+		writeSkillErr(c, err)
+		return
+	}
+	pkg.Created(c, item)
+}
+
+func (h *Handler) DeleteSkillEntry(c *gin.Context) {
+	id, scope, ok := h.skillScope(c)
+	if !ok {
+		return
+	}
+	path := strings.TrimSpace(c.Query("path"))
+	if path == "" {
+		pkg.Error(c, http.StatusBadRequest, "缺少 path")
+		return
+	}
+	if err := h.skills.DeleteEntry(id, authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c), scope, path); err != nil {
+		writeSkillErr(c, err)
+		return
+	}
+	pkg.Success(c, gin.H{"deleted": true})
+}
+
+func (h *Handler) RenameSkillEntry(c *gin.Context) {
+	id, scope, ok := h.skillScope(c)
+	if !ok {
+		return
+	}
+	var input service.SkillRenameInput
+	if err := c.ShouldBindJSON(&input); err != nil ||
+		strings.TrimSpace(input.FromPath) == "" || strings.TrimSpace(input.ToPath) == "" {
+		pkg.Error(c, http.StatusBadRequest, "无效请求")
+		return
+	}
+	item, err := h.skills.RenameEntry(id, authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c), scope, input)
+	if err != nil {
+		writeSkillErr(c, err)
+		return
+	}
+	pkg.Success(c, item)
+}
+
+func (h *Handler) skillScope(c *gin.Context) (uint, string, bool) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	scope, err := h.perm.ResolveDataScope(authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c))
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return 0, "", false
+	}
+	return uint(id), scope, true
+}
+
 func writeErr(c *gin.Context, err error) {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		pkg.Error(c, http.StatusNotFound, "资源不存在")
@@ -351,23 +470,24 @@ func writeErr(c *gin.Context, err error) {
 }
 
 func writeSkillErr(c *gin.Context, err error) {
-	if errors.Is(err, service.ErrMissingSkillMD) {
+	switch {
+	case errors.Is(err, service.ErrMissingSkillMD):
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	if errors.Is(err, service.ErrSkillForbidden) {
+	case errors.Is(err, service.ErrSkillForbidden), errors.Is(err, service.ErrSkillReadOnly):
 		pkg.Error(c, http.StatusForbidden, err.Error())
-		return
-	}
-	if errors.Is(err, service.ErrSkillNotFound) {
+	case errors.Is(err, service.ErrSkillNotFound), errors.Is(err, service.ErrSkillFileNotFound):
 		pkg.Error(c, http.StatusNotFound, err.Error())
-		return
-	}
-	if errors.Is(err, storageservice.ErrTooLarge) {
+	case errors.Is(err, service.ErrSkillFileExists):
+		pkg.Error(c, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrSkillPathInvalid),
+		errors.Is(err, service.ErrSkillFileTooLarge),
+		errors.Is(err, service.ErrSkillBinaryFile):
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+	case errors.Is(err, storageservice.ErrTooLarge):
 		pkg.Error(c, http.StatusRequestEntityTooLarge, err.Error())
-		return
+	default:
+		writeErr(c, err)
 	}
-	writeErr(c, err)
 }
 
 func defaultStr(v, def string) string {

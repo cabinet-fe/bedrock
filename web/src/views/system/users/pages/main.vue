@@ -127,10 +127,11 @@ const remove = bind(async (row: User) => {
     <ProTable ref="list" url="/users" :query="query" :columns="columns" pagination>
       <template #filters>
         <u-input v-model="query.keyword" placeholder="用户名关键词" style="width: 200px" />
+      </template>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('system_users:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           新建用户

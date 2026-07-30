@@ -2,7 +2,7 @@
 defineOptions({ name: "AiRunDetail" });
 
 import { computed, onMounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import { message } from "@veltra/desktop";
 
 import { agentRunLogsWSURL, cancelRun, getRun } from "@/api/ai";
@@ -14,7 +14,6 @@ import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
 
 const route = useRoute();
-const router = useRouter();
 const { hasPermission } = usePermission();
 
 const run = ref<AgentRun | null>(null);
@@ -99,9 +98,6 @@ onMounted(async () => {
     <div class="page">
       <header class="page-header">
         <div class="page-header__lead">
-          <u-button type="primary" plain @click="router.push({ name: 'ai-runs' })">
-            返回列表
-          </u-button>
           <div v-if="run" class="page-header__title">
             <h2>运行 #{{ run.id }}</h2>
             <u-tag size="small" :type="tagType(run.status, JOB_STATUS_TAG)">{{ run.status }}</u-tag>

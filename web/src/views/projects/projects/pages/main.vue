@@ -143,10 +143,11 @@ async function onOwnerTransferred() {
           ]"
           style="width: 130px"
         />
+      </template>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('project_projects:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           新建项目

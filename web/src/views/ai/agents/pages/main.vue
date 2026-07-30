@@ -17,7 +17,7 @@ import {
   updateAgent,
 } from "@/api/ai";
 import { listBuildJobs } from "@/api/cicd";
-import { listRepositories, listRepositoryBranches, syncRepositoryBranches } from "@/api/resource";
+import { listRepositories, listRepositoryBranches } from "@/api/resource";
 import type {
   AiAgent,
   AiAgentEnvVarInput,
@@ -31,6 +31,7 @@ import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { tagType, type TagType } from "@/lib/tag";
 import RunHistoryDialog from "../components/run-history-dialog.vue";
+import { repoBindingPath } from "../repo-dir-name";
 
 const CLI_KEY_TAG: Record<string, TagType> = {
   claude_code: "primary",
@@ -92,7 +93,6 @@ const buildJobs = ref<BuildJob[]>([]);
 const repoOptions = ref<{ label: string; value: number }[]>([]);
 const branchOptionsByRepo = ref<Record<number, { label: string; value: string }[]>>({});
 const branchesLoadingByRepo = ref<Record<number, boolean>>({});
-const branchesSyncingByRepo = ref<Record<number, boolean>>({});
 /** Triggers shown in the agent form (existing + newly added drafts). */
 const formTriggers = ref<TriggerDraft[]>([]);
 /** Snapshot of server trigger ids when the edit dialog opened. */
@@ -183,7 +183,10 @@ onMounted(async () => {
     tasks.push(
       listRepositories({ page: 1, page_size: 200 })
         .then((res) => {
-          repoOptions.value = (res.items ?? []).map((r) => ({ label: r.name, value: r.id }));
+          repoOptions.value = (res.items ?? []).map((r) => ({
+            label: `${r.name} (repo-${r.id})`,
+            value: r.id,
+          }));
         })
         .catch(() => {
           repoOptions.value = [];
@@ -214,29 +217,6 @@ async function loadBranches(repositoryId?: number, force = false) {
   }
 }
 
-async function refreshBranches(repositoryId?: number) {
-  if (!repositoryId) return;
-  if (!hasPermission("resource_repositories:update")) {
-    message.error("需要仓库更新权限才能同步分支");
-    return;
-  }
-  branchesSyncingByRepo.value = { ...branchesSyncingByRepo.value, [repositoryId]: true };
-  try {
-    const { items } = await syncRepositoryBranches(repositoryId);
-    branchOptionsByRepo.value = {
-      ...branchOptionsByRepo.value,
-      [repositoryId]: items.map((b) => ({ label: b, value: b })),
-    };
-    if (!items.length) {
-      message.warn("未获取到分支，请检查仓库 URL / 凭证");
-    }
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : "同步分支失败");
-  } finally {
-    branchesSyncingByRepo.value = { ...branchesSyncingByRepo.value, [repositoryId]: false };
-  }
-}
-
 function branchOptionsFor(repositoryId?: number) {
   if (!repositoryId) return [];
   return branchOptionsByRepo.value[repositoryId] ?? [];
@@ -244,11 +224,11 @@ function branchOptionsFor(repositoryId?: number) {
 
 function branchPlaceholder(repositoryId?: number) {
   if (!repositoryId) return "先选择仓库";
-  if (branchesLoadingByRepo.value[repositoryId] || branchesSyncingByRepo.value[repositoryId]) {
+  if (branchesLoadingByRepo.value[repositoryId]) {
     return "加载分支…";
   }
   const opts = branchOptionsByRepo.value[repositoryId];
-  if (opts && opts.length === 0) return "无缓存，可点同步";
+  if (opts && opts.length === 0) return "无缓存分支，可手动输入";
   return "选择或输入分支";
 }
 
@@ -389,20 +369,22 @@ async function syncTriggers(agentID: number) {
 
 async function save() {
   const bindings: AiAgentRepoBinding[] = [];
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   for (const b of form.repo_bindings) {
     if (!b.repository_id) {
       message.error("请为每条绑定选择仓库");
       return;
     }
-    if (seen.has(b.repository_id)) {
-      message.error("同一智能体内仓库不能重复绑定");
+    const branch = (b.branch || "main").trim() || "main";
+    const key = `${b.repository_id}\0${branch}`;
+    if (seen.has(key)) {
+      message.error("同一智能体内不能重复绑定相同仓库与分支");
       return;
     }
-    seen.add(b.repository_id);
+    seen.add(key);
     bindings.push({
       repository_id: b.repository_id,
-      branch: (b.branch || "main").trim() || "main",
+      branch,
     });
   }
   const envVars: AiAgentEnvVarInput[] = [];
@@ -481,11 +463,10 @@ const remove = bind(async (row: AiAgent) => {
 <template>
   <div>
     <ProTable ref="table" url="/ai/agents" pagination :columns="columns">
-      <template #filters>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('ai_agents:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           新建
@@ -515,7 +496,7 @@ const remove = bind(async (row: AiAgent) => {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="3" :loading="busyKey === (rowData as AiAgent).id">
+        <u-action-group :max="5" :loading="busyKey === (rowData as AiAgent).id">
           <u-action v-if="hasPermission('ai_agents:update')" @run="openEdit(rowData as AiAgent)">
             编辑
           </u-action>
@@ -570,7 +551,7 @@ const remove = bind(async (row: AiAgent) => {
           field="system_prompt"
           span="full"
           :rows="6"
-          placeholder="描述任务目标；若需访问绑定仓库，请写相对路径，如 ./repo-12"
+          placeholder="描述任务目标；若需访问绑定仓库，请写相对路径，如 ./repo-12-main"
         />
       </template>
 
@@ -587,6 +568,7 @@ const remove = bind(async (row: AiAgent) => {
           field="repo_bindings"
           label="仓库绑定"
           span="full"
+          tips="工作区目录为 ./repo-{仓库ID}-{分支}（如 ./repo-12-main）；提示词中请用该相对路径引用；同一仓库可绑定多个分支"
           :item-default="{ repository_id: undefined, branch: 'main' }"
           :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
         >
@@ -608,14 +590,12 @@ const remove = bind(async (row: AiAgent) => {
               :placeholder="branchPlaceholder(item.repository_id)"
               @focus="loadBranches(item.repository_id)"
             />
-            <u-button
-              text
-              size="small"
-              :disabled="!item.repository_id || branchesSyncingByRepo[item.repository_id]"
-              @click="refreshBranches(item.repository_id)"
+            <code
+              v-if="item.repository_id"
+              class="repo-dir"
+              :title="repoBindingPath(item.repository_id, item.branch || 'main')"
+              >{{ repoBindingPath(item.repository_id, item.branch || "main") }}</code
             >
-              同步
-            </u-button>
           </template>
         </u-group-input>
         <u-group-input
@@ -722,6 +702,16 @@ const remove = bind(async (row: AiAgent) => {
 :deep(.u-group-input__item > .u-password-input) {
   flex: 1;
   min-width: 0;
+}
+
+.repo-dir {
+  flex: 0 0 auto;
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.75;
 }
 
 .trigger-section {

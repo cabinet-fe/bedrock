@@ -28,7 +28,7 @@
 创建系统用户并绑定角色；需要登录；权限 `sys_user:create`。
 
 ```
-POST /admin/user
+POST /admin/users
 ```
 
 **请求体**:
@@ -65,7 +65,7 @@ POST /admin/user
 按用户 ID 更新资料与角色绑定；需要登录；权限 `sys_user:update`。不传 `password` 则不改密。
 
 ```
-PUT /admin/user
+PUT /admin/users
 ```
 
 **请求体**:
@@ -103,7 +103,7 @@ PUT /admin/user
 按用户 ID 列表批量逻辑删除；需要登录；权限 `sys_user:delete`。
 
 ```
-DELETE /admin/user
+DELETE /admin/users
 ```
 
 **请求体**: 请求体为用户 ID 数组。
@@ -133,7 +133,7 @@ DELETE /admin/user
 按条件分页查询用户列表；需要登录；权限 `sys_user:view`。分页字段约定见 [API 约定](../_conventions.md) · 分页。
 
 ```
-POST /admin/user/page
+POST /admin/users/page
 ```
 
 **请求体**:

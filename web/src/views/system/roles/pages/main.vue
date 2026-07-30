@@ -181,11 +181,10 @@ const remove = bind(async (row: Role) => {
 <template>
   <div>
     <ProTable ref="list" url="/roles" :columns="columns" pagination>
-      <template #filters>
+      <template #toolbar>
         <u-button
           v-if="hasPermission('system_roles:create')"
           type="primary"
-          style="margin-left: auto"
           @click.prevent="openCreate"
         >
           新建角色

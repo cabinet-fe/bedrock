@@ -261,6 +261,16 @@ const router = createRouter({
           component: () => import("@/views/ai/skills/pages/main.vue"),
           meta: { permission: "ai_skills:view", title: "Skills", keepAliveName: "AiSkills" },
         },
+        {
+          path: "ai/skills/:id",
+          name: "ai-skill-detail",
+          component: () => import("@/views/ai/skills/pages/detail.vue"),
+          meta: {
+            permission: "ai_skills:view",
+            title: "技能详情",
+            keepAliveName: "AiSkillDetail",
+          },
+        },
       ],
     },
   ],

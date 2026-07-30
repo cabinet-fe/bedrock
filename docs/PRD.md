@@ -527,12 +527,12 @@ BuildRun 的输出目录、制品归档、保留与下载能力属于 CI/CD 域�
 | cli_key       | 使用的 AI CLI              |
 | system_prompt | 固定系统提示词             |
 | skill_ids     | 显式绑定的一个或多个 Skill |
-| repo_bindings | 可选绑定多组仓库+分支（同 Agent 内仓库唯一；工作区 `repo-{id}/`） |
+| repo_bindings | 可选绑定多组仓库+分支（同 Agent 内 `(仓库, 分支)` 唯一；工作区 `repo-{id}-{branch}/`） |
 | output_dir    | 固定产出目录相对名（默认 `output`） |
 | timeout       | 超时                       |
 | created_by    | 创建者                     |
 
-每个 Agent 唯一对应 `{workspace}/agents/agent-{id}/` 持久根工作区。所有 Run 直接复用该目录，启动后续 Run 时不得清空根目录已有文件，也不为单次 Run 创建独立输出目录。绑定仓库在 `{agentRoot}/repo-{repositoryID}/` 按配置分支 checkout，与构建事件触发解耦。每个 Agent 另有固定产出目录 `{agentRoot}/{output_dir}`（默认相对名 `output`），跨 Run 复用；CLI 同时接收 `BEDROCK_AGENT_WORKDIR` 与 `BEDROCK_AGENT_OUTPUT`。
+每个 Agent 唯一对应 `{workspace}/agents/agent-{id}/` 持久根工作区。所有 Run 直接复用该目录，启动后续 Run 时不得清空根目录已有文件，也不为单次 Run 创建独立输出目录。绑定仓库在 `{agentRoot}/repo-{repositoryID}-{sanitizedBranch}/` 按配置分支 checkout，与构建事件触发解耦。每个 Agent 另有固定产出目录 `{agentRoot}/{output_dir}`（默认相对名 `output`），跨 Run 复用；CLI 同时接收 `BEDROCK_AGENT_WORKDIR` 与 `BEDROCK_AGENT_OUTPUT`。
 
 ### 10.3 智能体上下文（首期）
 

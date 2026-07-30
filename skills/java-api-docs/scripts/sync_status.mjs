@@ -118,7 +118,7 @@ function runChangedSince(repoRoot, { out, project, workspace }) {
 
 function main() {
   const { out, workspace } = parseArgs(process.argv);
-  const outRoot = resolveOutRoot(out, { discover: true });
+  const outRoot = resolveOutRoot(out, { discover: true, workspace });
   const projects = listSyncedProjects(outRoot);
   const nearby = listNearbyGitRepos(workspace);
 
@@ -154,7 +154,7 @@ function main() {
     }
 
     const result = runChangedSince(effectiveRepo, {
-      out: out || displayPath(workspace, outRoot),
+      out: displayPath(workspace, outRoot),
       project,
       workspace,
     });

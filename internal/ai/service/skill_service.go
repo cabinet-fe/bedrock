@@ -25,19 +25,26 @@ const (
 )
 
 var (
-	ErrMissingSkillMD = errors.New("ZIP 必须包含 SKILL.md")
-	ErrSkillForbidden = errors.New("无权访问该 Skill")
-	ErrSkillNotFound  = errors.New("技能不存在")
+	ErrMissingSkillMD    = errors.New("ZIP 必须包含 SKILL.md")
+	ErrSkillForbidden    = errors.New("无权访问该 Skill")
+	ErrSkillNotFound     = errors.New("技能不存在")
+	ErrSkillReadOnly     = errors.New("内置技能只读，不可修改")
+	ErrSkillPathInvalid  = errors.New("非法技能文件路径")
+	ErrSkillFileNotFound = errors.New("文件不存在")
+	ErrSkillFileExists   = errors.New("目标路径已存在")
+	ErrSkillFileTooLarge = errors.New("文件过大，无法在线编辑")
+	ErrSkillBinaryFile   = errors.New("二进制文件不支持在线编辑")
 )
 
 type SkillService struct {
-	repo    *repository.AIRepository
-	storage *storageservice.StorageService
-	audit   AuditWriter
+	repo       *repository.AIRepository
+	storage    *storageservice.StorageService
+	skillsRoot string
+	audit      AuditWriter
 }
 
-func NewSkillService(repo *repository.AIRepository, storage *storageservice.StorageService, audit ...AuditWriter) *SkillService {
-	svc := &SkillService{repo: repo, storage: storage}
+func NewSkillService(repo *repository.AIRepository, storage *storageservice.StorageService, skillsRoot string, audit ...AuditWriter) *SkillService {
+	svc := &SkillService{repo: repo, storage: storage, skillsRoot: strings.TrimSpace(skillsRoot)}
 	if len(audit) > 0 {
 		svc.audit = audit[0]
 	}
@@ -57,7 +64,15 @@ type SkillUploadInput struct {
 }
 
 func (s *SkillService) List(page, pageSize int, userID uint, isSuperAdmin bool, dataScope string) ([]model.SkillPackage, int64, error) {
-	return s.repo.ListSkills(page, pageSize, userID, isSuperAdmin, dataScope == rbacmodel.DataScopeAll)
+	items, total, err := s.repo.ListSkills(page, pageSize, userID, isSuperAdmin, dataScope == rbacmodel.DataScopeAll)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range items {
+		normalizeSkillSource(&items[i])
+		items[i].Editable = canEditSkill(&items[i], userID, isSuperAdmin)
+	}
+	return items, total, nil
 }
 
 func (s *SkillService) Get(id, userID uint, isSuperAdmin bool, dataScope string) (*model.SkillPackage, error) {
@@ -68,6 +83,8 @@ func (s *SkillService) Get(id, userID uint, isSuperAdmin bool, dataScope string)
 	if !canViewSkill(skill, userID, isSuperAdmin, dataScope) {
 		return nil, ErrSkillForbidden
 	}
+	normalizeSkillSource(skill)
+	skill.Editable = canEditSkill(skill, userID, isSuperAdmin)
 	return skill, nil
 }
 
@@ -88,17 +105,25 @@ func (s *SkillService) Create(in SkillUploadInput) (*model.SkillPackage, error) 
 	}
 	skill := &model.SkillPackage{
 		Name: name, Description: strings.TrimSpace(in.Description),
-		Visibility: in.Visibility, StorageObjectID: object.ID,
-		PackageDigest: object.SHA256, SizeBytes: object.Size,
+		Visibility: in.Visibility, Source: model.SkillSourceUploaded,
+		StorageObjectID: object.ID,
+		PackageDigest:   object.SHA256, SizeBytes: object.Size,
 		CreatedBy: in.UserID, UpdatedBy: in.UserID,
 	}
 	if err := s.repo.CreateSkill(skill); err != nil {
 		_ = s.storage.Delete(object.ID)
 		return nil, err
 	}
+	if err := s.replaceWorkingCopy(skill); err != nil {
+		_ = s.repo.DeleteSkill(skill.ID)
+		_ = s.storage.Delete(object.ID)
+		_ = s.removeWorkingCopy(skill.ID)
+		return nil, err
+	}
 	if s.audit != nil {
 		_ = s.audit.Write(in.UserID, "", "skill_create", "skill_package", fmt.Sprintf("%d", skill.ID), skill.Name, "")
 	}
+	skill.Editable = true
 	return skill, nil
 }
 
@@ -106,6 +131,10 @@ func (s *SkillService) Overwrite(id uint, in SkillUploadInput) (*model.SkillPack
 	skill, err := s.repo.FindSkill(id)
 	if err != nil {
 		return nil, ErrSkillNotFound
+	}
+	normalizeSkillSource(skill)
+	if skill.Source == model.SkillSourceBuiltin {
+		return nil, ErrSkillReadOnly
 	}
 	if skill.CreatedBy != in.UserID && !in.IsSuperAdmin {
 		return nil, ErrSkillForbidden
@@ -135,10 +164,14 @@ func (s *SkillService) Overwrite(id uint, in SkillUploadInput) (*model.SkillPack
 		_ = s.storage.Delete(object.ID)
 		return nil, err
 	}
+	if err := s.replaceWorkingCopy(skill); err != nil {
+		return nil, err
+	}
 	_ = s.storage.Delete(oldID)
 	if s.audit != nil {
 		_ = s.audit.Write(in.UserID, "", "skill_overwrite", "skill_package", fmt.Sprintf("%d", skill.ID), skill.PackageDigest, "")
 	}
+	skill.Editable = true
 	return skill, nil
 }
 
@@ -147,6 +180,10 @@ func (s *SkillService) Delete(id, userID uint, isSuperAdmin bool) error {
 	if err != nil {
 		return ErrSkillNotFound
 	}
+	normalizeSkillSource(skill)
+	if skill.Source == model.SkillSourceBuiltin {
+		return ErrSkillReadOnly
+	}
 	if skill.CreatedBy != userID && !isSuperAdmin {
 		return ErrSkillForbidden
 	}
@@ -154,6 +191,7 @@ func (s *SkillService) Delete(id, userID uint, isSuperAdmin bool) error {
 		return err
 	}
 	_ = s.storage.Delete(skill.StorageObjectID)
+	_ = s.removeWorkingCopy(id)
 	return nil
 }
 
@@ -170,8 +208,8 @@ func (s *SkillService) OpenPackage(id, userID uint, isSuperAdmin bool, dataScope
 }
 
 // InjectSkills extracts bound skills into workspaceDir/.agents/skills/<name>/ for agent runs.
-// ZIP contents are rooted at the directory that contains SKILL.md (wrapping folders and
-// __MACOSX are stripped), matching the Agent Skills layout.
+// Prefers the on-disk working copy when present so file edits are visible to runs;
+// otherwise extracts from the stored ZIP (wrapping folders and __MACOSX stripped).
 func (s *SkillService) InjectSkills(workspaceDir string, skillIDs []uint, userID uint, isSuperAdmin bool) (map[uint]string, error) {
 	digests := map[uint]string{}
 	if len(skillIDs) == 0 {
@@ -189,16 +227,26 @@ func (s *SkillService) InjectSkills(workspaceDir string, skillIDs []uint, userID
 		if !canViewSkill(skill, userID, isSuperAdmin, rbacmodel.DataScopeSelf) {
 			return nil, fmt.Errorf("skill %d: %w", id, ErrSkillForbidden)
 		}
-		f, obj, err := s.storage.Open(skill.StorageObjectID)
-		if err != nil {
-			return nil, err
-		}
 		dest := filepath.Join(skillsRoot, skillDirName(skill.Name))
-		if err := extractSkillZIP(f, obj.Size, dest); err != nil {
-			f.Close()
+		if err := os.RemoveAll(dest); err != nil {
 			return nil, err
 		}
-		f.Close()
+		workDir, err := s.ensureWorkingCopy(skill)
+		if err == nil {
+			if err := copySkillDir(workDir, dest); err != nil {
+				return nil, err
+			}
+		} else {
+			f, obj, openErr := s.storage.Open(skill.StorageObjectID)
+			if openErr != nil {
+				return nil, openErr
+			}
+			extractErr := extractSkillZIP(f, obj.Size, dest)
+			f.Close()
+			if extractErr != nil {
+				return nil, extractErr
+			}
+		}
 		digests[id] = skill.PackageDigest
 	}
 	return digests, nil
@@ -432,4 +480,21 @@ func canViewSkill(skill *model.SkillPackage, userID uint, isSuperAdmin bool, dat
 		return true
 	}
 	return skill.CreatedBy == userID
+}
+
+func canEditSkill(skill *model.SkillPackage, userID uint, isSuperAdmin bool) bool {
+	normalizeSkillSource(skill)
+	if skill.Source != model.SkillSourceUploaded {
+		return false
+	}
+	return skill.CreatedBy == userID || isSuperAdmin
+}
+
+func normalizeSkillSource(skill *model.SkillPackage) {
+	if skill == nil {
+		return
+	}
+	if skill.Source == "" {
+		skill.Source = model.SkillSourceUploaded
+	}
 }

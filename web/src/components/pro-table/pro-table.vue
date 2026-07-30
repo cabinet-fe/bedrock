@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="T extends Record<string, any>">
 import { sleep } from "@cat-kit/core";
-import { computed, h, onMounted, ref, useSlots, watch } from "vue";
+import { computed, h, onMounted, onScopeDispose, ref, useSlots, watch } from "vue";
 import {
   message,
   UButton,
@@ -16,8 +16,10 @@ import type { ProTableColumn, ProTableQuery } from "./helper";
 
 type SortOrder = "asc" | "desc";
 
-/** loading 最短展示，避免请求过快时闪烁 */
-const MIN_LOADING_MS = 250;
+/** 短请求不闪 loading；超过后再展示 */
+const LOADING_DELAY_MS = 160;
+/** loading 一旦展示，最短可见时间，避免一闪而过 */
+const MIN_VISIBLE_MS = 200;
 
 const props = withDefaults(
   defineProps<{
@@ -66,13 +68,20 @@ const emit = defineEmits<{
 }>();
 
 const slots = useSlots();
-const loading = ref(false);
+const showLoading = ref(false);
 const items = ref<T[]>([]);
 const page = ref(1);
 const pageSize = ref(100);
 const total = ref(0);
 /** 与后端 ParsePage maxPageSize=100 对齐，避免选项超出后被回写打回 */
 const pageSizeOptions = [20, 50, 100];
+
+let loadGen = 0;
+let loadingDelayTimer: ReturnType<typeof setTimeout> | undefined;
+
+onScopeDispose(() => {
+  if (loadingDelayTimer) clearTimeout(loadingDelayTimer);
+});
 
 const mode = computed(() => {
   if (props.pagination) return "pagination" as const;
@@ -190,7 +199,18 @@ function applyPaginationMeta(body: Record<string, unknown>) {
 }
 
 async function load() {
-  loading.value = true;
+  const gen = ++loadGen;
+  if (loadingDelayTimer) clearTimeout(loadingDelayTimer);
+
+  let becameVisible = showLoading.value;
+  if (!becameVisible) {
+    loadingDelayTimer = setTimeout(() => {
+      if (gen !== loadGen) return;
+      showLoading.value = true;
+      becameVisible = true;
+    }, LOADING_DELAY_MS);
+  }
+
   const started = Date.now();
   try {
     const params: Record<string, unknown> = { ...props.query };
@@ -201,9 +221,11 @@ async function load() {
 
     // Envelope plugin unwraps `{ code, message, data }` → body is `data`.
     const { body: raw } = await http.get(props.url, { query: cleanQuery(params) });
-    const body = (raw ?? {}) as Record<string, unknown>;
+    if (gen !== loadGen) return;
 
+    const body = (raw ?? {}) as Record<string, unknown>;
     const list = extractItems(body);
+    // 直接替换，不清空旧 rows，避免闪空白
     items.value = list;
 
     if (mode.value === "pagination") {
@@ -214,19 +236,30 @@ async function load() {
 
     emit("loaded", list);
   } catch (err) {
+    if (gen !== loadGen) return;
     message.error(err instanceof Error ? err.message : "加载失败");
     items.value = [];
     total.value = 0;
   } finally {
-    const remain = MIN_LOADING_MS - (Date.now() - started);
-    if (remain > 0) await sleep(remain);
-    loading.value = false;
+    if (loadingDelayTimer) {
+      clearTimeout(loadingDelayTimer);
+      loadingDelayTimer = undefined;
+    }
   }
+
+  if (gen !== loadGen) return;
+
+  if (becameVisible || showLoading.value) {
+    const visibleFor = Date.now() - started - LOADING_DELAY_MS;
+    const remain = MIN_VISIBLE_MS - Math.max(0, visibleFor);
+    if (remain > 0) await sleep(remain);
+    if (gen !== loadGen) return;
+  }
+  showLoading.value = false;
 }
 
 /** Reset to page 1 and fetch (manual search / Enter / submit / sort). */
 function search() {
-  if (loading.value) return Promise.resolve();
   page.value = 1;
   return load();
 }
@@ -274,16 +307,21 @@ defineExpose({ search, reload });
 <template>
   <div class="pro-table">
     <form class="pro-table__toolbar" @submit.prevent="search">
-      <div class="pro-table__filters">
-        <slot name="filters" :search="search" :reload="reload" :query="query" />
+      <div class="pro-table__search-group">
+        <div class="pro-table__filters">
+          <slot name="filters" :search="search" :reload="reload" :query="query" />
+        </div>
+        <u-button type="primary" class="pro-table__search" :loading="showLoading" @click="search">
+          查询
+        </u-button>
       </div>
-      <u-button type="primary" class="pro-table__search" :loading="loading" @click="search">
-        查询
-      </u-button>
+      <div class="pro-table__actions">
+        <slot name="toolbar" :search="search" :reload="reload" :query="query" />
+      </div>
     </form>
 
     <div class="pro-table__panel" :style="height !== '100%' ? { height, flex: 'none' } : undefined">
-      <div v-loading="loading" class="pro-table__body">
+      <div v-loading="showLoading" class="pro-table__body">
         <u-table
           v-model:checked="checked"
           :columns="resolvedColumns"
@@ -297,7 +335,7 @@ defineExpose({ search, reload });
         >
           <template v-for="(_, name) in slots" :key="name" #[name]="slotData">
             <slot
-              v-if="name !== 'filters' && name !== 'empty'"
+              v-if="name !== 'filters' && name !== 'toolbar' && name !== 'empty'"
               :name="name"
               v-bind="slotData || {}"
             />
@@ -335,8 +373,17 @@ defineExpose({ search, reload });
   flex-shrink: 0;
   display: flex;
   align-items: flex-end;
+  flex-wrap: wrap;
   gap: fn.use-var(gap, default);
   padding: 0 0 fn.use-var(gap, small);
+}
+
+.pro-table__search-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: fn.use-var(gap, small);
+  min-width: 0;
 }
 
 .pro-table__filters {
@@ -344,12 +391,19 @@ defineExpose({ search, reload });
   flex-wrap: wrap;
   gap: fn.use-var(gap, small);
   align-items: flex-end;
-  flex: 1;
   min-width: 0;
 }
 
 .pro-table__search {
   flex-shrink: 0;
+}
+
+.pro-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: fn.use-var(gap, small);
+  margin-left: auto;
 }
 
 .pro-table__panel {

@@ -100,7 +100,7 @@ func setupAgentWorkspace(t *testing.T) (*service.AgentService, *service.SkillSer
 	if err != nil {
 		t.Fatal(err)
 	}
-	skills := service.NewSkillService(repo, storageSvc)
+	skills := service.NewSkillService(repo, storageSvc, filepath.Join(storageRoot, "skills"))
 	work := filepath.Join(t.TempDir(), "work")
 	logs := filepath.Join(t.TempDir(), "logs")
 	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, logs)
@@ -159,7 +159,7 @@ func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
 	if err != nil || string(data) != "hello workspace" {
 		t.Fatalf("SYSTEM_PROMPT.md: %v %q", err, data)
 	}
-	checkout := filepath.Join(root, fmt.Sprintf("repo-%d", repoID))
+	checkout := filepath.Join(root, fmt.Sprintf("repo-%d-develop", repoID))
 	branchFile, err := os.ReadFile(filepath.Join(checkout, "BRANCH"))
 	if err != nil {
 		t.Fatalf("repo checkout missing: %v", err)
@@ -173,7 +173,7 @@ func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
 }
 
 func TestAgentWorkspaceDefaultBranchAndDuplicateRejected(t *testing.T) {
-	agents, _, _, _ := setupAgentWorkspace(t)
+	agents, _, _, work := setupAgentWorkspace(t)
 	repoID := uint(3)
 	agents.SetRepoCheckoutDeps(&stubRepoFinder{
 		repos: map[uint]*resourcemodel.Repository{
@@ -193,12 +193,44 @@ func TestAgentWorkspaceDefaultBranchAndDuplicateRejected(t *testing.T) {
 	if len(agent.RepoBindings) != 1 || agent.RepoBindings[0].Branch != "main" {
 		t.Fatalf("expected default main, got %#v", agent.RepoBindings)
 	}
+	root := filepath.Join(work, "agents", fmt.Sprintf("agent-%d", agent.ID))
+	if _, err := os.Stat(filepath.Join(root, fmt.Sprintf("repo-%d-main", repoID))); err != nil {
+		t.Fatalf("default branch checkout missing: %v", err)
+	}
+
+	multi, err := agents.CreateAgent(1, service.AgentInput{
+		Name: "multi-branch", CliKey: "claude_code",
+		RepoBindings: []model.RepoBinding{
+			{RepositoryID: repoID, Branch: "a"},
+			{RepositoryID: repoID, Branch: "b"},
+		},
+		TimeoutSec: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	multi = waitWorkspaceStatus(t, agents, multi.ID, model.WorkspaceReady)
+	if len(multi.RepoBindings) != 2 {
+		t.Fatalf("expected 2 bindings, got %#v", multi.RepoBindings)
+	}
+	multiRoot := filepath.Join(work, "agents", fmt.Sprintf("agent-%d", multi.ID))
+	dirA := filepath.Join(multiRoot, fmt.Sprintf("repo-%d-a", repoID))
+	dirB := filepath.Join(multiRoot, fmt.Sprintf("repo-%d-b", repoID))
+	if dirA == dirB {
+		t.Fatalf("same-repo branches must use different dirs: %q", dirA)
+	}
+	if _, err := os.Stat(dirA); err != nil {
+		t.Fatalf("branch a checkout missing: %v", err)
+	}
+	if _, err := os.Stat(dirB); err != nil {
+		t.Fatalf("branch b checkout missing: %v", err)
+	}
 
 	_, err = agents.CreateAgent(1, service.AgentInput{
 		Name: "dup", CliKey: "claude_code",
 		RepoBindings: []model.RepoBinding{
-			{RepositoryID: repoID, Branch: "a"},
-			{RepositoryID: repoID, Branch: "b"},
+			{RepositoryID: repoID, Branch: "main"},
+			{RepositoryID: repoID, Branch: "main"},
 		},
 		TimeoutSec: 10,
 	})
@@ -255,10 +287,10 @@ func TestAgentWorkspaceRemovesStaleJobLinksAndUnboundRepos(t *testing.T) {
 	if _, err := os.Lstat(legacyJob); !os.IsNotExist(err) {
 		t.Fatalf("legacy job link should be removed, err=%v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "repo-2")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, fmt.Sprintf("repo-%d-main", repoDrop))); !os.IsNotExist(err) {
 		t.Fatalf("unbound repo dir should be removed, err=%v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "repo-1")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, fmt.Sprintf("repo-%d-main", repoKeep))); err != nil {
 		t.Fatalf("kept repo missing: %v", err)
 	}
 }
@@ -528,7 +560,7 @@ func TestAgentRunPassesFullPermissionFlagsAndScopeHint(t *testing.T) {
 				"--print",
 				"--dangerously-skip-permissions",
 				"$BEDROCK_AGENT_WORKDIR",
-				"./repo-{id}",
+				"./repo-{id}-{branch}",
 				"禁止访问该目录之外的任意路径",
 			} {
 				if !strings.Contains(joined, want) {
