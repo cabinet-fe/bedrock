@@ -14,7 +14,7 @@ function usage() {
   console.error(`用法: node verify_docs.mjs <srcRoot> [选项]
 
 比对 <out>/<project>/*.md 中的 \`METHOD /path\` 与 list_endpoints 结果。
-有 missingInDocs / extraInDocs / missingDocs / unresolvedTypes 时退出码 1。
+有 missingInDocs / extraInDocs / missingDocs / unresolvedTypes / flattenedShared 时退出码 1。
 
 选项:
   --out <dir>             产出根（默认自动发现 / ${DEFAULT_OUT}）
@@ -172,9 +172,11 @@ function main() {
     ...result,
     agentHint: result.ok
       ? '文档 path 与 list_endpoints 一致，可 stamp / push。'
-      : result.unresolvedTypes?.length
-        ? '存在未展开的类型名（如「返回 `UserInfo`」无字段表）：按 unresolvedTypes 补字段表或本文 ## 数据模型；修好后再跑本脚本。'
-        : '文档 path 与脚本不一致：按 missingInDocs / extraInDocs 修正 Markdown（禁止按英语习惯改单复数）；修好后再跑本脚本。',
+      : result.flattenedShared?.length
+        ? '请求体把 BaseShared 字段摊平了：必须写嵌套 `_shared` 对象（含 moduleCode/action/orgCode/attachments 等），禁止摊到顶层；修好后再跑本脚本。'
+        : result.unresolvedTypes?.length
+          ? '存在未展开的类型名（如「返回 `UserInfo`」无字段表）：按 unresolvedTypes 补字段表或本文 ## 数据模型；修好后再跑本脚本。'
+          : '文档 path 与脚本不一致：按 missingInDocs / extraInDocs 修正 Markdown（禁止按英语习惯改单复数）；修好后再跑本脚本。',
   };
 
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);

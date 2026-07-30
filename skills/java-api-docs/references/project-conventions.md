@@ -27,7 +27,7 @@
 
 ## 3. 共享基类 / 公共字段
 
-继承链：`BaseDTO` → `BaseBusinessEntity` → `BaseEntity`。
+继承链：`BaseDTO` → `BaseBusinessEntity` → `BaseEntity`。公共包源码通常不在业务仓；`resolve_types` 对 `extends BaseDTO` 会注入本节字段（见脚本 `platformBaseFields`）。
 
 ### `BaseEntity`（审计 / 租户 / 逻辑删除）
 
@@ -54,21 +54,29 @@
 | date1…date5       | string | 预留日期（null 不输出）             |
 | number1…number5   | number | 预留数值（null 不输出）             |
 
-### `BaseDTO`
+### `BaseDTO`（保存类请求体基类）
 
-在业务基类之上增加 `_shared`：
+在业务基类之上**增加嵌套对象字段** `_shared`（类型 `BaseShared`）。JSON 字段名就是 `_shared`（下划线开头）。
 
-| 字段        | 类型                     | 说明                                |
-| ----------- | ------------------------ | ----------------------------------- |
-| moduleCode  | string                   | 模块编码                            |
-| taskUser    | Record\<string, string\> | 任务用户                            |
-| action      | string                   | 操作：`DRAFT` / `SAVE` / `SUBMIT`   |
-| orgCode     | string                   | 组织代码                            |
+| 字段     | 类型   | 说明                                      |
+| -------- | ------ | ----------------------------------------- |
+| \_shared | object | 共享上下文；见下方 `BaseShared`（**禁止摊平**） |
+
+另含父类 `BaseBusinessEntity` / `BaseEntity` 字段（见上）。保存接口请求体常以 `_shared` 携带模块/组织/操作/附件；顶层 `moduleCode` 等也可能被鉴权 SpEL（如 `#commonDTO.moduleCode`）读取——以源码为准，两者勿混为一谈。
+
+**注意**：JSON 字段名就是 `_shared`（嵌套对象），子字段见下方 `BaseShared`。文档字段表与请求示例中**必须**写 `"_shared": { ... }`，**禁止**把 `moduleCode` / `action` / `orgCode` / `taskUser` / `attachments` 摊平到请求体顶层。勿写 `_(继承 BaseDTO)_`。
+
+### `BaseShared`（`_shared` 的结构）
+
+| 字段        | 类型                     | 说明                              |
+| ----------- | ------------------------ | --------------------------------- |
+| moduleCode  | string                   | 模块编码                          |
+| taskUser    | Record\<string, string\> | 任务用户（提交流程时传入处理人）  |
+| action      | string                   | 操作：`DRAFT` / `SAVE` / `SUBMIT` |
+| orgCode     | string                   | 组织代码                          |
 | attachments | object[]                 | 附件分组：`groupId`、`categories[]` |
 
 `attachments[].categories[]`：`categoryId`（string）、`fileIds`（string[]）。
-
-写文档时：子类表格合并上述字段；勿写 `_(继承 BaseDTO)_`。业务仓 DTO 若解析为 `extendsUnresolved`，直接按本节展开。
 
 ### `ConditionVO`
 

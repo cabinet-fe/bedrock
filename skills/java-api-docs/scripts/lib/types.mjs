@@ -125,6 +125,109 @@ function extractSchemaDescription(annoBlock) {
   return dm ? dm[1] : '';
 }
 
+/** IC 公共包基类字段（业务仓通常无源码；与 references/project-conventions.md §3 对齐） */
+const PLATFORM_BASE_FIELDS = {
+  BaseEntity: [
+    { name: 'creatorId', type: 'string', javaType: 'Long', required: false, description: '创建者 ID（JSON 字符串）' },
+    { name: 'createBy', type: 'string', javaType: 'String', required: false, description: '创建者' },
+    { name: 'createTime', type: 'string', javaType: 'LocalDateTime', required: false, description: '创建时间' },
+    { name: 'updateBy', type: 'string', javaType: 'String', required: false, description: '更新者' },
+    { name: 'updateTime', type: 'string', javaType: 'LocalDateTime', required: false, description: '更新时间' },
+    { name: 'tenantId', type: 'string', javaType: 'Long', required: false, description: '租户 ID（JSON 字符串）' },
+    { name: 'deleted', type: 'string', javaType: 'String', required: false, description: '逻辑删除标志' },
+  ],
+  BaseBusinessEntity: [
+    { name: 'orgCode', type: 'string', javaType: 'String', required: false, description: '组织代码' },
+    { name: 'invoiceSerial', type: 'string', javaType: 'String', required: false, description: '单据编号' },
+    { name: 'moduleCode', type: 'string', javaType: 'String', required: false, description: '表单/模块编码' },
+    {
+      name: 'processInstanceId',
+      type: 'string',
+      javaType: 'Long',
+      required: false,
+      description: '流程实例 ID（JSON 字符串）',
+    },
+    { name: 'reviewStatus', type: 'string', javaType: 'String', required: false, description: '审批状态' },
+    { name: 'text1', type: 'string', javaType: 'String', required: false, description: '预留文本（null 不输出）' },
+    { name: 'text2', type: 'string', javaType: 'String', required: false, description: '预留文本（null 不输出）' },
+    { name: 'text3', type: 'string', javaType: 'String', required: false, description: '预留文本（null 不输出）' },
+    { name: 'text4', type: 'string', javaType: 'String', required: false, description: '预留文本（null 不输出）' },
+    { name: 'text5', type: 'string', javaType: 'String', required: false, description: '预留文本（null 不输出）' },
+    { name: 'date1', type: 'string', javaType: 'LocalDate', required: false, description: '预留日期（null 不输出）' },
+    { name: 'date2', type: 'string', javaType: 'LocalDate', required: false, description: '预留日期（null 不输出）' },
+    { name: 'date3', type: 'string', javaType: 'LocalDate', required: false, description: '预留日期（null 不输出）' },
+    { name: 'date4', type: 'string', javaType: 'LocalDate', required: false, description: '预留日期（null 不输出）' },
+    { name: 'date5', type: 'string', javaType: 'LocalDate', required: false, description: '预留日期（null 不输出）' },
+    { name: 'number1', type: 'number', javaType: 'BigDecimal', required: false, description: '预留数值（null 不输出）' },
+    { name: 'number2', type: 'number', javaType: 'BigDecimal', required: false, description: '预留数值（null 不输出）' },
+    { name: 'number3', type: 'number', javaType: 'BigDecimal', required: false, description: '预留数值（null 不输出）' },
+    { name: 'number4', type: 'number', javaType: 'BigDecimal', required: false, description: '预留数值（null 不输出）' },
+    { name: 'number5', type: 'number', javaType: 'BigDecimal', required: false, description: '预留数值（null 不输出）' },
+  ],
+  BaseShared: [
+    { name: 'moduleCode', type: 'string', javaType: 'String', required: true, description: '模块编码' },
+    {
+      name: 'taskUser',
+      type: 'Record<string, string>',
+      javaType: 'Map<String, String>',
+      required: false,
+      description: '任务用户（提交流程时传入处理人）',
+    },
+    {
+      name: 'action',
+      type: 'string',
+      javaType: 'OperationEnum',
+      required: true,
+      description: '操作：DRAFT / SAVE / SUBMIT',
+    },
+    { name: 'orgCode', type: 'string', javaType: 'String', required: true, description: '组织代码' },
+    {
+      name: 'attachments',
+      type: 'object[]',
+      javaType: 'List',
+      required: false,
+      description: '附件分组：groupId、categories[]（categoryId、fileIds[]）',
+    },
+  ],
+};
+
+/**
+ * 公共基类字段树（BaseDTO 含嵌套 `_shared`，禁止摊平）。
+ * @param {string} simple
+ * @returns {object[]|null}
+ */
+function platformBaseFields(simple) {
+  if (simple === 'BaseEntity') {
+    return PLATFORM_BASE_FIELDS.BaseEntity.map((f) => ({ ...f, fromPlatform: true }));
+  }
+  if (simple === 'BaseBusinessEntity') {
+    return [
+      ...PLATFORM_BASE_FIELDS.BaseEntity,
+      ...PLATFORM_BASE_FIELDS.BaseBusinessEntity,
+    ].map((f) => ({ ...f, fromPlatform: true }));
+  }
+  if (simple === 'BaseShared') {
+    return PLATFORM_BASE_FIELDS.BaseShared.map((f) => ({ ...f, fromPlatform: true }));
+  }
+  if (simple === 'BaseDTO') {
+    return [
+      {
+        name: '_shared',
+        type: 'object',
+        javaType: 'BaseShared',
+        simple: 'BaseShared',
+        required: true,
+        description: '共享上下文（BaseShared）；禁止摊平到请求体顶层',
+        fromPlatform: true,
+        fields: PLATFORM_BASE_FIELDS.BaseShared.map((f) => ({ ...f, fromPlatform: true })),
+      },
+      ...PLATFORM_BASE_FIELDS.BaseEntity,
+      ...PLATFORM_BASE_FIELDS.BaseBusinessEntity,
+    ].map((f) => (f.name === '_shared' ? f : { ...f, fromPlatform: true }));
+  }
+  return null;
+}
+
 function resolveType(indexBundle, typeName, { depth = 0, seen = new Set() } = {}) {
   const simple = simpleTypeName(typeName) || typeName;
   const mapped = mapJavaType(typeName);
@@ -171,6 +274,18 @@ function resolveType(indexBundle, typeName, { depth = 0, seen = new Set() } = {}
 
   const entry = pickType(indexBundle.index, typeName);
   if (!entry) {
+    const platformFields = platformBaseFields(simple);
+    if (platformFields) {
+      return {
+        name: simple,
+        type: 'object',
+        javaType: typeName,
+        fields: platformFields,
+        resolved: true,
+        fromPlatform: true,
+        description: `IC 公共包 ${simple}（本仓库无源码；字段来自项目约定）`,
+      };
+    }
     return {
       name: simple,
       type: mapped.type || 'object',
@@ -193,13 +308,18 @@ function resolveType(indexBundle, typeName, { depth = 0, seen = new Set() } = {}
     if (parent.resolved && parent.fields) {
       fields = [...parent.fields, ...fields];
     } else {
-      // 不要注入 _extends_* / _(继承)_ 这类假字段名；留给文档说明或项目规范
-      extendsUnresolved = {
-        simple: parentSimple,
-        javaType: parsed.extendsType,
-        needs_source: true,
-        description: `继承自 ${parsed.extendsType}（本仓库无源码；字段见项目规范）`,
-      };
+      const injected = platformBaseFields(parentSimple);
+      if (injected) {
+        fields = [...injected, ...fields];
+      } else {
+        // 不要注入 _extends_* / _(继承)_ 这类假字段名；留给文档说明或项目规范
+        extendsUnresolved = {
+          simple: parentSimple,
+          javaType: parsed.extendsType,
+          needs_source: true,
+          description: `继承自 ${parsed.extendsType}（本仓库无源码；字段见项目规范）`,
+        };
+      }
     }
   }
 
@@ -252,4 +372,5 @@ export {
   buildTypeIndex,
   resolveTypes,
   resolveType,
+  platformBaseFields,
 };

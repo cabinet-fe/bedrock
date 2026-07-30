@@ -147,6 +147,60 @@ function findUnresolvedTypeMentions(md) {
 }
 
 /**
+ * 检测把 BaseShared 字段摊平到请求体顶层、缺少嵌套 `_shared`。
+ * 典型误写：顶层同时出现 action + (attachments|taskUser)，却无 `_shared` 字段行。
+ * @param {string} md
+ * @returns {{ line: number, snippet: string }[]}
+ */
+function findFlattenedSharedFields(md) {
+  const issues = [];
+  const lines = md.split('\n');
+  let inRequestTable = false;
+  let tableStart = 0;
+  /** @type {string[]} */
+  let fieldNames = [];
+
+  const flush = () => {
+    if (!inRequestTable) return;
+    const names = new Set(fieldNames.map((n) => n.replace(/\\_/g, '_').replace(/`/g, '').trim()));
+    const hasShared = [...names].some((n) => n === '_shared');
+    const hasAction = names.has('action');
+    const hasSharedChild = names.has('attachments') || names.has('taskUser');
+    if (!hasShared && hasAction && hasSharedChild) {
+      issues.push({
+        line: tableStart,
+        snippet: '请求体把 BaseShared 字段摊平到顶层，缺少嵌套字段 `_shared`',
+      });
+    }
+    inRequestTable = false;
+    fieldNames = [];
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\*\*请求体\*\*/.test(line)) {
+      flush();
+      inRequestTable = true;
+      tableStart = i + 1;
+      fieldNames = [];
+      continue;
+    }
+    if (inRequestTable) {
+      if (/^###\s/.test(line) || /^\*\*(?:响应成功|响应体|路径参数|查询参数)/.test(line)) {
+        flush();
+        continue;
+      }
+      const row = line.match(/^\|\s*`?([A-Za-z_\\][A-Za-z0-9_\\]*)`?\s*\|/);
+      if (row && !/^[-:| ]+$/.test(line) && !/字段名/.test(line)) {
+        fieldNames.push(row[1]);
+      }
+    }
+  }
+  flush();
+  return issues;
+}
+
+/**
  * 比对文档与 list_endpoints 结果。
  *
  * @param {{
@@ -164,6 +218,7 @@ function findUnresolvedTypeMentions(md) {
  *   extraInDocs: { key: string, docFile: string, line: number }[],
  *   missingDocs: string[],
  *   unresolvedTypes: { docFile: string, type: string, line: number, snippet: string }[],
+ *   flattenedShared: { docFile: string, line: number, snippet: string }[],
  * }}
  */
 function verifyDocsAgainstEndpoints(opts) {
@@ -179,6 +234,7 @@ function verifyDocsAgainstEndpoints(opts) {
   const extraInDocs = [];
   const missingDocs = [];
   const unresolvedTypes = [];
+  const flattenedShared = [];
   const docsChecked = [];
   let foundCount = 0;
   let expectedCount = 0;
@@ -203,6 +259,9 @@ function verifyDocsAgainstEndpoints(opts) {
 
     for (const issue of findUnresolvedTypeMentions(md)) {
       unresolvedTypes.push({ docFile, ...issue });
+    }
+    for (const issue of findFlattenedSharedFields(md)) {
+      flattenedShared.push({ docFile, ...issue });
     }
 
     const expectedKeys = byDoc.get(docFile) || new Set();
@@ -234,7 +293,8 @@ function verifyDocsAgainstEndpoints(opts) {
     missingDocs.length === 0 &&
     missingInDocs.length === 0 &&
     extraInDocs.length === 0 &&
-    unresolvedTypes.length === 0;
+    unresolvedTypes.length === 0 &&
+    flattenedShared.length === 0;
 
   return {
     ok,
@@ -245,6 +305,7 @@ function verifyDocsAgainstEndpoints(opts) {
     extraInDocs,
     missingDocs,
     unresolvedTypes,
+    flattenedShared,
   };
 }
 
@@ -255,5 +316,6 @@ export {
   extractDocEndpoints,
   indexScriptEndpoints,
   findUnresolvedTypeMentions,
+  findFlattenedSharedFields,
   verifyDocsAgainstEndpoints,
 };
