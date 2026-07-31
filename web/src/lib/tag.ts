@@ -24,6 +24,7 @@ export const TRIGGER_TYPE_TAG: Record<string, TagType> = {
   api: "info",
   webhook: "info",
   cron: "primary",
+  pipeline: "primary",
   build_event: "warning",
   docs_generate: "info",
 };

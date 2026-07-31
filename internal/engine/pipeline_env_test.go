@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"bedrock/internal/cicd/model"
 	"bedrock/internal/pkg"
 )
 
@@ -69,6 +70,39 @@ func TestMergeBuildEnv_NamesFromHost(t *testing.T) {
 	}
 	if found != "host-value" {
 		t.Fatalf("want host-value, got %q", found)
+	}
+}
+
+func TestBuildScriptTemplateVars(t *testing.T) {
+	const hostKey = "BEDROCK_TEST_TMPL_HOST"
+	t.Setenv(hostKey, "from-host")
+	job := &model.BuildJob{
+		ID:          5,
+		Name:        "demo",
+		EnvVarNames: []string{hostKey},
+	}
+	run := &model.BuildRun{ID: 9, BuildNumber: 2, CommitHash: "deadbeef"}
+	vars := buildScriptTemplateVars(job, run, "/tmp/ws", "develop", map[string]string{
+		"TOKEN": "secret",
+		hostKey: "from-job",
+	})
+	if vars["job.id"] != "5" || vars["job.name"] != "demo" {
+		t.Fatalf("job vars=%v", vars)
+	}
+	if vars["run.id"] != "9" || vars["run.build_number"] != "2" {
+		t.Fatalf("run vars=%v", vars)
+	}
+	if vars["run.branch"] != "develop" || vars["run.commit"] != "deadbeef" {
+		t.Fatalf("branch/commit=%v", vars)
+	}
+	if !filepath.IsAbs(vars["workspace"]) {
+		t.Fatalf("workspace not abs: %q", vars["workspace"])
+	}
+	if vars["env."+hostKey] != "from-job" {
+		t.Fatalf("kv should override host: %q", vars["env."+hostKey])
+	}
+	if vars["env.TOKEN"] != "secret" {
+		t.Fatalf("env.TOKEN=%q", vars["env.TOKEN"])
 	}
 }
 

@@ -1,6 +1,6 @@
 # CI/CD
 
-构建任务、构建运行、Webhook。
+构建任务、构建运行、构建流水线、流水线运行、Webhook。
 
 代码仓库 / 服务器 / 凭证见 [resource.md](resource.md)。
 
@@ -20,7 +20,7 @@
 权限：`cicd_build_jobs:create`
 请求：{ repository_id*, name*, description, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
 响应 201：data = BuildJob
-说明：`artifact_paths` 为相对仓库根的制品路径列表（文件或目录，最多约 10 条；须相对、禁止 `..`/绝对路径）。写入优先 `artifact_paths`；若为空且提供 `output_dir` 则视为单元素列表。响应含 `artifact_paths`，并回显 `output_dir` 为第一项（兼容）。`env_var_names` 为宿主机环境变量名称列表（运行时 `LookupEnv`）；`env_vars` 为加密 Key-Value 全量键列表 `[{key, value?}]`（带 value 写入；响应仅回显 `[{key, has_value}]`）。运行时合并顺序：进程环境 → 名称列表注入 → Key-Value 覆盖同名键。`post_build_script` 在主构建脚本成功后、缓存保存/归档前执行（同 shell/cwd/env）；失败则 run=`failed`。
+说明：`artifact_paths` 为相对仓库根的制品路径列表（文件或目录，最多约 10 条；须相对、禁止 `..`/绝对路径）。写入优先 `artifact_paths`；若为空且提供 `output_dir` 则视为单元素列表。响应含 `artifact_paths`，并回显 `output_dir` 为第一项（兼容）。`env_var_names` 为宿主机环境变量名称列表（运行时 `LookupEnv`）；`env_vars` 为加密 Key-Value 全量键列表 `[{key, value?}]`（带 value 写入；响应仅回显 `[{key, has_value}]`）。运行时合并顺序：进程环境 → 名称列表注入 → Key-Value 覆盖同名键。`post_build_script` 在主构建脚本成功后、缓存保存/归档前执行（同 shell/cwd/env）；失败则 run=`failed`。响应只读字段 `workspace_path` 为任务 checkout 绝对路径：`{build.workspace_dir}/jobs/job-{id}/`（与 Agent 的 `agents/agent-{id}/` 对齐；旧路径 `repo-{repository_id}/job-{id}/` 不再使用，不自动搬迁）。`build_script` / `post_build_script` 执行前做 `${{...}}` 文本替换（见下文「脚本模板」）；未知变量则构建失败。
 
 ### GET /build-jobs/{id} — 获取构建任务（含部署目标）
 
@@ -124,6 +124,75 @@
 
 `__REFRESH__` 仅经 WebSocket 广播，不写入日志文件。
 
+## 构建流水线
+
+节点 `data.build_job_id` 引用可复用的构建任务；边表示上游成功后解锁下游。保存时校验 DAG（无环）且 `build_job_id` 存在。执行时入度 0 节点并行入队 BuildRun（`trigger_type=pipeline`）；任一 stage 失败/取消/中断则流水线失败，未启动 stage 标 `skipped`。首版不做跨任务制品传递；流水线内不内嵌同步 Agent。
+
+### GET /build-pipelines — 列出构建流水线
+
+权限：`cicd_pipelines:view`
+查询参数：page: integer, page_size: integer, keyword: string
+响应 200：data = BuildPipelinePage
+
+### POST /build-pipelines — 创建构建流水线
+
+权限：`cicd_pipelines:create`
+请求：{ name*, description, enabled, graph_json, trigger_manual, trigger_webhook, trigger_cron, cron_expression, cron_timezone, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, is_public }
+响应 201：data = BuildPipeline
+说明：`graph_json` 为 VueFlow `{nodes,edges}`；空图允许保存（编辑器草稿）；非空须为合法 DAG。
+
+### GET /build-pipelines/{id} — 获取构建流水线
+
+权限：`cicd_pipelines:view`
+路径参数：id*: integer
+响应 200：data = BuildPipeline
+
+### PUT /build-pipelines/{id} — 更新构建流水线
+
+权限：`cicd_pipelines:update`
+路径参数：id*: integer
+请求：同创建（字段可选）
+响应 200：data = BuildPipeline
+
+### DELETE /build-pipelines/{id} — 删除构建流水线
+
+权限：`cicd_pipelines:delete`
+路径参数：id*: integer
+响应 200
+
+### GET /build-pipelines/{id}/webhook-secret — 查看 Webhook 密钥与 URL
+
+权限：`cicd_pipelines:view`
+路径参数：id*: integer
+响应 200：{ webhook_secret, webhook_url }
+
+### POST /build-pipelines/{id}/webhook-secret/rotate — 轮换 Webhook 密钥
+
+权限：`cicd_pipelines:update`
+路径参数：id*: integer
+响应 200：{ webhook_secret, webhook_url }
+
+### POST /build-pipelines/{id}/runs — 入队流水线运行
+
+权限：`cicd_pipelines:execute`
+路径参数：id*: integer
+请求：{ trigger_type }
+响应 202：data = PipelineRun
+
+## 流水线运行
+
+### GET /pipeline-runs — 列出流水线运行
+
+权限：`cicd_pipeline_runs:view`
+查询参数：page: integer, page_size: integer, build_pipeline_id: integer, status: string, sort: string
+响应 200：data = PipelineRunPage
+
+### GET /pipeline-runs/{id} — 获取流水线运行详情（含 stages）
+
+权限：`cicd_pipeline_runs:view`
+路径参数：id*: integer
+响应 200：data = PipelineRun
+
 ## Webhook
 
 ### POST /webhook/jobs/{build_job_id}/{secret} — 接收构建任务 Webhook
@@ -133,6 +202,14 @@
 响应 202（可能为重复投递，`triggered=0`）
 错误：401
 说明：优先校验签名；也可用 URL 中的 secret。按 delivery 去重。
+
+### POST /webhook/pipelines/{pipeline_id}/{secret} — 接收流水线 Webhook
+
+认证：不需要
+路径参数：pipeline_id*: integer, secret*: string
+响应 202（可能为重复投递，`triggered=0`）
+错误：401
+说明：签名/去重同构建任务；首版不做分支匹配（流水线无单一分支）。
 
 ### POST /webhook/repos/{repository_id}/{secret} — 已废弃的仓库 Webhook（返回 410）
 
@@ -175,6 +252,7 @@
 | `build_script` | `string` |  |  |
 | `post_build_script` | `string` |  | 构建成功后、缓存/归档前执行；与主脚本同 cwd/env；失败则 run failed |
 | `work_dir` | `string` |  | 相对仓库工作区的构建 cwd；不存在时明确报错 |
+| `workspace_path` | `string` |  | 只读；绝对路径 `{workspace}/jobs/job-{id}/` |
 | `artifact_paths` | `string[]` |  | 相对仓库根制品路径（文件/目录）；单文件不压缩，多路径打成一包；缺失则构建失败 |
 | `output_dir` | `string` |  | 废弃兼容字段：等于 `artifact_paths[0]` |
 | `cache_paths` | `string` |  | JSON 数组字符串，相对仓库根的缓存路径列表 |
@@ -333,3 +411,69 @@
 | `method` | `'rsync' \| 'sftp' \| 'scp' \| 'agent' \| 'local'` |  |  |
 | `post_deploy_script` | `string` |  |  |
 | `sort_order` | `integer` |  |  |
+
+### BuildPipeline
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `name` | `string` |  |  |
+| `description` | `string` |  |  |
+| `enabled` | `boolean` |  |  |
+| `graph_json` | `string` |  | VueFlow `{nodes,edges}`；节点 `data.build_job_id` |
+| `trigger_manual` | `boolean` |  |  |
+| `trigger_webhook` | `boolean` |  |  |
+| `trigger_cron` | `boolean` |  |  |
+| `webhook_secret` | `string` |  | Only present on secret view/rotate |
+| `webhook_type` | `string` |  |  |
+| `cron_expression` | `string` |  |  |
+| `cron_timezone` | `string` |  |  |
+| `is_public` | `boolean` |  |  |
+| `created_by` | `integer` |  |  |
+| `created_at` | `string(date-time)` |  |  |
+| `updated_at` | `string(date-time)` |  |  |
+
+### PipelineRun
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `build_pipeline_id` | `integer` |  |  |
+| `run_number` | `integer` |  |  |
+| `status` | `'queued' \| 'running' \| 'success' \| 'failed' \| 'cancelled'` |  |  |
+| `trigger_type` | `string` |  | manual / cron / webhook |
+| `triggered_by` | `integer` |  |  |
+| `snapshot_json` | `string` |  | 触发时固化的 graph_json |
+| `error_message` | `string` |  |  |
+| `started_at` | `string(date-time)` |  |  |
+| `finished_at` | `string(date-time)` |  |  |
+| `created_at` | `string(date-time)` |  |  |
+| `stages` | `PipelineStageRun[]` |  | 详情含 |
+
+### PipelineStageRun
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `pipeline_run_id` | `integer` |  |  |
+| `node_id` | `string` |  | 对应 graph 节点 id |
+| `build_job_id` | `integer` |  |  |
+| `build_run_id` | `integer` |  | 关联 BuildRun；可空 |
+| `status` | `'pending' \| 'queued' \| 'running' \| 'success' \| 'failed' \| 'cancelled' \| 'skipped' \| 'interrupted'` |  |  |
+| `error_message` | `string` |  |  |
+| `started_at` | `string(date-time)` |  |  |
+| `finished_at` | `string(date-time)` |  |  |
+| `created_at` | `string(date-time)` |  |  |
+
+## 脚本模板
+
+`build_script` / `post_build_script` 在启动解释器前做**一次性文本替换**（非 shell 求值）。语法：`${{ path }}`（`path` 两侧可有空白）。
+
+| 变量 | 说明 |
+| --- | --- |
+| `job.id` / `job.name` | 构建任务 |
+| `run.id` / `run.build_number` / `run.branch` / `run.commit` | 本次运行（`commit` 为 hash） |
+| `workspace` | 任务 checkout 绝对路径 |
+| `env.KEY` | 任务配置的环境变量（`env_var_names` LookupEnv + `env_vars` Key-Value；同名以 Key-Value 为准） |
+
+规则：标识段为 `[A-Za-z_][A-Za-z0-9_]*`，允许点分路径；未知变量 → 构建失败；替换值内若含 `${{` 不再二次展开。可与 bash `$VAR`、Python `{}`、PowerShell `$x` 共存。

@@ -158,6 +158,12 @@ func main() {
 	jobRepo := cicdrepo.NewBuildJobRepository(gdb)
 	runRepo := cicdrepo.NewBuildRunRepository(gdb)
 	deliveryRepo := cicdrepo.NewWebhookDeliveryRepository(gdb)
+	scriptJobRepo := cicdrepo.NewScriptJobRepository(gdb)
+	scriptRunRepo := cicdrepo.NewScriptRunRepository(gdb)
+	scriptDeliveryRepo := cicdrepo.NewScriptWebhookDeliveryRepository(gdb)
+	pipelineRepo := cicdrepo.NewBuildPipelineRepository(gdb)
+	pipelineRunRepo := cicdrepo.NewPipelineRunRepository(gdb)
+	pipelineDeliveryRepo := cicdrepo.NewPipelineWebhookDeliveryRepository(gdb)
 
 	credSvc := resourceservice.NewCredentialService(credRepo)
 	repoSvc := resourceservice.NewRepositoryService(repoRepo, credSvc)
@@ -165,8 +171,14 @@ func main() {
 	cliSvc := resourceservice.NewCLIService(cliRepo, auditSvc)
 	patSvc := resourceservice.NewPATService(patRepo, auditSvc)
 	jobSvc := cicdservice.NewBuildJobService(jobRepo, repoRepo)
+	jobSvc.SetWorkspaceDir(cfg.Build.WorkspaceDir)
 	runSvc := cicdservice.NewBuildRunService(runRepo, jobRepo)
 	webhookSvc := cicdservice.NewWebhookService(jobRepo, deliveryRepo, runSvc)
+	scriptJobSvc := cicdservice.NewScriptJobService(scriptJobRepo)
+	scriptJobSvc.SetWorkspaceDir(cfg.Build.WorkspaceDir)
+	scriptRunSvc := cicdservice.NewScriptRunService(scriptRunRepo, scriptJobRepo)
+	scriptWebhookSvc := cicdservice.NewScriptWebhookService(scriptJobRepo, scriptDeliveryRepo, scriptRunSvc)
+	pipelineSvc := cicdservice.NewBuildPipelineService(pipelineRepo, jobRepo)
 
 	dashboardRepo := dashboardrepo.NewDashboardRepository(gdb)
 	dashboardSvc := dashboardservice.NewDashboardService(
@@ -222,6 +234,19 @@ func main() {
 	cronSched := engine.NewCronScheduler(jobRepo, runRepo, runSvc, sched, logger)
 	jobSvc.SetCron(cronSched)
 
+	scriptPipeline := engine.NewScriptPipeline(scriptRunRepo, scriptJobRepo, hub, logger, cfg.Build.WorkspaceDir, cfg.Build.LogDir)
+	scriptSched := engine.NewScriptScheduler(cfg.Build.MaxConcurrent, scriptPipeline, scriptRunRepo, logger)
+	scriptRunSvc.SetScheduler(scriptSched)
+	scriptCronSched := engine.NewScriptCronScheduler(scriptJobRepo, scriptRunRepo, scriptRunSvc, scriptSched, logger)
+	scriptJobSvc.SetCron(scriptCronSched)
+
+	pipelineOrch := cicdservice.NewPipelineOrchestrator(pipelineRepo, pipelineRunRepo, jobRepo, runSvc, logger)
+	pipeline.SetBuildRunTerminalHook(pipelineOrch)
+	runSvc.SetTerminalHook(pipelineOrch)
+	pipelineWebhookSvc := cicdservice.NewPipelineWebhookService(pipelineRepo, pipelineDeliveryRepo, pipelineOrch)
+	pipelineCronSched := cicdservice.NewPipelineCronScheduler(pipelineRepo, pipelineRunRepo, pipelineOrch, logger)
+	pipelineSvc.SetCron(pipelineCronSched)
+
 	credHandler := resourcehandler.NewCredentialHandler(credSvc, permSvc)
 	repoHandler := resourcehandler.NewRepositoryHandler(repoSvc, permSvc)
 	serverHandler := resourcehandler.NewServerHandler(serverSvc, permSvc)
@@ -229,7 +254,13 @@ func main() {
 	tokenHandler := resourcehandler.NewTokenHandler(patSvc, permSvc)
 	jobHandler := cicdhandler.NewBuildJobHandler(jobSvc, runSvc, permSvc)
 	runHandler := cicdhandler.NewBuildRunHandler(runSvc, permSvc)
+	scriptJobHandler := cicdhandler.NewScriptJobHandler(scriptJobSvc, scriptRunSvc, permSvc)
+	scriptRunHandler := cicdhandler.NewScriptRunHandler(scriptRunSvc, permSvc)
 	webhookHandler := cicdhandler.NewWebhookHandler(webhookSvc)
+	webhookHandler.SetScriptWebhook(scriptWebhookSvc)
+	webhookHandler.SetPipelineWebhook(pipelineWebhookSvc)
+	buildPipelineHandler := cicdhandler.NewBuildPipelineHandler(pipelineSvc, pipelineOrch, permSvc)
+	pipelineRunHandler := cicdhandler.NewPipelineRunHandler(pipelineOrch, permSvc)
 
 	r := gin.Default()
 	r.Use(gzip.Gzip(gzip.DefaultCompression))
@@ -252,6 +283,10 @@ func main() {
 	tokenHandler.RegisterRoutes(api, authMW)
 	jobHandler.RegisterRoutes(api, authMW)
 	runHandler.RegisterRoutes(api, authMW)
+	scriptJobHandler.RegisterRoutes(api, authMW)
+	scriptRunHandler.RegisterRoutes(api, authMW)
+	buildPipelineHandler.RegisterRoutes(api, authMW)
+	pipelineRunHandler.RegisterRoutes(api, authMW)
 	webhookHandler.RegisterRoutes(api)
 	dashboardHandler.RegisterRoutes(api, authMW)
 	opsHandler.RegisterRoutes(api, authMW)
@@ -268,6 +303,7 @@ func main() {
 	})
 
 	wsHandler := cicdhandler.NewWSHandler(authSvc, permSvc, runSvc, hub, corsCfg)
+	wsHandler.SetScriptRuns(scriptRunSvc)
 	wsHandler.RegisterRoutes(r)
 	aiWSHandler := aihandler.NewWSHandler(authSvc, permSvc, agentSvc, hub, corsCfg)
 	aiWSHandler.RegisterRoutes(r)
@@ -283,10 +319,14 @@ func main() {
 	}
 
 	sched.Start()
+	scriptSched.Start()
 	devEnvSvc.Start()
 	agentSvc.Start()
 	if err := sched.RecoverOnStartup(); err != nil {
 		logger.Error("scheduler recovery failed", zap.Error(err))
+	}
+	if err := scriptSched.RecoverOnStartup(); err != nil {
+		logger.Error("script scheduler recovery failed", zap.Error(err))
 	}
 	if err := devEnvSvc.RecoverOnStartup(); err != nil {
 		logger.Error("dev environment scheduler recovery failed", zap.Error(err))
@@ -296,6 +336,15 @@ func main() {
 	}
 	if err := cronSched.Start(); err != nil {
 		logger.Error("cron start failed", zap.Error(err))
+	}
+	if err := scriptCronSched.Start(); err != nil {
+		logger.Error("script cron start failed", zap.Error(err))
+	}
+	if _, err := pipelineRunRepo.MarkRunningInterrupted(); err != nil {
+		logger.Error("pipeline run recovery failed", zap.Error(err))
+	}
+	if err := pipelineCronSched.Start(); err != nil {
+		logger.Error("pipeline cron start failed", zap.Error(err))
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -314,7 +363,10 @@ func main() {
 	logger.Info("Shutting down...")
 
 	cronSched.Stop()
+	scriptCronSched.Stop()
+	pipelineCronSched.Stop()
 	sched.Shutdown()
+	scriptSched.Shutdown()
 	devEnvSvc.Shutdown()
 	agentSvc.Shutdown()
 	hub.Shutdown()

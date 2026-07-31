@@ -10,6 +10,7 @@ import type { ColorType } from "@veltra/utils";
 import {
   buildRunArtifactURL,
   cancelBuildRun,
+  getBuildJob,
   getBuildRun,
   redeployBuildRun,
   retryBuildRun,
@@ -26,6 +27,7 @@ import {
   TRIGGER_TYPE_TAG,
   tagType,
 } from "@/lib/tag";
+import { useTabsStore } from "@/stores/tabs";
 
 /** 与 BuildRun.stage 对齐（不含终态 idle） */
 const PIPELINE_STEPS: { key: string; label: string }[] = [
@@ -38,6 +40,7 @@ const PIPELINE_STEPS: { key: string; label: string }[] = [
 
 const route = useRoute();
 const router = useRouter();
+const tabsStore = useTabsStore();
 const { hasPermission } = usePermission();
 
 const run = ref<BuildRun | null>(null);
@@ -54,6 +57,7 @@ function parseRouteId(raw: unknown): number | null {
 const canExecute = computed(() => hasPermission("cicd_build_jobs:execute"));
 // Layout keys detail by path and keep-alive caches the instance. Freeze the id at
 // setup so deactivated instances do not re-read the global route (which loses :id).
+const detailPath = route.path;
 const runId = parseRouteId(route.params.id);
 
 const isLive = computed(() => {
@@ -130,6 +134,17 @@ const currentStepType = computed<ColorType | undefined>(() => {
   return "primary";
 });
 
+async function syncTabTitle(r: BuildRun) {
+  let title = `构建 #${r.build_number}`;
+  try {
+    const job = await getBuildJob(r.build_job_id);
+    if (job.name) title = `${job.name} #${r.build_number}`;
+  } catch {
+    /* keep fallback title */
+  }
+  tabsStore.updateTitle(detailPath, title);
+}
+
 async function load() {
   if (runId == null) {
     message.error("无效 ID");
@@ -138,6 +153,7 @@ async function load() {
   }
   try {
     run.value = await getBuildRun(runId);
+    await syncTabTitle(run.value);
   } catch (err) {
     message.error(err instanceof Error ? err.message : "加载失败");
   } finally {

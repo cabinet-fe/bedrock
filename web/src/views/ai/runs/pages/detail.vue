@@ -5,15 +5,17 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { message } from "@veltra/desktop";
 
-import { agentRunLogsWSURL, cancelRun, getRun } from "@/api/ai";
+import { agentRunLogsWSURL, cancelRun, getAgent, getRun } from "@/api/ai";
 import { getAccessToken } from "@/api/http";
 import type { AgentRun } from "@/api/types";
 import BuildLogViewer, { resolveBuildLogStatus } from "@/components/build-log-viewer";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
+import { useTabsStore } from "@/stores/tabs";
 
 const route = useRoute();
+const tabsStore = useTabsStore();
 const { hasPermission } = usePermission();
 
 const run = ref<AgentRun | null>(null);
@@ -29,6 +31,7 @@ function parseRouteId(raw: unknown): number | null {
 const canExecute = computed(() => hasPermission("ai_agents:execute"));
 // Layout keys detail by path and keep-alive caches the instance. Freeze the id at
 // setup so deactivated instances do not re-read the global route (which loses :id).
+const detailPath = route.path;
 const runId = parseRouteId(route.params.id);
 
 const isLive = computed(() => {
@@ -50,6 +53,17 @@ const logsWsURL = computed(() => {
   return agentRunLogsWSURL(runId, token);
 });
 
+async function syncTabTitle(r: AgentRun) {
+  let title = `运行 #${r.id}`;
+  try {
+    const agent = await getAgent(r.agent_id);
+    if (agent.name) title = agent.name;
+  } catch {
+    /* keep fallback title */
+  }
+  tabsStore.updateTitle(detailPath, title);
+}
+
 async function load() {
   if (runId == null) {
     message.error("无效 ID");
@@ -58,6 +72,7 @@ async function load() {
   }
   try {
     run.value = await getRun(runId);
+    await syncTabTitle(run.value);
   } catch (err) {
     message.error(err instanceof Error ? err.message : "加载失败");
   } finally {

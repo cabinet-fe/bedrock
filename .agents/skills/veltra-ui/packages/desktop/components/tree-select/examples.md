@@ -60,6 +60,8 @@ const departments = [
 
 ## 在 UForm 中使用
 
+> 表单内用 `field` 绑 `model`，勿再写 `v-model`；无 `field` 时 `label` 不生效。
+
 ```vue
 <script setup lang="ts">
 import { reactive } from 'vue'
@@ -75,5 +77,35 @@ const regionData = [
   <u-form :model="formData">
     <u-tree-select label="地区" field="region" :data="regionData" />
   </u-form>
+</template>
+```
+
+## 同步冗余文案（@update:text）
+
+```vue
+<script setup lang="ts">
+import { reactive } from 'vue'
+
+// 展示由 data 推导；父级用事件写冗余 text，勿再 v-model:text
+const form = reactive({ code: 'chaoyang', text: '旧文案' })
+
+const treeData = [
+  {
+    label: '北京',
+    value: 'beijing',
+    children: [
+      { label: '朝阳区（最新）', value: 'chaoyang' },
+      { label: '海淀区（最新）', value: 'haidian' }
+    ]
+  }
+]
+</script>
+
+<template>
+  <u-tree-select
+    v-model="form.code"
+    :data="treeData"
+    @update:text="form.text = $event"
+  />
 </template>
 ```

@@ -8,15 +8,17 @@ import (
 
 	"bedrock/internal/cicd/model"
 	"bedrock/internal/cicd/repository"
+	"bedrock/internal/engine"
 	"bedrock/internal/pkg"
 	rbacmodel "bedrock/internal/rbac/model"
 	resourcerepo "bedrock/internal/resource/repository"
 )
 
 type BuildJobService struct {
-	jobs  *repository.BuildJobRepository
-	repos *resourcerepo.RepositoryRepository
-	cron  CronRegistrar
+	jobs         *repository.BuildJobRepository
+	repos        *resourcerepo.RepositoryRepository
+	cron         CronRegistrar
+	workspaceDir string
 }
 
 // CronRegistrar updates in-process cron entries when jobs change.
@@ -30,6 +32,9 @@ func NewBuildJobService(jobs *repository.BuildJobRepository, repos *resourcerepo
 }
 
 func (s *BuildJobService) SetCron(c CronRegistrar) { s.cron = c }
+
+// SetWorkspaceDir configures build.workspace_dir for computing workspace_path.
+func (s *BuildJobService) SetWorkspaceDir(dir string) { s.workspaceDir = strings.TrimSpace(dir) }
 
 type DeployTargetInput struct {
 	ServerID         *uint  `json:"server_id"`
@@ -352,7 +357,9 @@ func (s *BuildJobService) Get(id uint, userID uint, dataScope string) (*model.Bu
 		return nil, err
 	}
 	hydrateJobEnv(job)
-	return publicJob(job, false), nil
+	out := publicJob(job, false)
+	s.attachWorkspacePath(out)
+	return out, nil
 }
 
 func (s *BuildJobService) GetWithSecret(id uint, userID uint, dataScope string) (*model.BuildJob, error) {
@@ -364,7 +371,9 @@ func (s *BuildJobService) GetWithSecret(id uint, userID uint, dataScope string) 
 		return nil, err
 	}
 	hydrateJobEnv(job)
-	return publicJob(job, true), nil
+	out := publicJob(job, true)
+	s.attachWorkspacePath(out)
+	return out, nil
 }
 
 func (s *BuildJobService) RotateWebhookSecret(id uint, userID uint, dataScope string) (*model.BuildJob, error) {
@@ -384,7 +393,9 @@ func (s *BuildJobService) RotateWebhookSecret(id uint, userID uint, dataScope st
 		return nil, err
 	}
 	hydrateJobEnv(job)
-	return publicJob(job, true), nil
+	out := publicJob(job, true)
+	s.attachWorkspacePath(out)
+	return out, nil
 }
 
 func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword string, userID uint, dataScope string) ([]model.BuildJob, int64, error) {
@@ -398,7 +409,9 @@ func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword stri
 	}
 	for i := range items {
 		hydrateJobEnv(&items[i])
-		items[i] = *publicJob(&items[i], false)
+		pub := publicJob(&items[i], false)
+		s.attachWorkspacePath(pub)
+		items[i] = *pub
 	}
 	return items, total, nil
 }
@@ -534,6 +547,18 @@ func publicJob(job *model.BuildJob, revealSecret bool) *model.BuildJob {
 		cp.WebhookSecret = ""
 	}
 	return &cp
+}
+
+func (s *BuildJobService) attachWorkspacePath(job *model.BuildJob) {
+	if job == nil || job.ID == 0 || s.workspaceDir == "" {
+		return
+	}
+	abs, err := engine.AbsoluteJobWorkspace(s.workspaceDir, job.ID)
+	if err != nil {
+		job.WorkspacePath = engine.JobWorkspace(s.workspaceDir, job.ID)
+		return
+	}
+	job.WorkspacePath = abs
 }
 
 func generateWebhookSecret() (string, error) {

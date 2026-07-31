@@ -95,6 +95,9 @@ type BuildJob struct {
 	CreatedAt          time.Time    `json:"created_at"`
 	UpdatedAt          time.Time    `json:"updated_at"`
 
+	// WorkspacePath is absolute checkout dir {workspace}/jobs/job-{id}/ (API-only).
+	WorkspacePath string `json:"workspace_path,omitempty" gorm:"-"`
+
 	DeployTargets []DeployTarget `json:"deploy_targets,omitempty" gorm:"foreignKey:BuildJobID"`
 }
 
@@ -162,3 +165,119 @@ type BuildDeployAttempt struct {
 }
 
 func (BuildDeployAttempt) TableName() string { return "build_deploy_attempts" }
+
+// ScriptJob is a no-repo, no-artifact, no-deploy script task.
+type ScriptJob struct {
+	ID              uint         `json:"id" gorm:"primaryKey"`
+	Name            string       `json:"name" gorm:"size:100;not null"`
+	Description     string       `json:"description" gorm:"size:500"`
+	Enabled         bool         `json:"enabled" gorm:"not null"`
+	ScriptType      string       `json:"script_type" gorm:"size:20;default:bash"`
+	Script          string       `json:"script" gorm:"type:text"`
+	WorkDir         string       `json:"work_dir" gorm:"size:300"` // relative to script workspace
+	EnvVarNamesJSON string       `json:"-" gorm:"type:text"`
+	EnvVarNames     []string     `json:"env_var_names" gorm:"-"`
+	EnvVarsCipher   string       `json:"-" gorm:"type:text"`
+	EnvVars         []EnvVarView `json:"env_vars" gorm:"-"`
+	TriggerManual   bool         `json:"trigger_manual" gorm:"not null"`
+	TriggerWebhook  bool         `json:"trigger_webhook" gorm:"not null;default:false"`
+	TriggerCron     bool         `json:"trigger_cron" gorm:"not null;default:false"`
+	WebhookSecret   string       `json:"webhook_secret,omitempty" gorm:"size:64"`
+	WebhookType     string       `json:"webhook_type" gorm:"size:20;default:generic"`
+	CronExpression  string       `json:"cron_expression" gorm:"size:100"`
+	CronTimezone    string       `json:"cron_timezone" gorm:"size:100;default:UTC"`
+	IsPublic        bool         `json:"is_public" gorm:"not null;default:false;index"`
+	CreatedBy       uint         `json:"created_by" gorm:"index"`
+	CreatedAt       time.Time    `json:"created_at"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+
+	// WorkspacePath is absolute dir {workspace}/scripts/script-{id}/ (API-only).
+	WorkspacePath string `json:"workspace_path,omitempty" gorm:"-"`
+}
+
+func (ScriptJob) TableName() string { return "script_jobs" }
+
+// ScriptRun is one execution of a ScriptJob.
+// status: queued|running|success|failed|cancelled|interrupted
+// stage: pending|running|idle
+type ScriptRun struct {
+	ID           uint       `json:"id" gorm:"primaryKey"`
+	ScriptJobID  uint       `json:"script_job_id" gorm:"uniqueIndex:idx_script_job_run_num;not null"`
+	RunNumber    int        `json:"run_number" gorm:"uniqueIndex:idx_script_job_run_num;not null"`
+	Status       string     `json:"status" gorm:"size:20;not null;default:queued"`
+	Stage        string     `json:"stage" gorm:"size:20;not null;default:pending"`
+	TriggerType  string     `json:"trigger_type" gorm:"size:20"`
+	TriggeredBy  uint       `json:"triggered_by"`
+	LogPath      string     `json:"log_path" gorm:"size:500"`
+	DurationMs   int64      `json:"duration_ms"`
+	ErrorMessage string     `json:"error_message" gorm:"type:text"`
+	SnapshotJSON string     `json:"snapshot_json,omitempty" gorm:"type:text"`
+	StartedAt    *time.Time `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+func (ScriptRun) TableName() string { return "script_runs" }
+
+// BuildPipeline is a DAG of BuildJobs (graph_json = VueFlow nodes/edges).
+// Edges mean: upstream success → unlock downstream. No cross-job artifact passing in v1.
+type BuildPipeline struct {
+	ID                 uint      `json:"id" gorm:"primaryKey"`
+	Name               string    `json:"name" gorm:"size:100;not null"`
+	Description        string    `json:"description" gorm:"size:500"`
+	Enabled            bool      `json:"enabled" gorm:"not null"`
+	GraphJSON          string    `json:"graph_json" gorm:"type:text"`
+	TriggerManual      bool      `json:"trigger_manual" gorm:"not null"`
+	TriggerWebhook     bool      `json:"trigger_webhook" gorm:"not null;default:false"`
+	TriggerCron        bool      `json:"trigger_cron" gorm:"not null;default:false"`
+	WebhookSecret      string    `json:"webhook_secret,omitempty" gorm:"size:64"`
+	WebhookType        string    `json:"webhook_type" gorm:"size:20;default:generic"`
+	WebhookRefPath     string    `json:"webhook_ref_path" gorm:"size:300"`
+	WebhookCommitPath  string    `json:"webhook_commit_path" gorm:"size:300"`
+	WebhookMessagePath string    `json:"webhook_message_path" gorm:"size:300"`
+	CronExpression     string    `json:"cron_expression" gorm:"size:100"`
+	CronTimezone       string    `json:"cron_timezone" gorm:"size:100;default:UTC"`
+	IsPublic           bool      `json:"is_public" gorm:"not null;default:false;index"`
+	CreatedBy          uint      `json:"created_by" gorm:"index"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+func (BuildPipeline) TableName() string { return "build_pipelines" }
+
+// PipelineRun is one execution of a BuildPipeline.
+// status: queued|running|success|failed|cancelled
+type PipelineRun struct {
+	ID              uint       `json:"id" gorm:"primaryKey"`
+	BuildPipelineID uint       `json:"build_pipeline_id" gorm:"uniqueIndex:idx_pipeline_run_num;not null"`
+	RunNumber       int        `json:"run_number" gorm:"uniqueIndex:idx_pipeline_run_num;not null"`
+	Status          string     `json:"status" gorm:"size:20;not null;default:queued"`
+	TriggerType     string     `json:"trigger_type" gorm:"size:20"`
+	TriggeredBy     uint       `json:"triggered_by"`
+	SnapshotJSON    string     `json:"snapshot_json,omitempty" gorm:"type:text"`
+	ErrorMessage    string     `json:"error_message" gorm:"type:text"`
+	StartedAt       *time.Time `json:"started_at"`
+	FinishedAt      *time.Time `json:"finished_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+
+	Stages []PipelineStageRun `json:"stages,omitempty" gorm:"foreignKey:PipelineRunID"`
+}
+
+func (PipelineRun) TableName() string { return "pipeline_runs" }
+
+// PipelineStageRun tracks one graph node within a PipelineRun.
+// status: pending|queued|running|success|failed|cancelled|skipped|interrupted
+type PipelineStageRun struct {
+	ID            uint       `json:"id" gorm:"primaryKey"`
+	PipelineRunID uint       `json:"pipeline_run_id" gorm:"index;not null"`
+	NodeID        string     `json:"node_id" gorm:"size:100;not null"`
+	BuildJobID    uint       `json:"build_job_id" gorm:"index;not null"`
+	BuildRunID    *uint      `json:"build_run_id" gorm:"index"`
+	Status        string     `json:"status" gorm:"size:20;not null;default:pending"`
+	ErrorMessage  string     `json:"error_message" gorm:"type:text"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+func (PipelineStageRun) TableName() string { return "pipeline_stage_runs" }

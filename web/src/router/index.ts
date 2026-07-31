@@ -153,6 +153,76 @@ const router = createRouter({
           },
         },
         {
+          path: "cicd/script-jobs",
+          name: "cicd-script-jobs",
+          component: () => import("@/views/cicd/script-jobs/pages/main.vue"),
+          meta: {
+            permission: "cicd_script_jobs:view",
+            title: "脚本任务",
+            keepAliveName: "CicdScriptJobs",
+          },
+        },
+        {
+          path: "cicd/script-runs",
+          name: "cicd-script-runs",
+          component: () => import("@/views/cicd/script-runs/pages/main.vue"),
+          meta: {
+            permission: "cicd_script_runs:view",
+            title: "脚本记录",
+            keepAliveName: "CicdScriptRuns",
+          },
+        },
+        {
+          path: "cicd/script-runs/:id",
+          name: "cicd-script-run-detail",
+          component: () => import("@/views/cicd/script-runs/pages/detail.vue"),
+          meta: {
+            permission: "cicd_script_runs:view",
+            title: "脚本详情",
+            keepAliveName: "CicdScriptRunDetail",
+          },
+        },
+        {
+          path: "cicd/pipelines",
+          name: "cicd-pipelines",
+          component: () => import("@/views/cicd/pipelines/pages/main.vue"),
+          meta: {
+            permission: "cicd_pipelines:view",
+            title: "构建流水线",
+            keepAliveName: "CicdPipelines",
+          },
+        },
+        {
+          path: "cicd/pipelines/:id/editor",
+          name: "cicd-pipeline-editor",
+          component: () => import("@/views/cicd/pipelines/pages/editor.vue"),
+          meta: {
+            permission: "cicd_pipelines:view",
+            title: "流水线编排",
+            keepAliveName: "CicdPipelineEditor",
+          },
+        },
+        {
+          path: "cicd/pipeline-runs",
+          name: "cicd-pipeline-runs",
+          component: () => import("@/views/cicd/pipeline-runs/pages/main.vue"),
+          meta: {
+            permission: "cicd_pipeline_runs:view",
+            title: "流水线运行",
+            keepAliveName: "CicdPipelineRuns",
+          },
+        },
+        {
+          path: "cicd/pipeline-runs/:id",
+          name: "cicd-pipeline-run-detail",
+          component: () => import("@/views/cicd/pipeline-runs/pages/detail.vue"),
+          meta: {
+            permission: "cicd_pipeline_runs:view",
+            title: "流水线运行详情",
+            keepAliveName: "CicdPipelineRunDetail",
+          },
+        },
+        {
           path: "project",
           redirect: "/project/projects",
         },

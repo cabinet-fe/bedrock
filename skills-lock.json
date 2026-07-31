@@ -27,7 +27,7 @@
       "ref": "dev",
       "sourceType": "github",
       "skillPath": "skills/veltra-ui/SKILL.md",
-      "computedHash": "ee1fe6dbf646dc6a8dbbc19f77fc4799203df40ae63167f2305ab165e5c2617f"
+      "computedHash": "34dd94030ca6d38383713903f6c19bfe0a2e5d6e8b9482be55d75f33098a5c6a"
     },
     "vue-best-practices": {
       "source": "cabinet-fe/prompt-engineering",

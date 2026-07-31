@@ -20,6 +20,10 @@ const props = defineProps<{
   skillId: number;
 }>();
 
+const emit = defineEmits<{
+  loaded: [skill: SkillPackage];
+}>();
+
 const skill = shallowRef<SkillPackage | null>(null);
 const tree = shallowRef<SkillFileNode[]>([]);
 const selectedPath = ref<string>();
@@ -78,6 +82,7 @@ async function bootstrap() {
   binary.value = false;
   try {
     skill.value = await getSkill(props.skillId);
+    emit("loaded", skill.value);
     await loadTree();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "加载技能失败");

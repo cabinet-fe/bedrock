@@ -58,6 +58,10 @@
 | D29 | Run 快照 | 创建运行时强制写入最小配置快照（只读复现） |
 | D30 | 状态字段 | `status`（结果）与 `stage`（活动阶段）分离；流水线**无**内嵌 agent 阶段 |
 | D31 | Agent 工作区与制品 | 每个 Agent 有一个持久根工作区与一个固定 `output_dir` 产出目录，跨 Run 复用且不清空根目录与产出目录；AgentRun 不绑定、归档或下载文件制品，BuildRun 制品能力不变 |
+| D32 | BuildJob 工作区路径 | 每个构建任务 checkout 目录为 `{workspace}/jobs/job-{id}/`（对齐 Agent `agents/agent-{id}/`）；API 只读回显绝对路径 `workspace_path`；不自动搬迁旧 `repo-*/job-*` 目录 |
+| D33 | ScriptJob | 无仓库/制品/部署的精简任务；工作区 `{workspace}/scripts/script-{id}/`；日志 `{log_dir}/script-{jobID}/run-{NNN}.log`；触发同 BuildJob（manual/cron/webhook，webhook 无分支匹配）；脚本执行前 `${{...}}` 替换 |
+| D34 | 脚本模板 `${{...}}` | 构建/构建后脚本执行前一次性文本替换；内置 `job.*` / `run.*` / `workspace`；用户变量 `${{ env.KEY }}`；未知变量失败；不二次展开 |
+| D35 | 构建流水线 | 独立 `BuildPipeline` 模块；VueFlow `graph_json` DAG；节点引用可复用 BuildJob；拓扑并行；stage 失败则流水线失败并 skip 其余；**无**跨任务制品传递；**无**内嵌同步 Agent |
 
 ### 1.4 已接受风险（必须对外声明）
 
@@ -271,6 +275,12 @@ flowchart TB
 4. **禁止**流水线内嵌同步 `agent` 阶段；构建事件异步创建 `AgentRun`。
 5. `retry`：新建 BuildRun；`redeploy`：**同一** BuildRun，追加 `BuildDeployAttempt`，summary 指向最新一批结果。
 
+**工作区路径**：BuildJob checkout 为 `{workspace}/jobs/job-{id}/`（持久复用，跨 Run；对齐 Agent `{workspace}/agents/agent-{id}/`）。API 只读字段 `workspace_path` 为绝对路径。首次在新路径 clone；旧目录 `repo-{repository_id}/job-{id}/` **不**自动搬迁，可手工清理。日志 / 制品 / 缓存仍按 `job-{id}` 隔离（无 repo 前缀）。
+
+**脚本任务（ScriptJob）**：无 clone / 归档 / 分发；工作区 `{workspace}/scripts/script-{id}/`（跨 run 复用、不清空）；日志 `{log_dir}/script-{jobID}/run-{NNN}.log`。执行流：enqueue → `${{...}}` 替换 → 跑脚本 → 终态。Webhook 仅 URL secret + delivery 去重，不做分支匹配。
+
+**脚本模板**：`build_script` / `post_build_script` / ScriptJob `script` 启动前对 `${{ path }}` 做一次性文本替换（非 shell 求值）。构建内置只读：`job.id`、`job.name`、`run.id`、`run.build_number`、`run.branch`、`run.commit`、`workspace`；脚本任务内置：`job.id`、`job.name`、`run.id`、`workspace`。用户变量 `${{ env.KEY }}` 对齐 `env_var_names` + `env_vars`（同名以 Key-Value 为准），进程环境仍注入以兼容 `$KEY`。未知变量 → `failed`；替换值不二次展开。
+
 **制品路径（`artifact_paths`）**：相对仓库根的文件/目录列表（替代单一 `output_dir`；`output_dir` 列保留一版兼容，读时与 `artifact_paths` 合并）。运行时在 clone 根下解析并做边界校验；配置路径缺失 → 构建 `failed`。归档规则：0 路径无制品（有部署目标时拒绝整仓分发，`distribution_summary=all_failed`）；1 文件原样存储（`artifact_kind=file`）；1 目录按 `artifact_format` 打 zip/tar.gz（`archive`）；2+ 路径按 basename 合并后打一包（`bundle`，basename 冲突失败）。分发与 redeploy 均从同一 `deployRoot` 出发（文件/归档先物化到 staging）。
 
 **构建环境变量（混合）**：`env_var_names`（JSON 文本列，仅名称，运行时 `os.LookupEnv`）+ `env_vars_cipher`（AES-GCM Key-Value）。API 对 Key-Value 仅回显 `{key, has_value}`，不回显明文。运行时合并：`os.Environ()` → 名称列表注入 → 解密后的 Key-Value（同名以任务 Key-Value 覆盖）。
@@ -399,7 +409,7 @@ database:
 - Dashboard layout + card data
 - Ops processes / dev-environments / per-environment sources
 - Resource: repositories / servers / credentials
-- CI/CD: webhook / build-jobs / build-runs
+- CI/CD: webhook / build-jobs / build-runs / build-pipelines / pipeline-runs
 - Projects / members / requirements / docs（含 generate、publish、diff）
 - AI CLIs / agents / triggers / runs / skills
 
@@ -473,6 +483,18 @@ API/Cron/Webhook/Event
 | purge_after | GC 时间 |
 
 日志与构建实时日志：**不**强制进对象表，按 `{log_dir}/...` 分段文件 + 保留期清理。
+
+本地目录约定（`build.workspace_dir` 等）：
+
+| 路径 | 用途 |
+| --- | --- |
+| `{workspace}/jobs/job-{id}/` | BuildJob Git checkout（跨 Run 复用） |
+| `{workspace}/scripts/script-{id}/` | ScriptJob 工作区（跨 Run 复用） |
+| `{workspace}/agents/agent-{id}/` | Agent 持久根工作区 |
+| `{artifact_dir}/job-{id}/` | BuildRun 制品 |
+| `{log_dir}/job-{id}/` | BuildRun 日志 |
+| `{log_dir}/script-{jobID}/` | ScriptRun 日志 |
+| `{cache_dir}/job-{id}/` | 构建缓存 |
 
 ### 10.2 默认限额（均可配置）
 

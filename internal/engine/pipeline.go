@@ -16,6 +16,7 @@ import (
 
 	"bedrock/internal/cicd/model"
 	"bedrock/internal/pkg"
+	"bedrock/internal/pkg/scripttmpl"
 	resourcemodel "bedrock/internal/resource/model"
 	"bedrock/internal/ws"
 )
@@ -29,6 +30,13 @@ type AgentEventHook interface {
 // TerminalNotifier persists + pushes per-user inbox notifications on BuildRun terminal.
 type TerminalNotifier interface {
 	NotifyBuildRun(userID uint, buildRunID uint, buildNumber int, status, message string)
+}
+
+// BuildRunTerminalHook is invoked for every BuildRun terminal status
+// (success|failed|cancelled|interrupted), including cron/webhook (TriggeredBy=0).
+// Used by PipelineOrchestrator to unlock DAG stages.
+type BuildRunTerminalHook interface {
+	OnBuildRunTerminal(run *model.BuildRun, status string)
 }
 
 // Pipeline executes BuildRun: clone → build → archive → success → distribute.
@@ -48,6 +56,7 @@ type Pipeline struct {
 	cacheDir  string
 	agentHook AgentEventHook
 	notifier  TerminalNotifier
+	termHook  BuildRunTerminalHook
 }
 
 // SetAgentEventHook wires P4 async AgentRun creation from build events.
@@ -58,6 +67,11 @@ func (p *Pipeline) SetAgentEventHook(h AgentEventHook) {
 // SetTerminalNotifier wires DESIGN §12 in-app notifications for build terminal states.
 func (p *Pipeline) SetTerminalNotifier(n TerminalNotifier) {
 	p.notifier = n
+}
+
+// SetBuildRunTerminalHook wires PipelineOrchestrator (or tests) on BuildRun terminal.
+func (p *Pipeline) SetBuildRunTerminalHook(h BuildRunTerminalHook) {
+	p.termHook = h
 }
 
 func NewPipeline(
@@ -183,7 +197,7 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 
 	writeLine("=== Stage: Cloning ===")
 	writeLine("NOTE: Build scripts run as the same OS user as Bedrock (no sandbox isolation).")
-	workDir := filepath.Join(p.workspace, fmt.Sprintf("repo-%d", repo.ID), fmt.Sprintf("job-%d", job.ID))
+	workDir := JobWorkspace(p.workspace, job.ID)
 
 	authType, username, password, err := p.resolveRepoGitAuth(repo)
 	if err != nil {
@@ -280,8 +294,9 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 		return
 	}
 	envVars := mergeBuildEnv(job.EnvVarNames, kvEnv)
+	tmplVars := buildScriptTemplateVars(job, run, workDir, branch, kvEnv)
 
-	if err := p.runJobScript(ctx, run, buildDir, job.BuildScriptType, job.BuildScript, envVars, writeLine, "构建"); err != nil {
+	if err := p.runJobScript(ctx, run, buildDir, job.BuildScriptType, job.BuildScript, envVars, tmplVars, writeLine, "构建"); err != nil {
 		return
 	}
 	writeLine("=== Build completed successfully ===")
@@ -294,7 +309,7 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 			writeLine("ERROR: " + err.Error())
 			return
 		}
-		if err := p.runJobScript(ctx, run, buildDir, job.BuildScriptType, job.PostBuildScript, envVars, writeLine, "构建后脚本"); err != nil {
+		if err := p.runJobScript(ctx, run, buildDir, job.BuildScriptType, job.PostBuildScript, envVars, tmplVars, writeLine, "构建后脚本"); err != nil {
 			return
 		}
 		writeLine("=== Post-build completed successfully ===")
@@ -506,7 +521,19 @@ func (p *Pipeline) markArtifactSuccess(run *model.BuildRun, writeLine func(strin
 }
 
 func (p *Pipeline) notifyTerminal(run *model.BuildRun, status, message string) {
-	if run == nil || run.TriggeredBy == 0 {
+	if run == nil {
+		return
+	}
+	// Orchestrator hook fires for all triggers (including TriggeredBy=0).
+	if p.termHook != nil {
+		// Refresh status onto the run object for consumers.
+		run.Status = status
+		if message != "" {
+			run.ErrorMessage = message
+		}
+		p.termHook.OnBuildRunTerminal(run, status)
+	}
+	if run.TriggeredBy == 0 {
 		return
 	}
 	if p.notifier != nil {
@@ -638,6 +665,45 @@ func decryptJobEnvVarsCipher(cipherText string) (map[string]string, error) {
 	return vars, nil
 }
 
+// buildScriptTemplateVars builds ${{...}} substitution map for build/post_build scripts.
+func buildScriptTemplateVars(
+	job *model.BuildJob,
+	run *model.BuildRun,
+	workspace, branch string,
+	kvEnv map[string]string,
+) map[string]string {
+	absWS := workspace
+	if a, err := filepath.Abs(workspace); err == nil {
+		absWS = a
+	}
+	vars := map[string]string{
+		"job.id":           fmt.Sprintf("%d", job.ID),
+		"job.name":         job.Name,
+		"run.id":           fmt.Sprintf("%d", run.ID),
+		"run.build_number": fmt.Sprintf("%d", run.BuildNumber),
+		"run.branch":       branch,
+		"run.commit":       run.CommitHash,
+		"workspace":        absWS,
+	}
+	for _, name := range job.EnvVarNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if v, ok := os.LookupEnv(name); ok {
+			vars["env."+name] = v
+		}
+	}
+	for k, v := range kvEnv {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		vars["env."+k] = v
+	}
+	return vars
+}
+
 // runJobScript runs a build/post-build script in buildDir with envVars.
 // On failure it failRun/cancelRun and returns a non-nil error so the caller can return.
 func (p *Pipeline) runJobScript(
@@ -645,9 +711,19 @@ func (p *Pipeline) runJobScript(
 	run *model.BuildRun,
 	buildDir, scriptType, script string,
 	envVars []string,
+	tmplVars map[string]string,
 	writeLine func(string),
 	label string,
 ) error {
+	expanded, err := scripttmpl.Expand(script, tmplVars)
+	if err != nil {
+		msg := label + "模板替换失败: " + err.Error()
+		p.failRun(run, msg)
+		writeLine("ERROR: " + err.Error())
+		return err
+	}
+	script = expanded
+
 	cmd, cleanupScript, err := newBuildScriptCommand(ctx, buildDir, scriptType, script)
 	if err != nil {
 		msg := label + "配置无效: " + err.Error()

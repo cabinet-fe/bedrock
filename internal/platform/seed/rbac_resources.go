@@ -87,6 +87,10 @@ func EnsureRBACResources(db *gorm.DB) error {
 			Menus: []seedMenu{
 				{Code: "cicd_build_jobs", Title: "构建任务", Route: "/cicd/build-jobs", SortKey: 10, Actions: append(append([]string{}, standardCRUD...), "execute")},
 				{Code: "cicd_build_runs", Title: "构建记录", Route: "/cicd/build-runs", SortKey: 20, Actions: []string{"view"}},
+				{Code: "cicd_script_jobs", Title: "脚本任务", Route: "/cicd/script-jobs", SortKey: 25, Actions: append(append([]string{}, standardCRUD...), "execute")},
+				{Code: "cicd_script_runs", Title: "脚本记录", Route: "/cicd/script-runs", SortKey: 26, Actions: []string{"view"}},
+				{Code: "cicd_pipelines", Title: "构建流水线", Route: "/cicd/pipelines", SortKey: 30, Actions: append(append([]string{}, standardCRUD...), "execute")},
+				{Code: "cicd_pipeline_runs", Title: "流水线运行", Route: "/cicd/pipeline-runs", SortKey: 40, Actions: []string{"view"}},
 			},
 		},
 		{

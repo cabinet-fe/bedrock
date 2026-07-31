@@ -1,5 +1,13 @@
 import { getAccessToken, http } from "./http";
-import type { BuildJob, BuildRun, PageResult } from "./types";
+import type {
+  BuildJob,
+  BuildPipeline,
+  BuildRun,
+  PageResult,
+  PipelineRun,
+  ScriptJob,
+  ScriptRun,
+} from "./types";
 
 export type ListQuery = Record<string, string | number | boolean | undefined | null>;
 
@@ -108,4 +116,145 @@ export async function getBuildRunLog(id: number): Promise<string> {
 export function buildRunLogsWSURL(id: number, token: string): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}/ws/build-runs/${id}/logs?token=${encodeURIComponent(token)}`;
+}
+
+// —— Script jobs ——
+export async function listScriptJobs(params?: ListQuery): Promise<PageResult<ScriptJob>> {
+  const { body } = await http.get<PageResult<ScriptJob>>("/script-jobs", {
+    query: toQuery(params),
+  });
+  return body;
+}
+
+export async function getScriptJob(id: number): Promise<ScriptJob> {
+  const { body } = await http.get<ScriptJob>(`/script-jobs/${id}`);
+  return body;
+}
+
+export async function createScriptJob(body: Record<string, unknown>): Promise<ScriptJob> {
+  const { body: data } = await http.post<ScriptJob>("/script-jobs", body);
+  return data;
+}
+
+export async function updateScriptJob(
+  id: number,
+  body: Record<string, unknown>,
+): Promise<ScriptJob> {
+  const { body: data } = await http.put<ScriptJob>(`/script-jobs/${id}`, body);
+  return data;
+}
+
+export async function deleteScriptJob(id: number): Promise<void> {
+  await http.delete(`/script-jobs/${id}`);
+}
+
+export async function getScriptJobWebhookSecret(
+  id: number,
+): Promise<{ webhook_secret: string; webhook_url: string }> {
+  const { body } = await http.get<{ webhook_secret: string; webhook_url: string }>(
+    `/script-jobs/${id}/webhook-secret`,
+  );
+  return body;
+}
+
+export async function rotateScriptJobWebhookSecret(
+  id: number,
+): Promise<{ webhook_secret: string; webhook_url: string }> {
+  const { body } = await http.post<{ webhook_secret: string; webhook_url: string }>(
+    `/script-jobs/${id}/webhook-secret/rotate`,
+    {},
+  );
+  return body;
+}
+
+export async function enqueueScriptRun(jobId: number): Promise<ScriptRun> {
+  const { body: data } = await http.post<ScriptRun>(`/script-jobs/${jobId}/runs`, {});
+  return data;
+}
+
+// —— Script runs ——
+export async function getScriptRun(id: number): Promise<ScriptRun> {
+  const { body } = await http.get<ScriptRun>(`/script-runs/${id}`);
+  return body;
+}
+
+export async function cancelScriptRun(id: number): Promise<ScriptRun> {
+  const { body } = await http.post<ScriptRun>(`/script-runs/${id}/cancel`, {});
+  return body;
+}
+
+export async function retryScriptRun(id: number): Promise<ScriptRun> {
+  const { body } = await http.post<ScriptRun>(`/script-runs/${id}/retry`, {});
+  return body;
+}
+
+export function scriptRunLogsWSURL(id: number, token: string): string {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/ws/script-runs/${id}/logs?token=${encodeURIComponent(token)}`;
+}
+
+// —— Build pipelines ——
+export async function listBuildPipelines(params?: ListQuery): Promise<PageResult<BuildPipeline>> {
+  const { body } = await http.get<PageResult<BuildPipeline>>("/build-pipelines", {
+    query: toQuery(params),
+  });
+  return body;
+}
+
+export async function getBuildPipeline(id: number): Promise<BuildPipeline> {
+  const { body } = await http.get<BuildPipeline>(`/build-pipelines/${id}`);
+  return body;
+}
+
+export async function createBuildPipeline(body: Record<string, unknown>): Promise<BuildPipeline> {
+  const { body: data } = await http.post<BuildPipeline>("/build-pipelines", body);
+  return data;
+}
+
+export async function updateBuildPipeline(
+  id: number,
+  body: Record<string, unknown>,
+): Promise<BuildPipeline> {
+  const { body: data } = await http.put<BuildPipeline>(`/build-pipelines/${id}`, body);
+  return data;
+}
+
+export async function deleteBuildPipeline(id: number): Promise<void> {
+  await http.delete(`/build-pipelines/${id}`);
+}
+
+export async function getBuildPipelineWebhookSecret(
+  id: number,
+): Promise<{ webhook_secret: string; webhook_url: string }> {
+  const { body } = await http.get<{ webhook_secret: string; webhook_url: string }>(
+    `/build-pipelines/${id}/webhook-secret`,
+  );
+  return body;
+}
+
+export async function rotateBuildPipelineWebhookSecret(
+  id: number,
+): Promise<{ webhook_secret: string; webhook_url: string }> {
+  const { body } = await http.post<{ webhook_secret: string; webhook_url: string }>(
+    `/build-pipelines/${id}/webhook-secret/rotate`,
+    {},
+  );
+  return body;
+}
+
+export async function enqueuePipelineRun(
+  pipelineId: number,
+  body?: Record<string, unknown>,
+): Promise<PipelineRun> {
+  const { body: data } = await http.post<PipelineRun>(
+    `/build-pipelines/${pipelineId}/runs`,
+    body ?? {},
+  );
+  return data;
+}
+
+// —— Pipeline runs ——
+export async function getPipelineRun(id: number): Promise<PipelineRun> {
+  const { body } = await http.get<PipelineRun>(`/pipeline-runs/${id}`);
+  return body;
 }

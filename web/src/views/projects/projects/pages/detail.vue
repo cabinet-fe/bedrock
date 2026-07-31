@@ -8,12 +8,14 @@ import { useRoute, useRouter } from "vue-router";
 import { getProject } from "@/api/projects";
 import type { ProductProject } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
+import { useTabsStore } from "@/stores/tabs";
 
 import DocsPanel from "../../components/docs-panel.vue";
 import RequirementsPanel from "../../components/requirements-panel.vue";
 
 const route = useRoute();
 const router = useRouter();
+const tabsStore = useTabsStore();
 const { hasPermission } = usePermission();
 const project = ref<ProductProject | null>(null);
 const tab = ref("requirements");
@@ -57,6 +59,9 @@ async function load() {
   }
   try {
     project.value = await getProject(projectID);
+    if (project.value.name) {
+      tabsStore.updateTitle(detailPath, project.value.name);
+    }
     if (isThisDetailActive()) {
       tab.value = resolveTab(route.query.tab);
     }

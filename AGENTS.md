@@ -57,7 +57,7 @@ cd web && vp check    # format + lint + typecheck
 │   ├── rbac/                   # 角色与权限判定
 │   ├── system/                 # 用户、角色、字典、操作日志、权限资源（菜单/功能）
 │   ├── resource/               # 仓库、服务器、凭证、访问令牌等资源
-│   ├── cicd/                   # 构建任务 / 构建运行 API
+│   ├── cicd/                   # 构建任务 / 脚本任务 / 构建运行 / 流水线 API
 │   ├── engine/                 # 流水线执行引擎（调度、构建、分发）
 │   ├── deployer/               # 部署传输（SSH / rsync / SFTP 等）
 │   ├── ops/                    # 运维：进程、开发环境等
@@ -83,7 +83,7 @@ cd web && vp check    # format + lint + typecheck
 │       └── views/              # 业务页面（按域）
 │           ├── system/         # 用户、角色、权限资源、字典、操作日志
 │           ├── resource/       # 仓库、服务器、凭证、令牌
-│           ├── cicd/           # 构建任务 / 运行
+│           ├── cicd/           # 构建任务 / 脚本任务 / 运行 / 流水线
 │           ├── ops/            # 进程、开发环境
 │           ├── projects/       # 项目、需求、文档
 │           ├── ai/             # Agent / Skill / Run

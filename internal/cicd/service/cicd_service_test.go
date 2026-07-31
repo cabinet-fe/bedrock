@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,8 +77,44 @@ func setupCICD(t *testing.T) (
 	repoSvc := resourceservice.NewRepositoryService(repoRepo, credSvc, stubGit{branches: []string{"main", "develop"}})
 	serverSvc := resourceservice.NewServerService(serverRepo, credSvc)
 	jobSvc := service.NewBuildJobService(jobRepo, repoRepo)
+	jobSvc.SetWorkspaceDir(filepath.Join(t.TempDir(), "workspaces"))
 	runSvc := service.NewBuildRunService(runRepo, jobRepo)
 	return credSvc, repoSvc, serverSvc, jobSvc, runSvc, gdb
+}
+
+func TestBuildJob_WorkspacePathAbsolute(t *testing.T) {
+	_, repoSvc, _, jobSvc, _, _ := setupCICD(t)
+	repo, err := repoSvc.Create(1, resourceservice.CreateRepositoryInput{
+		Name: "ws-repo", RepoURL: "https://example.com/ws.git",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := jobSvc.Create(1, service.CreateBuildJobInput{
+		RepositoryID: repo.ID,
+		Name:         "ws-job",
+		BuildScript:  "true",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.WorkspacePath == "" {
+		t.Fatal("expected workspace_path")
+	}
+	if !filepath.IsAbs(job.WorkspacePath) {
+		t.Fatalf("workspace_path not absolute: %q", job.WorkspacePath)
+	}
+	wantSuffix := filepath.Join("jobs", fmt.Sprintf("job-%d", job.ID))
+	if !strings.HasSuffix(job.WorkspacePath, wantSuffix) {
+		t.Fatalf("workspace_path=%q want suffix %q", job.WorkspacePath, wantSuffix)
+	}
+	got, err := jobSvc.Get(job.ID, 1, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.WorkspacePath != job.WorkspacePath {
+		t.Fatalf("Get path=%q Create path=%q", got.WorkspacePath, job.WorkspacePath)
+	}
 }
 
 func TestCredential_CRUD_neverReturnsPlaintext(t *testing.T) {

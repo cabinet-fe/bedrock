@@ -141,6 +141,33 @@ export const useTabsStore = defineStore("tabs", () => {
     persist(tabs.value, activeKey.value);
   }
 
+  /** Keep home + the specified tab; drop every other closable tab. */
+  function closeOthers(keepKey: string) {
+    tabs.value = tabs.value.filter((t) => t.key === HOME_TAB.key || t.key === keepKey);
+    if (!tabs.value.some((t) => t.key === HOME_TAB.key)) {
+      tabs.value.unshift({ ...HOME_TAB });
+    }
+    if (!findByKey(activeKey.value)) {
+      activeKey.value = findByKey(keepKey)?.key ?? HOME_TAB.key;
+    }
+    persist(tabs.value, activeKey.value);
+  }
+
+  /** Leave only the home tab. */
+  function closeAll() {
+    tabs.value = [{ ...HOME_TAB }];
+    activeKey.value = HOME_TAB.key;
+    persist(tabs.value, activeKey.value);
+  }
+
+  function updateTitle(key: string, title: string) {
+    const tab = findByKey(key);
+    if (!tab || !title) return;
+    if (tab.title === title) return;
+    tab.title = title;
+    persist(tabs.value, activeKey.value);
+  }
+
   function syncFromRoute(
     route: {
       fullPath: string;
@@ -151,6 +178,15 @@ export const useTabsStore = defineStore("tabs", () => {
     title: string,
   ) {
     if (route.path === "/login") return;
+    const existing = findByKey(route.path);
+    if (existing) {
+      // Preserve custom titles set via updateTitle; only refresh navigation fields.
+      existing.fullPath = route.fullPath;
+      existing.name = keepAliveNameFromRoute(route);
+      activeKey.value = existing.key;
+      persist(tabs.value, activeKey.value);
+      return;
+    }
     open({
       key: route.path,
       fullPath: route.fullPath,
@@ -174,6 +210,9 @@ export const useTabsStore = defineStore("tabs", () => {
     findByKey,
     open,
     close,
+    closeOthers,
+    closeAll,
+    updateTitle,
     syncFromRoute,
     reset,
   };

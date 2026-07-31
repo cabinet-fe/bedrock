@@ -29,6 +29,11 @@ export async function createAgent(input: Record<string, unknown>): Promise<AiAge
   return body;
 }
 
+export async function getAgent(id: number): Promise<AiAgent> {
+  const { body } = await http.get<AiAgent>(`/ai/agents/${id}`);
+  return body;
+}
+
 export async function updateAgent(id: number, input: Record<string, unknown>): Promise<AiAgent> {
   const { body } = await http.put<AiAgent>(`/ai/agents/${id}`, input);
   return body;

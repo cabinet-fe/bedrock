@@ -4,6 +4,7 @@ defineOptions({ name: "CicdBuildJobs" });
 import { computed, nextTick, onMounted, reactive, ref, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
 import { o } from "@cat-kit/core";
+import { clipboard } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
 import type { CodeEditorLang } from "@veltra/desktop";
 
@@ -353,6 +354,7 @@ async function openEdit(row: BuildJob) {
         "deploy_targets",
         "agent_ids",
         "post_build_script",
+        "workspace_path",
       ]),
     );
     form.env_var_names = (full.env_var_names ?? []).map((name) => ({ name }));
@@ -369,6 +371,17 @@ async function openEdit(row: BuildJob) {
     dialogOpen.value = true;
   } catch (err) {
     message.error(err instanceof Error ? err.message : "加载失败");
+  }
+}
+
+async function copyWorkspacePath() {
+  const path = editing.value?.workspace_path;
+  if (!path) return;
+  try {
+    await clipboard.copy(path);
+    message.success("已复制工作区路径");
+  } catch {
+    message.error("复制失败");
   }
 }
 
@@ -652,6 +665,12 @@ async function rotateWebhookSecret() {
           placeholder="相对仓库根，可留空"
           tips="须存在；可配合 SDKMAN 等开发环境"
         />
+        <u-form-item v-if="editing?.workspace_path" label="工作区路径" span="full">
+          <div class="workspace-path-row">
+            <code class="workspace-path">{{ editing.workspace_path }}</code>
+            <u-button size="small" @click="copyWorkspacePath">复制</u-button>
+          </div>
+        </u-form-item>
         <u-group-input
           field="artifact_paths"
           label="制品路径"
@@ -935,5 +954,21 @@ async function rotateWebhookSecret() {
 :deep(.u-group-input__item > .u-password-input) {
   flex: 1;
   min-width: 0;
+}
+.workspace-path-row {
+  display: flex;
+  align-items: center;
+  gap: fn.use-var(gap, default);
+  width: 100%;
+  min-width: 0;
+}
+.workspace-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: fn.use-var(font-size-assist, default);
+  color: fn.use-var(text-color, assist);
 }
 </style>

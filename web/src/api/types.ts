@@ -236,6 +236,8 @@ export interface BuildJob {
   build_script: string;
   post_build_script?: string;
   work_dir: string;
+  /** 绝对路径：{workspace}/jobs/job-{id}/（只读，由服务端计算） */
+  workspace_path?: string;
   /** @deprecated use artifact_paths; echoed as first path for compat */
   output_dir?: string;
   /** 相对仓库根的制品路径（文件或目录）；单文件不压缩，多路径打成一个包 */
@@ -295,6 +297,96 @@ export interface BuildRun {
   error_message?: string;
   created_at: string;
   deploy_attempts?: BuildDeployAttempt[];
+}
+
+export interface ScriptJob {
+  id: number;
+  name: string;
+  description: string;
+  enabled: boolean;
+  script_type: string;
+  script: string;
+  work_dir: string;
+  /** 绝对路径：{workspace}/scripts/script-{id}/（只读） */
+  workspace_path?: string;
+  env_var_names?: string[];
+  env_vars?: { key: string; value?: string; has_value?: boolean }[];
+  trigger_manual: boolean;
+  trigger_webhook: boolean;
+  trigger_cron: boolean;
+  webhook_type?: string;
+  cron_expression: string;
+  cron_timezone: string;
+  is_public: boolean;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScriptRun {
+  id: number;
+  script_job_id: number;
+  run_number: number;
+  status: string;
+  stage: string;
+  trigger_type: string;
+  triggered_by: number;
+  log_path?: string;
+  duration_ms?: number;
+  error_message?: string;
+  snapshot_json?: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at: string;
+}
+
+export interface BuildPipeline {
+  id: number;
+  name: string;
+  description: string;
+  enabled: boolean;
+  graph_json: string;
+  trigger_manual: boolean;
+  trigger_webhook: boolean;
+  trigger_cron: boolean;
+  webhook_type?: string;
+  webhook_ref_path?: string;
+  webhook_commit_path?: string;
+  webhook_message_path?: string;
+  cron_expression: string;
+  cron_timezone: string;
+  is_public: boolean;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PipelineStageRun {
+  id: number;
+  pipeline_run_id: number;
+  node_id: string;
+  build_job_id: number;
+  build_run_id?: number | null;
+  status: string;
+  error_message?: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at: string;
+}
+
+export interface PipelineRun {
+  id: number;
+  build_pipeline_id: number;
+  run_number: number;
+  status: string;
+  trigger_type: string;
+  triggered_by: number;
+  snapshot_json?: string;
+  error_message?: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at: string;
+  stages?: PipelineStageRun[];
 }
 
 export type DashboardCardID =

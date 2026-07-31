@@ -21,6 +21,7 @@ type BuildRunService struct {
 	runs      *repository.BuildRunRepository
 	jobs      *repository.BuildJobRepository
 	scheduler engine.RunScheduler
+	termHook  engine.BuildRunTerminalHook
 }
 
 func NewBuildRunService(runs *repository.BuildRunRepository, jobs *repository.BuildJobRepository) *BuildRunService {
@@ -29,6 +30,11 @@ func NewBuildRunService(runs *repository.BuildRunRepository, jobs *repository.Bu
 
 func (s *BuildRunService) SetScheduler(sched engine.RunScheduler) {
 	s.scheduler = sched
+}
+
+// SetTerminalHook wires PipelineOrchestrator for queued cancels that bypass Pipeline.Execute.
+func (s *BuildRunService) SetTerminalHook(h engine.BuildRunTerminalHook) {
+	s.termHook = h
 }
 
 type EnqueueRunInput struct {
@@ -157,6 +163,10 @@ func (s *BuildRunService) Cancel(id uint, userID uint, dataScope string) (*model
 			"stage":       "idle",
 			"finished_at": now,
 		})
+		if s.termHook != nil {
+			run.Status = "cancelled"
+			s.termHook.OnBuildRunTerminal(run, "cancelled")
+		}
 	case "running":
 		if s.scheduler != nil {
 			s.scheduler.Cancel(id)
