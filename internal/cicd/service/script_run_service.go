@@ -19,6 +19,7 @@ type ScriptRunService struct {
 	runs      *repository.ScriptRunRepository
 	jobs      *repository.ScriptJobRepository
 	scheduler engine.RunScheduler
+	termHook  engine.ScriptRunTerminalHook
 }
 
 func NewScriptRunService(runs *repository.ScriptRunRepository, jobs *repository.ScriptJobRepository) *ScriptRunService {
@@ -27,6 +28,11 @@ func NewScriptRunService(runs *repository.ScriptRunRepository, jobs *repository.
 
 func (s *ScriptRunService) SetScheduler(sched engine.RunScheduler) {
 	s.scheduler = sched
+}
+
+// SetTerminalHook wires PipelineOrchestrator for queued cancels that bypass ScriptPipeline.Execute.
+func (s *ScriptRunService) SetTerminalHook(h engine.ScriptRunTerminalHook) {
+	s.termHook = h
 }
 
 func (s *ScriptRunService) List(q pkg.ListQuery, scriptJobID *uint, status string, userID uint, dataScope string) ([]model.ScriptRun, int64, error) {
@@ -64,6 +70,12 @@ func (s *ScriptRunService) Enqueue(jobID, triggeredBy uint, dataScope string, tr
 
 // EnqueueInternal implements engine.ScriptRunEnqueuer.
 func (s *ScriptRunService) EnqueueInternal(jobID, triggeredBy uint, triggerType string) (*model.ScriptRun, error) {
+	return s.EnqueueWithOverrides(jobID, triggeredBy, triggerType, nil)
+}
+
+// EnqueueWithOverrides enqueues a ScriptRun with optional run-level env
+// overrides (pipeline node config); overrides win over job env at execution.
+func (s *ScriptRunService) EnqueueWithOverrides(jobID, triggeredBy uint, triggerType string, envOverrides map[string]string) (*model.ScriptRun, error) {
 	job, err := s.jobs.FindByID(jobID)
 	if err != nil {
 		return nil, NewNotFound("脚本任务不存在")
@@ -92,15 +104,25 @@ func (s *ScriptRunService) EnqueueInternal(jobID, triggeredBy uint, triggerType 
 		"triggered_by":  triggeredBy,
 		"enqueued_at":   time.Now().UTC().Format(time.RFC3339),
 	}
+	var overridesCipher string
+	if len(envOverrides) > 0 {
+		cipher, err := encryptJobEnvVars(envOverrides)
+		if err != nil {
+			return nil, err
+		}
+		overridesCipher = cipher
+		snapshot["env_override_keys"] = sortedKeys(envOverrides)
+	}
 	snapBytes, _ := json.Marshal(snapshot)
 	run := &model.ScriptRun{
-		ScriptJobID:  jobID,
-		RunNumber:    num,
-		Status:       "queued",
-		Stage:        "pending",
-		TriggerType:  triggerType,
-		TriggeredBy:  triggeredBy,
-		SnapshotJSON: string(snapBytes),
+		ScriptJobID:        jobID,
+		RunNumber:          num,
+		Status:             "queued",
+		Stage:              "pending",
+		TriggerType:        triggerType,
+		TriggeredBy:        triggeredBy,
+		SnapshotJSON:       string(snapBytes),
+		EnvOverridesCipher: overridesCipher,
 	}
 	if err := s.runs.Create(run); err != nil {
 		return nil, err
@@ -127,6 +149,10 @@ func (s *ScriptRunService) Cancel(id uint, userID uint, dataScope string) (*mode
 			"stage":       "idle",
 			"finished_at": now,
 		})
+		if s.termHook != nil {
+			run.Status = "cancelled"
+			s.termHook.OnScriptRunTerminal(run, "cancelled")
+		}
 	case "running":
 		if s.scheduler != nil {
 			s.scheduler.Cancel(id)
@@ -135,6 +161,31 @@ func (s *ScriptRunService) Cancel(id uint, userID uint, dataScope string) (*mode
 		return nil, NewConflict("当前状态不可取消: " + run.Status)
 	}
 	return s.runs.FindByID(id)
+}
+
+// CancelInternal cancels a script run without RBAC or terminal-hook callbacks.
+// Used by PipelineOrchestrator while holding the per-pipeline lock.
+func (s *ScriptRunService) CancelInternal(id uint) {
+	if s == nil || id == 0 {
+		return
+	}
+	run, err := s.runs.FindByID(id)
+	if err != nil {
+		return
+	}
+	switch run.Status {
+	case "queued":
+		now := time.Now()
+		_ = s.runs.UpdateFields(id, map[string]interface{}{
+			"status":      "cancelled",
+			"stage":       "idle",
+			"finished_at": now,
+		})
+	case "running":
+		if s.scheduler != nil {
+			s.scheduler.Cancel(id)
+		}
+	}
 }
 
 func (s *ScriptRunService) Retry(id, triggeredBy uint, dataScope string) (*model.ScriptRun, error) {

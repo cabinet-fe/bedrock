@@ -7,6 +7,7 @@ function usage() {
   console.error(`用法: node resolve_types.mjs <srcRoot> TypeA,TypeB
 
 在 srcRoot 下解析 DTO/VO/Entity 字段树。
+每字段含 required + requiredSource（validation|schema|platform|default）。
 未解析类型标记为 needs_source（需读源码）。
 
 说明: 本脚本只解析类型。文档输出目录请用 changed_since / stamp_commit 的

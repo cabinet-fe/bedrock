@@ -40,6 +40,13 @@ type TerminalNotifier interface {
 	NotifyAgentRun(userID uint, agentRunID, agentID uint, status string)
 }
 
+// RunTerminalHook is invoked for every AgentRun terminal status
+// (success|failed|cancelled|interrupted). Used by PipelineOrchestrator to
+// advance in-pipeline agent stages (graph_json v2 allows sync agent nodes).
+type RunTerminalHook interface {
+	OnAgentRunTerminal(run *model.AgentRun, status string)
+}
+
 type AgentService struct {
 	repo        *repository.AIRepository
 	cli         CLILookup
@@ -54,6 +61,7 @@ type AgentService struct {
 	gitCheckout GitCheckoutFunc
 	audit       AuditWriter
 	notifier    TerminalNotifier
+	termHook    RunTerminalHook
 
 	runs    chan uint
 	stop    chan struct{}
@@ -72,6 +80,11 @@ type AgentService struct {
 // SetTerminalNotifier wires DESIGN §12 in-app notifications for agent terminal states.
 func (s *AgentService) SetTerminalNotifier(n TerminalNotifier) {
 	s.notifier = n
+}
+
+// SetTerminalHook wires PipelineOrchestrator on AgentRun terminal.
+func (s *AgentService) SetTerminalHook(h RunTerminalHook) {
+	s.termHook = h
 }
 
 // locSchedule interprets cron fields in loc (equivalent to cron.WithLocation per trigger).
@@ -587,7 +600,15 @@ func (s *AgentService) worker() {
 
 func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	run, err := s.repo.FindRun(id)
-	if err != nil || (run.Status != model.JobQueued && run.Status != model.JobPending) {
+	if err != nil {
+		return
+	}
+	if run.Status != model.JobQueued && run.Status != model.JobPending {
+		// A run cancelled while queued never reaches ExecuteRun's normal
+		// terminal paths; still notify so consumers (e.g. pipelines) advance.
+		if run.Status == model.JobCancelled {
+			s.notifyTerminal(run, model.JobCancelled)
+		}
 		return
 	}
 	agent, err := s.repo.FindAgent(run.AgentID)
@@ -801,6 +822,9 @@ func (s *AgentService) failRun(run *model.AgentRun, err error) {
 func (s *AgentService) notifyTerminal(run *model.AgentRun, status string) {
 	if run == nil {
 		return
+	}
+	if s.termHook != nil {
+		s.termHook.OnAgentRunTerminal(run, status)
 	}
 	if s.notifier != nil && run.TriggeredBy != 0 {
 		s.notifier.NotifyAgentRun(run.TriggeredBy, run.ID, run.AgentID, status)

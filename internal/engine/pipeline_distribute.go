@@ -11,6 +11,7 @@ import (
 
 	"bedrock/internal/cicd/model"
 	"bedrock/internal/deployer"
+	"bedrock/internal/pkg"
 	resourcemodel "bedrock/internal/resource/model"
 )
 
@@ -197,26 +198,17 @@ func (p *Pipeline) deployOneTarget(
 		if err != nil {
 			return fmt.Errorf("服务器不存在")
 		}
-		password, privateKey, agentToken, err := p.resolveServerSecrets(server)
+		password, agentToken, err := p.resolveServerSecrets(server)
 		if err != nil {
 			return err
-		}
-		username := server.Username
-		if username == "" {
-			// Prefer credential username when server username empty
-			if server.CredentialID != nil {
-				_, u, _, _, _ := p.secrets.Resolve(*server.CredentialID)
-				username = u
-			}
 		}
 		opts.Server = deployer.ServerInfo{
 			Host:       server.Host,
 			Port:       server.Port,
 			OSType:     server.OSType,
-			Username:   username,
+			Username:   server.Username,
 			AuthType:   server.AuthType,
 			Password:   password,
-			PrivateKey: privateKey,
 			AgentURL:   server.AgentURL,
 			AgentToken: agentToken,
 		}
@@ -244,28 +236,21 @@ func (p *Pipeline) deployOneTarget(
 	return nil
 }
 
-func (p *Pipeline) resolveServerSecrets(server *resourcemodel.Server) (password, privateKey, agentToken string, err error) {
-	if server.CredentialID != nil && *server.CredentialID > 0 {
-		typ, _, secret, passphrase, rerr := p.secrets.Resolve(*server.CredentialID)
-		if rerr != nil {
-			return "", "", "", rerr
-		}
-		switch strings.ToLower(typ) {
-		case "ssh_key":
-			privateKey = secret
-			_ = passphrase // passphrase not threaded into deployer.ServerInfo in current API
-		default:
-			password = secret
+func (p *Pipeline) resolveServerSecrets(server *resourcemodel.Server) (password, agentToken string, err error) {
+	if server.PasswordCipher != "" {
+		password, err = pkg.Decrypt(server.PasswordCipher)
+		if err != nil {
+			return "", "", fmt.Errorf("解密服务器密码失败: %w", err)
 		}
 	}
 	if server.AgentCredentialID != nil && *server.AgentCredentialID > 0 {
 		_, _, token, _, rerr := p.secrets.Resolve(*server.AgentCredentialID)
 		if rerr != nil {
-			return "", "", "", rerr
+			return "", "", rerr
 		}
 		agentToken = token
 	}
-	return password, privateKey, agentToken, nil
+	return password, agentToken, nil
 }
 
 func (p *Pipeline) executeRedeployOnly(ctx context.Context, run *model.BuildRun, job *model.BuildJob, writeLine func(string)) {

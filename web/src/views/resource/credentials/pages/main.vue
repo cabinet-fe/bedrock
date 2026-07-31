@@ -155,7 +155,7 @@ const remove = bind(async (row: Credential) => {
             { label: 'api_key', value: 'api_key' },
           ]"
           :rules="{ required: '必填' }"
-          tips="决定密文字段语义；被仓库/服务器引用时按类型校验"
+          tips="决定密文字段语义；被仓库或 Deploy Agent 引用时按类型校验"
         />
         <u-input label="用户名" field="username" />
         <u-input label="描述" field="description" />

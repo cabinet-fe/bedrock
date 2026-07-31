@@ -52,6 +52,9 @@ type EnqueueParams struct {
 	TriggerType   string
 	CommitHash    string
 	CommitMessage string
+	// EnvOverrides are run-level Key-Value env overrides (e.g. pipeline node
+	// config); they win over the job's own env_vars at execution time.
+	EnvOverrides map[string]string
 }
 
 // RunScheduler submits/cancels runs in the in-memory worker pool.

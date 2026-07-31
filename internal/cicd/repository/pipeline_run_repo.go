@@ -95,6 +95,22 @@ func (r *PipelineRunRepository) FindStageByBuildRunID(buildRunID uint) (*model.P
 	return &stage, nil
 }
 
+func (r *PipelineRunRepository) FindStageByScriptRunID(scriptRunID uint) (*model.PipelineStageRun, error) {
+	var stage model.PipelineStageRun
+	if err := r.db.Where("script_run_id = ?", scriptRunID).First(&stage).Error; err != nil {
+		return nil, err
+	}
+	return &stage, nil
+}
+
+func (r *PipelineRunRepository) FindStageByAgentRunID(agentRunID uint) (*model.PipelineStageRun, error) {
+	var stage model.PipelineStageRun
+	if err := r.db.Where("agent_run_id = ?", agentRunID).First(&stage).Error; err != nil {
+		return nil, err
+	}
+	return &stage, nil
+}
+
 func (r *PipelineRunRepository) ListStages(pipelineRunID uint) ([]model.PipelineStageRun, error) {
 	var items []model.PipelineStageRun
 	err := r.db.Where("pipeline_run_id = ?", pipelineRunID).Order("id ASC").Find(&items).Error

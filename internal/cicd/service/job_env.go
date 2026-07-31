@@ -141,6 +141,11 @@ func jobEnvVarKeys(job *model.BuildJob) []string {
 	if err != nil {
 		return []string{}
 	}
+	return sortedKeys(vars)
+}
+
+// sortedKeys returns the sorted keys of an env map (no values).
+func sortedKeys(vars map[string]string) []string {
 	keys := make([]string, 0, len(vars))
 	for k := range vars {
 		keys = append(keys, k)

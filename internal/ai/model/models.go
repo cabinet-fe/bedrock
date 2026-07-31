@@ -18,6 +18,7 @@ const (
 	TriggerCron       = "cron"
 	TriggerBuildEvent = "build_event"
 	TriggerDocsGen    = "docs_generate"
+	TriggerPipeline   = "pipeline"
 )
 
 const (

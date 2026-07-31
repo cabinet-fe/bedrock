@@ -100,12 +100,15 @@ function parseFieldsFromClass(entry) {
         const typeExpr = fieldMatch[3].trim();
         const name = fieldMatch[4];
         if (!typeExpr.includes('(') && name !== 'serialVersionUID') {
-          const schemaDesc = extractSchemaDescription(fieldMatch[1] || '');
+          const annoBlock = fieldMatch[1] || '';
+          const schemaDesc = extractSchemaDescription(annoBlock);
+          const req = inferFieldRequired(annoBlock);
           const mapped = mapJavaType(typeExpr);
           fields.push({
             name,
             ...mapped,
-            required: true,
+            required: req.required,
+            requiredSource: req.requiredSource,
             description: schemaDesc || '',
           });
         }
@@ -119,58 +122,93 @@ function parseFieldsFromClass(entry) {
 }
 
 function extractSchemaDescription(annoBlock) {
-  const m = annoBlock.match(/@Schema\s*\(([^)]*)\)/);
+  const m = annoBlock.match(/@Schema\s*\(((?:[^()]|\([^()]*\))*)\)/);
   if (!m) return '';
   const dm = m[1].match(/description\s*=\s*"((?:\\.|[^"\\])*)"/);
   return dm ? dm[1] : '';
 }
 
+/**
+ * 从字段注解推断是否必填。
+ * 优先级：Bean Validation → @Schema(required/requiredMode) → 默认可选。
+ * requiredSource:
+ *   - validation：@NotNull / @NotBlank / @NotEmpty / @Nullable
+ *   - schema：OpenAPI @Schema
+ *   - default：无信号（Agent 须结合业务语义，禁止一律写「否」）
+ */
+function inferFieldRequired(annoBlock) {
+  const block = annoBlock || '';
+  // 注意：@ 非词字符，不能写 \b@NotNull；支持简单名与 FQCN
+  if (/@(?:[\w.]+\.)?(?:NotNull|NotBlank|NotEmpty)\b/.test(block)) {
+    return { required: true, requiredSource: 'validation' };
+  }
+  if (/@(?:[\w.]+\.)?Nullable\b/.test(block)) {
+    return { required: false, requiredSource: 'validation' };
+  }
+  // OpenAPI @Schema / Jackson @JsonProperty(required=…)
+  if (/\brequiredMode\s*=\s*(?:[\w.]+\.)?REQUIRED\b/.test(block)) {
+    return { required: true, requiredSource: 'schema' };
+  }
+  if (/\brequiredMode\s*=\s*(?:[\w.]+\.)?NOT_REQUIRED\b/.test(block)) {
+    return { required: false, requiredSource: 'schema' };
+  }
+  if (/\brequired\s*=\s*true\b/.test(block)) {
+    return { required: true, requiredSource: 'schema' };
+  }
+  if (/\brequired\s*=\s*false\b/.test(block)) {
+    return { required: false, requiredSource: 'schema' };
+  }
+  return { required: false, requiredSource: 'default' };
+}
+
 /** IC 公共包基类字段（业务仓通常无源码；与 references/project-conventions.md §3 对齐） */
 const PLATFORM_BASE_FIELDS = {
   BaseEntity: [
-    { name: 'creatorId', type: 'string', javaType: 'Long', required: false, description: '创建者 ID（JSON 字符串）' },
-    { name: 'createBy', type: 'string', javaType: 'String', required: false, description: '创建者' },
-    { name: 'createTime', type: 'string', javaType: 'LocalDateTime', required: false, description: '创建时间' },
-    { name: 'updateBy', type: 'string', javaType: 'String', required: false, description: '更新者' },
-    { name: 'updateTime', type: 'string', javaType: 'LocalDateTime', required: false, description: '更新时间' },
-    { name: 'tenantId', type: 'string', javaType: 'Long', required: false, description: '租户 ID（JSON 字符串）' },
-    { name: 'deleted', type: 'string', javaType: 'String', required: false, description: '逻辑删除标志' },
+    { name: 'creatorId', type: 'string', javaType: 'Long', required: false, requiredSource: 'platform', description: '创建者 ID（JSON 字符串）' },
+    { name: 'createBy', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '创建者' },
+    { name: 'createTime', type: 'string', javaType: 'LocalDateTime', required: false, requiredSource: 'platform', description: '创建时间' },
+    { name: 'updateBy', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '更新者' },
+    { name: 'updateTime', type: 'string', javaType: 'LocalDateTime', required: false, requiredSource: 'platform', description: '更新时间' },
+    { name: 'tenantId', type: 'string', javaType: 'Long', required: false, requiredSource: 'platform', description: '租户 ID（JSON 字符串）' },
+    { name: 'deleted', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '逻辑删除标志' },
   ],
   BaseBusinessEntity: [
-    { name: 'orgCode', type: 'string', javaType: 'String', required: false, description: '组织代码' },
-    { name: 'invoiceSerial', type: 'string', javaType: 'String', required: false, description: '单据编号' },
-    { name: 'moduleCode', type: 'string', javaType: 'String', required: false, description: '表单/模块编码' },
+    { name: 'orgCode', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '组织代码' },
+    { name: 'invoiceSerial', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '单据编号' },
+    { name: 'moduleCode', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '表单/模块编码' },
     {
       name: 'processInstanceId',
       type: 'string',
       javaType: 'Long',
       required: false,
+      requiredSource: 'platform',
       description: '流程实例 ID（JSON 字符串）',
     },
-    { name: 'reviewStatus', type: 'string', javaType: 'String', required: false, description: '审批状态' },
-    { name: 'text1', type: 'string', javaType: 'String', required: false, description: '预留文本（null 不输出）' },
-    { name: 'text2', type: 'string', javaType: 'String', required: false, description: '预留文本（null 不输出）' },
-    { name: 'text3', type: 'string', javaType: 'String', required: false, description: '预留文本（null 不输出）' },
-    { name: 'text4', type: 'string', javaType: 'String', required: false, description: '预留文本（null 不输出）' },
-    { name: 'text5', type: 'string', javaType: 'String', required: false, description: '预留文本（null 不输出）' },
-    { name: 'date1', type: 'string', javaType: 'LocalDate', required: false, description: '预留日期（null 不输出）' },
-    { name: 'date2', type: 'string', javaType: 'LocalDate', required: false, description: '预留日期（null 不输出）' },
-    { name: 'date3', type: 'string', javaType: 'LocalDate', required: false, description: '预留日期（null 不输出）' },
-    { name: 'date4', type: 'string', javaType: 'LocalDate', required: false, description: '预留日期（null 不输出）' },
-    { name: 'date5', type: 'string', javaType: 'LocalDate', required: false, description: '预留日期（null 不输出）' },
-    { name: 'number1', type: 'number', javaType: 'BigDecimal', required: false, description: '预留数值（null 不输出）' },
-    { name: 'number2', type: 'number', javaType: 'BigDecimal', required: false, description: '预留数值（null 不输出）' },
-    { name: 'number3', type: 'number', javaType: 'BigDecimal', required: false, description: '预留数值（null 不输出）' },
-    { name: 'number4', type: 'number', javaType: 'BigDecimal', required: false, description: '预留数值（null 不输出）' },
-    { name: 'number5', type: 'number', javaType: 'BigDecimal', required: false, description: '预留数值（null 不输出）' },
+    { name: 'reviewStatus', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '审批状态' },
+    { name: 'text1', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '预留文本（null 不输出）' },
+    { name: 'text2', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '预留文本（null 不输出）' },
+    { name: 'text3', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '预留文本（null 不输出）' },
+    { name: 'text4', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '预留文本（null 不输出）' },
+    { name: 'text5', type: 'string', javaType: 'String', required: false, requiredSource: 'platform', description: '预留文本（null 不输出）' },
+    { name: 'date1', type: 'string', javaType: 'LocalDate', required: false, requiredSource: 'platform', description: '预留日期（null 不输出）' },
+    { name: 'date2', type: 'string', javaType: 'LocalDate', required: false, requiredSource: 'platform', description: '预留日期（null 不输出）' },
+    { name: 'date3', type: 'string', javaType: 'LocalDate', required: false, requiredSource: 'platform', description: '预留日期（null 不输出）' },
+    { name: 'date4', type: 'string', javaType: 'LocalDate', required: false, requiredSource: 'platform', description: '预留日期（null 不输出）' },
+    { name: 'date5', type: 'string', javaType: 'LocalDate', required: false, requiredSource: 'platform', description: '预留日期（null 不输出）' },
+    { name: 'number1', type: 'number', javaType: 'BigDecimal', required: false, requiredSource: 'platform', description: '预留数值（null 不输出）' },
+    { name: 'number2', type: 'number', javaType: 'BigDecimal', required: false, requiredSource: 'platform', description: '预留数值（null 不输出）' },
+    { name: 'number3', type: 'number', javaType: 'BigDecimal', required: false, requiredSource: 'platform', description: '预留数值（null 不输出）' },
+    { name: 'number4', type: 'number', javaType: 'BigDecimal', required: false, requiredSource: 'platform', description: '预留数值（null 不输出）' },
+    { name: 'number5', type: 'number', javaType: 'BigDecimal', required: false, requiredSource: 'platform', description: '预留数值（null 不输出）' },
   ],
   BaseShared: [
-    { name: 'moduleCode', type: 'string', javaType: 'String', required: true, description: '模块编码' },
+    { name: 'moduleCode', type: 'string', javaType: 'String', required: true, requiredSource: 'platform', description: '模块编码' },
     {
       name: 'taskUser',
       type: 'Record<string, string>',
       javaType: 'Map<String, String>',
       required: false,
+      requiredSource: 'platform',
       description: '任务用户（提交流程时传入处理人）',
     },
     {
@@ -178,14 +216,16 @@ const PLATFORM_BASE_FIELDS = {
       type: 'string',
       javaType: 'OperationEnum',
       required: true,
+      requiredSource: 'platform',
       description: '操作：DRAFT / SAVE / SUBMIT',
     },
-    { name: 'orgCode', type: 'string', javaType: 'String', required: true, description: '组织代码' },
+    { name: 'orgCode', type: 'string', javaType: 'String', required: true, requiredSource: 'platform', description: '组织代码' },
     {
       name: 'attachments',
       type: 'object[]',
       javaType: 'List',
       required: false,
+      requiredSource: 'platform',
       description: '附件分组：groupId、categories[]（categoryId、fileIds[]）',
     },
   ],
@@ -217,6 +257,7 @@ function platformBaseFields(simple) {
         javaType: 'BaseShared',
         simple: 'BaseShared',
         required: true,
+        requiredSource: 'platform',
         description: '共享上下文（BaseShared）；禁止摊平到请求体顶层',
         fromPlatform: true,
         fields: PLATFORM_BASE_FIELDS.BaseShared.map((f) => ({ ...f, fromPlatform: true })),
@@ -373,4 +414,5 @@ export {
   resolveTypes,
   resolveType,
   platformBaseFields,
+  inferFieldRequired,
 };

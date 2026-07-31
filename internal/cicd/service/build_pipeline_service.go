@@ -16,19 +16,25 @@ type PipelineCronRegistrar interface {
 }
 
 type BuildPipelineService struct {
-	pipelines *repository.BuildPipelineRepository
-	jobs      *repository.BuildJobRepository
-	cron      PipelineCronRegistrar
+	pipelines   *repository.BuildPipelineRepository
+	jobs        *repository.BuildJobRepository
+	scriptJobs  *repository.ScriptJobRepository
+	agentExists func(id uint) bool
+	cron        PipelineCronRegistrar
 }
 
 func NewBuildPipelineService(
 	pipelines *repository.BuildPipelineRepository,
 	jobs *repository.BuildJobRepository,
+	scriptJobs *repository.ScriptJobRepository,
 ) *BuildPipelineService {
-	return &BuildPipelineService{pipelines: pipelines, jobs: jobs}
+	return &BuildPipelineService{pipelines: pipelines, jobs: jobs, scriptJobs: scriptJobs}
 }
 
 func (s *BuildPipelineService) SetCron(c PipelineCronRegistrar) { s.cron = c }
+
+// SetAgentExists wires the existence check for agent nodes (ai domain).
+func (s *BuildPipelineService) SetAgentExists(fn func(id uint) bool) { s.agentExists = fn }
 
 type CreateBuildPipelineInput struct {
 	Name               string `json:"name"`
@@ -72,6 +78,10 @@ func (s *BuildPipelineService) Create(createdBy uint, in CreateBuildPipelineInpu
 	graphJSON := strings.TrimSpace(in.GraphJSON)
 	if graphJSON == "" {
 		graphJSON = `{"nodes":[],"edges":[]}`
+	}
+	graphJSON, err := EncryptGraphEnvVars(graphJSON, "")
+	if err != nil {
+		return nil, err
 	}
 	if err := s.validateGraphJSON(graphJSON); err != nil {
 		return nil, err
@@ -138,6 +148,10 @@ func (s *BuildPipelineService) Update(id, userID uint, dataScope string, in Upda
 		graphJSON := strings.TrimSpace(*in.GraphJSON)
 		if graphJSON == "" {
 			graphJSON = `{"nodes":[],"edges":[]}`
+		}
+		graphJSON, err := EncryptGraphEnvVars(graphJSON, p.GraphJSON)
+		if err != nil {
+			return nil, err
 		}
 		if err := s.validateGraphJSON(graphJSON); err != nil {
 			return nil, err
@@ -257,16 +271,26 @@ func (s *BuildPipelineService) validateGraphJSON(graphJSON string) error {
 	if err != nil {
 		return errorsNew(err.Error())
 	}
-	// Allow empty graph on create (editor starts blank); reject non-empty invalid DAGs.
+	// Allow empty graph on create (editor seeds start/end); reject non-empty invalid DAGs.
 	if len(g.Nodes) == 0 {
 		if len(g.Edges) > 0 {
 			return errorsNew("空节点图不能包含边")
 		}
 		return nil
 	}
-	return ValidatePipelineDAG(g, func(id uint) bool {
-		_, err := s.jobs.FindByID(id)
-		return err == nil
+	return ValidatePipelineDAG(g, PipelineRefChecker{
+		BuildJobExists: func(id uint) bool {
+			_, err := s.jobs.FindByID(id)
+			return err == nil
+		},
+		ScriptJobExists: func(id uint) bool {
+			if s.scriptJobs == nil {
+				return false
+			}
+			_, err := s.scriptJobs.FindByID(id)
+			return err == nil
+		},
+		AgentExists: s.agentExists,
 	})
 }
 
@@ -282,6 +306,7 @@ func publicPipeline(p *model.BuildPipeline, revealSecret bool) *model.BuildPipel
 	if !revealSecret {
 		cp.WebhookSecret = ""
 	}
+	cp.GraphJSON = SanitizeGraphEnvVars(cp.GraphJSON)
 	return &cp
 }
 

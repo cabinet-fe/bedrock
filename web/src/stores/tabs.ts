@@ -8,6 +8,8 @@ export type WorkspaceTab = {
   /** Latest fullPath; layout tab navigation always uses this. */
   fullPath: string;
   title: string;
+  /** Route kind label (e.g. 构建详情); updateTitle composes `${kind} • ${detail}`. */
+  kind?: string;
   /** Vue component name for keep-alive include */
   name: string;
   closable: boolean;
@@ -36,8 +38,13 @@ function isWorkspaceTab(value: unknown): value is WorkspaceTab {
     typeof t.fullPath === "string" &&
     typeof t.title === "string" &&
     typeof t.name === "string" &&
-    typeof t.closable === "boolean"
+    typeof t.closable === "boolean" &&
+    (t.kind === undefined || typeof t.kind === "string")
   );
+}
+
+function composeTitle(kind: string | undefined, detail: string): string {
+  return kind ? `${kind} • ${detail}` : detail;
 }
 
 function loadCache(): TabsCache | null {
@@ -103,6 +110,7 @@ export const useTabsStore = defineStore("tabs", () => {
       existing.title = tab.title;
       existing.fullPath = tab.fullPath;
       existing.name = tab.name;
+      if (tab.kind) existing.kind = tab.kind;
       activeKey.value = existing.key;
       persist(tabs.value, activeKey.value);
       return;
@@ -111,6 +119,7 @@ export const useTabsStore = defineStore("tabs", () => {
       key: tab.key,
       fullPath: tab.fullPath,
       title: tab.title,
+      kind: tab.kind,
       name: tab.name,
       closable: tab.closable ?? tab.key !== "/",
     });
@@ -160,9 +169,11 @@ export const useTabsStore = defineStore("tabs", () => {
     persist(tabs.value, activeKey.value);
   }
 
-  function updateTitle(key: string, title: string) {
+  /** Set the entity-specific part; kind prefix comes from the route title. */
+  function updateTitle(key: string, detail: string) {
     const tab = findByKey(key);
-    if (!tab || !title) return;
+    if (!tab || !detail) return;
+    const title = composeTitle(tab.kind, detail);
     if (tab.title === title) return;
     tab.title = title;
     persist(tabs.value, activeKey.value);
@@ -183,6 +194,13 @@ export const useTabsStore = defineStore("tabs", () => {
       // Preserve custom titles set via updateTitle; only refresh navigation fields.
       existing.fullPath = route.fullPath;
       existing.name = keepAliveNameFromRoute(route);
+      if (!existing.kind) {
+        existing.kind = title;
+        // Upgrade legacy cached titles that lack the kind prefix.
+        if (existing.title !== title && !existing.title.startsWith(`${title} • `)) {
+          existing.title = composeTitle(title, existing.title);
+        }
+      }
       activeKey.value = existing.key;
       persist(tabs.value, activeKey.value);
       return;
@@ -191,6 +209,7 @@ export const useTabsStore = defineStore("tabs", () => {
       key: route.path,
       fullPath: route.fullPath,
       title,
+      kind: title,
       name: keepAliveNameFromRoute(route),
       closable: route.path !== "/",
     });

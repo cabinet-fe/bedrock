@@ -3,16 +3,31 @@ defineOptions({ name: "CicdPipelineEditor" });
 
 import type { Edge, Node } from "@vue-flow/core";
 import { message } from "@veltra/desktop";
-import { onMounted, ref } from "vue";
+import { computed, onMounted, provide, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import { getBuildPipeline, listBuildJobs, updateBuildPipeline } from "@/api/cicd";
-import type { BuildJob, BuildPipeline } from "@/api/types";
+import { listAgents } from "@/api/ai";
+import {
+  enqueuePipelineRun,
+  getBuildPipeline,
+  listBuildJobs,
+  listScriptJobs,
+  updateBuildPipeline,
+} from "@/api/cicd";
+import type { BuildPipeline } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
 import { useTabsStore } from "@/stores/tabs";
 
-import JobPalette from "../components/job-palette.vue";
+import NodeConfigDrawer from "../components/node-config-drawer.vue";
 import PipelineCanvas from "../components/pipeline-canvas.vue";
+import {
+  NODE_TYPE_LABEL,
+  PIPELINE_TARGET_NAMES,
+  parseGraphJson,
+  seedGraph,
+  serializeGraph,
+  type PipelineNodeData,
+} from "../graph";
 
 const route = useRoute();
 const router = useRouter();
@@ -24,57 +39,57 @@ const pipelineId = Number(Array.isArray(route.params.id) ? route.params.id[0] : 
 
 const loading = ref(true);
 const saving = ref(false);
+const running = ref(false);
 const pipeline = ref<BuildPipeline | null>(null);
-const jobs = ref<BuildJob[]>([]);
 const nodes = ref<Node[]>([]);
 const edges = ref<Edge[]>([]);
 
-function parseGraph(raw: string) {
-  try {
-    const g = JSON.parse(raw || '{"nodes":[],"edges":[]}') as {
-      nodes?: Node[];
-      edges?: Edge[];
-    };
-    nodes.value = (g.nodes ?? []).map((n) => ({
-      ...n,
-      type: n.type || "buildJob",
-    }));
-    edges.value = g.edges ?? [];
-  } catch {
-    nodes.value = [];
-    edges.value = [];
-  }
-}
+/** 节点副标题所需的任务/智能体名映射（key: `${type}:${id}`） */
+const targetNames = ref<Record<string, string>>({});
+provide(PIPELINE_TARGET_NAMES, targetNames);
 
-function jobLabel(jobId: number): string {
-  return jobs.value.find((j) => j.id === jobId)?.name ?? `Job #${jobId}`;
-}
+const canUpdate = computed(() => hasPermission("cicd_pipelines:update"));
+const canExecute = computed(() => hasPermission("cicd_pipelines:execute"));
 
-function addJob(job: BuildJob, position = { x: 80 + nodes.value.length * 40, y: 80 }) {
-  const full = jobs.value.find((j) => j.id === job.id) ?? job;
-  const id = `n-${full.id}-${Date.now()}`;
-  nodes.value = [
-    ...nodes.value,
-    {
-      id,
-      type: "buildJob",
-      position,
-      data: { build_job_id: full.id, label: full.name || jobLabel(full.id) },
-    },
-  ];
+async function loadTargetNames() {
+  const map: Record<string, string> = {};
+  await Promise.all([
+    listBuildJobs({ page: 1, page_size: 200 })
+      .then((r) => {
+        for (const j of r.items ?? []) map[`buildJob:${j.id}`] = j.name;
+      })
+      .catch(() => {}),
+    listScriptJobs({ page: 1, page_size: 200 })
+      .then((r) => {
+        for (const j of r.items ?? []) map[`scriptJob:${j.id}`] = j.name;
+      })
+      .catch(() => {}),
+    listAgents({ page: 1, page_size: 200 })
+      .then((r) => {
+        for (const a of r.items ?? []) map[`agent:${a.id}`] = a.name;
+      })
+      .catch(() => {}),
+  ]);
+  targetNames.value = map;
 }
 
 async function load() {
   loading.value = true;
   try {
-    const [p, jobPage] = await Promise.all([
-      getBuildPipeline(pipelineId),
-      listBuildJobs({ page: 1, page_size: 200 }),
-    ]);
+    const p = await getBuildPipeline(pipelineId);
     pipeline.value = p;
-    jobs.value = jobPage.items ?? [];
-    parseGraph(p.graph_json);
-    tabsStore.updateTitle(detailPath, `编排 · ${p.name}`);
+    const graph = parseGraphJson(p.graph_json);
+    // 空图自动种子化 start + end
+    if (graph.nodes.length) {
+      nodes.value = graph.nodes;
+      edges.value = graph.edges;
+    } else {
+      const seeded = seedGraph();
+      nodes.value = seeded.nodes;
+      edges.value = seeded.edges;
+    }
+    tabsStore.updateTitle(detailPath, p.name);
+    void loadTargetNames();
   } catch (e) {
     message.error(e instanceof Error ? e.message : "加载失败");
   } finally {
@@ -82,21 +97,76 @@ async function load() {
   }
 }
 
+function validateGraph(): boolean {
+  for (const n of nodes.value) {
+    const d = (n.data ?? {}) as PipelineNodeData;
+    const missing =
+      (n.type === "buildJob" && !d.build_job_id) ||
+      (n.type === "scriptJob" && !d.script_job_id) ||
+      (n.type === "agent" && !d.agent_id);
+    if (missing) {
+      message.warning(
+        `节点「${d.label || NODE_TYPE_LABEL[n.type ?? ""] || n.id}」尚未配置，请先完成配置`,
+      );
+      return false;
+    }
+  }
+  return true;
+}
+
 async function save() {
-  if (!hasPermission("cicd_pipelines:update")) return;
+  if (!canUpdate.value || !validateGraph()) return;
   saving.value = true;
   try {
-    const graph_json = JSON.stringify({
-      nodes: nodes.value.map(({ id, type, position, data }) => ({ id, type, position, data })),
-      edges: edges.value.map(({ id, source, target }) => ({ id, source, target })),
-    });
-    pipeline.value = await updateBuildPipeline(pipelineId, { graph_json });
+    pipeline.value = await persist();
     message.success("已保存");
   } catch (e) {
     message.error(e instanceof Error ? e.message : "保存失败");
   } finally {
     saving.value = false;
   }
+}
+
+function persist() {
+  return updateBuildPipeline(pipelineId, {
+    graph_json: serializeGraph(nodes.value, edges.value),
+  });
+}
+
+async function run() {
+  running.value = true;
+  try {
+    // 运行以画布当前状态为准：有编辑权限时先落库（避免跑到旧图/空图）
+    if (canUpdate.value) {
+      if (!validateGraph()) {
+        running.value = false;
+        return;
+      }
+      pipeline.value = await persist();
+    }
+    const r = await enqueuePipelineRun(pipelineId, { trigger_type: "manual" });
+    message.success(`已触发 #${r.run_number}`);
+    void router.push({ name: "cicd-pipeline-run-detail", params: { id: String(r.id) } });
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : "触发失败");
+  } finally {
+    running.value = false;
+  }
+}
+
+// —— 节点配置抽屉 ——
+const drawerOpen = ref(false);
+const configNode = ref<Node | null>(null);
+
+function openConfig(node: Node) {
+  configNode.value = node;
+  drawerOpen.value = true;
+}
+
+function onConfigSave(data: PipelineNodeData) {
+  const id = configNode.value?.id;
+  if (!id) return;
+  nodes.value = nodes.value.map((n) => (n.id === id ? { ...n, data } : n));
 }
 
 onMounted(() => {
@@ -111,26 +181,32 @@ onMounted(() => {
         <u-button text @click="router.push({ name: 'cicd-pipelines' })">返回列表</u-button>
         <strong v-if="pipeline">{{ pipeline.name }}</strong>
       </div>
-      <u-button
-        v-if="hasPermission('cicd_pipelines:update')"
-        type="primary"
-        :loading="saving"
-        :disabled="loading"
-        @click="save"
-      >
-        保存编排
-      </u-button>
+      <div class="pipeline-editor__actions">
+        <u-button v-if="canExecute" :loading="running" :disabled="loading" @click="run">
+          运行
+        </u-button>
+        <u-button
+          v-if="canUpdate"
+          type="primary"
+          :loading="saving"
+          :disabled="loading"
+          @click="save"
+        >
+          保存编排
+        </u-button>
+      </div>
     </header>
     <div v-if="loading" class="pipeline-editor__loading">加载中…</div>
     <div v-else class="pipeline-editor__body">
-      <JobPalette v-if="hasPermission('cicd_pipelines:update')" :jobs="jobs" @pick="addJob" />
       <PipelineCanvas
         v-model:nodes="nodes"
         v-model:edges="edges"
-        :readonly="!hasPermission('cicd_pipelines:update')"
-        @add-job="addJob"
+        :readonly="!canUpdate"
+        @configure-node="openConfig"
+        @node-added="openConfig"
       />
     </div>
+    <NodeConfigDrawer v-model="drawerOpen" :node="configNode" @save="onConfigSave" />
   </div>
 </template>
 
@@ -152,6 +228,11 @@ onMounted(() => {
   strong {
     margin-left: 8px;
   }
+}
+
+.pipeline-editor__actions {
+  display: flex;
+  gap: 8px;
 }
 
 .pipeline-editor__body {

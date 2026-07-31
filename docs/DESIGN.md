@@ -56,12 +56,12 @@
 | D27 | 存储 | `StorageObject` 注册表 + `StorageService`；日志独立分段；保守默认限额 |
 | D28 | 前端迁移 | 原 React `web/` 已移除；Vue 3 `web/` 为唯一 embed 源 |
 | D29 | Run 快照 | 创建运行时强制写入最小配置快照（只读复现） |
-| D30 | 状态字段 | `status`（结果）与 `stage`（活动阶段）分离；流水线**无**内嵌 agent 阶段 |
+| D30 | 状态字段 | `status`（结果）与 `stage`（活动阶段）分离；流水线 agent 节点为同步阶段（见 D35） |
 | D31 | Agent 工作区与制品 | 每个 Agent 有一个持久根工作区与一个固定 `output_dir` 产出目录，跨 Run 复用且不清空根目录与产出目录；AgentRun 不绑定、归档或下载文件制品，BuildRun 制品能力不变 |
 | D32 | BuildJob 工作区路径 | 每个构建任务 checkout 目录为 `{workspace}/jobs/job-{id}/`（对齐 Agent `agents/agent-{id}/`）；API 只读回显绝对路径 `workspace_path`；不自动搬迁旧 `repo-*/job-*` 目录 |
 | D33 | ScriptJob | 无仓库/制品/部署的精简任务；工作区 `{workspace}/scripts/script-{id}/`；日志 `{log_dir}/script-{jobID}/run-{NNN}.log`；触发同 BuildJob（manual/cron/webhook，webhook 无分支匹配）；脚本执行前 `${{...}}` 替换 |
 | D34 | 脚本模板 `${{...}}` | 构建/构建后脚本执行前一次性文本替换；内置 `job.*` / `run.*` / `workspace`；用户变量 `${{ env.KEY }}`；未知变量失败；不二次展开 |
-| D35 | 构建流水线 | 独立 `BuildPipeline` 模块；VueFlow `graph_json` DAG；节点引用可复用 BuildJob；拓扑并行；stage 失败则流水线失败并 skip 其余；**无**跨任务制品传递；**无**内嵌同步 Agent |
+| D35 | 构建流水线 | 独立 `BuildPipeline` 模块；VueFlow `graph_json` DAG（v2：start/end/buildJob/scriptJob/agent 节点，边带 `on_success`/`on_failure`/`always` 条件）；任务节点 AND-join（前驱全部终态且各有匹配入边才触发，否则 skipped 传播）；**到达任意 end 节点即 success**（OR-join，取消在飞分支），静止未到 end 则 failed；agent 节点**同步**等待 AgentRun 并按结果走分支；节点级 env 覆盖（AES-GCM 存于 graph_json，run > job）；**无**跨任务制品传递 |
 
 ### 1.4 已接受风险（必须对外声明）
 
@@ -210,10 +210,11 @@ RbacResource
 - **CI/CD**：无成员表；`data_scope=self` 时可见 `created_by=自己` 或 `is_public` 的 BuildJob；BuildRun 跟随 Job；写/执行仍仅本人或 `data_scope=all`。
 - **AI Skill**：列表/详情遵循 `data_scope=all OR visibility=public OR created_by=自己`；改删仍仅创建者/超管。运维、凭证等域仍为全局 RBAC only。
 
-### 4.5 凭证
+### 4.5 凭证与服务器认证
 
-- 密文 AES-GCM；API 永不回显明文。
-- 引用绑定（仓库认证、服务器认证、任务变量等）时校验操作者 `resource_credentials:use`。
+- 凭证密文 AES-GCM；API 永不回显明文。
+- 引用绑定（仓库认证、Deploy Agent 凭证、任务变量等）时校验操作者 `resource_credentials:use`。
+- 服务器认证：`password` 表单直填，AES-GCM 存 `servers.password_cipher`（响应仅 `has_password`）；`ssh_key` 不入库私钥，使用运行 Bedrock 主机上的 `SSH_AUTH_SOCK` / ssh-agent；仅 `auth_type=agent` 绑定 `agent_credential_id`。
 - Cron/Webhook 执行使用绑定快照；不要求「触发者」现场具备 `use`。
 - 删除保护：仍被引用时拦截并提示。
 
@@ -272,7 +273,7 @@ flowchart TB
 1. 克隆→构建（含可选 `post_build_script`）→缓存保存→归档成功后：`status=success`，制品可下载；`stage` 进入 `distributing` 或 `idle`。`post_build_script` 在主构建脚本成功之后、缓存保存/归档之前执行（与主脚本同一 shell 类型、cwd=`work_dir`、同一套环境变量）；失败与主构建同级 → `failed`。
 2. **分发失败不将 `status` 改为 `failed`**；更新 `distribution_summary`：`none` | `running` | `all_success` | `partial` | `all_failed` | `cancelled`。
 3. 构建阶段失败 → `failed`；用户取消构建中 → `cancelled`；若已 `success` 仅取消分发 → 保持 `success` + summary 反映取消。`work_dir` 解析后的构建目录在启动脚本前校验：不存在/非目录时明确失败原因，避免误报为缺少 `sh`。
-4. **禁止**流水线内嵌同步 `agent` 阶段；构建事件异步创建 `AgentRun`。
+4. 流水线 agent 节点为**同步**阶段（orchestrator 等待 AgentRun 终态并按边条件走分支）；构建事件（`agent_ids`/`agent_trigger_event`/`AgentTrigger`）仍**异步**创建独立 AgentRun，Agent 失败**不**修改 BuildRun.status。
 5. `retry`：新建 BuildRun；`redeploy`：**同一** BuildRun，追加 `BuildDeployAttempt`，summary 指向最新一批结果。
 
 **工作区路径**：BuildJob checkout 为 `{workspace}/jobs/job-{id}/`（持久复用，跨 Run；对齐 Agent `{workspace}/agents/agent-{id}/`）。API 只读字段 `workspace_path` 为绝对路径。首次在新路径 clone；旧目录 `repo-{repository_id}/job-{id}/` **不**自动搬迁，可手工清理。日志 / 制品 / 缓存仍按 `job-{id}` 隔离（无 repo 前缀）。
@@ -297,7 +298,7 @@ flowchart TB
 | DevEnvJob | 同上 | running→interrupted/failed，保留日志；人工重试新任务 |
 | CLI 安装/升级/卸载 | — | **同步**在请求内执行；结果一次性返回（不落库、不保留历史任务） |
 
-构建事件默认：`artifact_ready`（归档成功且制品路径有效）。BuildJob.`agent_trigger_event` 可覆盖为 `distribution_finished`（本轮分发流程结束，无论成功失败）或 `none`。可选 `agent_ids` 绑定一个或多个智能体；亦可在 AgentTrigger 中按 Job 过滤。事件**异步**创建独立 AgentRun；Agent 失败**不**修改 BuildRun.status。流水线**禁止**内嵌同步 agent 阶段。
+构建事件默认：`artifact_ready`（归档成功且制品路径有效）。BuildJob.`agent_trigger_event` 可覆盖为 `distribution_finished`（本轮分发流程结束，无论成功失败）或 `none`。可选 `agent_ids` 绑定一个或多个智能体；亦可在 AgentTrigger 中按 Job 过滤。事件**异步**创建独立 AgentRun；Agent 失败**不**修改 BuildRun.status。流水线 agent 节点的同步语义见 D35，与该异步机制解耦。
 
 Agent 工作区与记录规则：
 
@@ -611,7 +612,7 @@ web/src/
 | Build | BuildRun |
 | BuildDistribution | BuildDeployAttempt（可多轮历史） |
 | 固定 admin/ops/dev | Super Admin + 自定义 Role |
-| 内嵌 pipeline agent | 异步 AgentRun + 构建事件 |
+| 内嵌 pipeline agent | 异步 AgentRun + 构建事件；流水线 agent 节点（同步，见 D35） |
 | AgentProxy | CliRuntime |
 | React web/（已移除） | Vue web/ |
 

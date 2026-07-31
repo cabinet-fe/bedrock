@@ -41,7 +41,8 @@ type BuildRunTerminalHook interface {
 
 // Pipeline executes BuildRun: clone → build → archive → success → distribute.
 // Distribution failure never sets status=failed (DESIGN §5.2).
-// Sync AI Agent stage is intentionally absent (P4 async AgentRun only).
+// In-pipeline agent stages are orchestrated by cicd.PipelineOrchestrator
+// (sync via AgentService hook); this executor itself never runs agents.
 type Pipeline struct {
 	runs      RunStore
 	jobs      JobStore
@@ -290,6 +291,11 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 	kvEnv, err := decryptJobEnvVarsCipher(job.EnvVarsCipher)
 	if err != nil {
 		p.failRun(run, "解密构建环境变量失败: "+err.Error())
+		writeLine("ERROR: " + err.Error())
+		return
+	}
+	if err := applyRunEnvOverrides(kvEnv, run.EnvOverridesCipher); err != nil {
+		p.failRun(run, "解密运行变量覆盖失败: "+err.Error())
 		writeLine("ERROR: " + err.Error())
 		return
 	}

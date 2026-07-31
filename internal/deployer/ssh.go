@@ -19,11 +19,21 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
+// IsSSHKeyAuth reports whether auth_type uses host SSH keys (ssh_key or legacy key).
+func IsSSHKeyAuth(authType string) bool {
+	switch strings.ToLower(strings.TrimSpace(authType)) {
+	case "key", "ssh_key":
+		return true
+	default:
+		return false
+	}
+}
+
 // SSHAuthMethods builds auth methods for SSH: PEM private key, password, and/or SSH agent when key auth has no embedded key.
 func SSHAuthMethods(server ServerInfo) ([]ssh.AuthMethod, error) {
 	var authMethods []ssh.AuthMethod
 
-	if server.AuthType == "key" && server.PrivateKey != "" {
+	if IsSSHKeyAuth(server.AuthType) && server.PrivateKey != "" {
 		signer, err := parsePrivateKey(server.PrivateKey)
 		if err != nil {
 			return nil, fmt.Errorf("parse private key: %w", err)
@@ -35,7 +45,7 @@ func SSHAuthMethods(server ServerInfo) ([]ssh.AuthMethod, error) {
 		authMethods = append(authMethods, ssh.Password(server.Password))
 	}
 
-	if server.AuthType == "key" && server.PrivateKey == "" {
+	if IsSSHKeyAuth(server.AuthType) && server.PrivateKey == "" {
 		authMethods = append(authMethods, sshAgentAuthMethods()...)
 	}
 
@@ -163,7 +173,7 @@ func buildSSHOptionsSlice(server ServerInfo) ([]string, func()) {
 	if server.Port > 0 && server.Port != 22 {
 		result = append(result, "-o", fmt.Sprintf("Port=%d", server.Port))
 	}
-	if server.AuthType == "key" && server.PrivateKey != "" {
+	if IsSSHKeyAuth(server.AuthType) && server.PrivateKey != "" {
 		tmpFile, err := os.CreateTemp("", "bedrock-deploy-key-*")
 		if err == nil {
 			tmpFile.WriteString(server.PrivateKey)

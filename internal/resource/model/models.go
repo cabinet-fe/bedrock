@@ -40,7 +40,10 @@ type Repository struct {
 
 func (Repository) TableName() string { return "repositories" }
 
-// Server is a deploy host. Secrets live in Credential; bind requires resource_credentials:use.
+// Server is a deploy host.
+// password: AES-GCM in PasswordCipher (API write-only password / has_password).
+// ssh_key: host SSH agent (SSH_AUTH_SOCK); no private key stored.
+// agent: AgentURL + optional AgentCredentialID (requires resource_credentials:use).
 type Server struct {
 	ID                uint      `json:"id" gorm:"primaryKey"`
 	Name              string    `json:"name" gorm:"size:100;not null"`
@@ -49,7 +52,8 @@ type Server struct {
 	OSType            string    `json:"os_type" gorm:"size:20;not null;default:linux"`
 	Username          string    `json:"username" gorm:"size:100"`
 	AuthType          string    `json:"auth_type" gorm:"size:20;not null;default:password"`
-	CredentialID      *uint     `json:"credential_id" gorm:"index"`
+	CredentialID      *uint     `json:"-" gorm:"index"` // legacy column; unused by service
+	PasswordCipher    string    `json:"-" gorm:"type:text"`
 	AgentURL          string    `json:"agent_url" gorm:"size:500"`
 	AgentCredentialID *uint     `json:"agent_credential_id" gorm:"index"`
 	Description       string    `json:"description" gorm:"size:500"`
@@ -58,6 +62,8 @@ type Server struct {
 	CreatedBy         uint      `json:"created_by" gorm:"index"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
+
+	HasPassword bool `json:"has_password" gorm:"-"`
 }
 
 func (Server) TableName() string { return "servers" }

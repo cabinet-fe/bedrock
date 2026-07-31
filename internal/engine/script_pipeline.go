@@ -37,6 +37,13 @@ type ScriptRunEnqueuer interface {
 	EnqueueInternal(jobID, triggeredBy uint, triggerType string) (*model.ScriptRun, error)
 }
 
+// ScriptRunTerminalHook is invoked for every ScriptRun terminal status
+// (success|failed|cancelled|interrupted), mirroring BuildRunTerminalHook.
+// Used by PipelineOrchestrator to advance DAG stages.
+type ScriptRunTerminalHook interface {
+	OnScriptRunTerminal(run *model.ScriptRun, status string)
+}
+
 // ScriptPipeline executes ScriptRuns: workspace → template expand → run script → terminal.
 type ScriptPipeline struct {
 	runs         ScriptRunStore
@@ -45,6 +52,7 @@ type ScriptPipeline struct {
 	logger       *zap.Logger
 	workspaceDir string
 	logDir       string
+	termHook     ScriptRunTerminalHook
 }
 
 func NewScriptPipeline(
@@ -62,6 +70,11 @@ func NewScriptPipeline(
 		workspaceDir: workspaceDir,
 		logDir:       logDir,
 	}
+}
+
+// SetTerminalHook wires PipelineOrchestrator (or tests) on ScriptRun terminal.
+func (p *ScriptPipeline) SetTerminalHook(h ScriptRunTerminalHook) {
+	p.termHook = h
 }
 
 // Execute runs a ScriptRun to completion (or cancellation).
@@ -153,6 +166,11 @@ func (p *ScriptPipeline) Execute(ctx context.Context, runID uint) {
 		writeLine("ERROR: " + err.Error())
 		return
 	}
+	if err := applyRunEnvOverrides(kvEnv, run.EnvOverridesCipher); err != nil {
+		p.failRun(run, "解密运行变量覆盖失败: "+err.Error())
+		writeLine("ERROR: " + err.Error())
+		return
+	}
 	envVars := mergeBuildEnv(job.EnvVarNames, kvEnv)
 	tmplVars := buildScriptJobTemplateVars(job, run, absWS, kvEnv)
 
@@ -174,6 +192,7 @@ func (p *ScriptPipeline) Execute(ctx context.Context, runID uint) {
 	})
 	p.broadcastRefresh(run.ID)
 	writeLine(fmt.Sprintf("=== Script succeeded in %dms ===", dur))
+	p.notifyTerminal(run, "success")
 }
 
 func (p *ScriptPipeline) runScript(
@@ -253,6 +272,7 @@ func (p *ScriptPipeline) failRun(run *model.ScriptRun, errMsg string) {
 	}
 	_ = p.runs.UpdateFields(run.ID, fields)
 	p.broadcastRefresh(run.ID)
+	p.notifyTerminal(run, "failed")
 }
 
 func (p *ScriptPipeline) cancelRun(run *model.ScriptRun) {
@@ -267,6 +287,31 @@ func (p *ScriptPipeline) cancelRun(run *model.ScriptRun) {
 	}
 	_ = p.runs.UpdateFields(run.ID, fields)
 	p.broadcastRefresh(run.ID)
+	p.notifyTerminal(run, "cancelled")
+}
+
+func (p *ScriptPipeline) notifyTerminal(run *model.ScriptRun, status string) {
+	if p.termHook == nil || run == nil {
+		return
+	}
+	run.Status = status
+	p.termHook.OnScriptRunTerminal(run, status)
+}
+
+// applyRunEnvOverrides overlays run-level env overrides (same AES-GCM JSON map
+// format as job env_vars) onto the job env; override keys win.
+func applyRunEnvOverrides(kvEnv map[string]string, overridesCipher string) error {
+	if kvEnv == nil {
+		return nil
+	}
+	overrides, err := decryptJobEnvVarsCipher(overridesCipher)
+	if err != nil {
+		return err
+	}
+	for k, v := range overrides {
+		kvEnv[k] = v
+	}
+	return nil
 }
 
 func buildScriptJobTemplateVars(

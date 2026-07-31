@@ -40,6 +40,7 @@ declare module 'vue' {
     UContextmenu: typeof import('@veltra/desktop')['UContextmenu']
     UDatePicker: typeof import('@veltra/desktop')['UDatePicker']
     UDialog: typeof import('@veltra/desktop')['UDialog']
+    UDrawer: typeof import('@veltra/desktop')['UDrawer']
     UDropdown: typeof import('@veltra/desktop')['UDropdown']
     UEmpty: typeof import('@veltra/desktop')['UEmpty']
     UFilePicker: typeof import('@veltra/desktop')['UFilePicker']

@@ -126,7 +126,13 @@
 
 ## 构建流水线
 
-节点 `data.build_job_id` 引用可复用的构建任务；边表示上游成功后解锁下游。保存时校验 DAG（无环）且 `build_job_id` 存在。执行时入度 0 节点并行入队 BuildRun（`trigger_type=pipeline`）；任一 stage 失败/取消/中断则流水线失败，未启动 stage 标 `skipped`。首版不做跨任务制品传递；流水线内不内嵌同步 Agent。
+`graph_json`（v2）为 VueFlow `{nodes,edges}` DAG：
+
+- 节点类型 `type`：`start`（恰 1 个，无入边）、`end`（≥1 个，无出边）、`buildJob`（`data.build_job_id`）、`scriptJob`（`data.script_job_id`）、`agent`（`data.agent_id`）；均引用可复用任务/智能体，保存时校验存在性、DAG 无环、非 start 节点须有入边。
+- 边条件 `data.condition`：`on_success`（默认，可省略）/ `on_failure`（匹配 failed/cancelled/interrupted）/ `always`。
+- 节点变量覆盖 `data.env_vars`（buildJob/scriptJob）：写 `{key,value}` 设置；只写 `{key}` 保留已存值；读 API 仅回 `{key,has_value}`（值 AES-GCM 加密存储于 graph_json，永不回显明文）。覆盖在运行级生效（run > job env_vars），构建/脚本运行落 `env_overrides_cipher` 快照。
+
+执行语义：start 节点即入口；任务/智能体节点为 **AND-join**——全部前驱终态且每个前驱至少一条入边条件匹配其结果时触发，触发后同步等待对应 Run（`trigger_type=pipeline`）；前驱终态后无边可匹配则该节点标 `skipped` 并向下游传播。end 节点为 **OR-join**——任一入边路径到达即流水线 `success`（无论此前失败过多少节点），仍在运行的其它分支被取消；所有分支走到尽头仍未到达 end → `failed`。流水线内嵌的 agent 节点为**同步**阶段（等待 AgentRun 完成并按结果走分支）；构建事件异步 AgentRun 能力（`agent_ids`/`agent_trigger_event`）保持不变。不做跨任务制品传递。
 
 ### GET /build-pipelines — 列出构建流水线
 
@@ -198,7 +204,7 @@
 权限：`cicd_pipelines:execute`
 路径参数：id*: integer
 响应 200：data = PipelineRun
-说明：仅 `queued` / `running` 可取消。会取消非终态 sibling BuildRun，进行中的 stage 标为 `cancelled`，未启动 stage 标为 `skipped`。
+说明：仅 `queued` / `running` 可取消。会取消非终态 sibling BuildRun/ScriptRun/AgentRun，进行中的 stage 标为 `cancelled`，未启动 stage 标为 `skipped`。
 
 ## Webhook
 
@@ -427,7 +433,7 @@
 | `name` | `string` |  |  |
 | `description` | `string` |  |  |
 | `enabled` | `boolean` |  |  |
-| `graph_json` | `string` |  | VueFlow `{nodes,edges}`；节点 `data.build_job_id` |
+| `graph_json` | `string` |  | VueFlow `{nodes,edges}` v2；节点 `type` + `data.{build_job_id,script_job_id,agent_id,env_vars}`；边 `data.condition`；env_vars 值不回显 |
 | `trigger_manual` | `boolean` |  |  |
 | `trigger_webhook` | `boolean` |  |  |
 | `trigger_cron` | `boolean` |  |  |
@@ -464,8 +470,13 @@
 | `id` | `integer` |  |  |
 | `pipeline_run_id` | `integer` |  |  |
 | `node_id` | `string` |  | 对应 graph 节点 id |
-| `build_job_id` | `integer` |  |  |
+| `node_type` | `'start' \| 'end' \| 'buildJob' \| 'scriptJob' \| 'agent'` |  | 节点类型 |
+| `build_job_id` | `integer` |  | buildJob 节点引用；其它类型为 0 |
 | `build_run_id` | `integer` |  | 关联 BuildRun；可空 |
+| `script_job_id` | `integer` |  | scriptJob 节点引用；其它类型为 0 |
+| `script_run_id` | `integer` |  | 关联 ScriptRun；可空 |
+| `agent_id` | `integer` |  | agent 节点引用；其它类型为 0 |
+| `agent_run_id` | `integer` |  | 关联 AgentRun；可空 |
 | `status` | `'pending' \| 'queued' \| 'running' \| 'success' \| 'failed' \| 'cancelled' \| 'skipped' \| 'interrupted'` |  |  |
 | `error_message` | `string` |  |  |
 | `started_at` | `string(date-time)` |  |  |

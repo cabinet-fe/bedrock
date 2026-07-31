@@ -3,17 +3,23 @@ defineOptions({ name: "CicdPipelineRunDetail" });
 
 import type { Edge, Node } from "@vue-flow/core";
 import { defineTableColumns, message } from "@veltra/desktop";
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, provide, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { cancelPipelineRun, getBuildPipeline, getPipelineRun, listBuildJobs } from "@/api/cicd";
 import type { PipelineRun, PipelineStageRun } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
-import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
+import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType, type TagType } from "@/lib/tag";
 import { useTabsStore } from "@/stores/tabs";
 
 import PipelineCanvas from "../../pipelines/components/pipeline-canvas.vue";
+import {
+  NODE_TYPE_LABEL,
+  PIPELINE_TARGET_NAMES,
+  parseGraphJson,
+  type PipelineNodeData,
+} from "../../pipelines/graph";
 
 const route = useRoute();
 const router = useRouter();
@@ -30,6 +36,8 @@ const pipelineName = ref("");
 const jobNames = ref(new Map<number, string>());
 const nodes = ref<Node[]>([]);
 const edges = ref<Edge[]>([]);
+/** snapshot 中 node_id → 节点名称 */
+const nodeLabels = ref(new Map<string, string>());
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const canExecute = computed(() => hasPermission("cicd_pipelines:execute"));
@@ -44,12 +52,35 @@ const canCancel = computed(() => {
   return run.value.status === "queued" || run.value.status === "running";
 });
 
+/** 节点副标题解析（构建任务名；脚本/智能体回退为类型名） */
+const targetNames = computed(() => {
+  const map: Record<string, string> = {};
+  for (const [id, name] of jobNames.value) map[`buildJob:${id}`] = name;
+  return map;
+});
+provide(PIPELINE_TARGET_NAMES, targetNames);
+
 const stageColumns = defineTableColumns([
-  { key: "node_id", name: "节点", minWidth: 100 },
+  { key: "node_type", name: "类型", width: 90, align: "center" },
+  { key: "node_id", name: "名称", minWidth: 140 },
   { key: "build_job_id", name: "构建任务", minWidth: 120 },
-  { key: "status", name: "状态", width: 120 },
-  { key: "build_run_id", name: "构建运行", width: 120 },
+  { key: "status", name: "状态", width: 110 },
+  { key: "build_run_id", name: "构建运行", width: 100 },
+  { key: "script_run_id", name: "脚本运行", width: 100 },
+  { key: "agent_run_id", name: "智能体运行", width: 100 },
 ]);
+
+const STAGE_TYPE_TAG: Record<string, TagType> = {
+  start: "success",
+  end: undefined,
+  buildJob: "primary",
+  scriptJob: "warning",
+  agent: "info",
+};
+
+function stageNodeType(stage: PipelineStageRun): string {
+  return stage.node_type || "buildJob";
+}
 
 function stageByNode(): Map<string, PipelineStageRun> {
   const m = new Map<string, PipelineStageRun>();
@@ -60,31 +91,23 @@ function stageByNode(): Map<string, PipelineStageRun> {
 }
 
 function applyGraph(snapshot: string) {
-  try {
-    const g = JSON.parse(snapshot || '{"nodes":[],"edges":[]}') as {
-      nodes?: Node[];
-      edges?: Edge[];
-    };
-    const stages = stageByNode();
-    nodes.value = (g.nodes ?? []).map((n) => {
-      const st = stages.get(n.id);
-      const jobId = Number((n.data as { build_job_id?: number })?.build_job_id ?? 0);
-      return {
-        ...n,
-        type: "buildJob",
-        data: {
-          ...n.data,
-          label:
-            (n.data as { label?: string })?.label || jobNames.value.get(jobId) || `Job #${jobId}`,
-          status: st?.status,
-        },
-      };
-    });
-    edges.value = g.edges ?? [];
-  } catch {
-    nodes.value = [];
-    edges.value = [];
-  }
+  const g = parseGraphJson(snapshot);
+  const stages = stageByNode();
+  const labels = new Map<string, string>();
+  nodes.value = g.nodes.map((n) => {
+    const st = stages.get(n.id);
+    const d = (n.data ?? {}) as PipelineNodeData;
+    const jobId = Number(d.build_job_id ?? 0);
+    const label =
+      d.label ||
+      (jobId ? jobNames.value.get(jobId) : undefined) ||
+      NODE_TYPE_LABEL[n.type ?? "buildJob"] ||
+      n.id;
+    labels.set(n.id, label);
+    return { ...n, data: { ...d, label, status: st?.status } };
+  });
+  edges.value = g.edges;
+  nodeLabels.value = labels;
 }
 
 async function load() {
@@ -104,6 +127,19 @@ async function load() {
 function openBuildRun(stage: PipelineStageRun) {
   if (!stage.build_run_id) return;
   void router.push({ name: "cicd-build-run-detail", params: { id: String(stage.build_run_id) } });
+}
+
+function openScriptRun(stage: PipelineStageRun) {
+  if (!stage.script_run_id) return;
+  void router.push({
+    name: "cicd-script-run-detail",
+    params: { id: String(stage.script_run_id) },
+  });
+}
+
+function openAgentRun(stage: PipelineStageRun) {
+  if (!stage.agent_run_id) return;
+  void router.push({ name: "ai-run-detail", params: { id: String(stage.agent_run_id) } });
 }
 
 async function onCancel() {
@@ -191,11 +227,25 @@ onUnmounted(() => {
 
     <h3>Stage 列表</h3>
     <u-table :columns="stageColumns" :data="run.stages ?? []" row-key="id" border>
-      <template #column:build_job_id="{ rowData }">
+      <template #column:node_type="{ rowData }">
+        <u-tag size="small" :type="STAGE_TYPE_TAG[stageNodeType(rowData as PipelineStageRun)]">
+          {{ NODE_TYPE_LABEL[stageNodeType(rowData as PipelineStageRun)] }}
+        </u-tag>
+      </template>
+      <template #column:node_id="{ rowData }">
         {{
-          jobNames.get((rowData as PipelineStageRun).build_job_id) ||
-          (rowData as PipelineStageRun).build_job_id
+          nodeLabels.get((rowData as PipelineStageRun).node_id) ||
+          (rowData as PipelineStageRun).node_id
         }}
+      </template>
+      <template #column:build_job_id="{ rowData }">
+        <template v-if="(rowData as PipelineStageRun).build_job_id">
+          {{
+            jobNames.get((rowData as PipelineStageRun).build_job_id) ||
+            (rowData as PipelineStageRun).build_job_id
+          }}
+        </template>
+        <span v-else>—</span>
       </template>
       <template #column:status="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as PipelineStageRun).status, JOB_STATUS_TAG)">
@@ -208,6 +258,24 @@ onUnmounted(() => {
           @run="openBuildRun(rowData as PipelineStageRun)"
         >
           #{{ (rowData as PipelineStageRun).build_run_id }}
+        </u-action>
+        <span v-else>—</span>
+      </template>
+      <template #column:script_run_id="{ rowData }">
+        <u-action
+          v-if="(rowData as PipelineStageRun).script_run_id"
+          @run="openScriptRun(rowData as PipelineStageRun)"
+        >
+          #{{ (rowData as PipelineStageRun).script_run_id }}
+        </u-action>
+        <span v-else>—</span>
+      </template>
+      <template #column:agent_run_id="{ rowData }">
+        <u-action
+          v-if="(rowData as PipelineStageRun).agent_run_id"
+          @run="openAgentRun(rowData as PipelineStageRun)"
+        >
+          #{{ (rowData as PipelineStageRun).agent_run_id }}
         </u-action>
         <span v-else>—</span>
       </template>

@@ -203,7 +203,7 @@ export interface Server {
   os_type: string;
   username: string;
   auth_type: string;
-  credential_id?: number | null;
+  has_password?: boolean;
   agent_url?: string;
   agent_credential_id?: number | null;
   description: string;
@@ -361,12 +361,29 @@ export interface BuildPipeline {
   updated_at: string;
 }
 
+/** 流水线边条件（graph_json v2） */
+export type PipelineEdgeCondition = "on_success" | "on_failure" | "always";
+
+/** 流水线节点变量覆盖：{key, value} 设新值；{key} 保留已存密值；回显仅 {key, has_value} */
+export interface PipelineNodeEnvVar {
+  key: string;
+  value?: string;
+  has_value?: boolean;
+}
+
 export interface PipelineStageRun {
   id: number;
   pipeline_run_id: number;
   node_id: string;
+  /** start | end | buildJob | scriptJob | agent */
+  node_type: string;
+  /** 非 buildJob 节点为 0 */
   build_job_id: number;
   build_run_id?: number | null;
+  script_job_id: number;
+  script_run_id?: number | null;
+  agent_id: number;
+  agent_run_id?: number | null;
   status: string;
   error_message?: string;
   started_at?: string;

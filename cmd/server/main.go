@@ -178,7 +178,7 @@ func main() {
 	scriptJobSvc.SetWorkspaceDir(cfg.Build.WorkspaceDir)
 	scriptRunSvc := cicdservice.NewScriptRunService(scriptRunRepo, scriptJobRepo)
 	scriptWebhookSvc := cicdservice.NewScriptWebhookService(scriptJobRepo, scriptDeliveryRepo, scriptRunSvc)
-	pipelineSvc := cicdservice.NewBuildPipelineService(pipelineRepo, jobRepo)
+	pipelineSvc := cicdservice.NewBuildPipelineService(pipelineRepo, jobRepo, scriptJobRepo)
 
 	dashboardRepo := dashboardrepo.NewDashboardRepository(gdb)
 	dashboardSvc := dashboardservice.NewDashboardService(
@@ -240,9 +240,18 @@ func main() {
 	scriptCronSched := engine.NewScriptCronScheduler(scriptJobRepo, scriptRunRepo, scriptRunSvc, scriptSched, logger)
 	scriptJobSvc.SetCron(scriptCronSched)
 
-	pipelineOrch := cicdservice.NewPipelineOrchestrator(pipelineRepo, pipelineRunRepo, jobRepo, runSvc, logger)
+	pipelineOrch := cicdservice.NewPipelineOrchestrator(
+		pipelineRepo, pipelineRunRepo, jobRepo, scriptJobRepo, runSvc, scriptRunSvc, agentSvc, logger,
+	)
 	pipeline.SetBuildRunTerminalHook(pipelineOrch)
 	runSvc.SetTerminalHook(pipelineOrch)
+	scriptPipeline.SetTerminalHook(pipelineOrch)
+	scriptRunSvc.SetTerminalHook(pipelineOrch)
+	agentSvc.SetTerminalHook(pipelineOrch)
+	pipelineSvc.SetAgentExists(func(id uint) bool {
+		_, err := agentSvc.GetAgent(id)
+		return err == nil
+	})
 	pipelineWebhookSvc := cicdservice.NewPipelineWebhookService(pipelineRepo, pipelineDeliveryRepo, pipelineOrch)
 	pipelineCronSched := cicdservice.NewPipelineCronScheduler(pipelineRepo, pipelineRunRepo, pipelineOrch, logger)
 	pipelineSvc.SetCron(pipelineCronSched)

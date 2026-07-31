@@ -227,29 +227,35 @@ function openEditor(row: BuildPipeline) {
       </template>
     </ProTable>
 
-    <u-dialog v-model="dialogOpen" :title="editingId ? '编辑流水线' : '新建流水线'" width="520px">
+    <u-dialog
+      v-model="dialogOpen"
+      :title="editingId ? '编辑流水线' : '新建流水线'"
+      style="width: 720px"
+    >
       <u-form label-width="100px">
-        <u-form-item label="名称" required>
+        <u-form-item label="名称" required span="full">
           <u-input v-model="form.name" />
         </u-form-item>
-        <u-form-item label="描述">
+        <u-form-item label="描述" span="full">
           <u-input v-model="form.description" type="textarea" :rows="2" />
         </u-form-item>
-        <u-form-item label="启用">
-          <u-switch v-model="form.enabled" />
-        </u-form-item>
-        <u-form-item label="公开只读">
-          <u-switch v-model="form.is_public" />
-        </u-form-item>
-        <u-form-item label="手动触发">
-          <u-switch v-model="form.trigger_manual" />
-        </u-form-item>
-        <u-form-item label="Webhook">
-          <u-switch v-model="form.trigger_webhook" />
-        </u-form-item>
-        <u-form-item label="Cron">
-          <u-switch v-model="form.trigger_cron" />
-        </u-form-item>
+        <div class="switch-grid">
+          <u-form-item label="启用">
+            <u-switch v-model="form.enabled" />
+          </u-form-item>
+          <u-form-item label="公开只读">
+            <u-switch v-model="form.is_public" />
+          </u-form-item>
+          <u-form-item label="手动触发">
+            <u-switch v-model="form.trigger_manual" />
+          </u-form-item>
+          <u-form-item label="Webhook">
+            <u-switch v-model="form.trigger_webhook" />
+          </u-form-item>
+          <u-form-item label="Cron">
+            <u-switch v-model="form.trigger_cron" />
+          </u-form-item>
+        </div>
         <template v-if="form.trigger_cron">
           <u-form-item label="表达式">
             <u-input v-model="form.cron_expression" placeholder="0 2 * * *" />
@@ -272,5 +278,11 @@ function openEditor(row: BuildPipeline) {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.switch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 24px;
 }
 </style>

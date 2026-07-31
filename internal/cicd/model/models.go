@@ -61,9 +61,9 @@ type BuildJob struct {
 	RepositoryID       uint         `json:"repository_id" gorm:"index;not null"`
 	Name               string       `json:"name" gorm:"size:100;not null"`
 	Description        string       `json:"description" gorm:"size:500"`
-	Enabled            bool         `json:"enabled" gorm:"not null"`                          // no gorm default: must persist false
+	Enabled            bool         `json:"enabled" gorm:"not null"` // no gorm default: must persist false
 	Branch             string       `json:"branch" gorm:"size:200;default:main"`
-	ShallowClone       bool         `json:"shallow_clone" gorm:"not null"`                     // no gorm default: must persist false
+	ShallowClone       bool         `json:"shallow_clone" gorm:"not null"` // no gorm default: must persist false
 	BuildScriptType    string       `json:"build_script_type" gorm:"size:20;default:bash"`
 	BuildScript        string       `json:"build_script" gorm:"type:text"`
 	PostBuildScript    string       `json:"post_build_script" gorm:"type:text"`
@@ -140,6 +140,7 @@ type BuildRun struct {
 	ErrorMessage        string     `json:"error_message" gorm:"type:text"`
 	DistributionSummary string     `json:"distribution_summary" gorm:"size:30;default:none"`
 	SnapshotJSON        string     `json:"snapshot_json,omitempty" gorm:"type:text"`
+	EnvOverridesCipher  string     `json:"-" gorm:"type:text"` // run-level env overrides (AES-GCM JSON map), never exposed
 	StartedAt           *time.Time `json:"started_at"`
 	FinishedAt          *time.Time `json:"finished_at"`
 	CreatedAt           time.Time  `json:"created_at"`
@@ -201,26 +202,31 @@ func (ScriptJob) TableName() string { return "script_jobs" }
 // status: queued|running|success|failed|cancelled|interrupted
 // stage: pending|running|idle
 type ScriptRun struct {
-	ID           uint       `json:"id" gorm:"primaryKey"`
-	ScriptJobID  uint       `json:"script_job_id" gorm:"uniqueIndex:idx_script_job_run_num;not null"`
-	RunNumber    int        `json:"run_number" gorm:"uniqueIndex:idx_script_job_run_num;not null"`
-	Status       string     `json:"status" gorm:"size:20;not null;default:queued"`
-	Stage        string     `json:"stage" gorm:"size:20;not null;default:pending"`
-	TriggerType  string     `json:"trigger_type" gorm:"size:20"`
-	TriggeredBy  uint       `json:"triggered_by"`
-	LogPath      string     `json:"log_path" gorm:"size:500"`
-	DurationMs   int64      `json:"duration_ms"`
-	ErrorMessage string     `json:"error_message" gorm:"type:text"`
-	SnapshotJSON string     `json:"snapshot_json,omitempty" gorm:"type:text"`
-	StartedAt    *time.Time `json:"started_at"`
-	FinishedAt   *time.Time `json:"finished_at"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID           uint   `json:"id" gorm:"primaryKey"`
+	ScriptJobID  uint   `json:"script_job_id" gorm:"uniqueIndex:idx_script_job_run_num;not null"`
+	RunNumber    int    `json:"run_number" gorm:"uniqueIndex:idx_script_job_run_num;not null"`
+	Status       string `json:"status" gorm:"size:20;not null;default:queued"`
+	Stage        string `json:"stage" gorm:"size:20;not null;default:pending"`
+	TriggerType  string `json:"trigger_type" gorm:"size:20"`
+	TriggeredBy  uint   `json:"triggered_by"`
+	LogPath      string `json:"log_path" gorm:"size:500"`
+	DurationMs   int64  `json:"duration_ms"`
+	ErrorMessage string `json:"error_message" gorm:"type:text"`
+	SnapshotJSON string `json:"snapshot_json,omitempty" gorm:"type:text"`
+	// EnvOverridesCipher holds run-level env overrides (AES-GCM JSON map), never exposed.
+	EnvOverridesCipher string     `json:"-" gorm:"type:text"`
+	StartedAt          *time.Time `json:"started_at"`
+	FinishedAt         *time.Time `json:"finished_at"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 func (ScriptRun) TableName() string { return "script_runs" }
 
-// BuildPipeline is a DAG of BuildJobs (graph_json = VueFlow nodes/edges).
-// Edges mean: upstream success → unlock downstream. No cross-job artifact passing in v1.
+// BuildPipeline is a DAG of typed nodes (graph_json = VueFlow nodes/edges).
+// Node types: start|end|buildJob|scriptJob|agent. Edges carry data.condition
+// (on_success|on_failure|always): downstream unlocks when every predecessor
+// terminal-matches at least one incoming edge. Reaching any end node = pipeline
+// success; quiescence without end = failed. No cross-job artifact passing.
 type BuildPipeline struct {
 	ID                 uint      `json:"id" gorm:"primaryKey"`
 	Name               string    `json:"name" gorm:"size:100;not null"`
@@ -267,12 +273,18 @@ func (PipelineRun) TableName() string { return "pipeline_runs" }
 
 // PipelineStageRun tracks one graph node within a PipelineRun.
 // status: pending|queued|running|success|failed|cancelled|skipped|interrupted
+// node_type: start|end|buildJob|scriptJob|agent; per-type refs are 0/nil when N/A.
 type PipelineStageRun struct {
 	ID            uint       `json:"id" gorm:"primaryKey"`
 	PipelineRunID uint       `json:"pipeline_run_id" gorm:"index;not null"`
 	NodeID        string     `json:"node_id" gorm:"size:100;not null"`
+	NodeType      string     `json:"node_type" gorm:"size:20;not null;default:buildJob"`
 	BuildJobID    uint       `json:"build_job_id" gorm:"index;not null"`
 	BuildRunID    *uint      `json:"build_run_id" gorm:"index"`
+	ScriptJobID   uint       `json:"script_job_id" gorm:"not null;default:0"`
+	ScriptRunID   *uint      `json:"script_run_id" gorm:"index"`
+	AgentID       uint       `json:"agent_id" gorm:"not null;default:0"`
+	AgentRunID    *uint      `json:"agent_run_id" gorm:"index"`
 	Status        string     `json:"status" gorm:"size:20;not null;default:pending"`
 	ErrorMessage  string     `json:"error_message" gorm:"type:text"`
 	StartedAt     *time.Time `json:"started_at"`

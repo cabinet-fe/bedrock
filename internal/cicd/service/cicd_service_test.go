@@ -279,14 +279,14 @@ func TestServer_CRUD_and_deleteProtection(t *testing.T) {
 func TestServer_credentialsUseOnBind(t *testing.T) {
 	credSvc, _, serverSvc, _, _, _ := setupCICD(t)
 	cred, err := credSvc.Create(1, resourceservice.CreateCredentialInput{
-		Name: "ssh", Type: "password", Username: "root", Secret: "pw",
+		Name: "agent-tok", Type: "token", Secret: "tok",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cid := cred.ID
 	_, err = serverSvc.Create(1, resourceservice.CreateServerInput{
-		Name: "s2", Host: "10.0.0.2", AuthType: "password", CredentialID: &cid,
+		Name: "s2", AuthType: "agent", AgentURL: "http://127.0.0.1:9090", AgentCredentialID: &cid,
 	}, false)
 	if err == nil || !resourceservice.IsForbidden(err) {
 		t.Fatalf("expected forbidden, got %v", err)

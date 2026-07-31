@@ -115,7 +115,8 @@
 ### POST /resource/servers — 创建服务器
 
 权限：`resource_servers:create`
-请求：{ name*, host, port, os_type, username, auth_type, credential_id, agent_url, agent_credential_id, description, tags }
+请求：{ name*, host, port, os_type, username, auth_type, password, agent_url, agent_credential_id, description, tags }
+说明：`auth_type` 为 `password` | `ssh_key` | `agent`（旧值 `key`/`ssh_agent` 归一为 `ssh_key`）。`password` 仅写入；`ssh_key` 不存私钥（本机 `SSH_AUTH_SOCK`）；`agent` 使用 `agent_url` + 可选 `agent_credential_id`（需 `resource_credentials:use`）。
 响应 201：data = Server
 
 ### GET /resource/servers/{id} — 获取服务器
@@ -128,7 +129,8 @@
 
 权限：`resource_servers:update`
 路径参数：id*: integer
-请求：{ name, host, port, os_type, username, auth_type, credential_id, clear_credential, agent_url, agent_credential_id, clear_agent_credential, description, tags }
+请求：{ name, host, port, os_type, username, auth_type, password, clear_password, agent_url, agent_credential_id, clear_agent_credential, description, tags }
+说明：`password` 空或省略表示保留；`clear_password=true` 清空已存密码。
 响应 200：data = Server
 
 ### DELETE /resource/servers/{id} — 删除服务器
@@ -420,10 +422,10 @@ Metadata only; secret never returned
 | `port` | `integer` |  |  |
 | `os_type` | `string` |  |  |
 | `username` | `string` |  |  |
-| `auth_type` | `string` |  |  |
-| `credential_id` | `integer` |  |  |
+| `auth_type` | `string` |  | `password` \| `ssh_key` \| `agent` |
+| `has_password` | `boolean` |  | 是否已存密码密文；永不回显明文 |
 | `agent_url` | `string` |  |  |
-| `agent_credential_id` | `integer` |  |  |
+| `agent_credential_id` | `integer` |  | 仅 `auth_type=agent` |
 | `description` | `string` |  |  |
 | `tags` | `string` |  |  |
 | `status` | `string` |  |  |
@@ -436,12 +438,12 @@ Metadata only; secret never returned
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `name` | `string` | 是 |  |
-| `host` | `string` |  |  |
+| `host` | `string` |  | `auth_type!=agent` 时需要 |
 | `port` | `integer` |  |  |
 | `os_type` | `string` |  |  |
 | `username` | `string` |  |  |
-| `auth_type` | `string` |  |  |
-| `credential_id` | `integer` |  |  |
+| `auth_type` | `string` |  | `password` \| `ssh_key` \| `agent` |
+| `password` | `string` |  | 写-only；AES-GCM 存 `password_cipher` |
 | `agent_url` | `string` |  |  |
 | `agent_credential_id` | `integer` |  |  |
 | `description` | `string` |  |  |
@@ -469,9 +471,9 @@ Metadata only; secret never returned
 | `port` | `integer` |  |  |
 | `os_type` | `string` |  |  |
 | `username` | `string` |  |  |
-| `auth_type` | `string` |  |  |
-| `credential_id` | `integer` |  |  |
-| `clear_credential` | `boolean` |  |  |
+| `auth_type` | `string` |  | `password` \| `ssh_key` \| `agent` |
+| `password` | `string` |  | 写-only；空/省略表示保留 |
+| `clear_password` | `boolean` |  | 清空已存密码 |
 | `agent_url` | `string` |  |  |
 | `agent_credential_id` | `integer` |  |  |
 | `clear_agent_credential` | `boolean` |  |  |

@@ -25,7 +25,7 @@ func (d *RsyncDeployer) Deploy(ctx context.Context, opts DeployOptions) error {
 	remote := fmt.Sprintf("%s@%s:%s", opts.Server.Username, opts.Server.Host, normalizeRemotePath(opts.Server, opts.RemotePath))
 
 	var sshCmd string
-	if opts.Server.Password != "" && opts.Server.AuthType != "key" {
+	if opts.Server.Password != "" && !IsSSHKeyAuth(opts.Server.AuthType) {
 		sshCmd = fmt.Sprintf("sshpass -p %q ssh %s", opts.Server.Password, sshOpts)
 	} else {
 		sshCmd = "ssh " + sshOpts

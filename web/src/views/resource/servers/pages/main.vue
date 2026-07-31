@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: "ResourceServers" });
 
-import { onMounted, reactive, ref, useTemplateRef } from "vue";
+import { reactive, ref, useTemplateRef, watch } from "vue";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
 
@@ -19,8 +19,17 @@ import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { tagType, type TagType } from "@/lib/tag";
 
+const AUTH_TYPE_LABEL: Record<string, string> = {
+  password: "密码",
+  ssh_key: "SSH 密钥",
+  key: "SSH 密钥",
+  ssh_agent: "SSH 密钥",
+  agent: "Deploy Agent",
+};
+
 const AUTH_TYPE_TAG: Record<string, TagType> = {
   password: "warning",
+  ssh_key: "info",
   key: "info",
   ssh_agent: "info",
   agent: "primary",
@@ -31,6 +40,12 @@ const SERVER_STATUS_TAG: Record<string, TagType> = {
   offline: "danger",
   unknown: undefined,
 };
+
+const AUTH_OPTIONS = [
+  { label: "密码", value: "password" },
+  { label: "SSH 密钥", value: "ssh_key" },
+  { label: "Deploy Agent", value: "agent" },
+];
 
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
@@ -46,7 +61,7 @@ const form = reactive({
   os_type: "linux",
   username: "",
   auth_type: "password",
-  credential_id: undefined as number | undefined,
+  password: "",
   agent_url: "",
   agent_credential_id: undefined as number | undefined,
   description: "",
@@ -62,12 +77,13 @@ const columns = defineProTableColumns([
   { key: "name", name: "名称" },
   { key: "host", name: "主机" },
   { key: "port", name: "端口" },
-  { key: "auth_type", name: "认证", width: 100, align: "center" },
+  { key: "auth_type", name: "认证", width: 120, align: "center" },
   { key: "status", name: "状态", width: 100, align: "center" },
   { key: "action", name: "操作", width: 280, align: "center", fixed: "right" },
 ]);
 
-onMounted(async () => {
+async function loadAgentCredentials() {
+  if (credOptions.value.length > 0) return;
   try {
     const res = await listCredentials({ page: 1, page_size: 100 });
     credOptions.value = (res.items ?? []).map((c: Credential) => ({
@@ -77,29 +93,66 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
-});
+}
+
+watch(
+  () => form.auth_type,
+  (t) => {
+    if (t === "agent") void loadAgentCredentials();
+  },
+);
 
 function openCreate() {
   editing.value = null;
+  o(form).extend({
+    name: "",
+    host: "",
+    port: 22,
+    os_type: "linux",
+    username: "",
+    auth_type: "password",
+    password: "",
+    agent_url: "",
+    agent_credential_id: undefined,
+    description: "",
+    tags: "",
+  });
   dialogOpen.value = true;
 }
 
 function openEdit(row: Server) {
   editing.value = row;
-  o(form).extend(row);
+  const auth = row.auth_type === "key" || row.auth_type === "ssh_agent" ? "ssh_key" : row.auth_type;
+  o(form).extend({ ...row, password: "", auth_type: auth });
+  if (auth === "agent") void loadAgentCredentials();
   dialogOpen.value = true;
 }
 
 async function save() {
   try {
-    const body: Record<string, unknown> = { ...form };
-    if (!form.credential_id) {
-      delete body.credential_id;
-      if (editing.value) body.clear_credential = true;
+    const body: Record<string, unknown> = {
+      name: form.name,
+      host: form.host,
+      port: form.port,
+      os_type: form.os_type,
+      username: form.username,
+      auth_type: form.auth_type,
+      description: form.description,
+      tags: form.tags,
+    };
+    if (form.auth_type === "password" && form.password) {
+      body.password = form.password;
     }
-    if (!form.agent_credential_id) {
-      delete body.agent_credential_id;
-      if (editing.value) body.clear_agent_credential = true;
+    if (form.auth_type === "agent") {
+      body.agent_url = form.agent_url;
+      if (form.agent_credential_id) {
+        body.agent_credential_id = form.agent_credential_id;
+      } else if (editing.value) {
+        body.clear_agent_credential = true;
+      }
+    } else if (editing.value) {
+      body.agent_url = "";
+      body.clear_agent_credential = true;
     }
     if (editing.value) {
       await updateServer(editing.value.id, body);
@@ -134,6 +187,10 @@ const onTest = bind(async (row: Server) => {
     message.error(err instanceof Error ? err.message : "连接失败");
   }
 });
+
+function authLabel(t: string) {
+  return AUTH_TYPE_LABEL[t] ?? t;
+}
 </script>
 
 <template>
@@ -153,7 +210,7 @@ const onTest = bind(async (row: Server) => {
       </template>
       <template #column:auth_type="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as Server).auth_type, AUTH_TYPE_TAG)">
-          {{ (rowData as Server).auth_type }}
+          {{ authLabel((rowData as Server).auth_type) }}
         </u-tag>
       </template>
       <template #column:status="{ rowData }">
@@ -193,8 +250,13 @@ const onTest = bind(async (row: Server) => {
     >
       <template #group:connection>
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-        <u-input label="主机" field="host" :rules="{ required: '必填' }" />
-        <u-number-input label="端口" field="port" />
+        <u-input
+          v-if="form.auth_type !== 'agent'"
+          label="主机"
+          field="host"
+          :rules="{ required: '必填' }"
+        />
+        <u-number-input v-if="form.auth_type !== 'agent'" label="端口" field="port" />
         <u-select
           label="OS"
           field="os_type"
@@ -206,24 +268,27 @@ const onTest = bind(async (row: Server) => {
         <u-input label="描述" field="description" />
       </template>
       <template #group:auth>
-        <u-input label="用户名" field="username" />
         <u-select
           label="认证方式"
           field="auth_type"
-          :options="[
-            { label: 'password', value: 'password' },
-            { label: 'key', value: 'key' },
-            { label: 'ssh_agent', value: 'ssh_agent' },
-            { label: 'agent', value: 'agent' },
-          ]"
-          tips="password/key 用下方凭证；ssh_agent 走本机 agent；agent 经远端 Deploy Agent"
+          :options="AUTH_OPTIONS"
+          :tips="
+            form.auth_type === 'ssh_key'
+              ? '请在运行 Bedrock 的主机预先配置私钥（SSH_AUTH_SOCK / ssh-agent），目标机已授权对应公钥；应用内不存储私钥'
+              : form.auth_type === 'agent'
+                ? '经远端 Deploy Agent；需填写 Agent URL，可选绑定 Agent 凭证'
+                : '密码表单直填，AES-GCM 加密存于服务器记录'
+          "
         />
-        <u-select
-          label="凭证"
-          field="credential_id"
-          :options="credOptions"
-          clearable
-          tips="绑定已录入的凭证；引用时需具备 credentials:use"
+        <u-input v-if="form.auth_type !== 'agent'" label="用户名" field="username" />
+        <u-password-input
+          v-if="form.auth_type === 'password'"
+          :label="editing ? '密码（留空不改）' : '密码'"
+          field="password"
+          autocomplete="new-password"
+          :tips="
+            editing?.has_password ? '已保存密码；留空表示不修改' : 'AES-GCM 加密存储，API 永不回显'
+          "
         />
         <u-input
           v-if="form.auth_type === 'agent'"
@@ -237,7 +302,7 @@ const onTest = bind(async (row: Server) => {
           field="agent_credential_id"
           :options="credOptions"
           clearable
-          tips="访问 Deploy Agent 时使用的凭证"
+          tips="访问 Deploy Agent 时使用的凭证；绑定需 credentials:use"
         />
       </template>
     </FormDialog>

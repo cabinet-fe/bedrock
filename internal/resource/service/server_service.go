@@ -33,7 +33,7 @@ type CreateServerInput struct {
 	OSType            string `json:"os_type"`
 	Username          string `json:"username"`
 	AuthType          string `json:"auth_type"`
-	CredentialID      *uint  `json:"credential_id"`
+	Password          string `json:"password"` // write-only
 	AgentURL          string `json:"agent_url"`
 	AgentCredentialID *uint  `json:"agent_credential_id"`
 	Description       string `json:"description"`
@@ -47,8 +47,8 @@ type UpdateServerInput struct {
 	OSType               *string `json:"os_type"`
 	Username             *string `json:"username"`
 	AuthType             *string `json:"auth_type"`
-	CredentialID         *uint   `json:"credential_id"`
-	ClearCredential      bool    `json:"clear_credential"`
+	Password             *string `json:"password"` // empty/omit = keep
+	ClearPassword        bool    `json:"clear_password"`
 	AgentURL             *string `json:"agent_url"`
 	AgentCredentialID    *uint   `json:"agent_credential_id"`
 	ClearAgentCredential bool    `json:"clear_agent_credential"`
@@ -66,7 +66,7 @@ func (s *ServerService) Create(createdBy uint, in CreateServerInput, canUseCrede
 	if err := s.repo.Create(srv); err != nil {
 		return nil, err
 	}
-	return srv, nil
+	return maskServer(srv), nil
 }
 
 func (s *ServerService) buildServer(id uint, in CreateServerInput, canUseCredential bool) (*model.Server, error) {
@@ -79,17 +79,10 @@ func (s *ServerService) buildServer(id uint, in CreateServerInput, canUseCredent
 	if authType != "agent" && host == "" {
 		return nil, errorsNew("主机不能为空")
 	}
-	if (in.CredentialID != nil && *in.CredentialID > 0) || (in.AgentCredentialID != nil && *in.AgentCredentialID > 0) {
+	if in.AgentCredentialID != nil && *in.AgentCredentialID > 0 {
 		if !canUseCredential {
 			return nil, NewForbidden("绑定凭证需要 resource_credentials:use 权限")
 		}
-	}
-	if in.CredentialID != nil && *in.CredentialID > 0 {
-		if _, err := s.creds.Get(*in.CredentialID); err != nil {
-			return nil, errorsNew("凭证不存在")
-		}
-	}
-	if in.AgentCredentialID != nil && *in.AgentCredentialID > 0 {
 		if _, err := s.creds.Get(*in.AgentCredentialID); err != nil {
 			return nil, errorsNew("Agent 凭证不存在")
 		}
@@ -102,7 +95,7 @@ func (s *ServerService) buildServer(id uint, in CreateServerInput, canUseCredent
 	if osType != "windows" {
 		osType = "linux"
 	}
-	return &model.Server{
+	srv := &model.Server{
 		ID:                id,
 		Name:              name,
 		Host:              host,
@@ -110,12 +103,19 @@ func (s *ServerService) buildServer(id uint, in CreateServerInput, canUseCredent
 		OSType:            osType,
 		Username:          strings.TrimSpace(in.Username),
 		AuthType:          authType,
-		CredentialID:      nilIfZero(in.CredentialID),
 		AgentURL:          strings.TrimSpace(in.AgentURL),
 		AgentCredentialID: nilIfZero(in.AgentCredentialID),
 		Description:       strings.TrimSpace(in.Description),
 		Tags:              strings.TrimSpace(in.Tags),
-	}, nil
+	}
+	if pw := strings.TrimSpace(in.Password); pw != "" {
+		enc, err := pkg.Encrypt(pw)
+		if err != nil {
+			return nil, err
+		}
+		srv.PasswordCipher = enc
+	}
+	return srv, nil
 }
 
 func (s *ServerService) Update(id uint, in UpdateServerInput, canUseCredential bool) (*model.Server, error) {
@@ -123,7 +123,7 @@ func (s *ServerService) Update(id uint, in UpdateServerInput, canUseCredential b
 	if err != nil {
 		return nil, NewNotFound("服务器不存在")
 	}
-	prevCred, prevAgent := existing.CredentialID, existing.AgentCredentialID
+	prevAgent := existing.AgentCredentialID
 	if in.Name != nil {
 		existing.Name = strings.TrimSpace(*in.Name)
 	}
@@ -155,20 +155,14 @@ func (s *ServerService) Update(id uint, in UpdateServerInput, canUseCredential b
 	if in.Tags != nil {
 		existing.Tags = strings.TrimSpace(*in.Tags)
 	}
-	if in.ClearCredential {
-		existing.CredentialID = nil
-	} else if in.CredentialID != nil {
-		if !credentialIDEqual(prevCred, in.CredentialID) && !canUseCredential {
-			return nil, NewForbidden("绑定/修改凭证需要 resource_credentials:use 权限")
+	if in.ClearPassword {
+		existing.PasswordCipher = ""
+	} else if in.Password != nil && strings.TrimSpace(*in.Password) != "" {
+		enc, err := pkg.Encrypt(strings.TrimSpace(*in.Password))
+		if err != nil {
+			return nil, err
 		}
-		if *in.CredentialID == 0 {
-			existing.CredentialID = nil
-		} else {
-			if _, err := s.creds.Get(*in.CredentialID); err != nil {
-				return nil, errorsNew("凭证不存在")
-			}
-			existing.CredentialID = in.CredentialID
-		}
+		existing.PasswordCipher = enc
 	}
 	if in.ClearAgentCredential {
 		existing.AgentCredentialID = nil
@@ -191,10 +185,12 @@ func (s *ServerService) Update(id uint, in UpdateServerInput, canUseCredential b
 	if existing.AuthType != "agent" && existing.Host == "" {
 		return nil, errorsNew("主机不能为空")
 	}
+	// Ensure legacy credential_id is not reintroduced via updates.
+	existing.CredentialID = nil
 	if err := s.repo.Update(existing); err != nil {
 		return nil, err
 	}
-	return existing, nil
+	return maskServer(existing), nil
 }
 
 func (s *ServerService) Delete(id uint) error {
@@ -216,11 +212,19 @@ func (s *ServerService) Get(id uint) (*model.Server, error) {
 	if err != nil {
 		return nil, NewNotFound("服务器不存在")
 	}
-	return srv, nil
+	return maskServer(srv), nil
 }
 
 func (s *ServerService) List(q pkg.ListQuery, keyword, tag string) ([]model.Server, int64, error) {
-	return s.repo.List(q, keyword, tag)
+	items, total, err := s.repo.List(q, keyword, tag)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]model.Server, 0, len(items))
+	for i := range items {
+		out = append(out, *maskServer(&items[i]))
+	}
+	return out, total, nil
 }
 
 func (s *ServerService) TestConnection(id uint) (string, error) {
@@ -243,44 +247,26 @@ func (s *ServerService) TestConnection(id uint) (string, error) {
 }
 
 func (s *ServerService) testSSH(srv *model.Server) (string, error) {
-	password, privateKey := "", ""
-	authType := srv.AuthType
-	if srv.CredentialID != nil {
-		cred, secret, passphrase, err := s.creds.GetDecrypted(*srv.CredentialID)
+	password := ""
+	if srv.PasswordCipher != "" {
+		plain, err := pkg.Decrypt(srv.PasswordCipher)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("解密密码失败: %w", err)
 		}
-		switch cred.Type {
-		case "ssh_key":
-			privateKey = secret
-			authType = "key"
-			if passphrase != "" {
-				// deployer parsePrivateKey tries without passphrase; passphrase support limited — keep key as-is
-				_ = passphrase
-			}
-		default:
-			password = secret
-			authType = "password"
-		}
-		if srv.Username == "" {
-			srv.Username = cred.Username
-		}
+		password = plain
 	}
-	if authType == "ssh_agent" {
-		authType = "key"
-	}
+	authType := normalizeServerAuth(srv.AuthType)
 	addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
 	if srv.Port == 0 {
 		addr = srv.Host + ":22"
 	}
 	info := deployer.ServerInfo{
-		Host:       srv.Host,
-		Port:       srv.Port,
-		OSType:     srv.OSType,
-		Username:   srv.Username,
-		AuthType:   authType,
-		Password:   password,
-		PrivateKey: privateKey,
+		Host:     srv.Host,
+		Port:     srv.Port,
+		OSType:   srv.OSType,
+		Username: srv.Username,
+		AuthType: authType,
+		Password: password,
 	}
 	authMethods, err := deployer.SSHAuthMethods(info)
 	if err != nil {
@@ -351,15 +337,21 @@ func (s *ServerService) testAgent(srv *model.Server) (string, error) {
 
 func normalizeServerAuth(t string) string {
 	switch strings.ToLower(strings.TrimSpace(t)) {
-	case "key", "ssh_key":
-		return "key"
-	case "ssh_agent", "agent_ssh":
-		return "ssh_agent"
+	case "key", "ssh_key", "ssh_agent", "agent_ssh":
+		return "ssh_key"
 	case "agent":
 		return "agent"
 	default:
 		return "password"
 	}
+}
+
+func maskServer(s *model.Server) *model.Server {
+	cp := *s
+	cp.HasPassword = s.PasswordCipher != ""
+	cp.PasswordCipher = ""
+	cp.CredentialID = nil
+	return &cp
 }
 
 func nilIfZero(p *uint) *uint {

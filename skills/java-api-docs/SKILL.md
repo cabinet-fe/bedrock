@@ -58,7 +58,7 @@ description: >-
 |------------|---------------------|
 | `sync_status`：多项目 `action` 汇总、`allUpToDate` | 对 noop 项目直接跳过 |
 | `list_endpoints`：METHOD、完整 path、servicePath、参数、鉴权、按 Controller 分组与 `docFile` | 接口说明、业务语义、鉴权可读摘要、示例 JSON |
-| `resolve_types`：字段树、继承、`needs_source` | 前端友好表格；泛型/Map；解释字段含义 |
+| `resolve_types`：字段树、继承、`required`/`requiredSource`、`needs_source` | 按规则填「必填」列；解释字段含义；`requiredSource=default` 时读业务源码判断 |
 | `changed_since` / `stamp_commit`：变更范围、`docFiles`、同步提交号、`repoRel` | 判断改哪些 `<kebab>.md`；核对文档与源码意图 |
 | `verify_docs`：MD 中 `METHOD path` 与脚本集合比对 | `ok:false` 时按 diff 改 MD，禁止靠感觉改 path |
 | `ensure_conventions`：生成唯一 `_conventions.md` | 保持 `project-conventions.md` 为规范源 |
@@ -101,6 +101,20 @@ description: >-
 - `R<T>`：模块头写信封；接口响应表只写 `data` 内容
 - 分页：按约定展开；无源码时写「见 [API 约定](../_conventions.md) · 分页」
 - `needs_source`：只打开那一个源文件补字段；仍解析不出则标注「未解析」并列出已知字段，禁止用一句话搪塞
+
+### 必填列（请求侧）
+
+路径参数 / 查询参数 / 请求体字段表必须有「必填」列（写 `是` / `否`）。**响应体与数据模型表不写必填列**（响应字段无「必填」语义）。
+
+判定来源（按优先级，禁止凭感觉一律写「否」）：
+
+1. **路径 / 查询参数**：跟 `list_endpoints` 每条 param 的 `required`（Spring `@PathVariable` / `@RequestParam` 的 `required=`；缺省为必填）。
+2. **请求体字段**：跟 `resolve_types` 字段的 `required` + `requiredSource`：
+   - `validation`：有 `@NotNull` / `@NotBlank` / `@NotEmpty` → `是`；`@Nullable` → `否`
+   - `schema`：`@Schema(required=true)` 或 `requiredMode=REQUIRED` → `是`；`required=false` / `NOT_REQUIRED` → `否`
+   - `platform`：公共基类约定（如 `_shared.moduleCode`/`action`/`orgCode` 为 `是`；审计字段多为 `否`）
+   - `default`：**脚本无注解信号**——不得直接抄成全员「否」。必须结合 Controller/Service 校验、创建 vs 更新语义、示例与注释判断；创建接口的主键业务字段、更新接口的 ID 等常为必填。仍无法判断时写 `否`，并在说明标注「源码无校验注解」。
+3. **整段 body 非对象**（`` `_(body)_` ``）：必填写 `是`（有 `@RequestBody` 即须传体）。
 
 ### Path（网关 + 服务）
 
@@ -294,6 +308,7 @@ PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已�
 - [ ] 已跑 verify_docs 且 ok:true（失败已按 missing/extra/unresolvedTypes 修正）
 - [ ] 说明与示例是中文人话；无描述性斜体占位；非对象 body/data 用 `` `_(body)_` ``/`` `_(data)_` ``（带反引号）；鉴权为可读摘要
 - [ ] 每个对象请求/响应已展开字段表（或本文 `## 数据模型` 锚点）；无「返回 `Xxx` 对象」却无定义
+- [ ] 请求侧「必填」已按 list_endpoints / resolve_types 规则填写；未出现「无注解就全员否」；响应表无必填列
 - [ ] BaseDTO 保存/修改请求体含嵌套 `_shared`（未摊平）；示例 JSON 含 `"_shared"`
 - [ ] Markdown 在 <out>/<project>/，模块头链接 ../_conventions.md
 - [ ] 已 stamp（含 --docs）当前提交到该项目 .sync.json（含 repoRel）

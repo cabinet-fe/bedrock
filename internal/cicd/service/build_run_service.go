@@ -124,6 +124,15 @@ func (s *BuildRunService) EnqueueInternal(jobID, triggeredBy uint, in engine.Enq
 		"triggered_by":    triggeredBy,
 		"enqueued_at":     time.Now().UTC().Format(time.RFC3339),
 	}
+	var overridesCipher string
+	if len(in.EnvOverrides) > 0 {
+		cipher, err := encryptJobEnvVars(in.EnvOverrides)
+		if err != nil {
+			return nil, err
+		}
+		overridesCipher = cipher
+		snapshot["env_override_keys"] = sortedKeys(in.EnvOverrides)
+	}
 	snapBytes, _ := json.Marshal(snapshot)
 	run := &model.BuildRun{
 		BuildJobID:          jobID,
@@ -137,6 +146,7 @@ func (s *BuildRunService) EnqueueInternal(jobID, triggeredBy uint, in engine.Enq
 		CommitMessage:       in.CommitMessage,
 		DistributionSummary: "none",
 		SnapshotJSON:        string(snapBytes),
+		EnvOverridesCipher:  overridesCipher,
 	}
 	if err := s.runs.Create(run); err != nil {
 		return nil, err
