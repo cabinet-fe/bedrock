@@ -161,6 +161,30 @@ func (o *PipelineOrchestrator) EnqueueInternal(pipelineID, triggeredBy uint, tri
 	return o.runs.FindByID(run.ID)
 }
 
+// Cancel stops a non-terminal PipelineRun: cancels in-flight BuildRuns, skips never-started stages.
+func (o *PipelineOrchestrator) Cancel(id, userID uint, dataScope string) (*model.PipelineRun, error) {
+	run, err := o.runs.FindByID(id)
+	if err != nil {
+		return nil, NewNotFound("流水线运行不存在")
+	}
+	p, err := o.pipelines.FindByID(run.BuildPipelineID)
+	if err != nil {
+		return nil, NewNotFound("流水线不存在")
+	}
+	if err := requirePipelineWrite(p, userID, dataScope); err != nil {
+		return nil, err
+	}
+	switch run.Status {
+	case "queued", "running":
+	default:
+		return nil, NewConflict("当前状态不可取消: " + run.Status)
+	}
+	if err := o.cancelPipeline(id, "cancelled by user"); err != nil {
+		return nil, err
+	}
+	return o.runs.FindByID(id)
+}
+
 // OnBuildRunTerminal implements engine.BuildRunTerminalHook.
 func (o *PipelineOrchestrator) OnBuildRunTerminal(run *model.BuildRun, status string) {
 	if o == nil || run == nil || run.ID == 0 {
@@ -177,6 +201,21 @@ func (o *PipelineOrchestrator) OnBuildRunTerminal(run *model.BuildRun, status st
 	lock.Lock()
 	defer lock.Unlock()
 
+	switch status {
+	case "success", "failed", "cancelled", "interrupted":
+		// ok
+	default:
+		return
+	}
+
+	now := time.Now()
+	// Always sync the stage row (including late terminals after pipeline finalize).
+	_ = o.runs.UpdateStageFields(stage.ID, map[string]interface{}{
+		"status":        status,
+		"error_message": run.ErrorMessage,
+		"finished_at":   now,
+	})
+
 	pr, err := o.runs.FindByID(stage.PipelineRunID)
 	if err != nil {
 		return
@@ -185,22 +224,8 @@ func (o *PipelineOrchestrator) OnBuildRunTerminal(run *model.BuildRun, status st
 		return
 	}
 
-	now := time.Now()
-	stageStatus := status
-	switch status {
-	case "success", "failed", "cancelled", "interrupted":
-		// ok
-	default:
-		return
-	}
-	_ = o.runs.UpdateStageFields(stage.ID, map[string]interface{}{
-		"status":        stageStatus,
-		"error_message": run.ErrorMessage,
-		"finished_at":   now,
-	})
-
-	if stageStatus != "success" {
-		_ = o.failPipelineLocked(pr.ID, fmt.Sprintf("stage %s build_run=%d status=%s", stage.NodeID, run.ID, stageStatus))
+	if status != "success" {
+		_ = o.failPipelineLocked(pr.ID, fmt.Sprintf("stage %s build_run=%d status=%s", stage.NodeID, run.ID, status))
 		return
 	}
 
@@ -323,7 +348,20 @@ func (o *PipelineOrchestrator) failPipeline(pipelineRunID uint, msg string) erro
 	return o.failPipelineLocked(pipelineRunID, msg)
 }
 
+func (o *PipelineOrchestrator) cancelPipeline(pipelineRunID uint, msg string) error {
+	lock := o.runLock(pipelineRunID)
+	lock.Lock()
+	defer lock.Unlock()
+	return o.finalizePipelineLocked(pipelineRunID, "cancelled", msg)
+}
+
 func (o *PipelineOrchestrator) failPipelineLocked(pipelineRunID uint, msg string) error {
+	return o.finalizePipelineLocked(pipelineRunID, "failed", msg)
+}
+
+// finalizePipelineLocked marks the pipeline terminal, skips never-started stages,
+// cancels non-terminal sibling BuildRuns, and marks those stages cancelled.
+func (o *PipelineOrchestrator) finalizePipelineLocked(pipelineRunID uint, status, msg string) error {
 	pr, err := o.runs.FindByID(pipelineRunID)
 	if err != nil {
 		return err
@@ -333,22 +371,62 @@ func (o *PipelineOrchestrator) failPipelineLocked(pipelineRunID uint, msg string
 	}
 	now := time.Now()
 	_ = o.runs.UpdateFields(pipelineRunID, map[string]interface{}{
-		"status":        "failed",
+		"status":        status,
 		"error_message": msg,
 		"finished_at":   now,
 	})
+
+	var cancelIDs []uint
 	for _, st := range pr.Stages {
-		if st.Status == "pending" || st.Status == "queued" {
+		if isStageTerminal(st.Status) {
+			continue
+		}
+		switch st.Status {
+		case "pending":
+			_ = o.runs.UpdateStageFields(st.ID, map[string]interface{}{
+				"status":      "skipped",
+				"finished_at": now,
+			})
+		case "queued", "running":
+			if st.BuildRunID != nil && *st.BuildRunID > 0 {
+				cancelIDs = append(cancelIDs, *st.BuildRunID)
+				_ = o.runs.UpdateStageFields(st.ID, map[string]interface{}{
+					"status":      "cancelled",
+					"finished_at": now,
+				})
+			} else {
+				_ = o.runs.UpdateStageFields(st.ID, map[string]interface{}{
+					"status":      "skipped",
+					"finished_at": now,
+				})
+			}
+		default:
 			_ = o.runs.UpdateStageFields(st.ID, map[string]interface{}{
 				"status":      "skipped",
 				"finished_at": now,
 			})
 		}
 	}
+	for _, buildRunID := range cancelIDs {
+		o.buildRuns.CancelInternal(buildRunID)
+	}
 	if o.logger != nil {
-		o.logger.Info("pipeline failed", zap.Uint("pipeline_run_id", pipelineRunID), zap.String("msg", msg))
+		o.logger.Info("pipeline finalized",
+			zap.Uint("pipeline_run_id", pipelineRunID),
+			zap.String("status", status),
+			zap.String("msg", msg),
+		)
 	}
 	return nil
+}
+
+func isStageTerminal(status string) bool {
+	switch status {
+	case "success", "failed", "cancelled", "skipped", "interrupted":
+		return true
+	default:
+		return false
+	}
 }
 
 func stageByNode(stages []model.PipelineStageRun) map[string]model.PipelineStageRun {

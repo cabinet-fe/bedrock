@@ -6,8 +6,9 @@ import { defineTableColumns, message } from "@veltra/desktop";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import { getBuildPipeline, getPipelineRun, listBuildJobs } from "@/api/cicd";
+import { cancelPipelineRun, getBuildPipeline, getPipelineRun, listBuildJobs } from "@/api/cicd";
 import type { PipelineRun, PipelineStageRun } from "@/api/types";
+import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
 import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
 import { useTabsStore } from "@/stores/tabs";
@@ -17,11 +18,13 @@ import PipelineCanvas from "../../pipelines/components/pipeline-canvas.vue";
 const route = useRoute();
 const router = useRouter();
 const tabsStore = useTabsStore();
+const { hasPermission } = usePermission();
 
 const detailPath = route.path;
 const runId = Number(Array.isArray(route.params.id) ? route.params.id[0] : route.params.id);
 
 const loading = ref(true);
+const acting = ref(false);
 const run = ref<PipelineRun | null>(null);
 const pipelineName = ref("");
 const jobNames = ref(new Map<number, string>());
@@ -29,9 +32,16 @@ const nodes = ref<Node[]>([]);
 const edges = ref<Edge[]>([]);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
+const canExecute = computed(() => hasPermission("cicd_pipelines:execute"));
+
 const isLive = computed(() => {
   const s = run.value?.status;
   return s === "queued" || s === "running";
+});
+
+const canCancel = computed(() => {
+  if (!canExecute.value || !run.value) return false;
+  return run.value.status === "queued" || run.value.status === "running";
 });
 
 const stageColumns = defineTableColumns([
@@ -96,6 +106,20 @@ function openBuildRun(stage: PipelineStageRun) {
   void router.push({ name: "cicd-build-run-detail", params: { id: String(stage.build_run_id) } });
 }
 
+async function onCancel() {
+  if (!run.value || acting.value) return;
+  acting.value = true;
+  try {
+    run.value = await cancelPipelineRun(run.value.id);
+    applyGraph(run.value.snapshot_json || "");
+    message.success("已取消");
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : "取消失败");
+  } finally {
+    acting.value = false;
+  }
+}
+
 onMounted(async () => {
   try {
     const jobs = await listBuildJobs({ page: 1, page_size: 200 });
@@ -138,6 +162,9 @@ onUnmounted(() => {
       <div class="pipeline-run-detail__tags">
         <u-tag :type="tagType(run.status, JOB_STATUS_TAG)">{{ run.status }}</u-tag>
         <u-tag :type="tagType(run.trigger_type, TRIGGER_TYPE_TAG)">{{ run.trigger_type }}</u-tag>
+        <u-button v-if="canCancel" plain type="danger" :disabled="acting" @click="onCancel">
+          取消
+        </u-button>
       </div>
     </header>
 

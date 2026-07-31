@@ -193,6 +193,13 @@
 路径参数：id*: integer
 响应 200：data = PipelineRun
 
+### POST /pipeline-runs/{id}/cancel — 取消流水线运行
+
+权限：`cicd_pipelines:execute`
+路径参数：id*: integer
+响应 200：data = PipelineRun
+说明：仅 `queued` / `running` 可取消。会取消非终态 sibling BuildRun，进行中的 stage 标为 `cancelled`，未启动 stage 标为 `skipped`。
+
 ## Webhook
 
 ### POST /webhook/jobs/{build_job_id}/{secret} — 接收构建任务 Webhook

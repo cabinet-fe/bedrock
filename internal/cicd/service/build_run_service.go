@@ -189,6 +189,41 @@ func (s *BuildRunService) Cancel(id uint, userID uint, dataScope string) (*model
 	return s.runs.FindByID(id)
 }
 
+// CancelInternal cancels a build run without RBAC or terminal-hook callbacks.
+// Used by PipelineOrchestrator while holding the per-pipeline lock.
+func (s *BuildRunService) CancelInternal(id uint) {
+	if s == nil || id == 0 {
+		return
+	}
+	run, err := s.runs.FindByID(id)
+	if err != nil {
+		return
+	}
+	switch run.Status {
+	case "queued":
+		now := time.Now()
+		_ = s.runs.UpdateFields(id, map[string]interface{}{
+			"status":      "cancelled",
+			"stage":       "idle",
+			"finished_at": now,
+		})
+	case "running":
+		if s.scheduler != nil {
+			s.scheduler.Cancel(id)
+		}
+	case "success":
+		if s.scheduler != nil {
+			s.scheduler.Cancel(id)
+		}
+		if run.DistributionSummary == "running" {
+			_ = s.runs.UpdateFields(id, map[string]interface{}{
+				"distribution_summary": "cancelled",
+				"stage":                "idle",
+			})
+		}
+	}
+}
+
 func (s *BuildRunService) Retry(id, triggeredBy uint, dataScope string) (*model.BuildRun, error) {
 	prev, err := s.runs.FindByID(id)
 	if err != nil {

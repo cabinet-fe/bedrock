@@ -37,6 +37,7 @@ declare module 'vue' {
     UCardHeader: typeof import('@veltra/desktop')['UCardHeader']
     UCheckbox: typeof import('@veltra/desktop')['UCheckbox']
     UCodeEditor: typeof import('@veltra/desktop')['UCodeEditor']
+    UContextmenu: typeof import('@veltra/desktop')['UContextmenu']
     UDatePicker: typeof import('@veltra/desktop')['UDatePicker']
     UDialog: typeof import('@veltra/desktop')['UDialog']
     UDropdown: typeof import('@veltra/desktop')['UDropdown']

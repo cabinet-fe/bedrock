@@ -258,3 +258,8 @@ export async function getPipelineRun(id: number): Promise<PipelineRun> {
   const { body } = await http.get<PipelineRun>(`/pipeline-runs/${id}`);
   return body;
 }
+
+export async function cancelPipelineRun(id: number): Promise<PipelineRun> {
+  const { body } = await http.post<PipelineRun>(`/pipeline-runs/${id}/cancel`, {});
+  return body;
+}

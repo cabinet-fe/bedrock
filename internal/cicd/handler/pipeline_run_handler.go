@@ -26,6 +26,7 @@ func (h *PipelineRunHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Hand
 	g := rg.Group("/pipeline-runs", authMW)
 	g.GET("", rbacmw.RequirePermission(h.perm, "cicd_pipeline_runs:view"), h.List)
 	g.GET("/:id", rbacmw.RequirePermission(h.perm, "cicd_pipeline_runs:view"), h.Get)
+	g.POST("/:id/cancel", rbacmw.RequirePermission(h.perm, "cicd_pipelines:execute"), h.Cancel)
 }
 
 func (h *PipelineRunHandler) dataScope(c *gin.Context) (uint, string, bool) {
@@ -70,6 +71,24 @@ func (h *PipelineRunHandler) Get(c *gin.Context) {
 		return
 	}
 	item, err := h.orchestrator.Get(id, userID, scope)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	pkg.Success(c, item)
+}
+
+func (h *PipelineRunHandler) Cancel(c *gin.Context) {
+	id, err := parseID(c)
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "无效 ID")
+		return
+	}
+	userID, scope, ok := h.dataScope(c)
+	if !ok {
+		return
+	}
+	item, err := h.orchestrator.Cancel(id, userID, scope)
 	if err != nil {
 		writeServiceError(c, err)
 		return
