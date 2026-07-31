@@ -34,9 +34,10 @@ import (
 
 func setupAI(t *testing.T) (*gorm.DB, *service.AgentService, *service.SkillService, *projectservice.ProjectService) {
 	t.Helper()
+	root := t.TempDir()
 	gdb, err := db.Open(&config.DatabaseConfig{
 		Driver: "sqlite",
-		Path:   filepath.Join(t.TempDir(), "ai.sqlite"),
+		Path:   filepath.Join(root, "ai.sqlite"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -47,14 +48,14 @@ func setupAI(t *testing.T) (*gorm.DB, *service.AgentService, *service.SkillServi
 	repo := repository.NewAIRepository(gdb)
 	cli := resourceservice.NewCLIService(resourcerepo.NewCLIRepository(gdb))
 
-	storageRoot := filepath.Join(t.TempDir(), "storage")
+	storageRoot := filepath.Join(root, "storage")
 	storageSvc, err := storageservice.NewStorageService(storagerepo.NewStorageRepository(gdb), storageRoot, storageservice.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	skills := service.NewSkillService(repo, storageSvc, filepath.Join(storageRoot, "skills"))
-	work := filepath.Join(t.TempDir(), "work")
-	logs := filepath.Join(t.TempDir(), "logs")
+	work := filepath.Join(root, "work")
+	logs := filepath.Join(root, "logs")
 	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, logs)
 	agents.Start()
 	t.Cleanup(agents.Shutdown)
@@ -328,6 +329,17 @@ func zipBytes(t *testing.T, files map[string]string) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+func TestShutdownWaitsForWorkspaceInit(t *testing.T) {
+	_, agents, _, _ := setupAI(t)
+	if _, err := agents.CreateAgent(1, service.AgentInput{
+		Name: "async", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Intentionally skip waitWorkspaceStatus: t.Cleanup(agents.Shutdown) must
+	// drain workspace init before t.TempDir() removal (see wsInitWg).
 }
 
 func TestCronReloadAppliesTimezone(t *testing.T) {

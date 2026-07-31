@@ -50,7 +50,11 @@ func (s *AgentService) enqueueWorkspaceInit(agentID, userID uint) {
 	s.wsInitGen[agentID]++
 	gen := s.wsInitGen[agentID]
 	s.wsInitMu.Unlock()
-	go s.initAgentWorkspace(agentID, userID, gen)
+	s.wsInitWg.Add(1)
+	go func() {
+		defer s.wsInitWg.Done()
+		s.initAgentWorkspace(agentID, userID, gen)
+	}()
 }
 
 func (s *AgentService) initAgentWorkspace(agentID, userID uint, gen uint64) {

@@ -75,6 +75,7 @@ type AgentService struct {
 
 	wsInitMu  sync.Mutex
 	wsInitGen map[uint]uint64
+	wsInitWg  sync.WaitGroup
 }
 
 // SetTerminalNotifier wires DESIGN §12 in-app notifications for agent terminal states.
@@ -150,6 +151,7 @@ func (s *AgentService) Shutdown() {
 	close(s.stop)
 	s.startMu.Unlock()
 	s.wg.Wait()
+	s.wsInitWg.Wait()
 }
 
 func (s *AgentService) RecoverOnStartup() error {

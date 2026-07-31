@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 
 func setupNotifDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "notif.sqlite")), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

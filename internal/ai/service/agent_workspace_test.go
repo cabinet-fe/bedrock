@@ -82,9 +82,10 @@ func readRunLog(t *testing.T, path string) string {
 
 func setupAgentWorkspace(t *testing.T) (*service.AgentService, *service.SkillService, *resourcerepo.CLIRepository, string) {
 	t.Helper()
+	root := t.TempDir()
 	gdb, err := db.Open(&config.DatabaseConfig{
 		Driver: "sqlite",
-		Path:   filepath.Join(t.TempDir(), "ai-ws.sqlite"),
+		Path:   filepath.Join(root, "ai-ws.sqlite"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -95,14 +96,14 @@ func setupAgentWorkspace(t *testing.T) (*service.AgentService, *service.SkillSer
 	repo := repository.NewAIRepository(gdb)
 	cliRepo := resourcerepo.NewCLIRepository(gdb)
 	cli := resourceservice.NewCLIService(cliRepo)
-	storageRoot := filepath.Join(t.TempDir(), "storage")
+	storageRoot := filepath.Join(root, "storage")
 	storageSvc, err := storageservice.NewStorageService(storagerepo.NewStorageRepository(gdb), storageRoot, storageservice.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	skills := service.NewSkillService(repo, storageSvc, filepath.Join(storageRoot, "skills"))
-	work := filepath.Join(t.TempDir(), "work")
-	logs := filepath.Join(t.TempDir(), "logs")
+	work := filepath.Join(root, "work")
+	logs := filepath.Join(root, "logs")
 	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, logs)
 	agents.SetGitCheckout(stubGitCheckout)
 	agents.Start()
