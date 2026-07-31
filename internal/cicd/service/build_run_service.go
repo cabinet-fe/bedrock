@@ -87,6 +87,7 @@ func (s *BuildRunService) EnqueueInternal(jobID, triggeredBy uint, in engine.Enq
 		return nil, errorsNew("构建任务已禁用")
 	}
 	decodeEnvNames(job)
+	decodeArtifactPaths(job)
 	branch := in.Branch
 	if branch == "" {
 		branch = job.Branch
@@ -94,6 +95,9 @@ func (s *BuildRunService) EnqueueInternal(jobID, triggeredBy uint, in engine.Enq
 	trigger := in.TriggerType
 	if trigger == "" {
 		trigger = "manual"
+	}
+	if trigger == "manual" && !job.TriggerManual {
+		return nil, errorsNew("该任务未启用手动触发")
 	}
 	num, err := s.runs.NextBuildNumber(jobID)
 	if err != nil {
@@ -107,6 +111,8 @@ func (s *BuildRunService) EnqueueInternal(jobID, triggeredBy uint, in engine.Enq
 		"commit_hash":     in.CommitHash,
 		"script_sha256":   hex.EncodeToString(scriptHash[:]),
 		"env_var_names":   job.EnvVarNames,
+		"env_var_keys":    jobEnvVarKeys(job),
+		"artifact_paths":  job.ArtifactPaths,
 		"artifact_format": job.ArtifactFormat,
 		"deploy_targets":  targets,
 		"triggered_by":    triggeredBy,

@@ -236,7 +236,7 @@ onMounted(async () => {
             取消
           </u-button>
           <u-button
-            v-if="run.status === 'success'"
+            v-if="run.status === 'success' && run.artifact_path"
             plain
             type="primary"
             :disabled="acting"

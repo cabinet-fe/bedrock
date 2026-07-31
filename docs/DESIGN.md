@@ -265,15 +265,19 @@ flowchart TB
 
 规则：
 
-1. 克隆→构建→归档成功后：`status=success`，制品可下载；`stage` 进入 `distributing` 或 `idle`。
+1. 克隆→构建（含可选 `post_build_script`）→缓存保存→归档成功后：`status=success`，制品可下载；`stage` 进入 `distributing` 或 `idle`。`post_build_script` 在主构建脚本成功之后、缓存保存/归档之前执行（与主脚本同一 shell 类型、cwd=`work_dir`、同一套环境变量）；失败与主构建同级 → `failed`。
 2. **分发失败不将 `status` 改为 `failed`**；更新 `distribution_summary`：`none` | `running` | `all_success` | `partial` | `all_failed` | `cancelled`。
-3. 构建阶段失败 → `failed`；用户取消构建中 → `cancelled`；若已 `success` 仅取消分发 → 保持 `success` + summary 反映取消。
+3. 构建阶段失败 → `failed`；用户取消构建中 → `cancelled`；若已 `success` 仅取消分发 → 保持 `success` + summary 反映取消。`work_dir` 解析后的构建目录在启动脚本前校验：不存在/非目录时明确失败原因，避免误报为缺少 `sh`。
 4. **禁止**流水线内嵌同步 `agent` 阶段；构建事件异步创建 `AgentRun`。
 5. `retry`：新建 BuildRun；`redeploy`：**同一** BuildRun，追加 `BuildDeployAttempt`，summary 指向最新一批结果。
 
+**制品路径（`artifact_paths`）**：相对仓库根的文件/目录列表（替代单一 `output_dir`；`output_dir` 列保留一版兼容，读时与 `artifact_paths` 合并）。运行时在 clone 根下解析并做边界校验；配置路径缺失 → 构建 `failed`。归档规则：0 路径无制品（有部署目标时拒绝整仓分发，`distribution_summary=all_failed`）；1 文件原样存储（`artifact_kind=file`）；1 目录按 `artifact_format` 打 zip/tar.gz（`archive`）；2+ 路径按 basename 合并后打一包（`bundle`，basename 冲突失败）。分发与 redeploy 均从同一 `deployRoot` 出发（文件/归档先物化到 staging）。
+
+**构建环境变量（混合）**：`env_var_names`（JSON 文本列，仅名称，运行时 `os.LookupEnv`）+ `env_vars_cipher`（AES-GCM Key-Value）。API 对 Key-Value 仅回显 `{key, has_value}`，不回显明文。运行时合并：`os.Environ()` → 名称列表注入 → 解密后的 Key-Value（同名以任务 Key-Value 覆盖）。
+
 **BuildDeployAttempt**：每次分发/重新分发对每个目标一行（或一批次 + 每目标行）；含目标配置快照、状态、日志引用、起止时间。
 
-**最小快照（BuildRun.snapshot_json）** 至少含：trigger 载荷、resolved commit、脚本 SHA-256、环境变量**名**列表、DeployTarget 副本、制品格式、触发者/系统主体。
+**最小快照（BuildRun.snapshot_json）** 至少含：trigger 载荷、resolved commit、脚本 SHA-256、`env_var_names`、Key-Value 的 **key 列表**（`env_var_keys`，无明文值）、`artifact_paths`、DeployTarget 副本、制品格式、触发者/系统主体。
 
 ### 5.3 AgentRun / 安装任务
 

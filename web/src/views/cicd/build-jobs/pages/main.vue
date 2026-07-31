@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: "CicdBuildJobs" });
 
-import { computed, onMounted, reactive, ref, useTemplateRef, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
@@ -18,7 +18,15 @@ import {
   updateBuildJob,
 } from "@/api/cicd";
 import { listRepositories, listRepositoryBranches, listServers } from "@/api/resource";
-import type { AiAgent, BuildJob, BuildRun, DeployTarget, Repository, Server } from "@/api/types";
+import type {
+  AiAgent,
+  AiAgentEnvVarInput,
+  BuildJob,
+  BuildRun,
+  DeployTarget,
+  Repository,
+  Server,
+} from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusy, useBusyKey } from "@/composables/use-busy";
@@ -72,6 +80,31 @@ const AGENT_EVENT_OPTIONS = [
 const AGENT_EVENT_TIPS =
   "制品就绪：构建产物打包成功后执行 Agent；分发完成：全部部署目标执行完后执行 Agent；不触发：不自动执行 Agent";
 
+const JAVA_BUILD_TIPS =
+  "Java 示例：SDKMAN 装 JDK/Maven；构建脚本 `mvn -B package`；artifact_paths 指向 JAR 或制品目录；post_build 可整理后再归档；部署目标可选 post_deploy";
+
+type EnvNameDraft = { name: string };
+type EnvVarDraft = { key: string; value: string; has_value?: boolean };
+type CachePathDraft = { path: string };
+type ArtifactPathDraft = { path: string };
+
+/** API `cache_paths` 为 JSON 数组字符串；兼容换行分隔 */
+function parseCachePaths(raw: string | undefined): string[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) return parsed.map((s) => String(s).trim()).filter(Boolean);
+  } catch {
+    /* newline-separated fallback */
+  }
+  return trimmed
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 const BUILD_SCRIPT_TYPE_OPTIONS = [
   { label: "Bash / sh", value: "bash" },
   { label: "Node.js", value: "node" },
@@ -117,9 +150,12 @@ const form = reactive({
   shallow_clone: true,
   build_script_type: "bash",
   build_script: "",
+  post_build_script: "",
   work_dir: "",
-  output_dir: "",
-  env_var_names: "",
+  artifact_paths: [] as ArtifactPathDraft[],
+  cache_paths: [] as CachePathDraft[],
+  env_var_names: [] as EnvNameDraft[],
+  env_vars: [] as EnvVarDraft[],
   trigger_manual: true,
   trigger_webhook: false,
   trigger_cron: false,
@@ -262,15 +298,16 @@ function openHistory(row: BuildJob) {
   historyOpen.value = true;
 }
 
+watch(historyOpen, async (open) => {
+  if (!open || !historyJob.value) return;
+  historyQuery.build_job_id = historyJob.value.id;
+  await nextTick();
+  void historyRef.value?.reload();
+});
+
 function openRunDetail(row: BuildRun) {
   void router.push({ name: "cicd-build-run-detail", params: { id: String(row.id) } });
 }
-
-watch(historyOpen, (open) => {
-  if (open) {
-    void historyRef.value?.reload();
-  }
-});
 
 function triggerParts(job: BuildJob): { label: string; type: TagType }[] {
   const parts: { label: string; type: TagType }[] = [];
@@ -280,18 +317,53 @@ function triggerParts(job: BuildJob): { label: string; type: TagType }[] {
   return parts;
 }
 
+function canBuild(job: BuildJob) {
+  return job.enabled && job.trigger_manual;
+}
+
+function buildDisabledTip(job: BuildJob) {
+  if (!job.enabled) return "任务已停用";
+  if (!job.trigger_manual) return "未启用手动触发";
+  return "";
+}
+
 function openCreate() {
   editing.value = null;
-  form.is_public = false;
   dialogOpen.value = true;
+}
+
+function parseArtifactPaths(job: BuildJob): string[] {
+  if (job.artifact_paths?.length) {
+    return job.artifact_paths.map((p) => String(p).trim()).filter(Boolean);
+  }
+  const legacy = job.output_dir?.trim();
+  return legacy ? [legacy] : [];
 }
 
 async function openEdit(row: BuildJob) {
   try {
     const full = await getBuildJob(row.id);
     editing.value = full;
-    o(form).extend(full);
-    form.env_var_names = (full.env_var_names ?? []).join(",");
+    o(form).extend(
+      o(full).omit([
+        "cache_paths",
+        "artifact_paths",
+        "env_var_names",
+        "env_vars",
+        "deploy_targets",
+        "agent_ids",
+        "post_build_script",
+      ]),
+    );
+    form.env_var_names = (full.env_var_names ?? []).map((name) => ({ name }));
+    form.env_vars = (full.env_vars ?? []).map((e) => ({
+      key: e.key,
+      value: "",
+      has_value: e.has_value,
+    }));
+    form.cache_paths = parseCachePaths(full.cache_paths).map((path) => ({ path }));
+    form.artifact_paths = parseArtifactPaths(full).map((path) => ({ path }));
+    form.post_build_script = full.post_build_script ?? "";
     form.agent_ids = full.agent_ids ?? [];
     form.deploy_targets = (full.deploy_targets ?? []).map((t) => ({ ...t }));
     dialogOpen.value = true;
@@ -314,16 +386,46 @@ function removeTarget(idx: number) {
   form.deploy_targets.splice(idx, 1);
 }
 
-function buildBody(): Record<string, unknown> {
-  const { env_var_names, deploy_targets, agent_ids, ...rest } = form;
+function buildBody(): Record<string, unknown> | undefined {
+  const envVars: AiAgentEnvVarInput[] = [];
+  const seenKeys = new Set<string>();
+  for (const e of form.env_vars) {
+    const key = e.key.trim();
+    if (!key) {
+      message.error("环境变量 key 不能为空");
+      return;
+    }
+    if (key.includes("=") || key.includes("\n")) {
+      message.error("环境变量 key 不能包含 = 或换行");
+      return;
+    }
+    if (seenKeys.has(key)) {
+      message.error(`环境变量 key 重复: ${key}`);
+      return;
+    }
+    seenKeys.add(key);
+    const row: AiAgentEnvVarInput = { key };
+    if (e.value !== "") {
+      row.value = e.value;
+    } else if (!e.has_value) {
+      message.error(`新建环境变量 ${key} 必须填写值`);
+      return;
+    }
+    envVars.push(row);
+  }
   return {
-    ...rest,
-    env_var_names: env_var_names
-      .split(/[,;\s]+/)
-      .map((s) => s.trim())
-      .filter(Boolean),
-    agent_ids,
-    deploy_targets: deploy_targets.map((t, i) => ({
+    ...o(form).omit([
+      "env_var_names",
+      "env_vars",
+      "cache_paths",
+      "artifact_paths",
+      "deploy_targets",
+    ]),
+    env_var_names: form.env_var_names.map((e) => e.name.trim()).filter(Boolean),
+    env_vars: envVars,
+    artifact_paths: form.artifact_paths.map((a) => a.path.trim()).filter(Boolean),
+    cache_paths: JSON.stringify(form.cache_paths.map((c) => c.path.trim()).filter(Boolean)),
+    deploy_targets: form.deploy_targets.map((t, i) => ({
       server_id: t.method === "local" ? null : t.server_id,
       remote_path: t.remote_path,
       method: t.method,
@@ -336,6 +438,7 @@ function buildBody(): Record<string, unknown> {
 async function save() {
   try {
     const body = buildBody();
+    if (!body) return;
     if (editing.value) {
       await updateBuildJob(editing.value.id, body);
       message.success("已更新");
@@ -454,6 +557,8 @@ async function rotateWebhookSecret() {
           </u-action>
           <u-action
             v-if="hasPermission('cicd_build_jobs:execute')"
+            :disabled="!canBuild(rowData as BuildJob)"
+            :title="buildDisabledTip(rowData as BuildJob)"
             @run="trigger(rowData as BuildJob)"
           >
             构建
@@ -530,17 +635,76 @@ async function rotateWebhookSecret() {
           field="build_script"
           :langs="editorLangs"
           :default-lines="12"
-          :tips="ps5Tip"
+          :tips="ps5Tip ?? JAVA_BUILD_TIPS"
           span="full"
         />
-        <u-input label="工作目录" field="work_dir" placeholder="相对仓库根" />
-        <u-input label="输出目录" field="output_dir" />
-        <u-input
-          label="环境变量名"
-          field="env_var_names"
-          placeholder="逗号分隔，仅名称"
-          tips="仅填写变量名；运行时从服务器环境注入，密文不入库"
+        <u-code-editor
+          label="构建后脚本"
+          field="post_build_script"
+          :langs="editorLangs"
+          :default-lines="6"
+          tips="构建成功后、归档前执行"
+          span="full"
         />
+        <u-input
+          label="工作目录"
+          field="work_dir"
+          placeholder="相对仓库根，可留空"
+          tips="须存在；可配合 SDKMAN 等开发环境"
+        />
+        <u-group-input
+          field="artifact_paths"
+          label="制品路径"
+          span="full"
+          tips="相对仓库根；可为文件或目录；单文件不压缩，多路径打成一个包"
+          :item-default="{ path: '' }"
+          :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
+        >
+          <template #default="{ item }">
+            <u-input v-model="item.path" placeholder="如 target/app.jar 或 dist" />
+          </template>
+        </u-group-input>
+        <u-group-input
+          field="cache_paths"
+          label="缓存路径"
+          span="full"
+          tips="相对仓库根，如 .m2/repository；构建间复用"
+          :item-default="{ path: '' }"
+          :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
+        >
+          <template #default="{ item }">
+            <u-input v-model="item.path" placeholder="路径" />
+          </template>
+        </u-group-input>
+        <u-group-input
+          field="env_var_names"
+          label="环境变量名"
+          span="full"
+          tips="仅名称；运行时从宿主机 os.Environ 注入"
+          :item-default="{ name: '' }"
+          :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
+        >
+          <template #default="{ item }">
+            <u-input v-model="item.name" placeholder="VAR_NAME" />
+          </template>
+        </u-group-input>
+        <u-group-input
+          field="env_vars"
+          label="环境变量"
+          span="full"
+          tips="Key-Value 加密存储；同名时覆盖宿主机注入值；API 不回显明文"
+          :item-default="{ key: '', value: '', has_value: false }"
+          :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
+        >
+          <template #default="{ item }">
+            <u-input v-model="item.key" placeholder="KEY" />
+            <u-password-input
+              v-model="item.value"
+              :placeholder="item.has_value ? '已设置，留空不改' : '值'"
+              autocomplete="new-password"
+            />
+          </template>
+        </u-group-input>
       </template>
 
       <template #group:trigger>
@@ -608,7 +772,7 @@ async function rotateWebhookSecret() {
       <template #group:deploy>
         <div class="deploy-targets">
           <div class="targets-toolbar">
-            <span class="targets-hint">Job 私有部署目标，按顺序依次执行</span>
+            <span class="targets-hint">按顺序执行；Java 可配合 post_deploy 重启/切流量</span>
             <u-button size="small" type="primary" @click="addTarget">添加目标</u-button>
           </div>
           <div v-if="!form.deploy_targets.length" class="targets-empty">尚未配置部署目标</div>
@@ -645,6 +809,7 @@ async function rotateWebhookSecret() {
         url="/build-runs"
         :query="historyQuery"
         :columns="historyColumns"
+        :auto-query-fields="['build_job_id']"
         :immediate="false"
         pagination
         height="420px"
@@ -765,5 +930,10 @@ async function rotateWebhookSecret() {
   margin: fn.use-var(gap, default) 0 4px;
   font-size: fn.use-var(font-size-assist, default);
   color: fn.use-var(text-color, assist);
+}
+:deep(.u-group-input__item > .u-input),
+:deep(.u-group-input__item > .u-password-input) {
+  flex: 1;
+  min-width: 0;
 }
 </style>

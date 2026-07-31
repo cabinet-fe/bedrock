@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"bedrock/internal/cicd/model"
+	"bedrock/internal/pkg"
 	resourcemodel "bedrock/internal/resource/model"
 	"bedrock/internal/ws"
 )
@@ -119,6 +120,7 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 		return
 	}
 	decodeJobEnvNames(job)
+	decodeJobArtifactPaths(job)
 
 	now := time.Now()
 	redeployOnly := run.TriggerType == "redeploy"
@@ -261,55 +263,42 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 	if strings.TrimSpace(job.WorkDir) != "" {
 		buildDir = filepath.Join(workDir, job.WorkDir)
 	}
-	envVars := os.Environ()
-	for _, name := range job.EnvVarNames {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		if v, ok := os.LookupEnv(name); ok {
-			envVars = append(envVars, name+"="+v)
-		}
+	if abs, err := filepath.Abs(buildDir); err == nil {
+		buildDir = abs
+	}
+	writeLine("Build work dir: " + buildDir)
+	if err := validateBuildWorkDir(buildDir); err != nil {
+		p.failRun(run, err.Error())
+		writeLine("ERROR: " + err.Error())
+		return
 	}
 
-	cmd, cleanupScript, err := newBuildScriptCommand(ctx, buildDir, job.BuildScriptType, job.BuildScript)
+	kvEnv, err := decryptJobEnvVarsCipher(job.EnvVarsCipher)
 	if err != nil {
-		p.failRun(run, "构建脚本配置无效: "+err.Error())
+		p.failRun(run, "解密构建环境变量失败: "+err.Error())
 		writeLine("ERROR: " + err.Error())
 		return
 	}
-	defer cleanupScript()
-	cmd.Dir = buildDir
-	cmd.Env = envVars
-	configureBuildCmdProc(cmd)
-	cmd.Cancel = func() error { return killBuildCmdProcess(cmd) }
+	envVars := mergeBuildEnv(job.EnvVarNames, kvEnv)
 
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-	if err := cmd.Start(); err != nil {
-		p.failRun(run, "启动构建脚本失败: "+err.Error())
-		writeLine("ERROR: " + err.Error())
-		return
-	}
-	defer func() { _ = killBuildCmdProcess(cmd) }()
-
-	var scanWg sync.WaitGroup
-	scanWg.Go(func() {
-		scanLines(stdout, writeLine)
-	})
-	scanLines(stderr, writeLine)
-	scanWg.Wait()
-
-	if err := cmd.Wait(); err != nil {
-		if ctx.Err() != nil {
-			p.cancelRun(run)
-			return
-		}
-		p.failRun(run, "构建失败: "+err.Error())
-		writeLine("ERROR: Build failed with " + err.Error())
+	if err := p.runJobScript(ctx, run, buildDir, job.BuildScriptType, job.BuildScript, envVars, writeLine, "构建"); err != nil {
 		return
 	}
 	writeLine("=== Build completed successfully ===")
+
+	if strings.TrimSpace(job.PostBuildScript) != "" {
+		writeLine("=== Stage: Post-build ===")
+		writeLine("Build work dir: " + buildDir)
+		if err := validateBuildWorkDir(buildDir); err != nil {
+			p.failRun(run, err.Error())
+			writeLine("ERROR: " + err.Error())
+			return
+		}
+		if err := p.runJobScript(ctx, run, buildDir, job.BuildScriptType, job.PostBuildScript, envVars, writeLine, "构建后脚本"); err != nil {
+			return
+		}
+		writeLine("=== Post-build completed successfully ===")
+	}
 
 	if len(cachePaths) > 0 && p.cacheDir != "" {
 		writeLine("=== Stage: Saving Cache ===")
@@ -330,25 +319,37 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 	}
 
 	p.setRunning(run, "archiving")
-	sourceDir := workDir
-	if strings.TrimSpace(job.OutputDir) != "" {
-		sourceDir = filepath.Join(workDir, job.OutputDir)
-		writeLine("=== Stage: Collecting Artifact ===")
-		artifactDir := filepath.Join(p.artifact, fmt.Sprintf("job-%d", job.ID))
-		_ = os.MkdirAll(artifactDir, 0755)
-		artifactFormat := NormalizeArtifactFormat(job.ArtifactFormat)
-		artifactPath := filepath.Join(artifactDir, artifactArchiveName(run.BuildNumber, artifactFormat))
-		if err := CreateArtifactArchive(artifactPath, sourceDir, artifactFormat); err != nil {
-			writeLine("WARNING: 打包构建产物失败: " + err.Error())
-		} else {
-			run.ArtifactPath = artifactPath
-			_ = p.runs.UpdateFields(run.ID, map[string]interface{}{"artifact_path": artifactPath})
-			p.broadcastRunRefresh(run.ID)
-			writeLine("Artifact saved: " + artifactPath)
-		}
-		p.cleanupArtifacts(job)
+	relPaths := jobArtifactPaths(job)
+	writeLine("=== Stage: Collecting Artifact ===")
+	prep, err := prepareDeployRoot(workDir, relPaths)
+	if err != nil {
+		p.failRun(run, err.Error())
+		writeLine("ERROR: " + err.Error())
+		return
+	}
+	defer prep.Cleanup()
+
+	deployRoot := prep.DeployRoot
+	if prep.Kind == "" {
+		writeLine("=== Stage: Archiving (no artifact_paths; skip archive file) ===")
 	} else {
-		writeLine("=== Stage: Archiving (no output_dir; skip archive file) ===")
+		artifactDir := filepath.Join(p.artifact, fmt.Sprintf("job-%d", job.ID))
+		artifactFormat := NormalizeArtifactFormat(job.ArtifactFormat)
+		artifactPath, err := storePreparedArtifact(artifactDir, run.BuildNumber, artifactFormat, prep)
+		if err != nil {
+			p.failRun(run, "打包构建产物失败: "+err.Error())
+			writeLine("ERROR: 打包构建产物失败: " + err.Error())
+			return
+		}
+		run.ArtifactPath = artifactPath
+		run.ArtifactKind = prep.Kind
+		_ = p.runs.UpdateFields(run.ID, map[string]interface{}{
+			"artifact_path": artifactPath,
+			"artifact_kind": prep.Kind,
+		})
+		p.broadcastRunRefresh(run.ID)
+		writeLine(fmt.Sprintf("Artifact saved (%s): %s", prep.Kind, artifactPath))
+		p.cleanupArtifacts(job)
 	}
 
 	targets, _ := p.jobs.ListDeployTargets(job.ID)
@@ -360,8 +361,17 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 	}
 	// Agent sync stage intentionally omitted — P4 creates AgentRun asynchronously.
 	if hasDist {
+		if deployRoot == "" {
+			writeLine("ERROR: 已配置部署目标但未配置制品路径；拒绝分发整个仓库")
+			_ = p.runs.UpdateFields(run.ID, map[string]interface{}{
+				"stage":                "idle",
+				"distribution_summary": "all_failed",
+			})
+			p.broadcastRunRefresh(run.ID)
+			return
+		}
 		p.setStageKeepSuccess(run, "distributing")
-		p.runDistributions(ctx, run, job, sourceDir, writeLine, nil)
+		p.runDistributions(ctx, run, job, deployRoot, writeLine, nil)
 	} else {
 		p.setStageKeepSuccess(run, "idle")
 	}
@@ -557,4 +567,126 @@ func decodeJobEnvNames(job *model.BuildJob) {
 	if job.EnvVarNames == nil {
 		job.EnvVarNames = []string{}
 	}
+}
+
+// validateBuildWorkDir checks that buildDir exists and is a directory.
+// Returns a clear Chinese error so chdir failures are not misreported as missing sh.
+func validateBuildWorkDir(buildDir string) error {
+	info, err := os.Stat(buildDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("工作目录不存在: %s（请检查构建任务的工作目录 work_dir）", buildDir)
+		}
+		return fmt.Errorf("无法访问工作目录: %s（%v）", buildDir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("工作目录不是目录: %s（请检查构建任务的工作目录 work_dir）", buildDir)
+	}
+	return nil
+}
+
+// mergeBuildEnv builds process env: os.Environ → host LookupEnv for names → Key-Value overrides.
+func mergeBuildEnv(names []string, overrides map[string]string) []string {
+	merged := map[string]string{}
+	for _, e := range os.Environ() {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			merged[k] = v
+		}
+	}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if v, ok := os.LookupEnv(name); ok {
+			merged[name] = v
+		}
+	}
+	for k, v := range overrides {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		merged[k] = v
+	}
+	out := make([]string, 0, len(merged))
+	for k, v := range merged {
+		out = append(out, k+"="+v)
+	}
+	return out
+}
+
+func decryptJobEnvVarsCipher(cipherText string) (map[string]string, error) {
+	cipherText = strings.TrimSpace(cipherText)
+	if cipherText == "" {
+		return map[string]string{}, nil
+	}
+	plain, err := pkg.Decrypt(cipherText)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(plain) == "" {
+		return map[string]string{}, nil
+	}
+	var vars map[string]string
+	if err := json.Unmarshal([]byte(plain), &vars); err != nil {
+		return nil, err
+	}
+	if vars == nil {
+		vars = map[string]string{}
+	}
+	return vars, nil
+}
+
+// runJobScript runs a build/post-build script in buildDir with envVars.
+// On failure it failRun/cancelRun and returns a non-nil error so the caller can return.
+func (p *Pipeline) runJobScript(
+	ctx context.Context,
+	run *model.BuildRun,
+	buildDir, scriptType, script string,
+	envVars []string,
+	writeLine func(string),
+	label string,
+) error {
+	cmd, cleanupScript, err := newBuildScriptCommand(ctx, buildDir, scriptType, script)
+	if err != nil {
+		msg := label + "配置无效: " + err.Error()
+		p.failRun(run, msg)
+		writeLine("ERROR: " + err.Error())
+		return err
+	}
+	defer cleanupScript()
+	cmd.Dir = buildDir
+	cmd.Env = envVars
+	configureBuildCmdProc(cmd)
+	cmd.Cancel = func() error { return killBuildCmdProcess(cmd) }
+
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		msg := "启动" + label + "失败: " + err.Error()
+		p.failRun(run, msg)
+		writeLine("ERROR: " + err.Error())
+		return err
+	}
+	defer func() { _ = killBuildCmdProcess(cmd) }()
+
+	var scanWg sync.WaitGroup
+	scanWg.Go(func() {
+		scanLines(stdout, writeLine)
+	})
+	scanLines(stderr, writeLine)
+	scanWg.Wait()
+
+	if err := cmd.Wait(); err != nil {
+		if ctx.Err() != nil {
+			p.cancelRun(run)
+			return ctx.Err()
+		}
+		msg := label + "失败: " + err.Error()
+		p.failRun(run, msg)
+		writeLine("ERROR: " + label + " failed with " + err.Error())
+		return err
+	}
+	return nil
 }

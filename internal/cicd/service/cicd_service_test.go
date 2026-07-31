@@ -3,13 +3,16 @@ package service_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"bedrock/internal/cicd/model"
 	"bedrock/internal/cicd/repository"
 	"bedrock/internal/cicd/service"
+	"bedrock/internal/engine"
 	"bedrock/internal/pkg"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
@@ -261,11 +264,15 @@ func TestBuildJob_and_BuildRun_enqueue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	secret := "super-secret-env"
 	job, err := jobSvc.Create(1, service.CreateBuildJobInput{
-		RepositoryID: repo.ID,
-		Name:         "build",
-		EnvVarNames:  []string{"FOO", "BAR"},
-		BuildScript:  "make",
+		RepositoryID:    repo.ID,
+		Name:            "build",
+		ArtifactPaths:   []string{"target/app.jar", "conf/app.conf"},
+		EnvVarNames:     []string{"FOO", "BAR"},
+		EnvVars:         []service.EnvVarInput{{Key: "TOKEN", Value: &secret}},
+		PostBuildScript: "cp -r target/*.jar dist/",
+		BuildScript:     "make",
 		DeployTargets: []service.DeployTargetInput{
 			{Method: "local", RemotePath: "/tmp/out", SortOrder: 1},
 		},
@@ -276,8 +283,21 @@ func TestBuildJob_and_BuildRun_enqueue(t *testing.T) {
 	if len(job.DeployTargets) != 1 {
 		t.Fatalf("deploy targets=%d", len(job.DeployTargets))
 	}
+	if len(job.ArtifactPaths) != 2 || job.OutputDir != "target/app.jar" {
+		t.Fatalf("artifact_paths=%v output_dir=%q", job.ArtifactPaths, job.OutputDir)
+	}
 	if len(job.EnvVarNames) != 2 {
 		t.Fatalf("env names=%v", job.EnvVarNames)
+	}
+	if len(job.EnvVars) != 1 || job.EnvVars[0].Key != "TOKEN" || !job.EnvVars[0].HasValue {
+		t.Fatalf("env_vars=%v", job.EnvVars)
+	}
+	if job.PostBuildScript != "cp -r target/*.jar dist/" {
+		t.Fatalf("post_build_script=%q", job.PostBuildScript)
+	}
+	raw, _ := json.Marshal(job)
+	if strings.Contains(string(raw), secret) {
+		t.Fatalf("plaintext env leaked: %s", raw)
 	}
 
 	run, err := runSvc.Enqueue(job.ID, 1, "all", service.EnqueueRunInput{TriggerType: "manual"})
@@ -289,6 +309,21 @@ func TestBuildJob_and_BuildRun_enqueue(t *testing.T) {
 	}
 	if run.SnapshotJSON == "" {
 		t.Fatal("expected snapshot")
+	}
+	var snap map[string]any
+	if err := json.Unmarshal([]byte(run.SnapshotJSON), &snap); err != nil {
+		t.Fatal(err)
+	}
+	keys, ok := snap["env_var_keys"].([]any)
+	if !ok || len(keys) != 1 || keys[0] != "TOKEN" {
+		t.Fatalf("snapshot env_var_keys=%v", snap["env_var_keys"])
+	}
+	paths, ok := snap["artifact_paths"].([]any)
+	if !ok || len(paths) != 2 {
+		t.Fatalf("snapshot artifact_paths=%v", snap["artifact_paths"])
+	}
+	if strings.Contains(run.SnapshotJSON, secret) {
+		t.Fatal("snapshot must not contain env plaintext")
 	}
 	got, err := runSvc.Get(run.ID, 1, "all")
 	if err != nil {
@@ -527,3 +562,161 @@ func TestBuildJob_PublicReadableBySelfScope(t *testing.T) {
 		t.Fatalf("public must not grant redeploy, got %v", err)
 	}
 }
+
+func TestBuildJob_UpdateClearsArtifactPathsWithoutOutputDirFallback(t *testing.T) {
+	_, repoSvc, _, jobSvc, _, _ := setupCICD(t)
+	repo, err := repoSvc.Create(1, resourceservice.CreateRepositoryInput{
+		Name: "r-clear-paths", RepoURL: "https://example.com/clear-paths.git",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := jobSvc.Create(1, service.CreateBuildJobInput{
+		RepositoryID:  repo.ID,
+		Name:          "clear-paths",
+		ArtifactPaths: []string{"dist"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.OutputDir != "dist" {
+		t.Fatalf("output_dir=%q", job.OutputDir)
+	}
+	empty := []string{}
+	updated, err := jobSvc.Update(job.ID, 1, "all", service.UpdateBuildJobInput{
+		ArtifactPaths: &empty,
+		OutputDir:     ptr("dist"), // legacy field must not revive cleared paths
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.ArtifactPaths) != 0 || updated.OutputDir != "" {
+		t.Fatalf("expected cleared paths, got artifact_paths=%v output_dir=%q", updated.ArtifactPaths, updated.OutputDir)
+	}
+}
+
+func TestBuildRun_EnqueueRejectsDisabledManualTrigger(t *testing.T) {
+	_, repoSvc, _, jobSvc, runSvc, _ := setupCICD(t)
+	repo, err := repoSvc.Create(1, resourceservice.CreateRepositoryInput{
+		Name: "r-no-manual", RepoURL: "https://example.com/no-manual.git",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	job, err := jobSvc.Create(1, service.CreateBuildJobInput{
+		RepositoryID:  repo.ID,
+		Name:          "no-manual",
+		TriggerManual: &off,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.TriggerManual {
+		t.Fatal("expected trigger_manual=false after create")
+	}
+	if _, err := runSvc.Enqueue(job.ID, 1, "all", service.EnqueueRunInput{TriggerType: "manual"}); err == nil {
+		t.Fatal("expected manual trigger rejection")
+	}
+	// Non-manual triggers still allowed via EnqueueInternal.
+	if _, err := runSvc.EnqueueInternal(job.ID, 0, engine.EnqueueParams{TriggerType: "webhook"}); err != nil {
+		t.Fatalf("webhook enqueue: %v", err)
+	}
+}
+
+func TestBuildJob_DeleteCascadesRunsAndAttempts(t *testing.T) {
+	_, repoSvc, _, jobSvc, runSvc, gdb := setupCICD(t)
+	repo, err := repoSvc.Create(1, resourceservice.CreateRepositoryInput{
+		Name: "r-cascade", RepoURL: "https://example.com/cascade.git",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := jobSvc.Create(1, service.CreateBuildJobInput{
+		RepositoryID: repo.ID, Name: "cascade",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := runSvc.Enqueue(job.ID, 1, "all", service.EnqueueRunInput{TriggerType: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gdb.Create(&model.BuildDeployAttempt{
+		BuildRunID: run.ID,
+		BatchNo:    1,
+		Status:     "pending",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := gdb.Table("webhook_deliveries").Create(map[string]any{
+		"build_job_id": job.ID,
+		"delivery_key": "k1",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := jobSvc.Delete(job.ID, 1, "all"); err != nil {
+		t.Fatal(err)
+	}
+	var runs, attempts, deliveries int64
+	if err := gdb.Table("build_runs").Where("build_job_id = ?", job.ID).Count(&runs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := gdb.Table("build_deploy_attempts").Where("build_run_id = ?", run.ID).Count(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := gdb.Table("webhook_deliveries").Where("build_job_id = ?", job.ID).Count(&deliveries).Error; err != nil {
+		t.Fatal(err)
+	}
+	if runs != 0 || attempts != 0 || deliveries != 0 {
+		t.Fatalf("cascade incomplete: runs=%d attempts=%d deliveries=%d", runs, attempts, deliveries)
+	}
+}
+
+func TestBuildJob_CreateRejectsBadWorkDirAndCachePaths(t *testing.T) {
+	_, repoSvc, _, jobSvc, _, _ := setupCICD(t)
+	repo, err := repoSvc.Create(1, resourceservice.CreateRepositoryInput{
+		Name: "r-bad-paths", RepoURL: "https://example.com/bad-paths.git",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := jobSvc.Create(1, service.CreateBuildJobInput{
+		RepositoryID: repo.ID, Name: "bad-workdir", WorkDir: "../escape",
+	}); err == nil {
+		t.Fatal("expected work_dir rejection")
+	}
+	if _, err := jobSvc.Create(1, service.CreateBuildJobInput{
+		RepositoryID: repo.ID, Name: "bad-cache", CachePaths: `["../escape"]`,
+	}); err == nil {
+		t.Fatal("expected cache_paths rejection")
+	}
+}
+
+func TestBuildJob_SyncCronErrorPropagates(t *testing.T) {
+	_, repoSvc, _, jobSvc, _, _ := setupCICD(t)
+	jobSvc.SetCron(stubCron{addErr: errors.New("bad cron")})
+	repo, err := repoSvc.Create(1, resourceservice.CreateRepositoryInput{
+		Name: "r-cron-err", RepoURL: "https://example.com/cron-err.git",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	if _, err := jobSvc.Create(1, service.CreateBuildJobInput{
+		RepositoryID:   repo.ID,
+		Name:           "cron-err",
+		TriggerCron:    &on,
+		CronExpression: "not a cron",
+		CronTimezone:   "UTC",
+	}); err == nil || !strings.Contains(err.Error(), "bad cron") {
+		t.Fatalf("expected syncCron error, got %v", err)
+	}
+}
+
+type stubCron struct{ addErr error }
+
+func (s stubCron) Add(job model.BuildJob) error { return s.addErr }
+func (s stubCron) Remove(jobID uint)            {}
+
+func ptr[T any](v T) *T { return &v }

@@ -68,4 +68,10 @@ func TestUp_idempotent(t *testing.T) {
 	if !gdb.Migrator().HasColumn("agent_runs", "work_dir") {
 		t.Fatal("agent_runs.work_dir should be retained")
 	}
+	if !gdb.Migrator().HasColumn("build_jobs", "artifact_paths_json") {
+		t.Fatal("build_jobs.artifact_paths_json missing")
+	}
+	if !gdb.Migrator().HasColumn("build_runs", "artifact_kind") {
+		t.Fatal("build_runs.artifact_kind missing")
+	}
 }

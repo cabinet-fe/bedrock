@@ -18,8 +18,9 @@
 ### POST /build-jobs — 创建构建任务
 
 权限：`cicd_build_jobs:create`
-请求：{ repository_id*, name*, description, enabled, branch, shallow_clone, build_script_type, build_script, work_dir, output_dir, cache_paths, env_var_names, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
+请求：{ repository_id*, name*, description, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
 响应 201：data = BuildJob
+说明：`artifact_paths` 为相对仓库根的制品路径列表（文件或目录，最多约 10 条；须相对、禁止 `..`/绝对路径）。写入优先 `artifact_paths`；若为空且提供 `output_dir` 则视为单元素列表。响应含 `artifact_paths`，并回显 `output_dir` 为第一项（兼容）。`env_var_names` 为宿主机环境变量名称列表（运行时 `LookupEnv`）；`env_vars` 为加密 Key-Value 全量键列表 `[{key, value?}]`（带 value 写入；响应仅回显 `[{key, has_value}]`）。运行时合并顺序：进程环境 → 名称列表注入 → Key-Value 覆盖同名键。`post_build_script` 在主构建脚本成功后、缓存保存/归档前执行（同 shell/cwd/env）；失败则 run=`failed`。
 
 ### GET /build-jobs/{id} — 获取构建任务（含部署目标）
 
@@ -31,8 +32,9 @@
 
 权限：`cicd_build_jobs:update`
 路径参数：id*: integer
-请求：{ name, description, enabled, branch, shallow_clone, build_script_type, build_script, work_dir, output_dir, cache_paths, env_var_names, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
+请求：{ name, description, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
 响应 200：data = BuildJob
+说明：`artifact_paths` 写入优先于 `output_dir`（见创建说明）。`env_vars` 若提交则为全量键列表（带 value 更新/新建；已有键未带 value 保留；请求中消失的键删除；省略字段则不改）；永不回显明文。
 
 ### DELETE /build-jobs/{id} — 删除构建任务
 
@@ -171,10 +173,13 @@
 | `shallow_clone` | `boolean` |  |  |
 | `build_script_type` | `string` |  |  |
 | `build_script` | `string` |  |  |
-| `work_dir` | `string` |  |  |
-| `output_dir` | `string` |  |  |
-| `cache_paths` | `string` |  |  |
-| `env_var_names` | `string[]` |  |  |
+| `post_build_script` | `string` |  | 构建成功后、缓存/归档前执行；与主脚本同 cwd/env；失败则 run failed |
+| `work_dir` | `string` |  | 相对仓库工作区的构建 cwd；不存在时明确报错 |
+| `artifact_paths` | `string[]` |  | 相对仓库根制品路径（文件/目录）；单文件不压缩，多路径打成一包；缺失则构建失败 |
+| `output_dir` | `string` |  | 废弃兼容字段：等于 `artifact_paths[0]` |
+| `cache_paths` | `string` |  | JSON 数组字符串，相对仓库根的缓存路径列表 |
+| `env_var_names` | `string[]` |  | 宿主机环境变量名；运行时 LookupEnv 注入 |
+| `env_vars` | `{ key: string, has_value: boolean }[]` |  | 仅投影键与是否有值；永不回显明文（存于 `env_vars_cipher`） |
 | `trigger_manual` | `boolean` |  |  |
 | `trigger_webhook` | `boolean` |  |  |
 | `trigger_cron` | `boolean` |  |  |
@@ -208,10 +213,13 @@
 | `shallow_clone` | `boolean` |  |  |
 | `build_script_type` | `string` |  |  |
 | `build_script` | `string` |  |  |
+| `post_build_script` | `string` |  |  |
 | `work_dir` | `string` |  |  |
-| `output_dir` | `string` |  |  |
+| `artifact_paths` | `string[]` |  | 优先；为空且提供 `output_dir` 时视为单元素 |
+| `output_dir` | `string` |  | 废弃；仅当 `artifact_paths` 为空时作为单路径写入 |
 | `cache_paths` | `string` |  |  |
 | `env_var_names` | `string[]` |  |  |
+| `env_vars` | `{ key: string, value?: string }[]` |  | 全量键列表；带 value 设置/更新；key 非空且不得含 `=` / 换行 |
 | `trigger_manual` | `boolean` |  |  |
 | `trigger_webhook` | `boolean` |  |  |
 | `trigger_cron` | `boolean` |  |  |
@@ -252,10 +260,13 @@
 | `shallow_clone` | `boolean` |  |  |
 | `build_script_type` | `string` |  |  |
 | `build_script` | `string` |  |  |
+| `post_build_script` | `string` |  |  |
 | `work_dir` | `string` |  |  |
-| `output_dir` | `string` |  |  |
+| `artifact_paths` | `string[]` |  | 优先；省略则不改 |
+| `output_dir` | `string` |  | 废弃；仅当未传 `artifact_paths` 或为空时作为单路径写入 |
 | `cache_paths` | `string` |  |  |
 | `env_var_names` | `string[]` |  |  |
+| `env_vars` | `{ key: string, value?: string }[]` |  | 全量键列表；带 value 更新/新建；已有键未带 value 保留；请求中消失的键删除；省略则不改 |
 | `trigger_manual` | `boolean` |  |  |
 | `trigger_webhook` | `boolean` |  |  |
 | `trigger_cron` | `boolean` |  |  |
@@ -287,7 +298,8 @@
 | `commit_hash` | `string` |  |  |
 | `commit_message` | `string` |  |  |
 | `log_path` | `string` |  |  |
-| `artifact_path` | `string` |  |  |
+| `artifact_path` | `string` |  | 存储的制品文件路径；无制品时为空 |
+| `artifact_kind` | `'file' \| 'archive' \| 'bundle'` |  | 单文件 / 单目录归档 / 多路径打包；用于 redeploy 还原 |
 | `duration_ms` | `integer` |  |  |
 | `error_message` | `string` |  |  |
 | `distribution_summary` | `'none' \| 'running' \| 'all_success' \| 'partial' \| 'all_failed' \| 'cancelled'` |  |  |

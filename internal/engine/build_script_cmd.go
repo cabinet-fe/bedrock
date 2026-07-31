@@ -43,7 +43,24 @@ func newPOSIXShellBuildCommand(ctx context.Context, script string) (*exec.Cmd, f
 		}
 		return nil, func() {}, fmt.Errorf("未找到 bash 或 sh。请在 Windows 上安装 Git for Windows，或将脚本类型改为 PowerShell / CMD")
 	}
-	return exec.CommandContext(ctx, "sh", "-c", script), func() {}, nil
+	sh, err := resolvePOSIXShell()
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return exec.CommandContext(ctx, sh, "-c", script), func() {}, nil
+}
+
+// resolvePOSIXShell finds sh via PATH, then falls back to common absolute paths.
+func resolvePOSIXShell() (string, error) {
+	if path, err := exec.LookPath("sh"); err == nil {
+		return path, nil
+	}
+	for _, candidate := range []string{"/bin/sh", "/usr/bin/sh"} {
+		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("未找到 sh（已尝试 PATH、/bin/sh、/usr/bin/sh）")
 }
 
 func findPowerShellByType(scriptType string) (string, error) {

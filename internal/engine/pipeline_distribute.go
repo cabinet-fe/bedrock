@@ -287,30 +287,27 @@ func (p *Pipeline) executeRedeployOnly(ctx context.Context, run *model.BuildRun,
 	}
 	writeLine("=== Redeploy: using existing artifact ===")
 	writeLine("Artifact: " + artifactPath)
-
-	tmpDir, err := os.MkdirTemp("", "bedrock-redeploy-*")
-	if err != nil {
-		writeLine("ERROR: mkdir temp: " + err.Error())
-		_ = p.runs.UpdateFields(run.ID, map[string]interface{}{"distribution_summary": "all_failed", "stage": "idle"})
-		p.broadcastRunRefresh(run.ID)
-		return
+	kind := strings.TrimSpace(run.ArtifactKind)
+	if kind != "" {
+		writeLine("Artifact kind: " + kind)
 	}
-	defer os.RemoveAll(tmpDir)
 
 	format := NormalizeArtifactFormat(job.ArtifactFormat)
-	if err := extractArtifactArchive(artifactPath, tmpDir, format); err != nil {
+	deployRoot, cleanup, err := materializeDeployRootFromArtifact(artifactPath, kind, format)
+	if err != nil {
 		writeLine("ERROR: " + err.Error())
 		_ = p.runs.UpdateFields(run.ID, map[string]interface{}{"distribution_summary": "all_failed", "stage": "idle"})
 		p.broadcastRunRefresh(run.ID)
 		return
 	}
+	defer cleanup()
 
 	filter := parseTargetFilterFromSnapshot(run.SnapshotJSON)
 	if ctx.Err() != nil {
 		p.cancelRun(run)
 		return
 	}
-	p.runDistributions(ctx, run, job, tmpDir, writeLine, filter)
+	p.runDistributions(ctx, run, job, deployRoot, writeLine, filter)
 }
 
 // parseTargetFilterFromSnapshot reads optional redeploy_target_ids from snapshot_json.

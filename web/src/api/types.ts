@@ -234,10 +234,17 @@ export interface BuildJob {
   shallow_clone: boolean;
   build_script_type: string;
   build_script: string;
+  post_build_script?: string;
   work_dir: string;
-  output_dir: string;
+  /** @deprecated use artifact_paths; echoed as first path for compat */
+  output_dir?: string;
+  /** 相对仓库根的制品路径（文件或目录）；单文件不压缩，多路径打成一个包 */
+  artifact_paths?: string[];
+  /** JSON 数组字符串，相对仓库根的缓存路径列表 */
   cache_paths: string;
   env_var_names?: string[];
+  /** 回显仅 key + has_value；提交为 key + 可选 value */
+  env_vars?: { key: string; value?: string; has_value?: boolean }[];
   trigger_manual: boolean;
   trigger_webhook: boolean;
   trigger_cron: boolean;
@@ -281,6 +288,8 @@ export interface BuildRun {
   commit_message: string;
   log_path?: string;
   artifact_path?: string;
+  /** file | archive | bundle */
+  artifact_kind?: string;
   distribution_summary: string;
   snapshot_json?: string;
   error_message?: string;

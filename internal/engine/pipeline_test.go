@@ -69,6 +69,8 @@ func applyRunFields(r *model.BuildRun, fields map[string]interface{}) {
 			r.LogPath = v.(string)
 		case "artifact_path":
 			r.ArtifactPath = v.(string)
+		case "artifact_kind":
+			r.ArtifactKind = v.(string)
 		case "commit_hash":
 			r.CommitHash = v.(string)
 		case "trigger_type":
@@ -378,6 +380,149 @@ func TestMarkArtifactSuccess_WithDistributeStage(t *testing.T) {
 	}
 	if got.DistributionSummary != "running" {
 		t.Fatalf("summary=%s want running", got.DistributionSummary)
+	}
+}
+
+func TestPipeline_MissingWorkDirFailsClearly(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repoDir := initLocalGitRepo(t)
+	tmp := t.TempDir()
+	run := &model.BuildRun{
+		ID: 1, BuildJobID: 10, BuildNumber: 1,
+		Status: "queued", Stage: "pending", Branch: "main",
+	}
+	store := newMemRunStore(run)
+	jobStore := &memJobStore{
+		job: &model.BuildJob{
+			ID: 10, RepositoryID: 1, Branch: "main",
+			WorkDir:     "does-not-exist",
+			BuildScript: "echo should-not-run",
+		},
+	}
+	p := NewPipeline(store, jobStore, &memRepoStore{
+		repo: &resourcemodel.Repository{ID: 1, RepoURL: repoDir, AuthType: "none"},
+	}, &memServerStore{}, nopSecrets{}, nil, zap.NewNop(),
+		filepath.Join(tmp, "ws"), filepath.Join(tmp, "art"), filepath.Join(tmp, "logs"), filepath.Join(tmp, "cache"))
+
+	p.Execute(context.Background(), 1)
+
+	got, _ := store.FindByID(1)
+	if got.Status != "failed" {
+		t.Fatalf("status=%s want failed (error=%q)", got.Status, got.ErrorMessage)
+	}
+	if !strings.Contains(got.ErrorMessage, "工作目录不存在") {
+		t.Fatalf("error_message=%q", got.ErrorMessage)
+	}
+	if strings.Contains(got.ErrorMessage, "fork/exec") {
+		t.Fatalf("must not misreport as missing sh: %q", got.ErrorMessage)
+	}
+	logBody, err := os.ReadFile(got.LogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logBody), "Build work dir:") {
+		t.Fatalf("log missing work dir line: %s", logBody)
+	}
+	if !strings.Contains(string(logBody), "工作目录不存在") {
+		t.Fatalf("log missing clear error: %s", logBody)
+	}
+}
+
+func TestPipeline_PostBuildScriptRunsBeforeArchive(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repoDir := initLocalGitRepo(t)
+	tmp := t.TempDir()
+	run := &model.BuildRun{
+		ID: 1, BuildJobID: 10, BuildNumber: 2,
+		Status: "queued", Stage: "pending", Branch: "main",
+	}
+	store := newMemRunStore(run)
+	jobStore := &memJobStore{
+		job: &model.BuildJob{
+			ID: 10, RepositoryID: 1, Branch: "main",
+			BuildScript:     "mkdir -p target && echo jar > target/app.jar",
+			PostBuildScript: "mkdir -p dist && cp target/app.jar dist/app.jar",
+			OutputDir:       "dist",
+			ArtifactFormat:  "gzip",
+			MaxArtifacts:    5,
+		},
+	}
+	p := NewPipeline(store, jobStore, &memRepoStore{
+		repo: &resourcemodel.Repository{ID: 1, RepoURL: repoDir, AuthType: "none"},
+	}, &memServerStore{}, nopSecrets{}, nil, zap.NewNop(),
+		filepath.Join(tmp, "ws"), filepath.Join(tmp, "art"), filepath.Join(tmp, "logs"), filepath.Join(tmp, "cache"))
+
+	p.Execute(context.Background(), 1)
+
+	got, _ := store.FindByID(1)
+	if got.Status != "success" {
+		t.Fatalf("status=%s want success (error=%q)", got.Status, got.ErrorMessage)
+	}
+	logBody, err := os.ReadFile(got.LogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(logBody)
+	if !strings.Contains(text, "=== Stage: Post-build ===") {
+		t.Fatalf("missing post-build stage in log: %s", text)
+	}
+	postIdx := strings.Index(text, "=== Stage: Post-build ===")
+	archIdx := strings.Index(text, "=== Stage: Collecting Artifact ===")
+	if postIdx < 0 || archIdx < 0 || postIdx > archIdx {
+		t.Fatalf("post-build should run before archive: post=%d archive=%d", postIdx, archIdx)
+	}
+	extractDir := filepath.Join(tmp, "extract")
+	if err := extractArtifactArchive(got.ArtifactPath, extractDir, "gzip"); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(extractDir, "app.jar"))
+	if err != nil {
+		t.Fatalf("artifact missing post-build output: %v", err)
+	}
+	if strings.TrimSpace(string(body)) != "jar" {
+		t.Fatalf("content=%q", body)
+	}
+}
+
+func TestPipeline_PostBuildFailureFailsRun(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repoDir := initLocalGitRepo(t)
+	tmp := t.TempDir()
+	run := &model.BuildRun{
+		ID: 1, BuildJobID: 10, BuildNumber: 1,
+		Status: "queued", Stage: "pending", Branch: "main",
+	}
+	store := newMemRunStore(run)
+	jobStore := &memJobStore{
+		job: &model.BuildJob{
+			ID: 10, RepositoryID: 1, Branch: "main",
+			BuildScript:     "true",
+			PostBuildScript: "exit 7",
+			OutputDir:       "dist",
+		},
+	}
+	p := NewPipeline(store, jobStore, &memRepoStore{
+		repo: &resourcemodel.Repository{ID: 1, RepoURL: repoDir, AuthType: "none"},
+	}, &memServerStore{}, nopSecrets{}, nil, zap.NewNop(),
+		filepath.Join(tmp, "ws"), filepath.Join(tmp, "art"), filepath.Join(tmp, "logs"), filepath.Join(tmp, "cache"))
+
+	p.Execute(context.Background(), 1)
+
+	got, _ := store.FindByID(1)
+	if got.Status != "failed" {
+		t.Fatalf("status=%s want failed (error=%q)", got.Status, got.ErrorMessage)
+	}
+	if !strings.Contains(got.ErrorMessage, "构建后脚本失败") {
+		t.Fatalf("error_message=%q", got.ErrorMessage)
 	}
 }
 

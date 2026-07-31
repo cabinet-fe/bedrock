@@ -49,40 +49,51 @@ func (l *UintList) Scan(src any) error {
 	return nil
 }
 
+// EnvVarView is the API projection of a build-job Key-Value env var (never includes plaintext).
+type EnvVarView struct {
+	Key      string `json:"key"`
+	HasValue bool   `json:"has_value"`
+}
+
 // BuildJob belongs to a Repository (1:N).
 type BuildJob struct {
-	ID                 uint      `json:"id" gorm:"primaryKey"`
-	RepositoryID       uint      `json:"repository_id" gorm:"index;not null"`
-	Name               string    `json:"name" gorm:"size:100;not null"`
-	Description        string    `json:"description" gorm:"size:500"`
-	Enabled            bool      `json:"enabled" gorm:"not null;default:true"`
-	Branch             string    `json:"branch" gorm:"size:200;default:main"`
-	ShallowClone       bool      `json:"shallow_clone" gorm:"not null;default:true"`
-	BuildScriptType    string    `json:"build_script_type" gorm:"size:20;default:bash"`
-	BuildScript        string    `json:"build_script" gorm:"type:text"`
-	WorkDir            string    `json:"work_dir" gorm:"size:300"`
-	OutputDir          string    `json:"output_dir" gorm:"size:300"`
-	CachePaths         string    `json:"cache_paths" gorm:"type:text"`
-	EnvVarNamesJSON    string    `json:"-" gorm:"type:text"`
-	EnvVarNames        []string  `json:"env_var_names" gorm:"-"`
-	TriggerManual      bool      `json:"trigger_manual" gorm:"not null;default:true"`
-	TriggerWebhook     bool      `json:"trigger_webhook" gorm:"not null;default:false"`
-	TriggerCron        bool      `json:"trigger_cron" gorm:"not null;default:false"`
-	WebhookSecret      string    `json:"webhook_secret,omitempty" gorm:"size:64"`
-	WebhookType        string    `json:"webhook_type" gorm:"size:20;default:auto"`
-	WebhookRefPath     string    `json:"webhook_ref_path" gorm:"size:300"`
-	WebhookCommitPath  string    `json:"webhook_commit_path" gorm:"size:300"`
-	WebhookMessagePath string    `json:"webhook_message_path" gorm:"size:300"`
-	CronExpression     string    `json:"cron_expression" gorm:"size:100"`
-	CronTimezone       string    `json:"cron_timezone" gorm:"size:100;default:UTC"`
-	MaxArtifacts       int       `json:"max_artifacts" gorm:"default:5"`
-	ArtifactFormat     string    `json:"artifact_format" gorm:"size:20;default:gzip"`
-	AgentTriggerEvent  string    `json:"agent_trigger_event" gorm:"size:40;default:artifact_ready"`
-	AgentIDs           UintList  `json:"agent_ids" gorm:"type:text"`
-	IsPublic           bool      `json:"is_public" gorm:"not null;default:false;index"`
-	CreatedBy          uint      `json:"created_by" gorm:"index"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                 uint         `json:"id" gorm:"primaryKey"`
+	RepositoryID       uint         `json:"repository_id" gorm:"index;not null"`
+	Name               string       `json:"name" gorm:"size:100;not null"`
+	Description        string       `json:"description" gorm:"size:500"`
+	Enabled            bool         `json:"enabled" gorm:"not null"`                          // no gorm default: must persist false
+	Branch             string       `json:"branch" gorm:"size:200;default:main"`
+	ShallowClone       bool         `json:"shallow_clone" gorm:"not null"`                     // no gorm default: must persist false
+	BuildScriptType    string       `json:"build_script_type" gorm:"size:20;default:bash"`
+	BuildScript        string       `json:"build_script" gorm:"type:text"`
+	PostBuildScript    string       `json:"post_build_script" gorm:"type:text"`
+	WorkDir            string       `json:"work_dir" gorm:"size:300"`
+	OutputDir          string       `json:"output_dir" gorm:"size:300"` // deprecated compat: first of artifact_paths
+	ArtifactPathsJSON  string       `json:"-" gorm:"column:artifact_paths_json;type:text"`
+	ArtifactPaths      []string     `json:"artifact_paths" gorm:"-"`
+	CachePaths         string       `json:"cache_paths" gorm:"type:text"`
+	EnvVarNamesJSON    string       `json:"-" gorm:"type:text"`
+	EnvVarNames        []string     `json:"env_var_names" gorm:"-"`
+	EnvVarsCipher      string       `json:"-" gorm:"type:text"`
+	EnvVars            []EnvVarView `json:"env_vars" gorm:"-"`
+	TriggerManual      bool         `json:"trigger_manual" gorm:"not null"` // no gorm default: must persist false
+	TriggerWebhook     bool         `json:"trigger_webhook" gorm:"not null;default:false"`
+	TriggerCron        bool         `json:"trigger_cron" gorm:"not null;default:false"`
+	WebhookSecret      string       `json:"webhook_secret,omitempty" gorm:"size:64"`
+	WebhookType        string       `json:"webhook_type" gorm:"size:20;default:auto"`
+	WebhookRefPath     string       `json:"webhook_ref_path" gorm:"size:300"`
+	WebhookCommitPath  string       `json:"webhook_commit_path" gorm:"size:300"`
+	WebhookMessagePath string       `json:"webhook_message_path" gorm:"size:300"`
+	CronExpression     string       `json:"cron_expression" gorm:"size:100"`
+	CronTimezone       string       `json:"cron_timezone" gorm:"size:100;default:UTC"`
+	MaxArtifacts       int          `json:"max_artifacts" gorm:"default:5"`
+	ArtifactFormat     string       `json:"artifact_format" gorm:"size:20;default:gzip"`
+	AgentTriggerEvent  string       `json:"agent_trigger_event" gorm:"size:40;default:artifact_ready"`
+	AgentIDs           UintList     `json:"agent_ids" gorm:"type:text"`
+	IsPublic           bool         `json:"is_public" gorm:"not null;default:false;index"`
+	CreatedBy          uint         `json:"created_by" gorm:"index"`
+	CreatedAt          time.Time    `json:"created_at"`
+	UpdatedAt          time.Time    `json:"updated_at"`
 
 	DeployTargets []DeployTarget `json:"deploy_targets,omitempty" gorm:"foreignKey:BuildJobID"`
 }
@@ -121,6 +132,7 @@ type BuildRun struct {
 	CommitMessage       string     `json:"commit_message" gorm:"size:500"`
 	LogPath             string     `json:"log_path" gorm:"size:500"`
 	ArtifactPath        string     `json:"artifact_path" gorm:"size:500"`
+	ArtifactKind        string     `json:"artifact_kind,omitempty" gorm:"size:20"` // file|archive|bundle
 	DurationMs          int64      `json:"duration_ms"`
 	ErrorMessage        string     `json:"error_message" gorm:"type:text"`
 	DistributionSummary string     `json:"distribution_summary" gorm:"size:30;default:none"`

@@ -48,10 +48,13 @@ type CreateBuildJobInput struct {
 	ShallowClone       *bool               `json:"shallow_clone"`
 	BuildScriptType    string              `json:"build_script_type"`
 	BuildScript        string              `json:"build_script"`
+	PostBuildScript    string              `json:"post_build_script"`
 	WorkDir            string              `json:"work_dir"`
-	OutputDir          string              `json:"output_dir"`
+	OutputDir          string              `json:"output_dir"` // deprecated: prefer artifact_paths
+	ArtifactPaths      []string            `json:"artifact_paths"`
 	CachePaths         string              `json:"cache_paths"`
 	EnvVarNames        []string            `json:"env_var_names"`
+	EnvVars            []EnvVarInput       `json:"env_vars"`
 	TriggerManual      *bool               `json:"trigger_manual"`
 	TriggerWebhook     *bool               `json:"trigger_webhook"`
 	TriggerCron        *bool               `json:"trigger_cron"`
@@ -77,10 +80,13 @@ type UpdateBuildJobInput struct {
 	ShallowClone       *bool                `json:"shallow_clone"`
 	BuildScriptType    *string              `json:"build_script_type"`
 	BuildScript        *string              `json:"build_script"`
+	PostBuildScript    *string              `json:"post_build_script"`
 	WorkDir            *string              `json:"work_dir"`
-	OutputDir          *string              `json:"output_dir"`
+	OutputDir          *string              `json:"output_dir"` // deprecated: prefer artifact_paths
+	ArtifactPaths      *[]string            `json:"artifact_paths"`
 	CachePaths         *string              `json:"cache_paths"`
 	EnvVarNames        *[]string            `json:"env_var_names"`
+	EnvVars            *[]EnvVarInput       `json:"env_vars"`
 	TriggerManual      *bool                `json:"trigger_manual"`
 	TriggerWebhook     *bool                `json:"trigger_webhook"`
 	TriggerCron        *bool                `json:"trigger_cron"`
@@ -123,8 +129,8 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 		ShallowClone:       boolOr(in.ShallowClone, true),
 		BuildScriptType:    stringOr(in.BuildScriptType, "bash"),
 		BuildScript:        in.BuildScript,
+		PostBuildScript:    in.PostBuildScript,
 		WorkDir:            strings.TrimSpace(in.WorkDir),
-		OutputDir:          strings.TrimSpace(in.OutputDir),
 		CachePaths:         in.CachePaths,
 		TriggerManual:      boolOr(in.TriggerManual, true),
 		TriggerWebhook:     boolOr(in.TriggerWebhook, false),
@@ -143,8 +149,22 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 		IsPublic:           boolOr(in.IsPublic, false),
 		CreatedBy:          createdBy,
 	}
+	if err := validateOptionalRelPath(job.WorkDir, "工作目录"); err != nil {
+		return nil, err
+	}
+	if err := validateJobCachePaths(job.CachePaths); err != nil {
+		return nil, err
+	}
+	if err := encodeArtifactPaths(job, resolveArtifactPathsInput(in.ArtifactPaths, in.OutputDir)); err != nil {
+		return nil, err
+	}
 	if err := encodeEnvNames(job, in.EnvVarNames); err != nil {
 		return nil, err
+	}
+	if in.EnvVars != nil {
+		if err := applyJobEnvVarsInput(job, in.EnvVars); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.jobs.Create(job); err != nil {
 		return nil, err
@@ -162,7 +182,9 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 	if err != nil {
 		return nil, err
 	}
-	s.syncCron(out)
+	if err := s.syncCron(out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -195,17 +217,38 @@ func (s *BuildJobService) Update(id uint, userID uint, dataScope string, in Upda
 	if in.BuildScript != nil {
 		job.BuildScript = *in.BuildScript
 	}
+	if in.PostBuildScript != nil {
+		job.PostBuildScript = *in.PostBuildScript
+	}
 	if in.WorkDir != nil {
 		job.WorkDir = strings.TrimSpace(*in.WorkDir)
+		if err := validateOptionalRelPath(job.WorkDir, "工作目录"); err != nil {
+			return nil, err
+		}
 	}
-	if in.OutputDir != nil {
-		job.OutputDir = strings.TrimSpace(*in.OutputDir)
+	// Explicit artifact_paths (including empty) wins; do not fall back to output_dir.
+	if in.ArtifactPaths != nil {
+		if err := encodeArtifactPaths(job, resolveArtifactPathsInput(*in.ArtifactPaths, "")); err != nil {
+			return nil, err
+		}
+	} else if in.OutputDir != nil {
+		if err := encodeArtifactPaths(job, resolveArtifactPathsInput(nil, *in.OutputDir)); err != nil {
+			return nil, err
+		}
 	}
 	if in.CachePaths != nil {
+		if err := validateJobCachePaths(*in.CachePaths); err != nil {
+			return nil, err
+		}
 		job.CachePaths = *in.CachePaths
 	}
 	if in.EnvVarNames != nil {
 		if err := encodeEnvNames(job, *in.EnvVarNames); err != nil {
+			return nil, err
+		}
+	}
+	if in.EnvVars != nil {
+		if err := applyJobEnvVarsInput(job, *in.EnvVars); err != nil {
 			return nil, err
 		}
 	}
@@ -270,7 +313,9 @@ func (s *BuildJobService) Update(id uint, userID uint, dataScope string, in Upda
 	if err != nil {
 		return nil, err
 	}
-	s.syncCron(out)
+	if err := s.syncCron(out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -291,11 +336,11 @@ func (s *BuildJobService) Delete(id uint, userID uint, dataScope string) error {
 	return nil
 }
 
-func (s *BuildJobService) syncCron(job *model.BuildJob) {
+func (s *BuildJobService) syncCron(job *model.BuildJob) error {
 	if s.cron == nil || job == nil {
-		return
+		return nil
 	}
-	_ = s.cron.Add(*job)
+	return s.cron.Add(*job)
 }
 
 func (s *BuildJobService) Get(id uint, userID uint, dataScope string) (*model.BuildJob, error) {
@@ -306,7 +351,7 @@ func (s *BuildJobService) Get(id uint, userID uint, dataScope string) (*model.Bu
 	if err := requireJobRead(job, userID, dataScope); err != nil {
 		return nil, err
 	}
-	decodeEnvNames(job)
+	hydrateJobEnv(job)
 	return publicJob(job, false), nil
 }
 
@@ -318,7 +363,7 @@ func (s *BuildJobService) GetWithSecret(id uint, userID uint, dataScope string) 
 	if err := requireJobWrite(job, userID, dataScope); err != nil {
 		return nil, err
 	}
-	decodeEnvNames(job)
+	hydrateJobEnv(job)
 	return publicJob(job, true), nil
 }
 
@@ -338,7 +383,7 @@ func (s *BuildJobService) RotateWebhookSecret(id uint, userID uint, dataScope st
 	if err := s.jobs.Update(job); err != nil {
 		return nil, err
 	}
-	decodeEnvNames(job)
+	hydrateJobEnv(job)
 	return publicJob(job, true), nil
 }
 
@@ -352,7 +397,7 @@ func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword stri
 		return nil, 0, err
 	}
 	for i := range items {
-		decodeEnvNames(&items[i])
+		hydrateJobEnv(&items[i])
 		items[i] = *publicJob(&items[i], false)
 	}
 	return items, total, nil
@@ -414,6 +459,12 @@ func decodeEnvNames(job *model.BuildJob) {
 		return
 	}
 	job.EnvVarNames = names
+}
+
+func hydrateJobEnv(job *model.BuildJob) {
+	decodeEnvNames(job)
+	decodeArtifactPaths(job)
+	projectJobEnvVars(job)
 }
 
 func normalizeArtifactFormat(f string) string {

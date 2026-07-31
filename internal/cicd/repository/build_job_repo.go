@@ -23,6 +23,21 @@ func (r *BuildJobRepository) Update(job *model.BuildJob) error {
 
 func (r *BuildJobRepository) Delete(id uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		var runIDs []uint
+		if err := tx.Model(&model.BuildRun{}).Where("build_job_id = ?", id).Pluck("id", &runIDs).Error; err != nil {
+			return err
+		}
+		if len(runIDs) > 0 {
+			if err := tx.Where("build_run_id IN ?", runIDs).Delete(&model.BuildDeployAttempt{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("build_job_id = ?", id).Delete(&model.BuildRun{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("build_job_id = ?", id).Delete(&WebhookDelivery{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("build_job_id = ?", id).Delete(&model.DeployTarget{}).Error; err != nil {
 			return err
 		}
