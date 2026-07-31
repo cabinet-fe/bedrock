@@ -338,6 +338,7 @@ func TestCronReloadAppliesTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	agent = waitWorkspaceStatus(t, agents, agent.ID, model.WorkspaceReady)
 	_, err = agents.CreateTrigger(agent.ID, 1, service.TriggerInput{
 		Type: model.TriggerCron, CronExpression: "0 12 * * *", CronTimezone: "Asia/Shanghai",
 	})
