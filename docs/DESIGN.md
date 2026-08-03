@@ -284,6 +284,8 @@ flowchart TB
 
 **制品路径（`artifact_paths`）**：相对仓库根的文件/目录列表（替代单一 `output_dir`；`output_dir` 列保留一版兼容，读时与 `artifact_paths` 合并）。运行时在 clone 根下解析并做边界校验；配置路径缺失 → 构建 `failed`。归档规则：0 路径无制品（有部署目标时拒绝整仓分发，`distribution_summary=all_failed`）；1 文件原样存储（`artifact_kind=file`）；1 目录按 `artifact_format` 打 zip/tar.gz（`archive`）；2+ 路径按 basename 合并后打一包（`bundle`，basename 冲突失败）。分发与 redeploy 均从同一 `deployRoot` 出发（文件/归档先物化到 staging）。
 
+**分发**：rsync 默认 merge（覆盖制品文件，不删远端多余文件）；DeployTarget.`mirror=true` 时加 `--delete` 镜像同步。post-deploy 与 rsync/scp 等 CLI 分发共用系统 `ssh`/`sshpass` 与主机 `~/.ssh` 认证（`auth_type=agent` 仍走 HTTP）。
+
 **构建环境变量（混合）**：`env_var_names`（JSON 文本列，仅名称，运行时 `os.LookupEnv`）+ `env_vars_cipher`（AES-GCM Key-Value）。API 对 Key-Value 仅回显 `{key, has_value}`，不回显明文。运行时合并：`os.Environ()` → 名称列表注入 → 解密后的 Key-Value（同名以任务 Key-Value 覆盖）。
 
 **BuildDeployAttempt**：每次分发/重新分发对每个目标一行（或一批次 + 每目标行）；含目标配置快照、状态、日志引用、起止时间。

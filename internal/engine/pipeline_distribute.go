@@ -191,6 +191,7 @@ func (p *Pipeline) deployOneTarget(
 		SourceDir:     sourceDir,
 		ArchiveFormat: artifactFormat,
 		RemotePath:    deployPath,
+		Mirror:        t.Mirror,
 		Logger:        writeLine,
 	}
 	if !isLocal {

@@ -41,6 +41,7 @@ type DeployTargetInput struct {
 	RemotePath       string `json:"remote_path"`
 	Method           string `json:"method"`
 	PostDeployScript string `json:"post_deploy_script"`
+	Mirror           bool   `json:"mirror"`
 	SortOrder        int    `json:"sort_order"`
 }
 
@@ -435,6 +436,7 @@ func mapDeployTargets(in []DeployTargetInput) ([]model.DeployTarget, error) {
 			RemotePath:       strings.TrimSpace(t.RemotePath),
 			Method:           method,
 			PostDeployScript: t.PostDeployScript,
+			Mirror:           t.Mirror,
 			SortOrder:        order,
 		})
 	}

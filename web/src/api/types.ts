@@ -221,6 +221,8 @@ export interface DeployTarget {
   remote_path: string;
   method: string;
   post_deploy_script?: string;
+  /** rsync only: when true, pass --delete (mirror). Default false = merge. */
+  mirror?: boolean;
   sort_order: number;
 }
 

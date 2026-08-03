@@ -104,58 +104,32 @@ func ExecuteRemoteScriptInDir(ctx context.Context, server ServerInfo, workDir, s
 		return executeAgentScript(ctx, server, workDir, script, logFn)
 	}
 
-	config, err := CreateSSHClientConfig(server)
-	if err != nil {
-		return err
-	}
-
-	addr := fmt.Sprintf("%s:%d", server.Host, server.Port)
-	if server.Port == 0 {
-		addr = server.Host + ":22"
-	}
-
-	client, err := ssh.Dial("tcp", addr, config)
-	if err != nil {
-		return fmt.Errorf("ssh dial: %w", err)
-	}
-	defer client.Close()
-
-	session, err := client.NewSession()
-	if err != nil {
-		return fmt.Errorf("new session: %w", err)
-	}
-	defer session.Close()
-
-	var stdout, stderr bytes.Buffer
-	session.Stdout = &stdout
-	session.Stderr = &stderr
-
 	command := wrapRemoteScript(server, workDir, script)
-	if err := session.Run(command); err != nil {
-		if stdout.Len() > 0 {
-			for line := range strings.SplitSeq(strings.TrimSpace(stdout.String()), "\n") {
-				logFn(line)
-			}
-		}
-		if stderr.Len() > 0 {
-			for line := range strings.SplitSeq(strings.TrimSpace(stderr.String()), "\n") {
-				logFn("stderr: " + line)
-			}
-		}
+	name, args, cleanup := buildRemoteSSHCLI(server, command)
+	defer cleanup()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	if err := runAndLog(cmd, logFn); err != nil {
 		return fmt.Errorf("script execution: %w", err)
 	}
-
-	if stdout.Len() > 0 {
-		for line := range strings.SplitSeq(strings.TrimSpace(stdout.String()), "\n") {
-			logFn(line)
-		}
-	}
-	if stderr.Len() > 0 {
-		for line := range strings.SplitSeq(strings.TrimSpace(stderr.String()), "\n") {
-			logFn("stderr: " + line)
-		}
-	}
 	return nil
+}
+
+// buildRemoteSSHCLI assembles system ssh/sshpass argv for a remote command.
+// Matches rsync's auth path: password (non-key) uses sshpass; ssh_key uses bare ssh
+// (host ~/.ssh / agent / IdentityFile from buildSSHOptionsSlice).
+func buildRemoteSSHCLI(server ServerInfo, remoteCommand string) (name string, args []string, cleanup func()) {
+	sshOpts, cleanup := buildSSHOptionsSlice(server)
+	target := fmt.Sprintf("%s@%s", server.Username, server.Host)
+	if server.Password != "" && !IsSSHKeyAuth(server.AuthType) {
+		args = []string{"-p", server.Password, "ssh"}
+		args = append(args, sshOpts...)
+		args = append(args, target, "--", remoteCommand)
+		return "sshpass", args, cleanup
+	}
+	args = append(args, sshOpts...)
+	args = append(args, target, "--", remoteCommand)
+	return "ssh", args, cleanup
 }
 
 // buildSSHOptions returns SSH option string and a cleanup function for temp key files.

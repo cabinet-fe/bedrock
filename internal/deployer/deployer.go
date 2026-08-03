@@ -19,6 +19,7 @@ type DeployOptions struct {
 	ArchiveFormat string
 	Server        ServerInfo
 	RemotePath    string
+	Mirror        bool // rsync: when true, pass --delete (mirror remote to artifact)
 	Logger        func(string)
 }
 

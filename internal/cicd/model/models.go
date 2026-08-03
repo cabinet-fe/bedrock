@@ -111,6 +111,7 @@ type DeployTarget struct {
 	RemotePath       string    `json:"remote_path" gorm:"size:500"`
 	Method           string    `json:"method" gorm:"size:20;not null;default:rsync"`
 	PostDeployScript string    `json:"post_deploy_script" gorm:"type:text"`
+	Mirror           bool      `json:"mirror" gorm:"not null;default:false"` // rsync --delete when true
 	SortOrder        int       `json:"sort_order" gorm:"not null;default:0"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`

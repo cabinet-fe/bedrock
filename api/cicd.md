@@ -423,6 +423,7 @@
 | `remote_path` | `string` |  |  |
 | `method` | `'rsync' \| 'sftp' \| 'scp' \| 'agent' \| 'local'` |  |  |
 | `post_deploy_script` | `string` |  |  |
+| `mirror` | `boolean` |  | rsync only：默认 `false`（merge，覆盖制品文件、不删远端多余文件）；`true` 时加 `--delete` 镜像同步。其他 method 可忽略 |
 | `sort_order` | `integer` |  |  |
 
 ### BuildPipeline

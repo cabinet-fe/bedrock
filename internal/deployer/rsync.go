@@ -30,13 +30,14 @@ func (d *RsyncDeployer) Deploy(ctx context.Context, opts DeployOptions) error {
 	} else {
 		sshCmd = "ssh " + sshOpts
 	}
-	args := []string{
-		"-avz",
-		"--delete",
-		"-e", sshCmd,
-		source,
-		remote,
+	args := []string{"-avz"}
+	if opts.Mirror {
+		args = append(args, "--delete")
+		if opts.Logger != nil {
+			opts.Logger("rsync mirror: --delete enabled (remote files absent from artifact will be removed)")
+		}
 	}
+	args = append(args, "-e", sshCmd, source, remote)
 
 	cmd := exec.CommandContext(ctx, "rsync", args...)
 	return runAndLog(cmd, opts.Logger)

@@ -367,7 +367,10 @@ async function openEdit(row: BuildJob) {
     form.artifact_paths = parseArtifactPaths(full).map((path) => ({ path }));
     form.post_build_script = full.post_build_script ?? "";
     form.agent_ids = full.agent_ids ?? [];
-    form.deploy_targets = (full.deploy_targets ?? []).map((t) => ({ ...t }));
+    form.deploy_targets = (full.deploy_targets ?? []).map((t) => ({
+      ...t,
+      mirror: !!t.mirror,
+    }));
     dialogOpen.value = true;
   } catch (err) {
     message.error(err instanceof Error ? err.message : "加载失败");
@@ -391,6 +394,7 @@ function addTarget() {
     remote_path: "",
     method: "rsync",
     post_deploy_script: "",
+    mirror: false,
     sort_order: form.deploy_targets.length,
   });
 }
@@ -443,6 +447,7 @@ function buildBody(): Record<string, unknown> | undefined {
       remote_path: t.remote_path,
       method: t.method,
       post_deploy_script: t.post_deploy_script || "",
+      mirror: t.method === "rsync" ? !!t.mirror : false,
       sort_order: t.sort_order ?? i,
     })),
   };
@@ -809,6 +814,11 @@ async function rotateWebhookSecret() {
                 />
                 <u-input v-model="t.remote_path" placeholder="远程路径" style="flex: 1" />
               </div>
+              <div v-if="t.method === 'rsync'" class="target-item__row target-item__mirror">
+                <u-switch v-model="t.mirror" />
+                <span class="target-item__script-caption" style="margin: 0">镜像同步</span>
+                <span class="targets-hint">会删除目标目录中制品没有的文件</span>
+              </div>
               <div class="target-item__script-caption">部署后脚本（可选）</div>
               <u-code-editor v-model="t.post_deploy_script" :default-lines="4" />
             </div>
@@ -944,6 +954,9 @@ async function rotateWebhookSecret() {
   display: flex;
   align-items: center;
   gap: fn.use-var(gap, default);
+}
+.target-item__mirror {
+  margin-top: fn.use-var(gap, default);
 }
 .target-item__script-caption {
   margin: fn.use-var(gap, default) 0 4px;
