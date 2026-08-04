@@ -55,8 +55,9 @@ func setupAI(t *testing.T) (*gorm.DB, *service.AgentService, *service.SkillServi
 	}
 	skills := service.NewSkillService(repo, storageSvc, filepath.Join(storageRoot, "skills"))
 	work := filepath.Join(root, "work")
+	arts := filepath.Join(root, "artifacts")
 	logs := filepath.Join(root, "logs")
-	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, logs)
+	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, arts, logs)
 	agents.Start()
 	t.Cleanup(agents.Shutdown)
 

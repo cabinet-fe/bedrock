@@ -4,30 +4,46 @@ import { message } from "@veltra/desktop";
 import { Books, Folder } from "@veltra/icons/normal";
 
 import {
+  createDevDocNode,
   createDocNode,
+  deleteDevDocNode,
   deleteDocNode,
+  getDevDocNode,
   getDocNode,
+  importDevDocsZIP,
   importDocsZIP,
+  listDevDocTree,
   listDocTree,
+  moveDevDocNode,
   moveDocNode,
+  updateDevDocNode,
   updateDocNode,
+  uploadDevMarkdown,
   uploadMarkdown,
 } from "@/api/projects";
-import type { ApiDocNode, ProductProject, ProjectRole } from "@/api/types";
+import type { ProductProject, ProjectDocNode, ProjectRole } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import MarkdownViewer from "@/components/markdown-viewer";
 import { usePermission } from "@/composables/use-permission";
 
-const props = defineProps<{
-  project: ProductProject;
-  projectRole?: ProjectRole;
-  manageAll: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    project: ProductProject;
+    projectRole?: ProjectRole;
+    manageAll: boolean;
+    /** api = 接口文档；dev = 开发文档 */
+    docKind?: "api" | "dev";
+  }>(),
+  { docKind: "api" },
+);
 const { hasPermission } = usePermission();
 
-const tree = ref<ApiDocNode[]>([]);
+const isDev = computed(() => props.docKind === "dev");
+const permPrefix = computed(() => (isDev.value ? "project_dev_docs" : "project_docs"));
+
+const tree = ref<ProjectDocNode[]>([]);
 const selectedID = ref<number>();
-const selected = ref<ApiDocNode | null>(null);
+const selected = ref<ProjectDocNode | null>(null);
 const content = ref("");
 const docPane = ref("preview");
 const nodeDialogOpen = ref(false);
@@ -35,7 +51,7 @@ const moveDialogOpen = ref(false);
 const creatingKind = ref<"dir" | "doc">("doc");
 const createParentID = ref<number | null>(null);
 /** 当前正在移动的节点（来自树节点操作，非右侧内容区） */
-const movingNode = ref<ApiDocNode | null>(null);
+const movingNode = ref<ProjectDocNode | null>(null);
 const nodeForm = reactive({ name: "" });
 const moveForm = reactive({ parent_id: undefined as number | undefined, sort_order: 0 });
 
@@ -50,13 +66,13 @@ const canAdminProjectContent = computed(
   () => props.manageAll || props.projectRole === "owner" || props.projectRole === "admin",
 );
 const canCreate = computed(
-  () => hasPermission("project_docs:create") && canEditProjectContent.value,
+  () => hasPermission(`${permPrefix.value}:create`) && canEditProjectContent.value,
 );
 const canUpdate = computed(
-  () => hasPermission("project_docs:update") && canEditProjectContent.value,
+  () => hasPermission(`${permPrefix.value}:update`) && canEditProjectContent.value,
 );
 const canDelete = computed(
-  () => hasPermission("project_docs:delete") && canAdminProjectContent.value,
+  () => hasPermission(`${permPrefix.value}:delete`) && canAdminProjectContent.value,
 );
 const docPaneTabs = computed(() =>
   canUpdate.value
@@ -76,13 +92,13 @@ const moveBlockedIds = computed(() => {
   return ids;
 });
 
-function filterDirNodes(nodes: ApiDocNode[]): ApiDocNode[] {
+function filterDirNodes(nodes: ProjectDocNode[]): ProjectDocNode[] {
   return nodes
     .filter((n) => n.kind === "dir")
     .map((n) => ({ ...n, children: filterDirNodes(n.children ?? []) }));
 }
 
-function collectNodeIds(node: ApiDocNode, out: Set<number>) {
+function collectNodeIds(node: ProjectDocNode, out: Set<number>) {
   out.add(node.id);
   for (const child of node.children ?? []) collectNodeIds(child, out);
 }
@@ -93,7 +109,9 @@ function isMoveTargetDisabled(item: Record<string, any>) {
 
 async function loadTree() {
   try {
-    tree.value = await listDocTree(props.project.id);
+    tree.value = isDev.value
+      ? await listDevDocTree(props.project.id)
+      : await listDocTree(props.project.id);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "文档树加载失败");
   }
@@ -107,7 +125,9 @@ async function selectNode(id?: number) {
     return;
   }
   try {
-    const node = await getDocNode(props.project.id, id);
+    const node = isDev.value
+      ? await getDevDocNode(props.project.id, id)
+      : await getDocNode(props.project.id, id);
     selected.value = node;
     content.value = node.content ?? "";
     docPane.value = "preview";
@@ -134,11 +154,14 @@ function selectedDirectoryID() {
 
 async function createNode() {
   try {
-    const node = await createDocNode(props.project.id, {
+    const input = {
       kind: creatingKind.value,
       name: nodeForm.name,
       parent_id: createParentID.value,
-    });
+    };
+    const node = isDev.value
+      ? await createDevDocNode(props.project.id, input)
+      : await createDocNode(props.project.id, input);
     nodeDialogOpen.value = false;
     await loadTree();
     await selectNode(node.id);
@@ -151,9 +174,9 @@ async function createNode() {
 async function saveContent() {
   if (!selected.value || selected.value.kind !== "doc") return;
   try {
-    const node = await updateDocNode(props.project.id, selected.value.id, {
-      content: content.value,
-    });
+    const node = isDev.value
+      ? await updateDevDocNode(props.project.id, selected.value.id, { content: content.value })
+      : await updateDocNode(props.project.id, selected.value.id, { content: content.value });
     selected.value = node;
     content.value = node.content ?? "";
     await loadTree();
@@ -166,7 +189,8 @@ async function saveContent() {
 async function removeNode() {
   if (!selected.value) return;
   try {
-    await deleteDocNode(props.project.id, selected.value.id);
+    if (isDev.value) await deleteDevDocNode(props.project.id, selected.value.id);
+    else await deleteDocNode(props.project.id, selected.value.id);
     await selectNode();
     await loadTree();
     message.success("节点已删除");
@@ -175,7 +199,7 @@ async function removeNode() {
   }
 }
 
-function openMove(node: ApiDocNode) {
+function openMove(node: ProjectDocNode) {
   movingNode.value = node;
   moveForm.parent_id = node.parent_id ?? undefined;
   moveForm.sort_order = node.sort_order;
@@ -186,10 +210,12 @@ async function move() {
   if (!movingNode.value) return;
   try {
     const nodeID = movingNode.value.id;
-    await moveDocNode(props.project.id, nodeID, {
+    const input = {
       parent_id: moveForm.parent_id ?? null,
       sort_order: moveForm.sort_order,
-    });
+    };
+    if (isDev.value) await moveDevDocNode(props.project.id, nodeID, input);
+    else await moveDocNode(props.project.id, nodeID, input);
     moveDialogOpen.value = false;
     movingNode.value = null;
     await loadTree();
@@ -204,7 +230,9 @@ async function uploadMarkdownFile(files: File[]) {
   const file = files[0];
   if (!file) return;
   try {
-    const node = await uploadMarkdown(props.project.id, selectedDirectoryID(), file);
+    const node = isDev.value
+      ? await uploadDevMarkdown(props.project.id, selectedDirectoryID(), file)
+      : await uploadMarkdown(props.project.id, selectedDirectoryID(), file);
     await loadTree();
     await selectNode(node.id);
     message.success("Markdown 已导入");
@@ -217,7 +245,9 @@ async function importZIPFile(files: File[]) {
   const file = files[0];
   if (!file) return;
   try {
-    const items = await importDocsZIP(props.project.id, selectedDirectoryID(), file);
+    const items = isDev.value
+      ? await importDevDocsZIP(props.project.id, selectedDirectoryID(), file)
+      : await importDocsZIP(props.project.id, selectedDirectoryID(), file);
     await loadTree();
     if (items[0]) await selectNode(items[0].id);
     message.success(`已导入 ${items.length} 个 Markdown`);
@@ -227,7 +257,7 @@ async function importZIPFile(files: File[]) {
 }
 
 watch(
-  () => props.project.id,
+  () => [props.project.id, props.docKind] as const,
   () => {
     selected.value = null;
     selectedID.value = undefined;
@@ -273,7 +303,7 @@ watch(canUpdate, (ok) => {
               class="tree-node__actions"
               @click.stop
             >
-              <u-action v-if="canUpdate" @run="openMove(data as ApiDocNode)">移动</u-action>
+              <u-action v-if="canUpdate" @run="openMove(data as ProjectDocNode)">移动</u-action>
               <u-action v-if="canCreate && data.kind === 'dir'" @run="openCreateDoc(data.id)">
                 新建文档
               </u-action>

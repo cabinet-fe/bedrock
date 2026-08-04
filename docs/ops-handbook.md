@@ -81,7 +81,9 @@ make smoke-three-db
 2. 完整备份数据库、`{workspace}/agents/` 和制品根目录，并确认备份可恢复。
 3. 确认相关目录有足够空间完成同文件系统隔离移动。
 
-首次应用对应 schema migration 时，Server 会安全清理旧的 `{workspace}/agents/agent-{id}/runs/`，以及 Agent 归档根下的 `agent-{id}/run-{runID}.zip` / `run-{runID}.tar.gz`。schema 保留 `ai_agents.output_dir`（固定产出目录名），删除 `artifact_format` / `max_artifacts` / `agent_runs.artifact_path`。清理先严格校验路径边界与软链祖先，再将目标原子移入同根隔离区；数据库迁移提交后才删除隔离区，异常退出后可幂等续做。
+首次应用 `000018_agent_persistent_workspace` 时，Server 会安全清理旧的 `{workspace}/agents/agent-{id}/runs/`，以及当时 Agent 归档根下的 `agent-{id}/run-{runID}.zip` / `run-{runID}.tar.gz`。该 migration 保留 `ai_agents.output_dir`，删除 `artifact_format` / `max_artifacts` / `agent_runs.artifact_path`。清理先严格校验路径边界与软链祖先，再将目标原子移入同根隔离区；数据库迁移提交后才删除隔离区，异常退出后可幂等续做。
+
+后续 `000041_agent_run_artifacts` 重新引入 `agent_runs.artifact_path` / `artifact_kind`：Run 成功时对固定 `output_dir` 做快照 zip 归档（`{artifact_dir}/agent-{id}/run-{runID}.zip`），可供下载；与 000018 清理的旧 per-run 工作区语义不同。
 
 路径越界、软链风险、移动或删除失败时，Server 会拒绝升级启动。清理不会清空 Agent 持久根工作区中的其他文件，也不会触碰 CI/CD BuildRun 的工作区、归档或下载能力。遇到失败时不要手工跳过 migration；保留现场，根据错误修正路径/权限后重试，必要时从升级前备份恢复。
 

@@ -103,6 +103,7 @@ func EnsureRBACResources(db *gorm.DB) error {
 				// Hidden from nav: still seeded so project-detail tabs / API permissions keep working.
 				{Code: "project_requirements", Title: "需求管理", Route: "/project/requirements", SortKey: 20, Hidden: true, Actions: standardCRUD},
 				{Code: "project_docs", Title: "接口文档", Route: "/project/docs", SortKey: 30, Hidden: true, Actions: append(append([]string{}, standardCRUD...), "execute")},
+				{Code: "project_dev_docs", Title: "开发文档", Route: "/project/dev-docs", SortKey: 40, Hidden: true, Actions: standardCRUD},
 			},
 		},
 		{
@@ -132,7 +133,7 @@ func EnsureRBACResources(db *gorm.DB) error {
 				return err
 			}
 		}
-		if err := hideMenus(tx, "project_requirements", "project_docs"); err != nil {
+		if err := hideMenus(tx, "project_requirements", "project_docs", "project_dev_docs"); err != nil {
 			return err
 		}
 		return removeRetiredMenus(tx, "dashboard_system_info", "dashboard_system_status", "resource_clis")

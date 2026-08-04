@@ -281,6 +281,90 @@
 请求：{ parent_id, sort_order }
 响应 200
 
+### GET /projects/{id}/dev-docs — 获取项目开发文档树
+
+权限：`project_dev_docs:view`
+路径参数：id*: integer
+响应 200：文档树；Markdown 渲染前须消毒
+
+### POST /projects/{id}/dev-docs — 创建目录或开发文档节点
+
+权限：`project_dev_docs:create`
+路径参数：id*: integer
+请求：{ parent_id, kind*, name*, sort_order, repository_id, content }
+响应 201
+
+### POST /projects/{id}/dev-docs/upload — 上传单个 Markdown 开发文档
+
+权限：`project_dev_docs:create`
+路径参数：id*: integer
+请求：multipart: { parent_id, file* }
+响应 201
+错误：413
+
+### POST /projects/{id}/dev-docs/import-zip — 导入 Markdown zip（开发文档）
+
+权限：`project_dev_docs:create`
+路径参数：id*: integer
+请求：multipart: { parent_id, file* }
+响应 201：Imported
+错误：400 / 413
+说明：ZIP 防护同接口文档导入。
+
+### POST /projects/{id}/dev-docs/push — 按路径推送开发文档（外部 API）
+
+鉴权：JWT 需 `project_dev_docs:create` + 项目 ACL；或 PAT scope `dev_docs:write` + 项目 ACL
+路径参数：id*: integer | string（正整数按项目 ID；否则按 slug 解析，找不到 → 404）
+请求：{ doc_dir, doc_name*, content* }
+响应 201：新建文档节点；200：更新已有文档
+错误：400 / 403 / 404
+说明：按 `doc_dir` + `doc_name` upsert `content`。`doc_dir` 为空表示根；`/` 分隔；拒绝 `..`、绝对路径、空段。目录不存在则创建。`doc_name` 无 `.md` 后缀时服务端补齐。无 AI generate。
+
+### GET /projects/{id}/dev-docs/pull — 按路径读取开发文档（外部 API）
+
+鉴权：JWT 需 `project_dev_docs:view` + 项目 ACL；或 PAT scope `dev_docs:read` + 项目 ACL
+路径参数：id*: integer | string（正整数按项目 ID；否则按 slug 解析，找不到 → 404）
+查询参数：doc_dir, doc_name*
+响应 200：DevDocNode（含 `content`）
+错误：400 / 403 / 404
+说明：路径规则同 push。单篇读取用 pull；全量同步用 export。
+
+### GET /projects/{id}/dev-docs/export — 按目录导出开发文档列表（外部 API）
+
+鉴权：JWT 需 `project_dev_docs:view` + 项目 ACL；或 PAT scope `dev_docs:read` + 项目 ACL（同 pull）
+路径参数：id*: integer | string（正整数按项目 ID；否则按 slug 解析，找不到 → 404）
+查询参数：doc_dir
+响应 200：`{ items: [{ path, content }] }`
+错误：400 / 403 / 404
+说明：语义同接口文档 export；字段为 `doc_dir`。
+
+### GET /projects/{id}/dev-docs/{nodeID} — 获取开发文档节点
+
+权限：`project_dev_docs:view`
+路径参数：id*: integer, nodeID*: integer
+响应 200
+错误：404
+
+### PUT /projects/{id}/dev-docs/{nodeID} — 重命名节点或写入开发文档内容
+
+权限：`project_dev_docs:update`
+路径参数：id*: integer, nodeID*: integer
+请求：{ name, repository_id, content }
+响应 200
+
+### DELETE /projects/{id}/dev-docs/{nodeID} — 删除开发文档节点及其子节点
+
+权限：`project_dev_docs:delete`
+路径参数：id*: integer, nodeID*: integer
+响应 200
+
+### POST /projects/{id}/dev-docs/{nodeID}/move — 移动开发文档节点
+
+权限：`project_dev_docs:update`
+路径参数：id*: integer, nodeID*: integer
+请求：{ parent_id, sort_order }
+响应 200
+
 ## 对象形状
 
 ### ApiDocNodeMoveRequest

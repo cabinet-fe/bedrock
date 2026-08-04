@@ -41,6 +41,8 @@ const form = reactive({
   scopeAgents: false,
   scopeDocsRead: false,
   scopeDocsWrite: false,
+  scopeDevDocsRead: false,
+  scopeDevDocsWrite: false,
   expireMode: "days" as ExpireMode,
   expireDays: 30,
   expires_at: "",
@@ -114,6 +116,8 @@ function openCreate() {
   form.scopeAgents = false;
   form.scopeDocsRead = false;
   form.scopeDocsWrite = false;
+  form.scopeDevDocsRead = false;
+  form.scopeDevDocsWrite = false;
   form.expireMode = "days";
   form.expireDays = 30;
   form.expires_at = "";
@@ -130,6 +134,8 @@ async function save() {
   if (form.scopeAgents) scopes.push("agents:run");
   if (form.scopeDocsRead) scopes.push("docs:read");
   if (form.scopeDocsWrite) scopes.push("docs:write");
+  if (form.scopeDevDocsRead) scopes.push("dev_docs:read");
+  if (form.scopeDevDocsWrite) scopes.push("dev_docs:write");
   if (!scopes.length) {
     message.error("至少选择一个 scope");
     return;
@@ -269,13 +275,15 @@ const remove = bind(async (row: PersonalAccessToken) => {
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
         <u-form-item
           label="Scope"
-          tips="skills:read 读技能；agents:run 触发 Agent；docs:read/write 读与写文档"
+          tips="skills:read 读技能；agents:run 触发 Agent；docs:* 接口文档；dev_docs:* 开发文档"
         >
           <div class="scope-row">
             <u-checkbox v-model="form.scopeSkills">skills:read</u-checkbox>
             <u-checkbox v-model="form.scopeAgents">agents:run</u-checkbox>
             <u-checkbox v-model="form.scopeDocsRead">docs:read</u-checkbox>
             <u-checkbox v-model="form.scopeDocsWrite">docs:write</u-checkbox>
+            <u-checkbox v-model="form.scopeDevDocsRead">dev_docs:read</u-checkbox>
+            <u-checkbox v-model="form.scopeDevDocsWrite">dev_docs:write</u-checkbox>
           </div>
         </u-form-item>
       </template>

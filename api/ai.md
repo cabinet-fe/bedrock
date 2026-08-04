@@ -14,7 +14,7 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 - 绑定仓库以 `{agentRoot}/repo-{repositoryID}-{sanitizedBranch}/` 目录存在（分支名中的 `/`、空格等不安全字符归一为 `-`）；创建/更新 Agent 后**异步**通过 `GitCloneOrPull` 初始化工作区（`workspace_status`：`pending` → `ready` / `failed`），每次 Run 执行前再增量同步；不再软链构建任务工作区。仅 `workspace_status=ready` 时可创建 Run。
 - 每个 Agent 另有一个固定产出目录 `{agentRoot}/{output_dir}`（`output_dir` 默认为相对名 `output`）。CLI 注入 `BEDROCK_AGENT_WORKDIR`（根）与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）。不创建 `runs/run-{id}/output` 或任何 per-run 输出子目录；后续 Run 复用同一产出目录且不清空既有内容（便于缓存与增量写入），由 Agent/CLI 自行覆盖需要更新的文件。
 - Agent 可配置任意键值环境变量：AES-GCM 加密存于 `env_vars_cipher`；API 仅回显 `{key, has_value}`；Sync/Run 时解密写入 `{agentRoot}/.env`、注入 `cmd.Env`，并设置 `BEDROCK_AGENT_ENV_FILE`（工作区 `.env` 同 UID 可见）。
-- AgentRun 只保存状态、日志、文本输出和 `work_dir` 等运行记录，不绑定、归档或提供文件制品下载（无 `artifact_path` / `GET /ai/runs/:id/artifact`）。此约束不影响 CI/CD BuildRun 的制品归档与下载。
+- AgentRun **成功**时将产出目录快照归档为 `{artifact_dir}/agent-{id}/run-{runID}.zip`，并写入 `artifact_path`（`artifact_kind=archive`）；空目录不归档；归档失败只记日志、不阻断成功态。可通过 `GET /ai/runs/:id/artifact` 下载。此能力与 CI/CD BuildRun 制品相互独立。
 - 构建事件触发（`AgentTrigger.build_event` / `BuildJob.agent_ids`）与工作区绑定解耦，语义不变。
 
 ### GET /ai/agents — 列出 Agents
@@ -50,7 +50,7 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 权限：`ai_agents:delete`
 路径参数：id*: integer
 响应 200
-说明：删除记录并清理 `{workspace}/agents/agent-{id}/`。
+说明：删除 Agent、其触发器与运行记录，并清理 `{workspace}/agents/agent-{id}/` 与 `{artifact_dir}/agent-{id}/`。
 
 ### GET /ai/agents/{id}/triggers — 列出触发器
 
@@ -85,7 +85,7 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 路径参数：id*: integer
 响应 202
 错误：400（智能体未启用或 `workspace_status` 非 `ready`，如「智能体工作区未初始化完成」）
-说明：直接在 Agent 持久根工作区执行；环境提供 `BEDROCK_AGENT_WORKDIR` 与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）。不创建 Run 专属目录，不归档文件制品。
+说明：直接在 Agent 持久根工作区执行；环境提供 `BEDROCK_AGENT_WORKDIR` 与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）。不创建 Run 专属工作区目录；成功后对固定产出目录做快照归档（见制品端点）。
 
 ### POST /ai/agents/{id}/api-runs — API 触发 Agent 运行（需 PAT scope）
 
@@ -106,7 +106,15 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 权限：`ai_runs:view`
 路径参数：id*: integer
 响应 200
-说明：返回状态、日志/文本输出与 `work_dir` 等记录；AgentRun 无文件制品字段或下载端点。
+说明：返回状态、日志/文本输出、`work_dir`；成功且已归档时含 `artifact_path` / `artifact_kind`。
+
+### GET /ai/runs/{id}/artifact — 下载 Agent 运行制品
+
+权限：`ai_runs:view`
+路径参数：id*: integer
+响应 200：文件附件（`Content-Disposition: attachment`）
+错误：404（无制品或文件缺失）
+说明：仅当 Run 成功且产出目录非空并已快照归档时可用；文件名为 `run-{id}.zip`。
 
 ### POST /ai/runs/{id}/cancel — 取消 Agent 运行
 
@@ -306,6 +314,8 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 | `trigger_type` | `string` |  |  |
 | `status` | `string` |  |  |
 | `work_dir` | `string` |  | Agent 持久根工作区；同一 Agent 的 Run 复用相同路径 |
+| `artifact_path` | `string` |  | 成功快照归档绝对路径；空目录或未归档时为空 |
+| `artifact_kind` | `string` |  | 归档时为 `archive` |
 | `build_run_id` | `integer` |  |  |
 | `project_id` | `integer` |  |  |
 | `doc_node_id` | `integer` |  |  |

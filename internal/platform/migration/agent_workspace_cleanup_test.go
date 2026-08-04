@@ -199,13 +199,21 @@ func setupLegacyAgentWorkspaceUpgrade(t *testing.T) (*gorm.DB, *airepository.AIR
 	if err := migration.Up(context.Background(), gdb, migration.Driver("sqlite")); err != nil {
 		t.Fatalf("initial migrations: %v", err)
 	}
+	legacyAgent := &legacyAgentArtifactColumns{}
 	for _, field := range []string{"ArtifactFormat", "MaxArtifacts"} {
-		if err := gdb.Migrator().AddColumn(&legacyAgentArtifactColumns{}, field); err != nil {
-			t.Fatalf("restore ai_agents.%s: %v", field, err)
+		if !gdb.Migrator().HasColumn(legacyAgent, field) {
+			if err := gdb.Migrator().AddColumn(legacyAgent, field); err != nil {
+				t.Fatalf("restore ai_agents.%s: %v", field, err)
+			}
 		}
 	}
-	if err := gdb.Migrator().AddColumn(&legacyRunArtifactColumn{}, "ArtifactPath"); err != nil {
-		t.Fatalf("restore agent_runs.artifact_path: %v", err)
+	legacyRun := &legacyRunArtifactColumn{}
+	// Full Up may already include 000041 which re-adds artifact_path; only restore when absent
+	// so this fixture still looks like a pre-000018 schema for cleanup.
+	if !gdb.Migrator().HasColumn(legacyRun, "ArtifactPath") {
+		if err := gdb.Migrator().AddColumn(legacyRun, "ArtifactPath"); err != nil {
+			t.Fatalf("restore agent_runs.artifact_path: %v", err)
+		}
 	}
 	if err := gdb.Exec("DELETE FROM schema_migrations WHERE version = ?", migration.AgentPersistentWorkspaceMigrationVersion).Error; err != nil {
 		t.Fatal(err)

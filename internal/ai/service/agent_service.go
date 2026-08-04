@@ -21,6 +21,7 @@ import (
 	"bedrock/internal/ai/model"
 	"bedrock/internal/ai/repository"
 	cicdmodel "bedrock/internal/cicd/model"
+	"bedrock/internal/engine"
 	resourcemodel "bedrock/internal/resource/model"
 	"bedrock/internal/ws"
 )
@@ -54,6 +55,7 @@ type AgentService struct {
 	hub         *ws.Hub
 	logger      *zap.Logger
 	workDir     string
+	artifactDir string
 	logDir      string
 	docs        DocDraftWriter
 	repos       RepositoryFinder
@@ -106,12 +108,12 @@ func NewAgentService(
 	skills *SkillService,
 	hub *ws.Hub,
 	logger *zap.Logger,
-	workDir, logDir string,
+	workDir, artifactDir, logDir string,
 	audit ...AuditWriter,
 ) *AgentService {
 	svc := &AgentService{
 		repo: repo, cli: cli, skills: skills, hub: hub, logger: logger,
-		workDir: workDir, logDir: logDir,
+		workDir: workDir, artifactDir: artifactDir, logDir: logDir,
 		runs: make(chan uint, 128), stop: make(chan struct{}),
 		cronIDs:   make(map[uint]cron.EntryID),
 		wsInitGen: make(map[uint]uint64),
@@ -307,6 +309,7 @@ func (s *AgentService) DeleteAgent(id, userID uint) error {
 		return err
 	}
 	s.removeAgentWorkspace(id)
+	s.removeAgentArtifacts(id)
 	if s.audit != nil {
 		_ = s.audit.Write(userID, "", "agent_delete", "ai_agent", fmt.Sprintf("%d", id), "", "")
 	}
@@ -554,6 +557,22 @@ func (s *AgentService) GetRun(id uint) (*model.AgentRun, error) {
 	return s.repo.FindRun(id)
 }
 
+// ArtifactPath returns the success-run snapshot archive for download.
+func (s *AgentService) ArtifactPath(id uint) (path string, filename string, err error) {
+	run, err := s.repo.FindRun(id)
+	if err != nil {
+		return "", "", err
+	}
+	path = strings.TrimSpace(run.ArtifactPath)
+	if path == "" {
+		return "", "", errors.New("制品不存在")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "", "", errors.New("制品文件不存在")
+	}
+	return path, filepath.Base(path), nil
+}
+
 func (s *AgentService) ListRuns(page, pageSize int, agentID uint, status string) ([]model.AgentRun, int64, error) {
 	return s.repo.ListRuns(page, pageSize, agentID, status)
 }
@@ -786,6 +805,13 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	run.Status = model.JobSuccess
 	run.ErrorMessage = ""
 	writeLog("success")
+	if err := s.archiveRunOutput(run, agent, absOutput, writeLog); err != nil {
+		writeLog("artifact archive failed: " + err.Error())
+		if s.logger != nil {
+			s.logger.Warn("agent run artifact archive failed",
+				zap.Uint("run_id", run.ID), zap.Uint("agent_id", agent.ID), zap.Error(err))
+		}
+	}
 	_ = s.repo.UpdateRun(run)
 
 	if run.TriggerType == model.TriggerDocsGen && s.docs != nil && run.ProjectID != nil && run.DocNodeID != nil {
@@ -800,6 +826,39 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		}
 	}
 	s.notifyTerminal(run, model.JobSuccess)
+}
+
+// archiveRunOutput snapshots the agent fixed output_dir into a per-run zip.
+// Empty directories skip archiving; failures are returned to the caller (run stays success).
+func (s *AgentService) archiveRunOutput(run *model.AgentRun, agent *model.AiAgent, runOutput string, writeLog func(string)) error {
+	hasFiles, err := dirHasRegularFiles(runOutput)
+	if err != nil {
+		return err
+	}
+	if !hasFiles {
+		writeLog("output empty; skip artifact")
+		return nil
+	}
+	dir := filepath.Join(s.artifactDir, fmt.Sprintf("agent-%d", agent.ID))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	artifactPath := filepath.Join(dir, fmt.Sprintf("run-%d.zip", run.ID))
+	if err := engine.CreateArtifactArchive(artifactPath, runOutput, "zip"); err != nil {
+		_ = os.Remove(artifactPath)
+		return err
+	}
+	run.ArtifactPath = artifactPath
+	run.ArtifactKind = "archive"
+	writeLog("artifact=" + artifactPath)
+	return nil
+}
+
+func (s *AgentService) removeAgentArtifacts(agentID uint) {
+	if strings.TrimSpace(s.artifactDir) == "" {
+		return
+	}
+	_ = os.RemoveAll(filepath.Join(s.artifactDir, fmt.Sprintf("agent-%d", agentID)))
 }
 
 func (s *AgentService) failRun(run *model.AgentRun, err error) {

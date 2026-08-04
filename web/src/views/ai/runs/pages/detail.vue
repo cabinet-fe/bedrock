@@ -3,9 +3,10 @@ defineOptions({ name: "AiRunDetail" });
 
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
+import { saveBlob } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
 
-import { agentRunLogsWSURL, cancelRun, getAgent, getRun } from "@/api/ai";
+import { agentRunArtifactURL, agentRunLogsWSURL, cancelRun, getAgent, getRun } from "@/api/ai";
 import { getAccessToken } from "@/api/http";
 import type { AgentRun } from "@/api/types";
 import BuildLogViewer, { resolveBuildLogStatus } from "@/components/build-log-viewer";
@@ -103,6 +104,26 @@ async function onCancel() {
   }
 }
 
+async function onDownloadArtifact() {
+  const token = getAccessToken();
+  if (!token || !run.value) return;
+  try {
+    const res = await fetch(agentRunArtifactURL(run.value.id), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      throw new Error((await res.text()) || `HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = /filename="?([^"]+)"?/.exec(cd);
+    const name = m?.[1] || `run-${run.value.id}.zip`;
+    saveBlob(blob, name);
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : "下载失败");
+  }
+}
+
 onMounted(async () => {
   await load();
 });
@@ -121,6 +142,15 @@ onMounted(async () => {
         <div v-if="run" class="page-header__actions">
           <u-button v-if="canCancel" plain type="danger" :disabled="acting" @click="onCancel">
             取消
+          </u-button>
+          <u-button
+            v-if="run.status === 'success' && run.artifact_path"
+            plain
+            type="primary"
+            :disabled="acting"
+            @click="onDownloadArtifact"
+          >
+            下载制品
           </u-button>
         </div>
       </header>

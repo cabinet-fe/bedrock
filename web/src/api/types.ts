@@ -643,6 +643,21 @@ export interface ApiDocNode {
   children?: ApiDocNode[];
 }
 
+export interface DevDocNode {
+  id: number;
+  project_id: number;
+  parent_id?: number | null;
+  kind: "dir" | "doc";
+  name: string;
+  sort_order: number;
+  repository_id?: number | null;
+  content?: string;
+  children?: DevDocNode[];
+}
+
+/** Shared shape for docs-panel (api | dev). */
+export type ProjectDocNode = ApiDocNode | DevDocNode;
+
 export interface CliRuntimeDefinition {
   id: number;
   key: string;
@@ -733,6 +748,8 @@ export interface AgentRun {
   trigger_type: string;
   status: string;
   work_dir?: string;
+  artifact_path?: string;
+  artifact_kind?: string;
   build_run_id?: number | null;
   project_id?: number | null;
   doc_node_id?: number | null;

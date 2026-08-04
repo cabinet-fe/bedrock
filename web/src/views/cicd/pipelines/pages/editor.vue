@@ -178,7 +178,6 @@ onMounted(() => {
   <div class="pipeline-editor">
     <header class="pipeline-editor__bar">
       <div>
-        <u-button text @click="router.push({ name: 'cicd-pipelines' })">返回列表</u-button>
         <strong v-if="pipeline">{{ pipeline.name }}</strong>
       </div>
       <div class="pipeline-editor__actions">

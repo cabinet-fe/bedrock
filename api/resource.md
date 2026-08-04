@@ -232,7 +232,7 @@ PAT 按 `user_id` 隔离：仅能列出/创建/删除本人令牌。Bearer PAT �
 权限：`resource_tokens:create`
 请求：{ name*, scopes*, expires_at?, expires_in_days? }
 响应 201：data = PATCreateResponse
-说明：创建响应含明文 `token`；服务端同时存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 reveal 返回密文，由客户端解密复制）。明文前缀为 `br_`+hex（不兼容旧 `br_pat_`）。scopes 限于 `skills:read`、`agents:run`、`docs:read`、`docs:write`。过期三选一：都不传 = 永不过期；`expires_in_days` 仅允许 `30` / `90` / `180` / `365`（服务端换算为 UTC 绝对时间写入 `expires_at`）；`expires_at` 为自定义绝对时间且必须晚于当前 UTC。`expires_at` 与 `expires_in_days` 不可同时传。不能替代 HTTPS/TLS。
+说明：创建响应含明文 `token`；服务端同时存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 reveal 返回密文，由客户端解密复制）。明文前缀为 `br_`+hex（不兼容旧 `br_pat_`）。scopes 限于 `skills:read`、`agents:run`、`docs:read`、`docs:write`、`dev_docs:read`、`dev_docs:write`。过期三选一：都不传 = 永不过期；`expires_in_days` 仅允许 `30` / `90` / `180` / `365`（服务端换算为 UTC 绝对时间写入 `expires_at`）；`expires_at` 为自定义绝对时间且必须晚于当前 UTC。`expires_at` 与 `expires_in_days` 不可同时传。不能替代 HTTPS/TLS。
 
 ### GET /resource/tokens/{id}/reveal — 获取个人访问令牌密文
 
@@ -501,7 +501,7 @@ Metadata only; secret never returned
 | `user_id` | `integer` |  |  |
 | `name` | `string` |  |  |
 | `token_prefix` | `string` |  |  |
-| `scopes` | `('skills:read' \| 'agents:run' \| 'docs:read' \| 'docs:write')[]` |  |  |
+| `scopes` | `('skills:read' \| 'agents:run' \| 'docs:read' \| 'docs:write' \| 'dev_docs:read' \| 'dev_docs:write')[]` |  |  |
 | `copyable` | `boolean` |  | 是否存有可解密密文；`false` 时无法 reveal（历史哈希-only） |
 | `expires_at` | `string(date-time)` |  |  |
 | `revoked_at` | `string(date-time)` |  |  |

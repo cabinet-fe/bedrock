@@ -313,6 +313,24 @@ func (s *AgentService) removeAgentWorkspace(agentID uint) {
 	_ = os.RemoveAll(s.agentRoot(agentID))
 }
 
+func dirHasRegularFiles(dir string) (bool, error) {
+	has := false
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info != nil && info.Mode().IsRegular() {
+			has = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	return has, nil
+}
+
 // resolveAgentOutputDir returns the fixed per-agent output directory under the
 // persistent agent root. It never creates per-run subdirectories.
 func resolveAgentOutputDir(agentRoot, outputDir string) (string, error) {

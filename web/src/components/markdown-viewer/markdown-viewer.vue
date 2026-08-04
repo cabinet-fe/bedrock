@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import MarkdownRender from "markstream-vue";
+import MarkdownRender, { enableMermaid } from "markstream-vue";
 import "markstream-vue/index.css";
+
+enableMermaid();
 
 defineProps<{
   content: string;
@@ -9,7 +11,7 @@ defineProps<{
 
 <template>
   <div class="markdown-viewer">
-    <MarkdownRender :content="content" />
+    <MarkdownRender :content="content" :enable-mermaid="true" />
   </div>
 </template>
 

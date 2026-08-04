@@ -11,7 +11,7 @@
 
 - 形态：`br_` 前缀 + hex；服务端存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 reveal 取密文，前端用与登录相同密钥解密后复制）；明文不落日志。
 - 使用：`Authorization: Bearer br_...`，与登录 JWT 分流校验；PAT 以属主用户身份生效。
-- scope 白名单（创建时多选）：`skills:read`、`agents:run`、`docs:read`、`docs:write`。每个 scope 映射固定的开放端点（见「3. 开放接口一览」），scope 不足返回 `403 token scope insufficient`。
+- scope 白名单（创建时多选）：`skills:read`、`agents:run`、`docs:read`、`docs:write`、`dev_docs:read`、`dev_docs:write`。每个 scope 映射固定的开放端点（见「3. 开放接口一览」），scope 不足返回 `403 token scope insufficient`。
 - 有效期三选一：`expires_in_days`（仅 `30|90|180|365`）、`expires_at`（UTC 绝对时间，须晚于当前，与 `expires_in_days` 互斥）、都不传 = 永不过期。
 - 吊销：删除令牌即吊销；元数据中的 `last_used_at` 记录最近使用时间。
 - 历史仅哈希、无密文的令牌无法再复制，需删除后重建。
@@ -52,15 +52,18 @@ curl -fsS "$HOST/api/v1/resource/tokens/1/reveal" \
 
 ## 3. 开放接口一览
 
-| scope         | 方法 | 路径                         | 说明                                               |
-| ------------- | ---- | ---------------------------- | -------------------------------------------------- |
-| `agents:run`  | POST | `/ai/agents/{id}/api-runs`   | 触发 Agent 运行（202 异步）                        |
-| `skills:read` | GET  | `/skills/{id}/package`       | 下载技能包（二进制 ZIP）                           |
-| `docs:write`  | POST | `/projects/{id}/docs/push`   | 按路径 upsert 文档；`{id}` 可为数字 ID 或项目 slug |
-| `docs:read`   | GET  | `/projects/{id}/docs/pull`   | 按路径读取单篇文档；`{id}` 可为数字 ID 或项目 slug |
-| `docs:read`   | GET  | `/projects/{id}/docs/export` | 按目录导出文档列表（全量同步）；`{id}` 同 push     |
+| scope            | 方法 | 路径                             | 说明                                                   |
+| ---------------- | ---- | -------------------------------- | ------------------------------------------------------ |
+| `agents:run`     | POST | `/ai/agents/{id}/api-runs`       | 触发 Agent 运行（202 异步）                            |
+| `skills:read`    | GET  | `/skills/{id}/package`           | 下载技能包（二进制 ZIP）                               |
+| `docs:write`     | POST | `/projects/{id}/docs/push`       | 按路径 upsert 接口文档；`{id}` 可为数字 ID 或项目 slug |
+| `docs:read`      | GET  | `/projects/{id}/docs/pull`       | 按路径读取单篇接口文档；`{id}` 可为数字 ID 或项目 slug |
+| `docs:read`      | GET  | `/projects/{id}/docs/export`     | 按目录导出接口文档列表（全量同步）；`{id}` 同 push     |
+| `dev_docs:write` | POST | `/projects/{id}/dev-docs/push`   | 按路径 upsert 开发文档；`{id}` 可为数字 ID 或项目 slug |
+| `dev_docs:read`  | GET  | `/projects/{id}/dev-docs/pull`   | 按路径读取单篇开发文档；`{id}` 可为数字 ID 或项目 slug |
+| `dev_docs:read`  | GET  | `/projects/{id}/dev-docs/export` | 按目录导出开发文档列表（全量同步）；`{id}` 同 push     |
 
-以上接口也接受登录 JWT（此时校验 RBAC 权限而非 scope）：`api-runs` 需 `ai_agents:execute`，`package` 需 `ai_skills:download`，`push` 需 `project_docs:create`，`pull` / `export` 需 `project_docs:view`；项目文档接口另要求项目 ACL。
+以上接口也接受登录 JWT（此时校验 RBAC 权限而非 scope）：`api-runs` 需 `ai_agents:execute`，`package` 需 `ai_skills:download`，接口文档 `push` 需 `project_docs:create`，`pull` / `export` 需 `project_docs:view`；开发文档对应 `project_dev_docs:*`；项目文档接口另要求项目 ACL。
 
 ## 4. 通用约定
 
@@ -78,8 +81,8 @@ curl -fsS "$HOST/api/v1/resource/tokens/1/reveal" \
 
 - 响应 `202`：`data` 为 AgentRun（`id`、`agent_id`、`trigger_type`、`status` 等）。
 - 错误：`400` Agent 未启用或工作区非 `ready`；`401` PAT 无效；`403` scope 不足；`404` Agent 不存在。
-- 运行直接在 Agent 持久根工作区执行，环境注入 `BEDROCK_AGENT_WORKDIR` 与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）；Run 无专属目录，平台不提供文件制品归档与下载。
-- 后续查询：`GET /ai/runs/{id}`（需 `ai_runs:view`）可取回状态与 `output_text`。
+- 运行直接在 Agent 持久根工作区执行，环境注入 `BEDROCK_AGENT_WORKDIR` 与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）；Run 无专属工作区目录。成功且产出非空时平台快照归档 zip，可通过 `GET /ai/runs/{id}/artifact`（需 `ai_runs:view`）下载。
+- 后续查询：`GET /ai/runs/{id}`（需 `ai_runs:view`）可取回状态、`output_text` 与可选 `artifact_path`。
 
 ```bash
 curl -fsS -X POST "$HOST/api/v1/ai/agents/1/api-runs" \
@@ -150,6 +153,53 @@ curl -fsS "$HOST/api/v1/projects/my-product/docs/export" \
 
 # 子树：远程 openapi/controllers/User.md → path=controllers/User.md
 curl -fsS "$HOST/api/v1/projects/my-product/docs/export?api_dir=openapi" \
+  -H "Authorization: Bearer br_..."
+```
+
+### 5.6 按路径推送开发文档 — scope `dev_docs:write`
+
+`POST /projects/{id}/dev-docs/push` — 按 `doc_dir` + `doc_name` upsert 开发文档内容。路径参数 `{id}` 规则同接口文档 push。无 AI generate。
+
+| 字段       | 必填 | 说明                                                                            |
+| ---------- | ---- | ------------------------------------------------------------------------------- |
+| `doc_dir`  |      | 目录路径；空表示根目录；`/` 分隔；拒绝 `..`、绝对路径与空段；目录不存在自动创建 |
+| `doc_name` | *    | 文档名；缺 `.md` 后缀时服务端补齐                                               |
+| `content`  | *    | Markdown 内容                                                                   |
+
+- 响应：`201` 新建节点 / `200` 更新已有文档。
+- 错误：`400` 参数无效；`403` scope 不足或不满足项目 ACL；`404` 项目不存在。
+
+```bash
+curl -fsS -X POST "$HOST/api/v1/projects/my-product/dev-docs/push" \
+  -H "Authorization: Bearer br_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"doc_dir":"guides","doc_name":"architecture","content":"# 架构\n..."}'
+```
+
+### 5.7 按路径读取开发文档 — scope `dev_docs:read`
+
+`GET /projects/{id}/dev-docs/pull` — 按路径读取开发文档节点（含 `content`）。
+
+| 查询参数   | 必填 | 说明               |
+| ---------- | ---- | ------------------ |
+| `doc_dir`  |      | 目录路径，规则同上 |
+| `doc_name` | *    | 文档名             |
+
+```bash
+curl -fsS "$HOST/api/v1/projects/my-product/dev-docs/pull?doc_dir=guides&doc_name=architecture" \
+  -H "Authorization: Bearer br_..."
+```
+
+### 5.8 导出开发文档列表 — scope `dev_docs:read`
+
+`GET /projects/{id}/dev-docs/export` — 一次返回扁平 `{ path, content }` 列表。
+
+| 查询参数  | 必填 | 说明                                                                     |
+| --------- | ---- | ------------------------------------------------------------------------ |
+| `doc_dir` |      | 导出根目录；空表示项目根；规则同 push/pull。合法但目录不存在时返回空列表 |
+
+```bash
+curl -fsS "$HOST/api/v1/projects/my-product/dev-docs/export?doc_dir=guides" \
   -H "Authorization: Bearer br_..."
 ```
 

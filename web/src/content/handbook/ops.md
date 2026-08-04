@@ -100,7 +100,9 @@ make smoke-three-db
 2. 完整备份数据库、`{workspace}/agents/` 和制品根目录，并确认备份可恢复。
 3. 确认相关目录有足够空间完成同文件系统隔离移动。
 
-首次应用对应 schema migration 时，Server 会安全清理旧的 `{workspace}/agents/agent-{id}/runs/` 及 Agent 归档根下的 `agent-{id}/run-{runID}.zip` / `.tar.gz`。清理先严格校验路径边界与软链祖先，再将目标原子移入同根隔离区，数据库迁移提交后才删除隔离区；异常退出后可幂等续做。
+首次应用 `000018_agent_persistent_workspace` 时，Server 会安全清理旧的 `{workspace}/agents/agent-{id}/runs/` 及当时 Agent 归档根下的 `agent-{id}/run-{runID}.zip` / `.tar.gz`。清理先严格校验路径边界与软链祖先，再将目标原子移入同根隔离区，数据库迁移提交后才删除隔离区；异常退出后可幂等续做。
+
+后续版本通过 `000041_agent_run_artifacts` 恢复成功 Run 的产出目录快照归档（`{artifact_dir}/agent-{id}/run-{runID}.zip`，`agent_runs.artifact_path`），语义为按 Run 快照而非旧 per-run 工作区。
 
 路径越界、软链风险、移动或删除失败时 Server 会 **拒绝启动**。此时不要手工跳过 migration：保留现场，修正路径/权限后重试，必要时从升级前备份恢复。清理不影响 Agent 持久根工作区中的其他文件，也不触碰 CI/CD BuildRun 的工作区、归档或下载能力。
 

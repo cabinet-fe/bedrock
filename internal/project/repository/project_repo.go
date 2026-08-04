@@ -104,6 +104,9 @@ func (r *ProjectRepository) DeleteProject(id uint) error {
 		if err := tx.Where("project_id = ?", id).Delete(&model.ApiDocNode{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("project_id = ?", id).Delete(&model.DevDocNode{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&model.ProductProject{}, id).Error
 	})
 }
@@ -396,6 +399,35 @@ func (r *ProjectRepository) DeleteDocNodes(ids []uint) error {
 		return nil
 	}
 	return r.db.Where("id IN ?", ids).Delete(&model.ApiDocNode{}).Error
+}
+
+func (r *ProjectRepository) CreateDevDocNode(node *model.DevDocNode) error {
+	return r.db.Create(node).Error
+}
+
+func (r *ProjectRepository) FindDevDocNode(id uint) (*model.DevDocNode, error) {
+	var node model.DevDocNode
+	if err := r.db.First(&node, id).Error; err != nil {
+		return nil, err
+	}
+	return &node, nil
+}
+
+func (r *ProjectRepository) ListDevDocNodes(projectID uint) ([]model.DevDocNode, error) {
+	var nodes []model.DevDocNode
+	err := r.db.Where("project_id = ?", projectID).Order("sort_order ASC, id ASC").Find(&nodes).Error
+	return nodes, err
+}
+
+func (r *ProjectRepository) UpdateDevDocNode(node *model.DevDocNode) error {
+	return r.db.Save(node).Error
+}
+
+func (r *ProjectRepository) DeleteDevDocNodes(ids []uint) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.Where("id IN ?", ids).Delete(&model.DevDocNode{}).Error
 }
 
 func (r *ProjectRepository) RequirementStatusExists(value string) (bool, error) {

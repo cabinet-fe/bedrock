@@ -80,7 +80,7 @@ func readRunLog(t *testing.T, path string) string {
 	return string(data)
 }
 
-func setupAgentWorkspace(t *testing.T) (*service.AgentService, *service.SkillService, *resourcerepo.CLIRepository, string) {
+func setupAgentWorkspace(t *testing.T) (*service.AgentService, *service.SkillService, *resourcerepo.CLIRepository, string, string) {
 	t.Helper()
 	root := t.TempDir()
 	gdb, err := db.Open(&config.DatabaseConfig{
@@ -103,16 +103,17 @@ func setupAgentWorkspace(t *testing.T) (*service.AgentService, *service.SkillSer
 	}
 	skills := service.NewSkillService(repo, storageSvc, filepath.Join(storageRoot, "skills"))
 	work := filepath.Join(root, "work")
+	arts := filepath.Join(root, "artifacts")
 	logs := filepath.Join(root, "logs")
-	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, logs)
+	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, arts, logs)
 	agents.SetGitCheckout(stubGitCheckout)
 	agents.Start()
 	t.Cleanup(agents.Shutdown)
-	return agents, skills, cliRepo, work
+	return agents, skills, cliRepo, work, arts
 }
 
 func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
-	agents, skills, _, work := setupAgentWorkspace(t)
+	agents, skills, _, work, _ := setupAgentWorkspace(t)
 
 	z := zipBytes(t, map[string]string{"SKILL.md": "# workspace-skill"})
 	skill, err := skills.Create(service.SkillUploadInput{
@@ -174,7 +175,7 @@ func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
 }
 
 func TestAgentWorkspaceDefaultBranchAndDuplicateRejected(t *testing.T) {
-	agents, _, _, work := setupAgentWorkspace(t)
+	agents, _, _, work, _ := setupAgentWorkspace(t)
 	repoID := uint(3)
 	agents.SetRepoCheckoutDeps(&stubRepoFinder{
 		repos: map[uint]*resourcemodel.Repository{
@@ -241,7 +242,7 @@ func TestAgentWorkspaceDefaultBranchAndDuplicateRejected(t *testing.T) {
 }
 
 func TestAgentWorkspaceRemovesStaleJobLinksAndUnboundRepos(t *testing.T) {
-	agents, _, _, work := setupAgentWorkspace(t)
+	agents, _, _, work, _ := setupAgentWorkspace(t)
 	repoKeep := uint(1)
 	repoDrop := uint(2)
 	agents.SetRepoCheckoutDeps(&stubRepoFinder{
@@ -297,7 +298,7 @@ func TestAgentWorkspaceRemovesStaleJobLinksAndUnboundRepos(t *testing.T) {
 }
 
 func TestAgentWorkspaceDeleteRemovesDir(t *testing.T) {
-	agents, _, _, work := setupAgentWorkspace(t)
+	agents, _, _, work, arts := setupAgentWorkspace(t)
 	agent, err := agents.CreateAgent(1, service.AgentInput{
 		Name: "del", CliKey: "claude_code", TimeoutSec: 10,
 	})
@@ -306,6 +307,13 @@ func TestAgentWorkspaceDeleteRemovesDir(t *testing.T) {
 	}
 	agent = waitWorkspaceStatus(t, agents, agent.ID, model.WorkspaceReady)
 	root := filepath.Join(work, "agents", fmt.Sprintf("agent-%d", agent.ID))
+	artRoot := filepath.Join(arts, fmt.Sprintf("agent-%d", agent.ID))
+	if err := os.MkdirAll(artRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artRoot, "run-1.zip"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.Stat(root); err != nil {
 		t.Fatal(err)
 	}
@@ -315,10 +323,13 @@ func TestAgentWorkspaceDeleteRemovesDir(t *testing.T) {
 	if _, err := os.Stat(root); !os.IsNotExist(err) {
 		t.Fatalf("workspace should be removed, err=%v", err)
 	}
+	if _, err := os.Stat(artRoot); !os.IsNotExist(err) {
+		t.Fatalf("artifact dir should be removed, err=%v", err)
+	}
 }
 
 func TestAgentRunsReusePersistentWorkspace(t *testing.T) {
-	agents, _, repo, work := setupAgentWorkspace(t)
+	agents, _, repo, work, arts := setupAgentWorkspace(t)
 	t.Setenv("BEDROCK_AGENT_OUTPUT", "/must-not-leak")
 
 	script := filepath.Join(t.TempDir(), "fake-cli.sh")
@@ -428,6 +439,20 @@ printf '%s\n' "persistent output"
 		if !strings.Contains(finished.OutputText, "persistent output") {
 			t.Fatalf("output_text=%q log=%s", finished.OutputText, readRunLog(t, finished.LogPath))
 		}
+		wantArt := filepath.Join(arts, fmt.Sprintf("agent-%d", agent.ID), fmt.Sprintf("run-%d.zip", finished.ID))
+		if finished.ArtifactPath != wantArt {
+			t.Fatalf("artifact_path=%q want=%q", finished.ArtifactPath, wantArt)
+		}
+		if finished.ArtifactKind != "archive" {
+			t.Fatalf("artifact_kind=%q", finished.ArtifactKind)
+		}
+		if _, err := os.Stat(wantArt); err != nil {
+			t.Fatalf("artifact missing: %v", err)
+		}
+		path, name, err := agents.ArtifactPath(finished.ID)
+		if err != nil || path != wantArt || name != filepath.Base(wantArt) {
+			t.Fatalf("ArtifactPath=%q name=%q err=%v", path, name, err)
+		}
 	}
 	for _, path := range []string{keepPath, filepath.Join(wantWork, "note.txt"), filepath.Join(wantOutput, "result.txt")} {
 		if _, err := os.Stat(path); err != nil {
@@ -447,7 +472,7 @@ printf '%s\n' "persistent output"
 }
 
 func TestAgentWorkspaceNoOpenCodeExternalDirs(t *testing.T) {
-	agents, _, _, work := setupAgentWorkspace(t)
+	agents, _, _, work, _ := setupAgentWorkspace(t)
 	repoID := uint(2)
 	agents.SetRepoCheckoutDeps(&stubRepoFinder{
 		repos: map[uint]*resourcemodel.Repository{
@@ -470,7 +495,7 @@ func TestAgentWorkspaceNoOpenCodeExternalDirs(t *testing.T) {
 }
 
 func TestAgentManualRunRejectedWhileWorkspacePending(t *testing.T) {
-	agents, _, _, _ := setupAgentWorkspace(t)
+	agents, _, _, _, _ := setupAgentWorkspace(t)
 	block := make(chan struct{})
 	agents.SetGitCheckout(func(ctx context.Context, workDir, repoURL, authType, username, password, branch string, logFn func(string)) error {
 		<-block
@@ -506,7 +531,7 @@ func TestAgentRunPassesFullPermissionFlagsAndScopeHint(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh required")
 	}
-	agents, _, repo, _ := setupAgentWorkspace(t)
+	agents, _, repo, _, _ := setupAgentWorkspace(t)
 	repoID := uint(9)
 	agents.SetRepoCheckoutDeps(&stubRepoFinder{
 		repos: map[uint]*resourcemodel.Repository{
@@ -606,7 +631,7 @@ func TestAgentRunNonInteractiveCLIArgs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.cliKey, func(t *testing.T) {
-			agents, _, repo, _ := setupAgentWorkspace(t)
+			agents, _, repo, _, _ := setupAgentWorkspace(t)
 			argvFile := filepath.Join(t.TempDir(), "argv.txt")
 			script := filepath.Join(t.TempDir(), "fake-cli.sh")
 			content := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argvFile + "\n"
@@ -680,7 +705,7 @@ func TestAgentRunStreamOutputCLIArgs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.cliKey, func(t *testing.T) {
-			agents, _, repo, _ := setupAgentWorkspace(t)
+			agents, _, repo, _, _ := setupAgentWorkspace(t)
 			argvFile := filepath.Join(t.TempDir(), "argv.txt")
 			script := filepath.Join(t.TempDir(), "fake-cli.sh")
 			content := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argvFile + "\n"
@@ -765,7 +790,7 @@ func TestAgentRunNonStreamOutputCLIArgs(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh required")
 	}
-	agents, _, repo, _ := setupAgentWorkspace(t)
+	agents, _, repo, _, _ := setupAgentWorkspace(t)
 	argvFile := filepath.Join(t.TempDir(), "argv.txt")
 	script := filepath.Join(t.TempDir(), "fake-cli.sh")
 	content := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argvFile + "\n"

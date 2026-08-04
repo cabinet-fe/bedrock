@@ -190,7 +190,6 @@ onUnmounted(() => {
   <div v-else-if="run" class="pipeline-run-detail">
     <header class="pipeline-run-detail__bar">
       <div>
-        <u-button text @click="router.push({ name: 'cicd-pipeline-runs' })">返回列表</u-button>
         <strong
           >{{ pipelineName || `流水线 #${run.build_pipeline_id}` }} #{{ run.run_number }}</strong
         >

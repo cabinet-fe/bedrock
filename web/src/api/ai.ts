@@ -74,6 +74,10 @@ export async function cancelRun(id: number): Promise<void> {
   await http.post(`/ai/runs/${id}/cancel`, {});
 }
 
+export function agentRunArtifactURL(id: number): string {
+  return `/api/v1/ai/runs/${id}/artifact`;
+}
+
 /** Agent run log WebSocket URL (Bearer via query token). */
 export function agentRunLogsWSURL(id: number, token: string): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";

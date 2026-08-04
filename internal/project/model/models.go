@@ -129,3 +129,23 @@ type ApiDocNode struct {
 }
 
 func (ApiDocNode) TableName() string { return "api_doc_nodes" }
+
+// DevDocNode models project development documentation (directory or Markdown), mirroring ApiDocNode.
+type DevDocNode struct {
+	ID           uint           `json:"id" gorm:"primaryKey"`
+	ProjectID    uint           `json:"project_id" gorm:"not null;index"`
+	ParentID     *uint          `json:"parent_id,omitempty" gorm:"index"`
+	Kind         string         `json:"kind" gorm:"size:10;not null;index"`
+	Name         string         `json:"name" gorm:"size:300;not null"`
+	SortOrder    int            `json:"sort_order" gorm:"not null;default:0;index"`
+	RepositoryID *uint          `json:"repository_id,omitempty" gorm:"index"`
+	Content      string         `json:"content,omitempty" gorm:"type:text"`
+	CreatedBy    uint           `json:"created_by" gorm:"index"`
+	UpdatedBy    uint           `json:"updated_by" gorm:"index"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`
+	Children     []DevDocNode   `json:"children,omitempty" gorm:"-"`
+}
+
+func (DevDocNode) TableName() string { return "dev_doc_nodes" }

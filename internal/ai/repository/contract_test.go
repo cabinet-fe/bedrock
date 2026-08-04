@@ -44,11 +44,10 @@ func TestContract_AI_CRUD(t *testing.T) {
 					t.Fatalf("ai_agents.%s missing on %s", column, driver)
 				}
 			}
-			if gdb.Migrator().HasColumn("agent_runs", "artifact_path") {
-				t.Fatalf("agent_runs.artifact_path still exists on %s", driver)
-			}
-			if !gdb.Migrator().HasColumn("agent_runs", "work_dir") {
-				t.Fatalf("agent_runs.work_dir missing on %s", driver)
+			for _, column := range []string{"artifact_path", "artifact_kind", "work_dir"} {
+				if !gdb.Migrator().HasColumn("agent_runs", column) {
+					t.Fatalf("agent_runs.%s missing on %s", column, driver)
+				}
 			}
 			repo := repository.NewAIRepository(gdb)
 

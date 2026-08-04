@@ -125,6 +125,45 @@ func TestExportDocsPATScopeAndSlug(t *testing.T) {
 	}
 }
 
+func TestPushAndPullDevDocPathPATScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler, service := newProjectHandlerForTest(t)
+	owner := projectservice.NewAccessContext(1, true, nil)
+	project, err := service.CreateProject(owner, projectservice.CreateProjectInput{Name: "PAT Dev Docs", Slug: "pat-dev-docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := strconv.FormatUint(uint64(project.ID), 10)
+
+	pushBody := `{"doc_dir":"a/b","doc_name":"Doc","content":"# hi"}`
+	if got := docsPathRequest(t, handler, http.MethodPost, "/dev-docs/push", projectID, pushBody, true, nil); got != http.StatusForbidden {
+		t.Fatalf("PAT without dev_docs:write = %d, want 403", got)
+	}
+	if got := docsPathRequest(t, handler, http.MethodPost, "/dev-docs/push", projectID, pushBody, true, []string{"docs:write"}); got != http.StatusForbidden {
+		t.Fatalf("PAT wrong scope = %d, want 403", got)
+	}
+	if got := docsPathRequest(t, handler, http.MethodPost, "/dev-docs/push", projectID, pushBody, true, []string{"dev_docs:write"}); got != http.StatusCreated {
+		t.Fatalf("PAT dev_docs:write push = %d, want 201", got)
+	}
+	if got := docsPathRequest(t, handler, http.MethodPost, "/dev-docs/push", projectID, pushBody, true, []string{"dev_docs:write"}); got != http.StatusOK {
+		t.Fatalf("PAT dev_docs:write upsert = %d, want 200", got)
+	}
+
+	if got := docsPathRequest(t, handler, http.MethodGet, "/dev-docs/pull?doc_dir=a/b&doc_name=Doc", projectID, "", true, []string{"dev_docs:write"}); got != http.StatusForbidden {
+		t.Fatalf("PAT without dev_docs:read = %d, want 403", got)
+	}
+	if got := docsPathRequest(t, handler, http.MethodGet, "/dev-docs/pull?doc_dir=a/b&doc_name=Doc", projectID, "", true, []string{"dev_docs:read"}); got != http.StatusOK {
+		t.Fatalf("PAT dev_docs:read pull = %d, want 200", got)
+	}
+
+	if got := docsPathRequest(t, handler, http.MethodGet, "/dev-docs/export", projectID, "", true, []string{"dev_docs:write"}); got != http.StatusForbidden {
+		t.Fatalf("PAT without dev_docs:read export = %d, want 403", got)
+	}
+	if got := docsPathRequest(t, handler, http.MethodGet, "/dev-docs/export", projectID, "", true, []string{"dev_docs:read"}); got != http.StatusOK {
+		t.Fatalf("PAT dev_docs:read export = %d, want 200", got)
+	}
+}
+
 func docsPathRequest(t *testing.T, handler *ProjectHandler, method, suffix, projectID, body string, isPAT bool, scopes []string) int {
 	t.Helper()
 	code, _ := docsPathRequestBody(t, handler, method, suffix, projectID, body, isPAT, scopes)
@@ -158,6 +197,12 @@ func docsPathRequestBody(t *testing.T, handler *ProjectHandler, method, suffix, 
 		handler.PullDocByPath(c)
 	case strings.HasPrefix(suffix, "/docs/export"):
 		handler.ExportDocs(c)
+	case strings.HasPrefix(suffix, "/dev-docs/push"):
+		handler.PushDevDocByPath(c)
+	case strings.HasPrefix(suffix, "/dev-docs/pull"):
+		handler.PullDevDocByPath(c)
+	case strings.HasPrefix(suffix, "/dev-docs/export"):
+		handler.ExportDevDocs(c)
 	default:
 		t.Fatalf("unknown suffix %s", suffix)
 	}
@@ -249,7 +294,7 @@ func TestGenerateDocsWiredReturnsAccepted(t *testing.T) {
 
 	aiRepo := airepository.NewAIRepository(gdb)
 	cli := resourceservice.NewCLIService(resourcerepo.NewCLIRepository(gdb))
-	agents := aiservice.NewAgentService(aiRepo, cli, nil, nil, zap.NewNop(), t.TempDir(), t.TempDir())
+	agents := aiservice.NewAgentService(aiRepo, cli, nil, nil, zap.NewNop(), t.TempDir(), t.TempDir(), t.TempDir())
 	agents.Start()
 	t.Cleanup(agents.Shutdown)
 	agents.SetDocDraftWriter(projectSvc)

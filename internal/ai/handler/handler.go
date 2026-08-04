@@ -48,6 +48,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 
 	ai.GET("/runs", rbacmw.RequirePermission(h.perm, "ai_runs:view"), h.ListRuns)
 	ai.GET("/runs/:id", rbacmw.RequirePermission(h.perm, "ai_runs:view"), h.GetRun)
+	ai.GET("/runs/:id/artifact", rbacmw.RequirePermission(h.perm, "ai_runs:view"), h.DownloadRunArtifact)
 	ai.POST("/runs/:id/cancel", rbacmw.RequirePermission(h.perm, "ai_agents:execute"), h.CancelRun)
 
 	skills := rg.Group("/skills", authMW)
@@ -227,6 +228,20 @@ func (h *Handler) GetRun(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, run)
+}
+
+func (h *Handler) DownloadRunArtifact(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	path, filename, err := h.agents.ArtifactPath(uint(id))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			pkg.Error(c, http.StatusNotFound, "资源不存在")
+			return
+		}
+		pkg.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	c.FileAttachment(path, filename)
 }
 
 func (h *Handler) CancelRun(c *gin.Context) {

@@ -36,6 +36,9 @@ func (r *AIRepository) DeleteAgent(id uint) error {
 		if err := tx.Where("agent_id = ?", id).Delete(&model.AgentTrigger{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("agent_id = ?", id).Delete(&model.AgentRun{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&model.AiAgent{}, id).Error
 	})
 }

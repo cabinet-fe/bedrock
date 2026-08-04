@@ -270,6 +270,17 @@ const router = createRouter({
           },
         },
         {
+          path: "project/dev-docs",
+          name: "project-dev-docs",
+          component: () => import("@/views/projects/dev-docs/pages/main.vue"),
+          meta: {
+            permission: "project_dev_docs:view",
+            projectTab: "dev-docs",
+            title: "开发文档",
+            keepAliveName: "ProjectDevDocs",
+          },
+        },
+        {
           path: "projects",
           redirect: "/project/projects",
         },

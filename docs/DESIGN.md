@@ -38,7 +38,7 @@
 | D14 | 凭证授权时点 | **绑定/修改**时校验 `resource_credentials:use`；之后执行仅需任务 `execute` |
 | D15 | Webhook | 优先平台签名头 + delivery ID 去重；保留 URL secret 兼容；日志脱敏 |
 | D16 | Cron | 每任务 IANA 时区；禁止同任务重叠；停机错过的触发**跳过** |
-| D17 | PAT scope | 固定白名单：`skills:read`、`agents:run`、`docs:read`、`docs:write`；前缀 `br_`+hex（不兼容旧 `br_pat_`）；SHA-256 哈希鉴权 + AES-GCM 密文（属主 `GET .../reveal` 返回密文，前端用与登录相同的 `encryption.key` 解密后复制）、可过期/吊销；**不替代 HTTPS/TLS**；供 Skill 安装器、`agents:run` 与文档读写开放 API 对接 |
+| D17 | PAT scope | 固定白名单：`skills:read`、`agents:run`、`docs:read`、`docs:write`、`dev_docs:read`、`dev_docs:write`；前缀 `br_`+hex（不兼容旧 `br_pat_`）；SHA-256 哈希鉴权 + AES-GCM 密文（属主 `GET .../reveal` 返回密文，前端用与登录相同的 `encryption.key` 解密后复制）、可过期/吊销；**不替代 HTTPS/TLS**；供 Skill 安装器、`agents:run` 与接口/开发文档读写开放 API 对接 |
 | D18 | 重启恢复 | `queued` 恢复调度；`running` → `interrupted`（可人工重试）；不做断点续跑 |
 | D19 | 平台支持 | 生产：Linux amd64/arm64；macOS 仅开发；部署目标继续支持 Linux/Windows |
 | D20 | 非功能验收 | **仅功能 Gate**；不设容量/延迟 SLO |
@@ -57,7 +57,7 @@
 | D28 | 前端迁移 | 原 React `web/` 已移除；Vue 3 `web/` 为唯一 embed 源 |
 | D29 | Run 快照 | 创建运行时强制写入最小配置快照（只读复现） |
 | D30 | 状态字段 | `status`（结果）与 `stage`（活动阶段）分离；流水线 agent 节点为同步阶段（见 D35） |
-| D31 | Agent 工作区与制品 | 每个 Agent 有一个持久根工作区与一个固定 `output_dir` 产出目录，跨 Run 复用且不清空根目录与产出目录；AgentRun 不绑定、归档或下载文件制品，BuildRun 制品能力不变 |
+| D31 | Agent 工作区与制品 | 每个 Agent 有一个持久根工作区与一个固定 `output_dir` 产出目录，跨 Run 复用且不清空根目录与产出目录；Run **成功**时将产出目录快照打 zip 绑定到该 AgentRun（`artifact_path`），可供下载；空目录不归档；归档失败不阻断 Run 成功态；BuildRun 制品能力不变 |
 | D32 | BuildJob 工作区路径 | 每个构建任务 checkout 目录为 `{workspace}/jobs/job-{id}/`（对齐 Agent `agents/agent-{id}/`）；API 只读回显绝对路径 `workspace_path`；不自动搬迁旧 `repo-*/job-*` 目录 |
 | D33 | ScriptJob | 无仓库/制品/部署的精简任务；工作区 `{workspace}/scripts/script-{id}/`；日志 `{log_dir}/script-{jobID}/run-{NNN}.log`；触发同 BuildJob（manual/cron/webhook，webhook 无分支匹配）；脚本执行前 `${{...}}` 替换 |
 | D34 | 脚本模板 `${{...}}` | 构建/构建后脚本执行前一次性文本替换；内置 `job.*` / `run.*` / `workspace`；用户变量 `${{ env.KEY }}`；未知变量失败；不二次展开 |
@@ -155,7 +155,7 @@ docs/
 - **User**：可禁用；绑定 **多个 Role**；权限 = 各角色权限码并集。
 - **Super Admin**：`users.is_super_admin` 为鉴权真源；内置角色 `code=super_admin`（`type=builtin`）与唯一超管用户 1:1 同步；不可删、不可改权限、不可通过用户角色绑定 API 赋给他人。
 - **自定义 Role**：`type=custom`；绑定功能 `full_code` 集合。
-- **PAT**：属于 User；scope ⊆ {`skills:read`,`agents:run`,`docs:read`,`docs:write`}；明文前缀 `br_`+hex；存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 `GET .../reveal` 返回密文，前端解密）；列表仅元数据 + `copyable`；历史无密文不可复制。
+- **PAT**：属于 User；scope ⊆ {`skills:read`,`agents:run`,`docs:read`,`docs:write`,`dev_docs:read`,`dev_docs:write`}；明文前缀 `br_`+hex；存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 `GET .../reveal` 返回密文，前端解密）；列表仅元数据 + `copyable`；历史无密文不可复制。
 
 ### 4.2 权限码
 
@@ -246,6 +246,7 @@ flowchart TB
   ProductProject --> ProjectMember
   ProductProject --> Requirement
   ProductProject --> ApiDocNode
+  ProductProject --> DevDocNode
   Repository --> BuildJob
   BuildJob --> DeployTarget
   BuildJob --> BuildRun
@@ -308,8 +309,8 @@ Agent 工作区与记录规则：
 2. 工作区代码绑定为多组 `{repository_id, branch}`（同 Agent 内 `(repository_id, branch)` 唯一；checkout 目录为 `repo-{repository_id}-{sanitizedBranch}/`）。创建/更新 Agent 后将 `workspace_status` 置为 `pending` 并**异步**初始化工作区（技能注入 + `GitCloneOrPull` checkout）；成功 → `ready`，失败 → `failed`（写入 `workspace_error`，不回滚删除配置）。仅 `workspace_status=ready` 时可创建 Run（手动 / API / cron / 构建事件）。每次 Run 执行前仍增量同步绑定分支。不再软链构建任务 `job-*` 工作区。分支存在性保存时不校验。
 3. 每个 Agent 另有一个固定产出目录 `{agentRoot}/{output_dir}`（配置字段 `output_dir`，默认相对名 `output`）。CLI 注入 `BEDROCK_AGENT_WORKDIR`（根）与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）。不创建 `runs/run-{id}/output` 或任何 per-run 输出子目录；后续 Run 复用同一产出目录且不清空既有内容（便于缓存与增量写入），由 Agent/CLI 自行覆盖需要更新的文件。
 4. Agent 环境变量 AES-GCM 加密存储（`env_vars_cipher`）；API 不回显明文。Sync/Run 时解密写入工作区 `.env` 并注入进程环境（`BEDROCK_AGENT_ENV_FILE` 指向该文件）；同 UID 下明文可见。
-5. AgentRun 保留状态、日志、文本输出、`work_dir` 与关联上下文，不含 `artifact_path`，不创建归档，也没有文件制品下载 API。
-6. AgentRun 的无制品语义不影响 CI/CD：BuildRun 仍按 §5.2 完成输出归档、保留、下载与重新分发。
+5. AgentRun 成功时将 `{agentRoot}/{output_dir}` 快照归档为 `{artifact_dir}/agent-{id}/run-{runID}.zip`，写入 `artifact_path`（`artifact_kind=archive`）；产出目录无常规文件则跳过归档；归档失败只记日志，不改变 Run 成功态。`GET /ai/runs/:id/artifact`（`ai_runs:view`）以附件流式返回。删除 Agent 时级联删除其 Run 记录并清理对应归档目录。
+6. 上述 AgentRun 快照归档与 CI/CD BuildRun 制品（§5.2）相互独立。
 7. 构建事件触发（`AgentTrigger.build_event` / `BuildJob.agent_ids`）与上述仓库绑定解耦，语义不变。
 
 ### 5.4 文档节点
@@ -318,11 +319,15 @@ Agent 工作区与记录规则：
 ApiDocNode:
   content               # Markdown 正文（无草稿/发布分态、无版本号）
   draft_source_run_id   # 可选，关联生成该内容的 AgentRun
+
+DevDocNode:
+  content               # Markdown 正文（结构对齐 ApiDocNode，无 AI 生成）
 ```
 
 - 创建/更新/导入/开放 push：直接写 `content`。
-- `GET .../docs/pull`：按路径读取文档（开放 API，PAT `docs:read`）。
-- `POST .../docs/generate` 契约归属项目管理域；接通 `AgentRun` 见 **P4**。成功后写入 `content`。
+- `GET .../docs/pull`：按路径读取接口文档（开放 API，PAT `docs:read`）。
+- `GET .../dev-docs/pull`：按路径读取开发文档（开放 API，PAT `dev_docs:read`）；push/export 字段为 `doc_dir` / `doc_name` / `content`。
+- `POST .../docs/generate` 契约归属项目管理域；接通 `AgentRun` 见 **P4**。成功后写入 `content`。开发文档无 generate。
 
 ### 5.5 Skill 可见性
 
@@ -495,6 +500,7 @@ API/Cron/Webhook/Event
 | `{workspace}/scripts/script-{id}/` | ScriptJob 工作区（跨 Run 复用） |
 | `{workspace}/agents/agent-{id}/` | Agent 持久根工作区 |
 | `{artifact_dir}/job-{id}/` | BuildRun 制品 |
+| `{artifact_dir}/agent-{id}/run-{runID}.zip` | AgentRun 成功时的产出目录快照归档 |
 | `{log_dir}/job-{id}/` | BuildRun 日志 |
 | `{log_dir}/script-{jobID}/` | ScriptRun 日志 |
 | `{cache_dir}/job-{id}/` | 构建缓存 |

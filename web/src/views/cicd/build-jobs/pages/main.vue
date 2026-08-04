@@ -307,6 +307,7 @@ watch(historyOpen, async (open) => {
 });
 
 function openRunDetail(row: BuildRun) {
+  historyOpen.value = false;
   void router.push({ name: "cicd-build-run-detail", params: { id: String(row.id) } });
 }
 

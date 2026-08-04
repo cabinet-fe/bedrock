@@ -3,6 +3,7 @@ import { saveBlob } from "@cat-kit/fe";
 import { http } from "./http";
 import type {
   ApiDocNode,
+  DevDocNode,
   ProductProject,
   ProjectMember,
   ProjectRole,
@@ -277,4 +278,68 @@ export async function importDocsZIP(
 ): Promise<ApiDocNode[]> {
   const body = await uploadDocFile(`/projects/${projectID}/docs/import-zip`, parentID, file);
   return "items" in body ? (body.items ?? []) : [];
+}
+
+export async function listDevDocTree(projectID: number): Promise<DevDocNode[]> {
+  const { body } = await http.get<{ items: DevDocNode[] }>(`/projects/${projectID}/dev-docs`);
+  return body.items;
+}
+
+export async function getDevDocNode(projectID: number, nodeID: number): Promise<DevDocNode> {
+  const { body } = await http.get<DevDocNode>(`/projects/${projectID}/dev-docs/${nodeID}`);
+  return body;
+}
+
+export async function createDevDocNode(
+  projectID: number,
+  input: Record<string, unknown>,
+): Promise<DevDocNode> {
+  const { body } = await http.post<DevDocNode>(`/projects/${projectID}/dev-docs`, input);
+  return body;
+}
+
+export async function updateDevDocNode(
+  projectID: number,
+  nodeID: number,
+  input: Record<string, unknown>,
+): Promise<DevDocNode> {
+  const { body } = await http.put<DevDocNode>(`/projects/${projectID}/dev-docs/${nodeID}`, input);
+  return body;
+}
+
+export async function moveDevDocNode(
+  projectID: number,
+  nodeID: number,
+  input: { parent_id?: number | null; sort_order?: number },
+): Promise<DevDocNode> {
+  const { body } = await http.post<DevDocNode>(
+    `/projects/${projectID}/dev-docs/${nodeID}/move`,
+    input,
+  );
+  return body;
+}
+
+export async function deleteDevDocNode(projectID: number, nodeID: number): Promise<void> {
+  await http.delete(`/projects/${projectID}/dev-docs/${nodeID}`);
+}
+
+export async function uploadDevMarkdown(
+  projectID: number,
+  parentID: number | null,
+  file: File,
+): Promise<DevDocNode> {
+  return (await uploadDocFile(
+    `/projects/${projectID}/dev-docs/upload`,
+    parentID,
+    file,
+  )) as DevDocNode;
+}
+
+export async function importDevDocsZIP(
+  projectID: number,
+  parentID: number | null,
+  file: File,
+): Promise<DevDocNode[]> {
+  const body = await uploadDocFile(`/projects/${projectID}/dev-docs/import-zip`, parentID, file);
+  return "items" in body ? ((body.items ?? []) as DevDocNode[]) : [];
 }

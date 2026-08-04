@@ -122,6 +122,8 @@ type AgentRun struct {
 	SnapshotJSON    string     `json:"snapshot_json,omitempty" gorm:"type:text"`
 	SkillDigestJSON string     `json:"skill_digest_json,omitempty" gorm:"type:text"`
 	WorkDir         string     `json:"work_dir" gorm:"size:500"`
+	ArtifactPath    string     `json:"artifact_path,omitempty" gorm:"size:500"`
+	ArtifactKind    string     `json:"artifact_kind,omitempty" gorm:"size:20"` // archive
 	LogPath         string     `json:"log_path" gorm:"size:500"`
 	OutputText      string     `json:"output_text,omitempty" gorm:"type:text"`
 	ErrorMessage    string     `json:"error_message" gorm:"type:text"`

@@ -12,10 +12,15 @@ const query = reactive({ keyword: "", status: "active" });
 
 const projectTab = computed(() => {
   const tab = route.meta.projectTab;
-  return tab === "docs" ? "docs" : "requirements";
+  if (tab === "docs" || tab === "dev-docs" || tab === "requirements") return tab;
+  return "requirements";
 });
 
-const actionLabel = computed(() => (projectTab.value === "docs" ? "进入文档" : "进入需求"));
+const actionLabel = computed(() => {
+  if (projectTab.value === "docs") return "进入文档";
+  if (projectTab.value === "dev-docs") return "进入开发文档";
+  return "进入需求";
+});
 
 const columns = defineProTableColumns([
   { key: "name", name: "项目", sortable: true },

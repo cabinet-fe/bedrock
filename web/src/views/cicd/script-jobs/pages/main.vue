@@ -275,6 +275,7 @@ function openHistory(row: ScriptJob) {
 }
 
 function openRunDetail(row: ScriptRun) {
+  historyOpen.value = false;
   void router.push({ name: "cicd-script-run-detail", params: { id: String(row.id) } });
 }
 </script>

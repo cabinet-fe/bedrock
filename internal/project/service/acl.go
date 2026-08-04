@@ -54,6 +54,9 @@ const (
 	capDocView          aclCapability = "doc_view"
 	capDocEdit          aclCapability = "doc_edit"
 	capDocAdmin         aclCapability = "doc_admin"
+	capDevDocView       aclCapability = "dev_doc_view"
+	capDevDocEdit       aclCapability = "dev_doc_edit"
+	capDevDocAdmin      aclCapability = "dev_doc_admin"
 )
 
 // projectACL implements DESIGN §4.4. Every object operation requires the
@@ -108,7 +111,7 @@ func (a *projectACL) CanListProjects(actor AccessContext) (bool, error) {
 
 func isReadCapability(capability aclCapability) bool {
 	switch capability {
-	case capProjectView, capMemberView, capRequirementView, capDocView:
+	case capProjectView, capMemberView, capRequirementView, capDocView, capDevDocView:
 		return true
 	default:
 		return false
@@ -121,16 +124,16 @@ func isWriteCapability(capability aclCapability) bool {
 
 func roleAllows(role string, capability aclCapability) bool {
 	switch capability {
-	case capProjectView, capMemberView, capRequirementView, capDocView:
+	case capProjectView, capMemberView, capRequirementView, capDocView, capDevDocView:
 		return role == model.ProjectRoleOwner || role == model.ProjectRoleAdmin ||
 			role == model.ProjectRoleMember || role == model.ProjectRoleReadonly
 	case capProjectManage, capOwnerTransfer:
 		return role == model.ProjectRoleOwner
 	case capMemberManage:
 		return role == model.ProjectRoleOwner || role == model.ProjectRoleAdmin
-	case capRequirementEdit, capDocEdit:
+	case capRequirementEdit, capDocEdit, capDevDocEdit:
 		return role == model.ProjectRoleOwner || role == model.ProjectRoleAdmin || role == model.ProjectRoleMember
-	case capRequirementAdmin, capDocAdmin:
+	case capRequirementAdmin, capDocAdmin, capDevDocAdmin:
 		return role == model.ProjectRoleOwner || role == model.ProjectRoleAdmin
 	default:
 		return false

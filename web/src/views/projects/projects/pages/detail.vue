@@ -39,6 +39,7 @@ const tabs = computed(
     [
       hasPermission("project_requirements:view") ? { key: "requirements", name: "需求" } : null,
       hasPermission("project_docs:view") ? { key: "docs", name: "接口文档" } : null,
+      hasPermission("project_dev_docs:view") ? { key: "dev-docs", name: "开发文档" } : null,
     ].filter(Boolean) as { key: string; name: string }[],
 );
 
@@ -95,10 +96,6 @@ watch(tab, (next) => {
 
 <template>
   <div class="project-detail">
-    <div class="page-toolbar">
-      <u-button plain @click="router.push({ name: 'projects' })">返回项目列表</u-button>
-    </div>
-
     <template v-if="project">
       <u-tabs v-model="tab" :items="tabs" />
       <RequirementsPanel
@@ -111,6 +108,15 @@ watch(tab, (next) => {
       <DocsPanel
         v-else-if="tab === 'docs' && hasPermission('project_docs:view')"
         class="project-detail__panel"
+        doc-kind="api"
+        :project="project"
+        :project-role="projectRole"
+        :manage-all="canManageAll"
+      />
+      <DocsPanel
+        v-else-if="tab === 'dev-docs' && hasPermission('project_dev_docs:view')"
+        class="project-detail__panel"
+        doc-kind="dev"
         :project="project"
         :project-role="projectRole"
         :manage-all="canManageAll"
@@ -127,12 +133,6 @@ watch(tab, (next) => {
   height: 100%;
   min-height: 0;
   gap: 12px;
-}
-
-.page-toolbar {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
 }
 
 .project-detail__panel {

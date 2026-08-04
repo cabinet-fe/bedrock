@@ -75,6 +75,19 @@ func (h *ProjectHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerF
 	g.PUT("/:id/docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_docs:update"), h.UpdateDocNode)
 	g.POST("/:id/docs/:nodeID/move", rbacmw.RequirePermission(h.perm, "project_docs:update"), h.MoveDocNode)
 	g.DELETE("/:id/docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_docs:delete"), h.DeleteDocNode)
+
+	g.GET("/:id/dev-docs", rbacmw.RequirePermission(h.perm, "project_dev_docs:view"), h.ListDevDocTree)
+	g.POST("/:id/dev-docs", rbacmw.RequirePermission(h.perm, "project_dev_docs:create"), h.CreateDevDocNode)
+	g.POST("/:id/dev-docs/upload", rbacmw.RequirePermission(h.perm, "project_dev_docs:create"), h.UploadDevMarkdown)
+	g.POST("/:id/dev-docs/import-zip", rbacmw.RequirePermission(h.perm, "project_dev_docs:create"), h.ImportDevZIP)
+	// External push/pull/export: PAT scope or JWT RBAC checked inside handler.
+	g.POST("/:id/dev-docs/push", h.PushDevDocByPath)
+	g.GET("/:id/dev-docs/pull", h.PullDevDocByPath)
+	g.GET("/:id/dev-docs/export", h.ExportDevDocs)
+	g.GET("/:id/dev-docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_dev_docs:view"), h.GetDevDocNode)
+	g.PUT("/:id/dev-docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_dev_docs:update"), h.UpdateDevDocNode)
+	g.POST("/:id/dev-docs/:nodeID/move", rbacmw.RequirePermission(h.perm, "project_dev_docs:update"), h.MoveDevDocNode)
+	g.DELETE("/:id/dev-docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_dev_docs:delete"), h.DeleteDevDocNode)
 }
 
 func (h *ProjectHandler) ListProjects(c *gin.Context) {

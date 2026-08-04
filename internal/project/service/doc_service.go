@@ -658,46 +658,55 @@ func safeDocName(value string) string {
 
 // parseDocDirPath splits a relative document directory path; empty means project root.
 func parseDocDirPath(apiDir string) ([]string, error) {
-	raw := strings.TrimSpace(strings.ReplaceAll(apiDir, "\\", "/"))
+	return parseRelDirPath(apiDir, "api_dir")
+}
+
+func normalizeDocFileName(apiDocName string) (string, error) {
+	return normalizeMDFileName(apiDocName, "api_doc_name")
+}
+
+// parseRelDirPath splits a relative directory path; empty means project root.
+func parseRelDirPath(dir, field string) ([]string, error) {
+	raw := strings.TrimSpace(strings.ReplaceAll(dir, "\\", "/"))
 	if raw == "" || raw == "." {
 		return nil, nil
 	}
 	if strings.HasPrefix(raw, "/") {
-		return nil, errors.New("api_dir 不能为绝对路径")
+		return nil, fmt.Errorf("%s 不能为绝对路径", field)
 	}
 	parts := strings.Split(raw, "/")
 	out := make([]string, 0, len(parts))
 	for _, part := range parts {
 		if part == "" || part == "." {
-			return nil, errors.New("api_dir 包含非法空段")
+			return nil, fmt.Errorf("%s 包含非法空段", field)
 		}
 		if part == ".." || strings.Contains(part, "\x00") {
-			return nil, errors.New("api_dir 包含非法路径")
+			return nil, fmt.Errorf("%s 包含非法路径", field)
 		}
 		name := safeDocName(part)
 		if name == "" || name != part {
-			return nil, errors.New("api_dir 包含非法路径")
+			return nil, fmt.Errorf("%s 包含非法路径", field)
 		}
 		out = append(out, name)
 	}
 	return out, nil
 }
 
-func normalizeDocFileName(apiDocName string) (string, error) {
-	name := strings.TrimSpace(apiDocName)
+func normalizeMDFileName(fileName, field string) (string, error) {
+	name := strings.TrimSpace(fileName)
 	if name == "" {
-		return "", errors.New("api_doc_name 不能为空")
+		return "", fmt.Errorf("%s 不能为空", field)
 	}
 	name = strings.ReplaceAll(name, "\\", "/")
 	if strings.Contains(name, "/") {
-		return "", errors.New("api_doc_name 不能包含路径分隔符")
+		return "", fmt.Errorf("%s 不能包含路径分隔符", field)
 	}
 	if !strings.EqualFold(path.Ext(name), ".md") {
 		name = name + ".md"
 	}
 	safe := safeDocName(name)
 	if safe == "" {
-		return "", errors.New("api_doc_name 无效")
+		return "", fmt.Errorf("%s 无效", field)
 	}
 	return safe, nil
 }

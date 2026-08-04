@@ -53,7 +53,7 @@ func TestContract_MigrationsAndCICDTables(t *testing.T) {
 				"deploy_targets", "build_deploy_attempts", "dashboard_layouts",
 				"dev_environments", "dev_env_install_sources", "dev_env_jobs", "schema_migrations",
 				"storage_objects", "product_projects", "project_members", "requirements",
-				"requirement_comments", "requirement_attachments", "api_doc_nodes",
+				"requirement_comments", "requirement_attachments", "api_doc_nodes", "dev_doc_nodes",
 				"menu_groups", "rbac_resources", "roles",
 			} {
 				if !gdb.Migrator().HasTable(table) {
@@ -125,6 +125,10 @@ func TestContract_MigrationsAndCICDTables(t *testing.T) {
 			doc := &projectmodel.ApiDocNode{ProjectID: project.ID, Kind: "doc", Name: "contract.md", CreatedBy: 99, UpdatedBy: 99}
 			if err := projectRepo.CreateDocNode(doc); err != nil {
 				t.Fatalf("create api doc node: %v", err)
+			}
+			devDoc := &projectmodel.DevDocNode{ProjectID: project.ID, Kind: "doc", Name: "dev.md", CreatedBy: 99, UpdatedBy: 99}
+			if err := projectRepo.CreateDevDocNode(devDoc); err != nil {
+				t.Fatalf("create dev doc node: %v", err)
 			}
 			_ = repoRepo.Delete(repo.ID)
 			_ = credRepo.Delete(cred.ID)
