@@ -60,8 +60,13 @@ export async function deleteTrigger(agentID: number, triggerID: number): Promise
   await http.delete(`/ai/agents/${agentID}/triggers/${triggerID}`);
 }
 
-export async function manualRunAgent(agentID: number): Promise<AgentRun> {
-  const { body } = await http.post<AgentRun>(`/ai/agents/${agentID}/runs`, {});
+export async function manualRunAgent(
+  agentID: number,
+  input?: { user_prompt?: string },
+): Promise<AgentRun> {
+  const { body } = await http.post<AgentRun>(`/ai/agents/${agentID}/runs`, {
+    user_prompt: input?.user_prompt ?? "",
+  });
   return body;
 }
 

@@ -181,6 +181,10 @@ onMounted(async () => {
               <span class="meta-label">文档节点</span>
               <span class="meta-value">{{ run.doc_node_id ?? "—" }}</span>
             </div>
+            <div class="meta-item meta-item--full">
+              <span class="meta-label">用户提示词</span>
+              <span class="meta-value meta-value--pre">{{ run.user_prompt || "—" }}</span>
+            </div>
             <div class="meta-item">
               <span class="meta-label">运行时间</span>
               <span class="meta-value">{{ formatDurationMs(run.duration_ms) || "—" }}</span>
@@ -311,6 +315,10 @@ onMounted(async () => {
   min-width: 0;
 }
 
+.meta-item--full {
+  grid-column: 1 / -1;
+}
+
 .meta-label {
   font-size: 12px;
   color: fn.use-var(text-color, assist);
@@ -324,6 +332,14 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.meta-value--pre {
+  white-space: pre-wrap;
+  overflow: visible;
+  text-overflow: unset;
+  font-weight: 400;
+  line-height: 1.5;
 }
 
 .error-msg {

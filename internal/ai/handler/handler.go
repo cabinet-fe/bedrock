@@ -176,7 +176,11 @@ func (h *Handler) DeleteTrigger(c *gin.Context) {
 
 func (h *Handler) ManualRun(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	run, err := h.agents.ManualRun(uint(id), authmiddleware.GetUserID(c))
+	var input struct {
+		UserPrompt string `json:"user_prompt"`
+	}
+	_ = c.ShouldBindJSON(&input)
+	run, err := h.agents.ManualRun(uint(id), authmiddleware.GetUserID(c), input.UserPrompt)
 	if err != nil {
 		writeErr(c, err)
 		return
@@ -196,7 +200,11 @@ func (h *Handler) APIRun(c *gin.Context) {
 		return
 	}
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	run, err := h.agents.APIRun(uint(id), authmiddleware.GetUserID(c))
+	var input struct {
+		UserPrompt string `json:"user_prompt"`
+	}
+	_ = c.ShouldBindJSON(&input)
+	run, err := h.agents.APIRun(uint(id), authmiddleware.GetUserID(c), input.UserPrompt)
 	if err != nil {
 		writeErr(c, err)
 		return

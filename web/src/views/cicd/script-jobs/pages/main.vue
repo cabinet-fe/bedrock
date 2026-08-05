@@ -22,7 +22,7 @@ import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType, type TagType } from "@/lib/tag";
 
 const TIMEZONE_OPTIONS = [
@@ -105,6 +105,13 @@ const historyColumns = defineProTableColumns([
   { key: "run_number", name: "#" },
   { key: "status", name: "状态", width: 100, align: "center" },
   { key: "trigger_type", name: "触发", width: 100, align: "center" },
+  {
+    key: "duration_ms",
+    name: "运行时间",
+    width: 110,
+    align: "center",
+    render: ({ val }) => formatDurationMs(val as number) || "—",
+  },
   {
     key: "created_at",
     name: "创建时间",

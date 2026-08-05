@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -295,6 +294,11 @@ func TestGenerateDocsWiredReturnsAccepted(t *testing.T) {
 	aiRepo := airepository.NewAIRepository(gdb)
 	cli := resourceservice.NewCLIService(resourcerepo.NewCLIRepository(gdb))
 	agents := aiservice.NewAgentService(aiRepo, cli, nil, nil, zap.NewNop(), t.TempDir(), t.TempDir(), t.TempDir())
+	agents.SetCLIRunner(func(context.Context, aiservice.CLIRunRequest) (string, error) {
+		return "docs stub\n", nil
+	})
+	agents.SetSyncWorkspaceInit(true)
+	agents.SetInlineExec(true)
 	agents.Start()
 	t.Cleanup(agents.Shutdown)
 	agents.SetDocDraftWriter(projectSvc)
@@ -306,16 +310,12 @@ func TestGenerateDocsWiredReturnsAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		got, err := agents.GetAgent(agent.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.WorkspaceStatus == aimodel.WorkspaceReady {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
+	got, err := agents.GetAgent(agent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.WorkspaceStatus != aimodel.WorkspaceReady {
+		t.Fatalf("workspace_status=%q err=%q", got.WorkspaceStatus, got.WorkspaceError)
 	}
 
 	body := fmt.Sprintf(`{"agent_id":%d}`, agent.ID)

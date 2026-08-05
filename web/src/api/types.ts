@@ -297,6 +297,9 @@ export interface BuildRun {
   distribution_summary: string;
   snapshot_json?: string;
   error_message?: string;
+  duration_ms?: number;
+  started_at?: string;
+  finished_at?: string;
   created_at: string;
   deploy_attempts?: BuildDeployAttempt[];
 }
@@ -753,6 +756,7 @@ export interface AgentRun {
   build_run_id?: number | null;
   project_id?: number | null;
   doc_node_id?: number | null;
+  user_prompt?: string;
   error_message?: string;
   output_text?: string;
   duration_ms?: number;

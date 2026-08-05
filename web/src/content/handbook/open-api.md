@@ -77,16 +77,19 @@ curl -fsS "$HOST/api/v1/resource/tokens/1/reveal" \
 
 ### 5.1 触发 Agent 运行 — scope `agents:run`
 
-`POST /ai/agents/{id}/api-runs` — 无需请求体。
+`POST /ai/agents/{id}/api-runs` — 可选请求体 `{ "user_prompt": "..." }`（可空或省略）。
 
-- 响应 `202`：`data` 为 AgentRun（`id`、`agent_id`、`trigger_type`、`status` 等）。
+- 响应 `202`：`data` 为 AgentRun（`id`、`agent_id`、`trigger_type`、`status`、`user_prompt` 等）。
 - 错误：`400` Agent 未启用或工作区非 `ready`；`401` PAT 无效；`403` scope 不足；`404` Agent 不存在。
 - 运行直接在 Agent 持久根工作区执行，环境注入 `BEDROCK_AGENT_WORKDIR` 与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）；Run 无专属工作区目录。成功且产出非空时平台快照归档 zip，可通过 `GET /ai/runs/{id}/artifact`（需 `ai_runs:view`）下载。
+- `user_prompt` 与智能体配置中的 `system_prompt` 一并作为 CLI 提示词；未传时仅使用系统提示词与工作区约束说明。
 - 后续查询：`GET /ai/runs/{id}`（需 `ai_runs:view`）可取回状态、`output_text` 与可选 `artifact_path`。
 
 ```bash
 curl -fsS -X POST "$HOST/api/v1/ai/agents/1/api-runs" \
-  -H "Authorization: Bearer br_..."
+  -H "Authorization: Bearer br_..." \
+  -H "Content-Type: application/json" \
+  -d '{"user_prompt":"总结仓库 README"}'
 ```
 
 ### 5.2 下载技能包 — scope `skills:read`

@@ -119,6 +119,7 @@ type AgentRun struct {
 	BuildRunID      *uint      `json:"build_run_id" gorm:"index"`
 	ProjectID       *uint      `json:"project_id" gorm:"index"`
 	DocNodeID       *uint      `json:"doc_node_id" gorm:"index"`
+	UserPrompt      string     `json:"user_prompt,omitempty" gorm:"type:text"`
 	SnapshotJSON    string     `json:"snapshot_json,omitempty" gorm:"type:text"`
 	SkillDigestJSON string     `json:"skill_digest_json,omitempty" gorm:"type:text"`
 	WorkDir         string     `json:"work_dir" gorm:"size:500"`

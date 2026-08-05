@@ -83,6 +83,7 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 
 权限：`ai_agents:execute`
 路径参数：id*: integer
+请求：{ user_prompt? }（可空；触发时附加的用户提示词，与智能体 `system_prompt` 一并传给 CLI）
 响应 202
 错误：400（智能体未启用或 `workspace_status` 非 `ready`，如「智能体工作区未初始化完成」）
 说明：直接在 Agent 持久根工作区执行；环境提供 `BEDROCK_AGENT_WORKDIR` 与 `BEDROCK_AGENT_OUTPUT`（固定产出目录）。不创建 Run 专属工作区目录；成功后对固定产出目录做快照归档（见制品端点）。
@@ -91,9 +92,10 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 
 权限：`ai_agents:execute`
 路径参数：id*: integer
+请求：{ user_prompt? }（可空；与手动触发相同）
 响应 202
 错误：401 / 403 / 400（工作区未就绪）
-说明：JWT with `ai_agents:execute` or PAT with scope `agents:run`.
+说明：JWT with `ai_agents:execute` or PAT with scope `agents:run`。请求体可省略。
 
 ### GET /ai/runs — 列出 Agent 运行记录
 
@@ -319,6 +321,7 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 | `build_run_id` | `integer` |  |  |
 | `project_id` | `integer` |  |  |
 | `doc_node_id` | `integer` |  |  |
+| `user_prompt` | `string` |  | 触发时附加的用户提示词；可空 |
 | `error_message` | `string` |  |  |
 | `output_text` | `string` |  |  |
 | `duration_ms` | `integer` |  | 运行耗时（毫秒）；未结束或未开始时为 `0` |

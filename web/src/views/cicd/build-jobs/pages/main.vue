@@ -32,7 +32,7 @@ import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import {
   BUILD_STAGE_TAG,
   JOB_STATUS_TAG,
@@ -218,6 +218,13 @@ const historyColumns = defineProTableColumns([
   { key: "stage", name: "阶段", width: 100, align: "center" },
   { key: "branch", name: "分支" },
   { key: "trigger_type", name: "触发", width: 100, align: "center" },
+  {
+    key: "duration_ms",
+    name: "运行时间",
+    width: 110,
+    align: "center",
+    render: ({ val }) => formatDurationMs(val as number) || "—",
+  },
   {
     key: "created_at",
     name: "创建时间",

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -48,6 +47,18 @@ type RunTerminalHook interface {
 	OnAgentRunTerminal(run *model.AgentRun, status string)
 }
 
+// CLIRunRequest is the resolved CLI invocation passed to CLIRunner.
+type CLIRunRequest struct {
+	Binary string
+	Args   []string
+	Dir    string
+	Env    []string
+}
+
+// CLIRunner executes an agent CLI. Production uses os/exec; tests inject fakes
+// so suites never spawn real model CLIs.
+type CLIRunner func(ctx context.Context, req CLIRunRequest) (output string, err error)
+
 type AgentService struct {
 	repo        *repository.AIRepository
 	cli         CLILookup
@@ -64,6 +75,9 @@ type AgentService struct {
 	audit       AuditWriter
 	notifier    TerminalNotifier
 	termHook    RunTerminalHook
+	cliRunner   CLIRunner
+	wsInitSync  bool
+	inlineExec  bool
 
 	runs    chan uint
 	stop    chan struct{}
@@ -89,6 +103,15 @@ func (s *AgentService) SetTerminalNotifier(n TerminalNotifier) {
 func (s *AgentService) SetTerminalHook(h RunTerminalHook) {
 	s.termHook = h
 }
+
+// SetCLIRunner replaces os/exec for agent CLI invocation (tests).
+func (s *AgentService) SetCLIRunner(r CLIRunner) { s.cliRunner = r }
+
+// SetSyncWorkspaceInit runs workspace init inline instead of a goroutine (tests).
+func (s *AgentService) SetSyncWorkspaceInit(v bool) { s.wsInitSync = v }
+
+// SetInlineExec runs ExecuteRun inside submit instead of the async worker (tests).
+func (s *AgentService) SetInlineExec(v bool) { s.inlineExec = v }
 
 // locSchedule interprets cron fields in loc (equivalent to cron.WithLocation per trigger).
 type locSchedule struct {
@@ -438,6 +461,7 @@ type CreateRunInput struct {
 	BuildRunID  *uint
 	ProjectID   *uint
 	DocNodeID   *uint
+	UserPrompt  string
 }
 
 func (s *AgentService) CreateRun(agentID uint, in CreateRunInput) (*model.AgentRun, error) {
@@ -455,10 +479,12 @@ func (s *AgentService) CreateRun(agentID uint, in CreateRunInput) (*model.AgentR
 	if err := s.attachRepoBindings(agent); err != nil {
 		return nil, err
 	}
+	userPrompt := strings.TrimSpace(in.UserPrompt)
 	snapshot, _ := json.Marshal(map[string]any{
 		"agent_id":      agent.ID,
 		"cli_key":       agent.CliKey,
 		"system_prompt": agent.SystemPrompt,
+		"user_prompt":   userPrompt,
 		"skill_ids":     agent.SkillIDs,
 		"repo_bindings": agent.RepoBindings,
 		"env_var_keys":  envVarKeys(agent),
@@ -472,6 +498,7 @@ func (s *AgentService) CreateRun(agentID uint, in CreateRunInput) (*model.AgentR
 		AgentID: agentID, TriggerType: in.TriggerType, TriggerID: in.TriggerID,
 		Status: model.JobQueued, TriggeredBy: in.TriggeredBy,
 		BuildRunID: in.BuildRunID, ProjectID: in.ProjectID, DocNodeID: in.DocNodeID,
+		UserPrompt:   userPrompt,
 		SnapshotJSON: string(snapshot),
 		WorkDir:      s.agentRoot(agentID),
 	}
@@ -488,12 +515,16 @@ func (s *AgentService) CreateRun(agentID uint, in CreateRunInput) (*model.AgentR
 	return run, nil
 }
 
-func (s *AgentService) ManualRun(agentID, userID uint) (*model.AgentRun, error) {
-	return s.CreateRun(agentID, CreateRunInput{TriggerType: model.TriggerManual, TriggeredBy: userID})
+func (s *AgentService) ManualRun(agentID, userID uint, userPrompt string) (*model.AgentRun, error) {
+	return s.CreateRun(agentID, CreateRunInput{
+		TriggerType: model.TriggerManual, TriggeredBy: userID, UserPrompt: userPrompt,
+	})
 }
 
-func (s *AgentService) APIRun(agentID, userID uint) (*model.AgentRun, error) {
-	return s.CreateRun(agentID, CreateRunInput{TriggerType: model.TriggerAPI, TriggeredBy: userID})
+func (s *AgentService) APIRun(agentID, userID uint, userPrompt string) (*model.AgentRun, error) {
+	return s.CreateRun(agentID, CreateRunInput{
+		TriggerType: model.TriggerAPI, TriggeredBy: userID, UserPrompt: userPrompt,
+	})
 }
 
 func (s *AgentService) DocsGenerateRun(agentID, userID, projectID, nodeID uint) (*model.AgentRun, error) {
@@ -516,6 +547,10 @@ func (s *AgentService) OnBuildEvent(event string, job *cicdmodel.BuildJob, run *
 		return
 	}
 	if desired != event {
+		return
+	}
+	if s.inlineExec {
+		s.dispatchBuildEvent(event, job, run)
 		return
 	}
 	go s.dispatchBuildEvent(event, job, run)
@@ -591,6 +626,10 @@ func (s *AgentService) CancelRun(id uint) error {
 }
 
 func (s *AgentService) submit(id uint) error {
+	if s.inlineExec {
+		s.ExecuteRun(context.Background(), id)
+		return nil
+	}
 	s.startMu.Lock()
 	started := s.started
 	s.startMu.Unlock()
@@ -719,11 +758,21 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	writeLog("BEDROCK_AGENT_ENV_FILE=" + envFile)
 	writeLog("请将需交付的文件写入 $BEDROCK_AGENT_OUTPUT（固定产出目录，跨 Run 复用）")
 
-	binary, lookErr := ResolveBinary(cli)
-	if lookErr != nil {
-		writeLog("CLI binary not found: " + lookErr.Error())
-		s.failRun(run, fmt.Errorf("CLI %s 未安装或不可用: %w", agent.CliKey, lookErr))
-		return
+	var binary string
+	if s.cliRunner != nil {
+		if strings.TrimSpace(cli.InstalledPath) != "" {
+			binary = cli.InstalledPath
+		} else {
+			binary = cli.BinaryName
+		}
+	} else {
+		resolved, lookErr := ResolveBinary(cli)
+		if lookErr != nil {
+			writeLog("CLI binary not found: " + lookErr.Error())
+			s.failRun(run, fmt.Errorf("CLI %s 未安装或不可用: %w", agent.CliKey, lookErr))
+			return
+		}
+		binary = resolved
 	}
 	writeLog("binary=" + binary)
 
@@ -739,46 +788,48 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	hint := agentWorkspaceScopeHint()
 	if run.TriggerType == model.TriggerDocsGen {
 		args = append(args, "Generate API documentation based on the workspace. Output Markdown only. "+hint)
-	} else if strings.TrimSpace(agent.SystemPrompt) != "" {
-		args = append(args, agent.SystemPrompt+"\n\n"+hint)
 	} else {
-		args = append(args, hint)
+		args = append(args, composeRunPrompt(agent.SystemPrompt, run.UserPrompt, hint))
 	}
 
-	cmd := exec.CommandContext(runCtx, binary, args...)
-	cmd.Dir = agentRoot
 	runtimeExtra := map[string]string{
 		"BEDROCK_AGENT_WORKDIR":  absRoot,
 		"BEDROCK_AGENT_ENV_FILE": envFile,
 	}
 	maps.Copy(runtimeExtra, agentEnv)
-	cmd.Env = append(removeEnv(BuildRuntimeEnv(cli, "", runtimeExtra), "BEDROCK_AGENT_OUTPUT"), "BEDROCK_AGENT_OUTPUT="+absOutput)
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-	if err := cmd.Start(); err != nil {
-		s.failRun(run, err)
-		return
-	}
-	// 分通道采集后再合并，避免并发写同一 Builder；边读边打日志供 UI 流式展示
-	var stdoutBuf, stderrBuf strings.Builder
-	copyStream := func(r io.Reader, buf *strings.Builder) {
-		sc := bufio.NewScanner(r)
-		scanBuf := make([]byte, 0, 64*1024)
-		sc.Buffer(scanBuf, 1024*1024)
-		for sc.Scan() {
-			line := sc.Text()
-			writeLog(line)
-			buf.WriteString(line)
-			buf.WriteByte('\n')
+	cmdEnv := append(removeEnv(BuildRuntimeEnv(cli, "", runtimeExtra), "BEDROCK_AGENT_OUTPUT"), "BEDROCK_AGENT_OUTPUT="+absOutput)
+
+	var outputText string
+	if s.cliRunner != nil {
+		outputText, err = s.cliRunner(runCtx, CLIRunRequest{
+			Binary: binary, Args: args, Dir: agentRoot, Env: cmdEnv,
+		})
+		if outputText != "" {
+			for line := range strings.SplitSeq(strings.TrimSuffix(outputText, "\n"), "\n") {
+				writeLog(line)
+			}
 		}
+	} else {
+		cmd := exec.CommandContext(runCtx, binary, args...)
+		cmd.Dir = agentRoot
+		cmd.Env = cmdEnv
+		stdout, _ := cmd.StdoutPipe()
+		stderr, _ := cmd.StderrPipe()
+		if err := cmd.Start(); err != nil {
+			s.failRun(run, err)
+			return
+		}
+		// 分通道采集后再合并，避免并发写同一 Builder；边读边打日志供 UI 流式展示。
+		// 使用 io.ReadAll 而非 Scanner，避免 Linux CI 上短生命周期子进程 stdout 偶发丢失末行。
+		var stdoutBuf, stderrBuf strings.Builder
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); drainExecStream(stdout, &stdoutBuf, writeLog) }()
+		go func() { defer wg.Done(); drainExecStream(stderr, &stderrBuf, writeLog) }()
+		err = cmd.Wait()
+		wg.Wait()
+		outputText = stdoutBuf.String() + stderrBuf.String()
 	}
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() { defer wg.Done(); copyStream(stdout, &stdoutBuf) }()
-	go func() { defer wg.Done(); copyStream(stderr, &stderrBuf) }()
-	err = cmd.Wait()
-	wg.Wait()
-	outputText := stdoutBuf.String() + stderrBuf.String()
 
 	latest, _ := s.repo.FindRun(run.ID)
 	if latest != nil && latest.Status == model.JobCancelled {
@@ -1047,4 +1098,18 @@ func removeEnv(env []string, key string) []string {
 		}
 	}
 	return filtered
+}
+
+// drainExecStream reads an exec pipe until EOF, appends to buf, and logs complete lines.
+func drainExecStream(r io.Reader, buf *strings.Builder, logFn func(string)) {
+	data, err := io.ReadAll(r)
+	if len(data) > 0 {
+		buf.Write(data)
+		for line := range strings.SplitSeq(strings.TrimSuffix(string(data), "\n"), "\n") {
+			logFn(line)
+		}
+	}
+	if err != nil && err != io.EOF {
+		logFn("stream read error: " + err.Error())
+	}
 }

@@ -11,61 +11,15 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
-	"gorm.io/gorm"
-
 	"bedrock/internal/ai/model"
 	"bedrock/internal/ai/repository"
 	"bedrock/internal/ai/service"
 	cicdmodel "bedrock/internal/cicd/model"
-	"bedrock/internal/platform/config"
-	"bedrock/internal/platform/db"
-	"bedrock/internal/platform/migration"
-	_ "bedrock/internal/platform/migration/migrations"
 	projectmodel "bedrock/internal/project/model"
 	projectrepo "bedrock/internal/project/repository"
 	projectservice "bedrock/internal/project/service"
 	resourcemodel "bedrock/internal/resource/model"
-	resourcerepo "bedrock/internal/resource/repository"
-	resourceservice "bedrock/internal/resource/service"
-	storagerepo "bedrock/internal/storage/repository"
-	storageservice "bedrock/internal/storage/service"
 )
-
-func setupAI(t *testing.T) (*gorm.DB, *service.AgentService, *service.SkillService, *projectservice.ProjectService) {
-	t.Helper()
-	root := t.TempDir()
-	gdb, err := db.Open(&config.DatabaseConfig{
-		Driver: "sqlite",
-		Path:   filepath.Join(root, "ai.sqlite"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := migration.Up(context.Background(), gdb, migration.Driver("sqlite")); err != nil {
-		t.Fatalf("migration: %v", err)
-	}
-	repo := repository.NewAIRepository(gdb)
-	cli := resourceservice.NewCLIService(resourcerepo.NewCLIRepository(gdb))
-
-	storageRoot := filepath.Join(root, "storage")
-	storageSvc, err := storageservice.NewStorageService(storagerepo.NewStorageRepository(gdb), storageRoot, storageservice.Limits{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	skills := service.NewSkillService(repo, storageSvc, filepath.Join(storageRoot, "skills"))
-	work := filepath.Join(root, "work")
-	arts := filepath.Join(root, "artifacts")
-	logs := filepath.Join(root, "logs")
-	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, arts, logs)
-	agents.Start()
-	t.Cleanup(agents.Shutdown)
-
-	projectSvc := projectservice.NewProjectService(projectrepo.NewProjectRepository(gdb), storageSvc)
-	agents.SetDocDraftWriter(projectSvc)
-	projectSvc.SetDocsAIBridge(service.NewDocsBridge(agents))
-	return gdb, agents, skills, projectSvc
-}
 
 func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
 	_, agents, _, _ := setupAI(t)
@@ -75,12 +29,12 @@ func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent = waitWorkspaceStatus(t, agents, agent.ID, model.WorkspaceReady)
-	manual, err := agents.ManualRun(agent.ID, 1)
+	agent = requireWorkspaceReady(t, agents, agent.ID)
+	manual, err := agents.ManualRun(agent.ID, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	api, err := agents.APIRun(agent.ID, 1)
+	api, err := agents.APIRun(agent.ID, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,20 +53,13 @@ func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
 	job := &cicdmodel.BuildJob{ID: 99, AgentTriggerEvent: model.EventArtifactReady, AgentIDs: cicdmodel.UintList{agent.ID}}
 	buildRun := &cicdmodel.BuildRun{ID: 77, BuildJobID: 99, Status: "success", TriggeredBy: 1, ArtifactPath: "/tmp/a.tgz"}
 	agents.OnBuildEvent(model.EventArtifactReady, job, buildRun)
-	deadline := time.Now().Add(2 * time.Second)
+	items, _, _ := agents.ListRuns(1, 50, agent.ID, "")
 	var buildEventRun *model.AgentRun
-	for time.Now().Before(deadline) {
-		items, _, _ := agents.ListRuns(1, 50, agent.ID, "")
-		for i := range items {
-			if items[i].TriggerType == model.TriggerBuildEvent {
-				buildEventRun = &items[i]
-				break
-			}
-		}
-		if buildEventRun != nil {
+	for i := range items {
+		if items[i].TriggerType == model.TriggerBuildEvent {
+			buildEventRun = &items[i]
 			break
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 	if buildEventRun == nil {
 		t.Fatal("expected build_event AgentRun")
@@ -125,17 +72,19 @@ func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
 
 func TestAgentFailureDoesNotChangeBuildRun(t *testing.T) {
 	_, agents, _, _ := setupAI(t)
+	agents.SetCLIRunner(func(context.Context, service.CLIRunRequest) (string, error) {
+		return "", fmt.Errorf("cli boom")
+	})
 	agent, err := agents.CreateAgent(1, service.AgentInput{
 		Name: "fail", CliKey: "reasonix", SystemPrompt: "x", TimeoutSec: 3,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent = waitWorkspaceStatus(t, agents, agent.ID, model.WorkspaceReady)
+	agent = requireWorkspaceReady(t, agents, agent.ID)
 	build := &cicdmodel.BuildRun{ID: 5, Status: "success", ArtifactPath: "/a"}
 	job := &cicdmodel.BuildJob{ID: 1, AgentIDs: cicdmodel.UintList{agent.ID}, AgentTriggerEvent: model.EventArtifactReady}
 	agents.OnBuildEvent(model.EventArtifactReady, job, build)
-	time.Sleep(200 * time.Millisecond)
 	if build.Status != "success" {
 		t.Fatalf("BuildRun.status mutated to %s", build.Status)
 	}
@@ -279,7 +228,7 @@ func TestDocsGenerateWritesDraftOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent = waitWorkspaceStatus(t, agents, agent.ID, model.WorkspaceReady)
+	agent = requireWorkspaceReady(t, agents, agent.ID)
 	// Seed a fake successful run writing content via bridge callback.
 	node := &projectmodel.ApiDocNode{
 		ProjectID: project.ID, Kind: projectmodel.DocNodeDocument, Name: "api",
@@ -339,7 +288,7 @@ func TestShutdownWaitsForWorkspaceInit(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// Intentionally skip waitWorkspaceStatus: t.Cleanup(agents.Shutdown) must
+	// Intentionally skip requireWorkspaceReady: t.Cleanup(agents.Shutdown) must
 	// drain workspace init before t.TempDir() removal (see wsInitWg).
 }
 
@@ -351,7 +300,7 @@ func TestCronReloadAppliesTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent = waitWorkspaceStatus(t, agents, agent.ID, model.WorkspaceReady)
+	agent = requireWorkspaceReady(t, agents, agent.ID)
 	_, err = agents.CreateTrigger(agent.ID, 1, service.TriggerInput{
 		Type: model.TriggerCron, CronExpression: "0 12 * * *", CronTimezone: "Asia/Shanghai",
 	})

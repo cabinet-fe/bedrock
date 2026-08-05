@@ -7,7 +7,7 @@ import { useRouter } from "vue-router";
 import { listBuildPipelines } from "@/api/cicd";
 import type { PipelineRun } from "@/api/types";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, formatDurationBetween } from "@/lib/datetime";
 import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
 
 const router = useRouter();
@@ -22,6 +22,17 @@ const columns = defineProTableColumns([
   { key: "build_pipeline_id", name: "流水线" },
   { key: "status", name: "状态" },
   { key: "trigger_type", name: "触发" },
+  {
+    key: "duration",
+    name: "运行时间",
+    width: 110,
+    align: "center",
+    render: ({ rowData }) =>
+      formatDurationBetween(
+        (rowData as PipelineRun).started_at,
+        (rowData as PipelineRun).finished_at,
+      ) || "—",
+  },
   {
     key: "created_at",
     name: "创建时间",

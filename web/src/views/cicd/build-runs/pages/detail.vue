@@ -19,7 +19,7 @@ import { getAccessToken } from "@/api/http";
 import type { BuildRun } from "@/api/types";
 import BuildLogViewer, { resolveBuildLogStatus } from "@/components/build-log-viewer";
 import { usePermission } from "@/composables/use-permission";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import {
   BUILD_DISTRIBUTION_TAG,
   BUILD_STAGE_TAG,
@@ -314,6 +314,18 @@ onMounted(async () => {
               <span class="meta-value mono" :title="run.commit_hash || undefined">
                 {{ shortCommit }}
               </span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">运行时间</span>
+              <span class="meta-value">{{ formatDurationMs(run.duration_ms) || "—" }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">开始时间</span>
+              <span class="meta-value">{{ formatDateTime(run.started_at) || "—" }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">结束时间</span>
+              <span class="meta-value">{{ formatDateTime(run.finished_at) || "—" }}</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">创建时间</span>

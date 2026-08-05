@@ -85,6 +85,8 @@ const { busyKey, bind } = useBusyKey();
 const router = useRouter();
 const table = useTemplateRef("table");
 const dialogOpen = ref(false);
+const runDialogOpen = ref(false);
+const runAgent = ref<AiAgent | null>(null);
 const historyOpen = ref(false);
 const historyAgent = ref<AiAgent | null>(null);
 const editing = ref<AiAgent | null>(null);
@@ -111,6 +113,8 @@ const form = reactive({
   stream_output: false,
   timeout_sec: 600,
 });
+
+const runForm = reactive({ user_prompt: "" });
 
 const formGroups = [
   { key: "basic", title: "基本信息" },
@@ -436,19 +440,27 @@ async function save() {
   }
 }
 
-const run = bind(async (row: AiAgent) => {
+function openRun(row: AiAgent) {
   if (!canRun(row)) {
     message.error(runDisabledTip(row) || "无法运行");
     return;
   }
+  runAgent.value = row;
+  runDialogOpen.value = true;
+}
+
+async function confirmRun() {
+  const agent = runAgent.value;
+  if (!agent) return;
   try {
-    const agentRun = await manualRunAgent(row.id);
+    const agentRun = await manualRunAgent(agent.id, { user_prompt: runForm.user_prompt });
+    runDialogOpen.value = false;
     message.success(`已创建运行 #${agentRun.id}`);
     await router.push(`/ai/runs/${agentRun.id}`);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "触发失败");
   }
-});
+}
 
 const remove = bind(async (row: AiAgent) => {
   try {
@@ -504,7 +516,7 @@ const remove = bind(async (row: AiAgent) => {
             v-if="hasPermission('ai_agents:execute')"
             :disabled="!canRun(rowData as AiAgent)"
             :title="runDisabledTip(rowData as AiAgent)"
-            @run="run(rowData as AiAgent)"
+            @run="openRun(rowData as AiAgent)"
           >
             运行
           </u-action>
@@ -690,6 +702,24 @@ const remove = bind(async (row: AiAgent) => {
           </div>
         </div>
       </template>
+    </FormDialog>
+
+    <FormDialog
+      v-model="runDialogOpen"
+      :title="runAgent ? `运行：${runAgent.name}` : '运行智能体'"
+      :model="runForm"
+      confirm-text="运行"
+      style="width: 800px"
+      @submit="confirmRun"
+    >
+      <u-textarea
+        label="提示词"
+        field="user_prompt"
+        tips="用户提示词, 用于自定义一些指令"
+        span="full"
+        :rows="6"
+        placeholder="可选；为空则仅使用智能体系统提示词"
+      />
     </FormDialog>
 
     <RunHistoryDialog v-model="historyOpen" :agent="historyAgent" />

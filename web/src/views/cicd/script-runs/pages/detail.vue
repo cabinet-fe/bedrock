@@ -16,7 +16,7 @@ import { getAccessToken } from "@/api/http";
 import type { ScriptRun } from "@/api/types";
 import BuildLogViewer, { resolveBuildLogStatus } from "@/components/build-log-viewer";
 import { usePermission } from "@/composables/use-permission";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import { BUILD_STAGE_TAG, JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
 import { useTabsStore } from "@/stores/tabs";
 
@@ -172,6 +172,18 @@ onMounted(async () => {
             <div class="meta-item">
               <span class="meta-label">任务 ID</span>
               <span class="meta-value">{{ run.script_job_id }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">运行时间</span>
+              <span class="meta-value">{{ formatDurationMs(run.duration_ms) || "—" }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">开始时间</span>
+              <span class="meta-value">{{ formatDateTime(run.started_at) || "—" }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">结束时间</span>
+              <span class="meta-value">{{ formatDateTime(run.finished_at) || "—" }}</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">创建时间</span>

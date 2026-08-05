@@ -22,3 +22,15 @@ export function formatDurationMs(ms: number | null | undefined): string {
   if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds}s`;
 }
+
+/** Format duration between two timestamps; missing/invalid → "". */
+export function formatDurationBetween(
+  start: string | number | Date | null | undefined,
+  end: string | number | Date | null | undefined,
+): string {
+  if (start == null || start === "" || end == null || end === "") return "";
+  const startMs = date(start).timestamp;
+  const endMs = date(end).timestamp;
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return "";
+  return formatDurationMs(endMs - startMs);
+}

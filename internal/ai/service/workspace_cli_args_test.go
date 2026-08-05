@@ -62,6 +62,25 @@ func TestAgentWorkspaceScopeHint(t *testing.T) {
 	}
 }
 
+func TestComposeRunPrompt(t *testing.T) {
+	got := composeRunPrompt("sys", "user", "hint")
+	if got != "sys\n\nuser\n\nhint" {
+		t.Fatalf("got %q", got)
+	}
+	got = composeRunPrompt("sys", "", "hint")
+	if got != "sys\n\nhint" {
+		t.Fatalf("empty user got %q", got)
+	}
+	got = composeRunPrompt("", "  user  ", "hint")
+	if got != "user\n\nhint" {
+		t.Fatalf("empty system got %q", got)
+	}
+	got = composeRunPrompt("", "", "hint")
+	if got != "hint" {
+		t.Fatalf("hint only got %q", got)
+	}
+}
+
 func TestRepoDirName(t *testing.T) {
 	cases := []struct {
 		repoID uint

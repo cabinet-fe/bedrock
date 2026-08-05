@@ -118,3 +118,52 @@ export function seedGraph(): { nodes: Node[]; edges: Edge[] } {
     edges: [],
   };
 }
+
+/** 按流水线 DAG 拓扑序排列 stage（开始 → … → 结束）；不可达节点保留原相对顺序追加在末尾。 */
+export function orderStagesByGraph<T extends { node_id: string }>(
+  stages: T[],
+  snapshotJson: string,
+): T[] {
+  if (stages.length <= 1) return stages;
+  const { nodes, edges } = parseGraphJson(snapshotJson);
+  if (!nodes.length) return stages;
+
+  const byNode = new Map(stages.map((s) => [s.node_id, s]));
+  const succ = new Map<string, string[]>();
+  const indeg = new Map<string, number>();
+  for (const n of nodes) {
+    succ.set(n.id, []);
+    indeg.set(n.id, 0);
+  }
+  for (const e of edges) {
+    if (!succ.has(e.source) || !indeg.has(e.target)) continue;
+    succ.get(e.source)!.push(e.target);
+    indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1);
+  }
+
+  const typeOf = (id: string) => nodes.find((n) => n.id === id)?.type ?? "";
+  const queue = nodes.filter((n) => (indeg.get(n.id) ?? 0) === 0).map((n) => n.id);
+  queue.sort((a, b) => {
+    const rank = (t: string) => (t === "start" ? 0 : t === "end" ? 2 : 1);
+    return rank(typeOf(a)) - rank(typeOf(b)) || a.localeCompare(b);
+  });
+
+  const ordered: T[] = [];
+  const seen = new Set<string>();
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const st = byNode.get(id);
+    if (st) ordered.push(st);
+    for (const next of succ.get(id) ?? []) {
+      const d = (indeg.get(next) ?? 1) - 1;
+      indeg.set(next, d);
+      if (d === 0) queue.push(next);
+    }
+  }
+  for (const st of stages) {
+    if (!seen.has(st.node_id)) ordered.push(st);
+  }
+  return ordered;
+}

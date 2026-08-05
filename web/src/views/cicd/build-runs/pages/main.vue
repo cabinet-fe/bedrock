@@ -7,7 +7,7 @@ import { useRouter } from "vue-router";
 import { listBuildJobs } from "@/api/cicd";
 import type { BuildRun } from "@/api/types";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import {
   BUILD_DISTRIBUTION_TAG,
   BUILD_STAGE_TAG,
@@ -31,6 +31,13 @@ const columns = defineProTableColumns([
   { key: "distribution_summary", name: "分发" },
   { key: "branch", name: "分支" },
   { key: "trigger_type", name: "触发" },
+  {
+    key: "duration_ms",
+    name: "运行时间",
+    width: 110,
+    align: "center",
+    render: ({ val }) => formatDurationMs(val as number) || "—",
+  },
   {
     key: "created_at",
     name: "创建时间",

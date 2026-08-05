@@ -9,7 +9,7 @@ import { useRoute, useRouter } from "vue-router";
 import { cancelPipelineRun, getBuildPipeline, getPipelineRun, listBuildJobs } from "@/api/cicd";
 import type { PipelineRun, PipelineStageRun } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, formatDurationBetween } from "@/lib/datetime";
 import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType, type TagType } from "@/lib/tag";
 import { useTabsStore } from "@/stores/tabs";
 
@@ -17,6 +17,7 @@ import PipelineCanvas from "../../pipelines/components/pipeline-canvas.vue";
 import {
   NODE_TYPE_LABEL,
   PIPELINE_TARGET_NAMES,
+  orderStagesByGraph,
   parseGraphJson,
   type PipelineNodeData,
 } from "../../pipelines/graph";
@@ -52,6 +53,12 @@ const canCancel = computed(() => {
   return run.value.status === "queued" || run.value.status === "running";
 });
 
+const orderedStages = computed(() => {
+  const r = run.value;
+  if (!r) return [];
+  return orderStagesByGraph(r.stages ?? [], r.snapshot_json || "");
+});
+
 /** 节点副标题解析（构建任务名；脚本/智能体回退为类型名） */
 const targetNames = computed(() => {
   const map: Record<string, string> = {};
@@ -65,6 +72,17 @@ const stageColumns = defineTableColumns([
   { key: "node_id", name: "名称", minWidth: 140 },
   { key: "build_job_id", name: "构建任务", minWidth: 120 },
   { key: "status", name: "状态", width: 110 },
+  {
+    key: "duration",
+    name: "运行时间",
+    width: 110,
+    align: "center",
+    render: ({ rowData }) =>
+      formatDurationBetween(
+        (rowData as PipelineStageRun).started_at,
+        (rowData as PipelineStageRun).finished_at,
+      ) || "—",
+  },
   { key: "build_run_id", name: "构建运行", width: 100 },
   { key: "script_run_id", name: "脚本运行", width: 100 },
   { key: "agent_run_id", name: "智能体运行", width: 100 },
@@ -205,16 +223,20 @@ onUnmounted(() => {
 
     <section class="meta-grid">
       <div class="meta-item">
+        <span class="meta-label">运行时间</span>
+        <span>{{ formatDurationBetween(run.started_at, run.finished_at) || "—" }}</span>
+      </div>
+      <div class="meta-item">
         <span class="meta-label">创建</span>
-        <span>{{ formatDateTime(run.created_at) }}</span>
+        <span>{{ formatDateTime(run.created_at) || "—" }}</span>
       </div>
       <div class="meta-item">
         <span class="meta-label">开始</span>
-        <span>{{ formatDateTime(run.started_at) }}</span>
+        <span>{{ formatDateTime(run.started_at) || "—" }}</span>
       </div>
       <div class="meta-item">
         <span class="meta-label">结束</span>
-        <span>{{ formatDateTime(run.finished_at) }}</span>
+        <span>{{ formatDateTime(run.finished_at) || "—" }}</span>
       </div>
     </section>
     <p v-if="run.error_message" class="error-msg">{{ run.error_message }}</p>
@@ -225,7 +247,7 @@ onUnmounted(() => {
     </div>
 
     <h3>Stage 列表</h3>
-    <u-table :columns="stageColumns" :data="run.stages ?? []" row-key="id" border>
+    <u-table :columns="stageColumns" :data="orderedStages" row-key="id" border>
       <template #column:node_type="{ rowData }">
         <u-tag size="small" :type="STAGE_TYPE_TAG[stageNodeType(rowData as PipelineStageRun)]">
           {{ NODE_TYPE_LABEL[stageNodeType(rowData as PipelineStageRun)] }}

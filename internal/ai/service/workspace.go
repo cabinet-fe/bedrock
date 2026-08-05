@@ -50,6 +50,10 @@ func (s *AgentService) enqueueWorkspaceInit(agentID, userID uint) {
 	s.wsInitGen[agentID]++
 	gen := s.wsInitGen[agentID]
 	s.wsInitMu.Unlock()
+	if s.wsInitSync {
+		s.initAgentWorkspace(agentID, userID, gen)
+		return
+	}
 	s.wsInitWg.Add(1)
 	go func() {
 		defer s.wsInitWg.Done()
@@ -307,6 +311,17 @@ func agentWorkspaceScopeHint() string {
 		" Read/write only inside it; access bound repository code via ./repo-{id}-{branch}." +
 		" Do not access any path outside this directory." +
 		" Write deliverable files into $BEDROCK_AGENT_OUTPUT (this agent's fixed output directory; preserved across runs)."
+}
+
+// composeRunPrompt joins system prompt, optional user prompt, and workspace hint.
+func composeRunPrompt(systemPrompt, userPrompt, hint string) string {
+	parts := make([]string, 0, 3)
+	for _, p := range []string{systemPrompt, userPrompt, hint} {
+		if t := strings.TrimSpace(p); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func (s *AgentService) removeAgentWorkspace(agentID uint) {

@@ -7,7 +7,7 @@ import { useRouter } from "vue-router";
 import { listScriptJobs } from "@/api/cicd";
 import type { ScriptRun } from "@/api/types";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import { BUILD_STAGE_TAG, JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
 
 const router = useRouter();
@@ -23,6 +23,13 @@ const columns = defineProTableColumns([
   { key: "status", name: "状态" },
   { key: "stage", name: "阶段" },
   { key: "trigger_type", name: "触发" },
+  {
+    key: "duration_ms",
+    name: "运行时间",
+    width: 110,
+    align: "center",
+    render: ({ val }) => formatDurationMs(val as number) || "—",
+  },
   {
     key: "created_at",
     name: "创建时间",
