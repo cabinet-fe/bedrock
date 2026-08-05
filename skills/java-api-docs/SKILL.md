@@ -19,9 +19,9 @@ description: >-
 
 1. **先查变更，再谈生成。** 多仓/多项目：先跑 `sync_status.mjs`；单项目：先跑 `changed_since.mjs`。
 2. **看 `action` 字段，不要只看 mode：**
-   - `action: "noop"`（或 `upToDate: true` / `allUpToDate: true`）→ **立即结束该项目（或整个任务）**。禁止 `list_endpoints` / `resolve_types` / 写 md / `stamp`。
+   - `action: "noop"`（或 `upToDate: true` / `allUpToDate: true`）→ **立即结束该项目（或整个任务）**。禁止 `list_endpoints` / `resolve_types` / 写 md / `stamp`。**`noop` 仅当：无相关 git 变更，且 `.sync.json` 的 `docs[]` 本地文件全部存在。** 若返回 `missingDocs` / `reason: "missing_local_docs"` / `ok_with_missing`，即使无 Java 变更也是 `update_docs`，必须重生缺失 md。
    - `action: "wrong_repo"` → 用 `suggestedRepoRoot` 重跑 `changed_since`，**禁止**因此全量重生成。
-   - `action: "update_docs"` → 只更新返回的 `docFiles` / `files`。
+   - `action: "update_docs"` → 只更新返回的 `docFiles` / `files`（含因本地缺失并入的 `missingDocs`）。
    - `action: "full_scan"` → 才允许全量。
 3. **产出根必须稳定。** 未传 `--out` 时脚本会自动发现已有的 `output/` / `api-docs/`（含 `.sync.json`）。若工作区已有文档，**必须**继续用同一目录，禁止另起一个空的 `api-docs` 导致「找不到 sync → 假全量」。
 4. **多仓工作区按项目选对 `repoRoot`。** `stamp` 会写入 `repoRel`；`sync_status` / `changed_since` 会校验。用错仓会出现 `wrong_repo`，不是全量信号。
@@ -218,7 +218,7 @@ node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--env-file <path
 | `sync_status.mjs` | 多项目汇总：`allUpToDate`、`summary.noop|update_docs|full_scan`、每项 `action` |
 | `list_endpoints.mjs` | 接口 JSON：`path`/`servicePath`/`docFile`、`controllers[]`、`gateway` |
 | `resolve_types.mjs` | 字段树；未解析 → `needs_source`；父类无源码 → `extendsUnresolved` |
-| `changed_since.mjs` | `{ action, mode, upToDate, files[], controllers[], docFiles[], agentHint, … }` |
+| `changed_since.mjs` | `{ action, mode, upToDate, files[], controllers[], docFiles[], missingDocs?, agentHint, … }` |
 | `verify_docs.mjs` | `{ ok, missingInDocs[], extraInDocs[], missingDocs[], unresolvedTypes[], … }`；失败退出码 1 |
 | `stamp_commit.mjs` | 已写入（或预览）的 `.sync.json`（含 `repoRel`） |
 | `push_docs.mjs` | `{ pushed[], failed[], dryRun, summary }`；失败非 0 退出 |
@@ -261,9 +261,9 @@ PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已�
      - `allUpToDate: true` → **整任务结束**
      - 否则只处理 `summary` 里非 `noop` 的项目
    - **单项目**：`changed_since.mjs <repoRoot> --project …`
-     - `action: "noop"` → **结束该项目**
+     - `action: "noop"` → **结束该项目**（无相关 git 变更 **且** `docs[]` 本地齐全）
      - `action: "wrong_repo"` → 换 `suggestedRepoRoot` 重跑
-     - `action: "update_docs"` → `list_endpoints … --files …`，只改 `docFiles`
+     - `action: "update_docs"` → `list_endpoints … --files …`，只改 `docFiles`（含 `missingDocs` 时须重生缺失本地 md）
      - `action: "full_scan"` → 全量 `list_endpoints`（不带 `--files`）
 5. **解析类型** — 仅对要写的接口：`resolve_types.mjs <api-srcRoot> TypeA,TypeB`（api 模块 srcRoot，见「双 srcRoot」）。**写 md 前必须已拿到字段树**；未跑 `resolve_types` 不得写对象响应/请求体。
 6. **写文档** — 每个 Controller 写到 `<out>/<project>/<docFile>`（如 `sys-user.md`），模块头链接 `../_conventions.md`；path **字符级**用脚本的完整 `path`（禁止改单复数）。对象字段必须落表（或落 `## 数据模型` 再锚点引用），禁止「返回 `Xxx`」空话。
@@ -303,6 +303,7 @@ PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已�
 - [ ] 已确认 --out（与已有文档目录一致；或让脚本自动发现）
 - [ ] 多仓已跑 sync_status；单仓已跑 changed_since；已按 action 分支（noop 已跳过）
 - [ ] 未在 action=noop / allUpToDate 时继续 list_endpoints 或写 md
+- [ ] 本地 docs[] 有缺失（missingDocs / reason=missing_local_docs）时未跳过，已按 docFiles 重生
 - [ ] 需要写入时已跑 list_endpoints；核对 gateway.matched；已 resolve_types 并读过源码
 - [ ] 每个 Controller 一个 <kebab>.md；path 字符级来自脚本；未匹配已标注；未改单复数
 - [ ] 已跑 verify_docs 且 ok:true（失败已按 missing/extra/unresolvedTypes 修正）

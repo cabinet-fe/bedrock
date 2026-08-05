@@ -3,8 +3,16 @@
 /**
  * 将本地目录下 Markdown 镜像推送到 Bedrock 项目「开发文档」。
  *
+ * 与增量门禁配合：先 sync_status / changed_since → run_agent 写 md → stamp_commit，
+ * 再对本仓产出子目录（或整棵产出根）调用本脚本。本脚本不读 .sync.json。
+ *
+ * 目录约定（与 changed_since / stamp 一致）:
+ *   <out>/<repoKey>/.sync.json
+ *   <out>/<repoKey>/…/*.md（含子路径）
+ * --dir 通常指向某一仓产出子目录 <out>/<repoKey>，或整棵产出根（多仓一并推）。
+ *
  * 典型用法:
- *   node scripts/push_docs.mjs --slug my-project --dir ./docs
+ *   node scripts/push_docs.mjs --slug my-project --dir ./dev-docs/repo-1-main
  *   bun scripts/push_docs.mjs --slug my-project --dir ./docs --prefix guides
  *   node scripts/push_docs.mjs --slug my-project --dir ./docs --dry-run
  */
@@ -202,7 +210,11 @@ function usage() {
 
 把本地目录下全部 .md 推送到 Bedrock 项目开发文档（POST /projects/{slug}/dev-docs/push）。
 相对 --dir 的路径镜像为 doc_dir + doc_name；可用 --prefix 加远程根前缀。
-跳过隐藏目录/文件（名以 . 开头）。
+跳过隐藏目录/文件（名以 . 开头，含 .sync.json 所在逻辑：隐藏项不推送）。
+
+--dir 约定（增量工作流）:
+  通常为仓产出子目录 <out>/<repoKey>（推荐），或整棵产出根 <out>。
+  本脚本不读 .sync.json；何时推送由 agent 按 sync_status / changed_since 门禁决定。
 
 所需环境变量（来自 env 文件或 process.env）:
   PAT             访问令牌（需 dev_docs:write）
@@ -210,8 +222,9 @@ function usage() {
 
 可选环境变量（CLI 优先）:
   BEDROCK_PROJECT / PROJECT_SLUG   项目 ID 或 slug
-  DEV_DOCS_DIR                     本地源目录
+  DEV_DOCS_DIR                     本地源目录（常等于某仓产出子目录）
   DEV_DOCS_PREFIX                  远程根前缀
+  BEDROCK_AGENT_OUTPUT             产出根（供其它脚本；本脚本仍以 --dir 为准）
 
 env 文件加载顺序（第一个存在的）:
   --env-file → $BEDROCK_AGENT_ENV_FILE → $BEDROCK_AGENT_WORKDIR/.env → ./.env
@@ -219,7 +232,7 @@ env 文件加载顺序（第一个存在的）:
 
 选项:
   --slug <id>           产品项目标识（必需；路径参数，可为数字 ID 或 slug）
-  --dir <dir>           本地 Markdown 根目录（必需）
+  --dir <dir>           本地 Markdown 根目录（必需；通常 <out>/<repoKey>）
   --prefix <path>       远程 doc_dir 前缀（可选；如 guides）
   --env-file <path>     显式指定 .env 路径（也可用 --env-file=path）
   --dry-run             只列出将推送的文件，不发请求

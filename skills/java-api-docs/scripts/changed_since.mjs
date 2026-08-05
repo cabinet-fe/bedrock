@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import fs from 'fs';
 import path from 'path';
 import { readJsonIfExists } from './lib/fs-utils.mjs';
 import {
@@ -17,12 +18,16 @@ import { isRelevantJavaChange } from './lib/endpoints.mjs';
 import { controllerDocFileName } from './lib/names.mjs';
 
 const HINT_NOOP =
-  '已与 HEAD 同步且无本地相关改动；立即结束本项目。禁止 list_endpoints / resolve_types / 写 md / stamp。';
+  '已与 HEAD 同步、无本地相关改动且 sync.docs 本地齐全；立即结束本项目。禁止 list_endpoints / resolve_types / 写 md / stamp。';
 const HINT_WRONG_REPO =
   'baseCommit 不属于当前 repoRoot。请改用 suggestedRepoRoot 再跑 changed_since；禁止在本仓库全量重生成。';
 const HINT_UPDATE =
   '有相关 Java 变更：仅对 files/controllers/docFiles 做增量更新，勿全量扫描。';
+const HINT_MISSING =
+  '本地 sync.docs 中有文档文件缺失：须重生 missingDocs/docFiles，禁止当 noop；写完后 stamp。';
 const HINT_FULL = '需要全量扫描：跑 list_endpoints（不带 --files），写齐文档后 stamp。';
+const HINT_CONVENTIONS =
+  '约定页 <out>/_conventions.md 不存在，写文档前请先跑 ensure_conventions。';
 
 function usage() {
   console.error(`用法: node changed_since.mjs <repoRoot> [baseCommit] [选项]
@@ -32,8 +37,8 @@ function usage() {
 也包括未暂存/已暂存的本地改动。结果以 JSON 打印到标准输出。
 
 关键字段 action（Agent 必须先看这个）:
-  noop          — 无变更，立即结束本项目
-  update_docs   — 仅更新返回的 docFiles
+  noop          — 无相关变更且本地 docs[] 齐全，立即结束本项目
+  update_docs   — 仅更新返回的 docFiles（含缺失的 missingDocs）
   full_scan     — 全量生成
   wrong_repo    — 用错了仓库，按 suggestedRepoRoot 重跑（禁止全量）
 
@@ -107,6 +112,42 @@ function buildDocFiles(controllers) {
         .filter(Boolean),
     ),
   ].sort();
+}
+
+/**
+ * sync.docs[] 里相对项目目录缺失的本地 md（无 docs 数组则跳过检查）。
+ * @param {string} projectRoot
+ * @param {unknown} docs
+ * @returns {string[]}
+ */
+function findMissingLocalDocs(projectRoot, docs) {
+  if (!Array.isArray(docs) || docs.length === 0) return [];
+  const missing = [];
+  for (const entry of docs) {
+    const raw = String(entry || '').trim();
+    if (!raw) continue;
+    const base = path.basename(raw);
+    // 仅接受 basename（与 stamp / resolveControllerDocPath 一致）
+    if (!base || base !== raw || base.includes('..')) continue;
+    const abs = path.join(projectRoot, base);
+    if (!fs.existsSync(abs)) missing.push(base);
+  }
+  return [...new Set(missing)].sort();
+}
+
+function mergeDocFiles(fromControllers, missingDocs) {
+  return [...new Set([...(fromControllers || []), ...(missingDocs || [])])].sort();
+}
+
+function buildAgentHint({ hasGitChanges, missingDocs, conventionsMissing }) {
+  const parts = [];
+  if (hasGitChanges) parts.push(HINT_UPDATE);
+  if (missingDocs.length) parts.push(HINT_MISSING);
+  if (!hasGitChanges && !missingDocs.length) parts.push(HINT_NOOP);
+  if (conventionsMissing && (hasGitChanges || missingDocs.length)) {
+    parts.push(HINT_CONVENTIONS);
+  }
+  return parts.join(' ');
 }
 
 function main() {
@@ -253,23 +294,37 @@ function main() {
     const baseName = path.basename(f);
     return baseName.endsWith('Controller.java') || /\/controller\//i.test(f);
   });
-  const docFiles = buildDocFiles(controllers);
-  const upToDate = files.length === 0;
+  const fromControllers = buildDocFiles(controllers);
+  const missingDocs = findMissingLocalDocs(paths.projectRoot, sync && sync.docs);
+  const hasGitChanges = files.length > 0;
+  const upToDate = !hasGitChanges && missingDocs.length === 0;
+  const docFiles = mergeDocFiles(fromControllers, missingDocs);
+  const reason = upToDate
+    ? 'ok'
+    : missingDocs.length === 0
+      ? 'ok'
+      : hasGitChanges
+        ? 'ok_with_missing'
+        : 'missing_local_docs';
+  const conventionsMissing =
+    !upToDate && !fs.existsSync(paths.conventionsPath);
 
-  printJson({
+  const result = {
     ...base,
     mode: 'incremental',
     action: upToDate ? 'noop' : 'update_docs',
     upToDate,
-    reason: 'ok',
+    reason,
     baseCommit,
     head,
     files,
     controllers,
     docFiles,
     allChangedCount: allChanged.length,
-    agentHint: upToDate ? HINT_NOOP : HINT_UPDATE,
-  });
+    agentHint: buildAgentHint({ hasGitChanges, missingDocs, conventionsMissing }),
+  };
+  if (missingDocs.length) result.missingDocs = missingDocs;
+  printJson(result);
 }
 
 main();
