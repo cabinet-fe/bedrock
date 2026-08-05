@@ -58,7 +58,7 @@ description: >-
 |------------|---------------------|
 | `sync_status`：多项目 `action` 汇总、`allUpToDate` | 对 noop 项目直接跳过 |
 | `list_endpoints`：METHOD、完整 path、servicePath、参数、鉴权、按 Controller 分组与 `docFile` | 接口说明、业务语义、鉴权可读摘要、示例 JSON |
-| `resolve_types`：字段树、继承、`required`/`requiredSource`、`needs_source` | 按规则填「必填」列；解释字段含义；`requiredSource=default` 时读业务源码判断 |
+| `resolve_types`：字段树（含与字段名不同的 JavaBean get/set/is）、继承、`required`/`requiredSource`、`needs_source` | 按规则填「必填」列；解释字段含义；`requiredSource=default` 时读业务源码判断；访问器属性见 `fromAccessor` |
 | `changed_since` / `stamp_commit`：变更范围、`docFiles`、同步提交号、`repoRel` | 判断改哪些 `<kebab>.md`；核对文档与源码意图 |
 | `verify_docs`：MD 中 `METHOD path` 与脚本集合比对 | `ok:false` 时按 diff 改 MD，禁止靠感觉改 path |
 | `ensure_conventions`：生成唯一 `_conventions.md` | 保持 `project-conventions.md` 为规范源 |
@@ -217,7 +217,7 @@ node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--env-file <path
 | `ensure_conventions.mjs` | 写入（或 `--dry-run` 预览）`<out>/_conventions.md` |
 | `sync_status.mjs` | 多项目汇总：`allUpToDate`、`summary.noop|update_docs|full_scan`、每项 `action` |
 | `list_endpoints.mjs` | 接口 JSON：`path`/`servicePath`/`docFile`、`controllers[]`、`gateway` |
-| `resolve_types.mjs` | 字段树；未解析 → `needs_source`；父类无源码 → `extendsUnresolved` |
+| `resolve_types.mjs` | 字段树（字段 + 异名 get/set/is）；未解析 → `needs_source`；父类无源码 → `extendsUnresolved` |
 | `changed_since.mjs` | `{ action, mode, upToDate, files[], controllers[], docFiles[], missingDocs?, agentHint, … }` |
 | `verify_docs.mjs` | `{ ok, missingInDocs[], extraInDocs[], missingDocs[], unresolvedTypes[], … }`；失败退出码 1 |
 | `stamp_commit.mjs` | 已写入（或预览）的 `.sync.json`（含 `repoRel`） |

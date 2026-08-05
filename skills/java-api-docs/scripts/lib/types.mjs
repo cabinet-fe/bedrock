@@ -5,7 +5,72 @@ import {
   mapJavaType,
   simpleTypeName,
   findAnnotationsBefore,
+  matchBalanced,
 } from './java-parse.mjs';
+
+/** JavaBeans：URL → URL；ArgKeyArray → argKeyArray */
+function decapitalizeBean(name) {
+  if (!name) return name;
+  if (
+    name.length > 1 &&
+    name[0] >= 'A' &&
+    name[0] <= 'Z' &&
+    name[1] >= 'A' &&
+    name[1] <= 'Z'
+  ) {
+    return name;
+  }
+  return name[0].toLowerCase() + name.slice(1);
+}
+
+/**
+ * 从 getXxx / setXxx / isXxx 推导 JSON 属性名。
+ * @returns {{ kind: 'get'|'set'|'is', property: string }|null}
+ */
+function accessorInfo(methodName) {
+  if (!methodName || methodName === 'getClass') return null;
+  if (methodName.startsWith('get') && methodName.length > 3) {
+    return { kind: 'get', property: decapitalizeBean(methodName.slice(3)) };
+  }
+  if (methodName.startsWith('set') && methodName.length > 3) {
+    return { kind: 'set', property: decapitalizeBean(methodName.slice(3)) };
+  }
+  if (methodName.startsWith('is') && methodName.length > 2) {
+    return { kind: 'is', property: decapitalizeBean(methodName.slice(2)) };
+  }
+  return null;
+}
+
+function extractJsonPropertyName(annoBlock) {
+  const block = annoBlock || '';
+  // Jackson @JsonProperty("x") / Fastjson2 @JSONField(name="x")
+  const jp = block.match(/@(?:JsonProperty|JSONField)\s*\(((?:[^()]|\([^()]*\))*)\)/);
+  if (!jp) return null;
+  const named = jp[1].match(/\b(?:value|name)\s*=\s*"((?:\\.|[^"\\])*)"/);
+  if (named) return named[1];
+  const positional = jp[1].match(/^\s*"((?:\\.|[^"\\])*)"/);
+  return positional ? positional[1] : null;
+}
+
+function hasJsonIgnore(annoBlock) {
+  return /@JsonIgnore\b/.test(annoBlock || '');
+}
+
+/** 解析单参数 setter 的类型表达式；多参/无参返回 null */
+function parseSetterParamType(paramsInner) {
+  const trimmed = (paramsInner || '').trim();
+  if (!trimmed) return null;
+  // 逗号分隔（忽略泛型/注解括号内逗号的简单场景：无嵌套泛型多参）
+  if (/,/.test(trimmed.replace(/<[^>]*>/g, '').replace(/@\w+(?:\([^)]*\))?/g, ''))) {
+    return null;
+  }
+  const cleaned = trimmed
+    .replace(/@\w+(?:\((?:[^()]|\([^()]*\))*\))?\s+/g, '')
+    .replace(/\bfinal\b\s+/g, '')
+    .trim();
+  const m = cleaned.match(/^([\w.<>,\s\[\]]+?)\s+([A-Za-z_][A-Za-z0-9_]*)$/);
+  return m ? m[1].trim() : null;
+}
 
 function buildTypeIndex(srcRoot) {
   const root = path.resolve(srcRoot);
@@ -64,10 +129,18 @@ function parseFieldsFromClass(entry) {
   const braceStart = src.indexOf('{', cm.index);
   if (braceStart < 0) return { fields: [], extendsType, lombok };
 
-  // 类体：在深度 1 收集字段，跳过嵌套类型
+  // 类体：在深度 1 收集字段与 JavaBean 访问器，跳过嵌套类型
   let depth = 0;
   let i = braceStart;
   const fields = [];
+  /** @type {Map<string, object>} 访问器推导的属性（与字段名不同时才会并入） */
+  const accessors = new Map();
+  const classSimple = entry.fqcn.split('.').pop();
+  const annoPrefix =
+    '((?:@\\w+(?:\\((?:[^()]|\\([^()]*\\))*\\))?\\s*)*)';
+  const modPrefix =
+    '((?:(?:public|protected|private|static|final|transient|volatile|synchronized|default|native|abstract)\\s+)*)';
+
   while (i < src.length) {
     const c = src[i];
     if (c === '{') {
@@ -85,14 +158,109 @@ function parseFieldsFromClass(entry) {
       i += 1;
       continue;
     }
-    // 尝试匹配字段：注解? 修饰符 类型 名称 [=...] ;
+    // 从声明起始处匹配，避免空白把 public 等吃进「类型」
+    if (/\s/.test(c)) {
+      i += 1;
+      continue;
+    }
     const slice = src.slice(i);
     if (/^\/\//.test(slice) || /^\/\*/.test(slice)) {
       i += 1;
       continue;
     }
+
+    // 方法：注解? 修饰符 返回类型 名称 (
+    const methodMatch = slice.match(
+      new RegExp(`^${annoPrefix}${modPrefix}([\\w.<>,\\s\\[\\]]+?)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(`),
+    );
+    if (methodMatch) {
+      const mods = methodMatch[2] || '';
+      const returnType = methodMatch[3].trim();
+      const methodName = methodMatch[4];
+      const annoBlock = methodMatch[1] || '';
+      const absParen = i + methodMatch[0].length - 1;
+      const bal = matchBalanced(src, absParen);
+      if (!bal) {
+        i += 1;
+        continue;
+      }
+      // 跳过方法体 / 抽象方法分号，避免体内部被当字段扫
+      let j = bal.end + 1;
+      while (j < src.length && /\s/.test(src[j])) j += 1;
+      if (src[j] === '{') {
+        const body = matchBalanced(src, j, '{', '}');
+        i = body ? body.end + 1 : j + 1;
+      } else {
+        i = src[j] === ';' ? j + 1 : bal.end + 1;
+      }
+
+      if (/\bstatic\b/.test(mods) || methodName === classSimple) {
+        continue;
+      }
+      // 仅 public/protected（含包可见时无修饰符也少见；要求至少非 private）
+      if (/\bprivate\b/.test(mods)) continue;
+      if (hasJsonIgnore(annoBlock)) continue;
+
+      const info = accessorInfo(methodName);
+      if (!info) continue;
+
+      let typeExpr = null;
+      const returnClean = returnType
+        .replace(/\b(?:public|protected|private|static|final|synchronized|default|native|abstract|transient|volatile)\b\s*/g, '')
+        .trim();
+      if (info.kind === 'get') {
+        if (bal.inner.trim() !== '') continue;
+        if (/^void$/i.test(returnClean)) continue;
+        typeExpr = returnClean;
+      } else if (info.kind === 'is') {
+        if (bal.inner.trim() !== '') continue;
+        if (!/^(?:boolean|Boolean)$/.test(returnClean.replace(/\s/g, ''))) continue;
+        typeExpr = returnClean;
+      } else if (info.kind === 'set') {
+        typeExpr = parseSetterParamType(bal.inner);
+        if (!typeExpr) continue;
+      }
+      if (!typeExpr) continue;
+
+      const jsonName = extractJsonPropertyName(annoBlock) || info.property;
+      if (!jsonName) continue;
+
+      const schemaDesc = extractSchemaDescription(annoBlock);
+      const req = inferFieldRequired(annoBlock);
+      const mapped = mapJavaType(typeExpr);
+      const prev = accessors.get(jsonName);
+      // get/is 优先定类型；set 可补全仅有 setter 的属性；合并描述
+      if (!prev) {
+        accessors.set(jsonName, {
+          name: jsonName,
+          ...mapped,
+          required: req.required,
+          requiredSource: req.requiredSource,
+          description: schemaDesc || '',
+          fromAccessor: true,
+          accessorKinds: [info.kind],
+        });
+      } else {
+        const kinds = new Set([...(prev.accessorKinds || []), info.kind]);
+        const preferType = info.kind === 'get' || info.kind === 'is' || !prev.javaType;
+        accessors.set(jsonName, {
+          ...prev,
+          ...(preferType ? mapped : {}),
+          description: prev.description || schemaDesc || '',
+          required: prev.required || req.required,
+          requiredSource:
+            prev.requiredSource !== 'default' ? prev.requiredSource : req.requiredSource,
+          accessorKinds: [...kinds],
+        });
+      }
+      continue;
+    }
+
+    // 字段：注解? 修饰符 类型 名称 [=...] ;
     const fieldMatch = slice.match(
-      /^((?:@\w+(?:\((?:[^()]|\([^()]*\))*\))?\s*)*)((?:(?:public|protected|private|static|final|transient|volatile)\s+)*)([\w.<>,\s\[\]]+?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:=|;)/,
+      new RegExp(
+        `^${annoPrefix}${modPrefix}([\\w.<>,\\s\\[\\]]+?)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:=|;)`,
+      ),
     );
     if (fieldMatch) {
       const mods = fieldMatch[2] || '';
@@ -104,8 +272,9 @@ function parseFieldsFromClass(entry) {
           const schemaDesc = extractSchemaDescription(annoBlock);
           const req = inferFieldRequired(annoBlock);
           const mapped = mapJavaType(typeExpr);
+          const jsonName = extractJsonPropertyName(annoBlock) || name;
           fields.push({
-            name,
+            name: jsonName,
             ...mapped,
             required: req.required,
             requiredSource: req.requiredSource,
@@ -118,6 +287,22 @@ function parseFieldsFromClass(entry) {
     }
     i += 1;
   }
+
+  // 并入与字段名不同的访问器属性（如 field argKeys + getArgKeyArray → argKeyArray）
+  const fieldNames = new Set(fields.map((f) => f.name));
+  for (const acc of accessors.values()) {
+    if (fieldNames.has(acc.name)) {
+      // 同名：用访问器补全空描述；不改类型（字段为准）
+      const idx = fields.findIndex((f) => f.name === acc.name);
+      if (idx >= 0 && !fields[idx].description && acc.description) {
+        fields[idx] = { ...fields[idx], description: acc.description };
+      }
+      continue;
+    }
+    const { accessorKinds, ...rest } = acc;
+    fields.push(rest);
+  }
+
   return { fields, extendsType, lombok };
 }
 

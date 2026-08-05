@@ -7,6 +7,8 @@ function usage() {
   console.error(`用法: node resolve_types.mjs <srcRoot> TypeA,TypeB
 
 在 srcRoot 下解析 DTO/VO/Entity 字段树。
+除字段声明外，会识别 public/protected 的 getXxx/setXxx/isXxx
+（与字段名不同的属性会并入，如 argKeys 字段 + getArgKeyArray → argKeyArray）。
 每字段含 required + requiredSource（validation|schema|platform|default）。
 未解析类型标记为 needs_source（需读源码）。
 
