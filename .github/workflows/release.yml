@@ -99,6 +99,9 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           pattern: bedrock-*
@@ -113,19 +116,36 @@ jobs:
             bedrock-windows-amd64.exe \
             bedrock-agent-windows-amd64.exe \
             > SHA256SUMS
+      - name: Generate release notes
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PREV_TAG="$(git tag --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)"
+          {
+            echo "## 变更"
+            echo
+            if [ -n "$PREV_TAG" ]; then
+              git log "${PREV_TAG}..${TAG}" --pretty=format:'- %s (%h)' --no-merges --reverse
+              echo
+              echo
+              echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${TAG}"
+            else
+              git log -20 --pretty=format:'- %s (%h)' --no-merges --reverse
+            fi
+            echo
+            echo
+            echo "## 重要说明"
+            echo
+            echo "- **不提供** 1.x → 2.0 数据迁移；请全新安装或自备备份策略。"
+            echo "- 产物前缀为 \`bedrock-*\`（不再使用 \`buildflow-*\`）。"
+            echo "- Server 与 Deploy Agent 须使用**同一版本**。"
+            echo "- 校验：各平台 \`*.sha256\`，或汇总文件 \`SHA256SUMS\`。"
+          } > release-notes.md
       - name: Create release
         uses: softprops/action-gh-release@v3.0.1
         with:
-          generate_release_notes: true
+          body_path: release-notes.md
           fail_on_unmatched_files: true
           overwrite_files: true
-          body: |
-            ## 重要说明
-
-            - **不提供** 1.x → 2.0 数据迁移；请全新安装或自备备份策略。
-            - 产物前缀为 `bedrock-*`（不再使用 `buildflow-*`）。
-            - Server 与 Deploy Agent 须使用**同一版本**。
-            - 校验：各平台 `*.sha256`，或汇总文件 `SHA256SUMS`。
           files: |
             bedrock-*
             SHA256SUMS
