@@ -231,6 +231,7 @@ export interface BuildJob {
   repository_id: number;
   name: string;
   description: string;
+  tags: string;
   enabled: boolean;
   branch: string;
   shallow_clone: boolean;

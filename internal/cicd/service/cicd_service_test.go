@@ -520,11 +520,11 @@ func TestBuildJob_DataScopeFiltersListAndMutate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", 1, "self")
+	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", 1, "self")
 	if err != nil || total != 1 || len(items) != 1 || items[0].ID != mine.ID {
 		t.Fatalf("self list = %#v total=%d err=%v", items, total, err)
 	}
-	allItems, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", 1, "all")
+	allItems, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", 1, "all")
 	if err != nil || total != 2 || len(allItems) != 2 {
 		t.Fatalf("all list = %#v total=%d err=%v", allItems, total, err)
 	}
@@ -572,7 +572,7 @@ func TestBuildJob_PublicReadableBySelfScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", 1, "self")
+	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", 1, "self")
 	if err != nil || total != 1 || len(items) != 1 || items[0].ID != job.ID {
 		t.Fatalf("self list public = %#v total=%d err=%v", items, total, err)
 	}

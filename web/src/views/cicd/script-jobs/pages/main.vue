@@ -12,7 +12,6 @@ import {
   createScriptJob,
   deleteScriptJob,
   enqueueScriptRun,
-  getScriptJob,
   getScriptJobWebhookSecret,
   rotateScriptJobWebhookSecret,
   updateScriptJob,
@@ -157,21 +156,16 @@ function openCreate() {
   dialogOpen.value = true;
 }
 
-async function openEdit(row: ScriptJob) {
-  try {
-    const full = await getScriptJob(row.id);
-    editing.value = full;
-    o(form).extend(o(full).omit(["env_var_names", "env_vars", "workspace_path"]));
-    form.env_var_names = (full.env_var_names ?? []).map((name) => ({ name }));
-    form.env_vars = (full.env_vars ?? []).map((e) => ({
-      key: e.key,
-      value: "",
-      has_value: e.has_value,
-    }));
-    dialogOpen.value = true;
-  } catch (err) {
-    message.error(err instanceof Error ? err.message : "加载失败");
-  }
+function openEdit(row: ScriptJob) {
+  editing.value = row;
+  o(form).extend(o(row).omit(["env_var_names", "env_vars", "workspace_path"]));
+  form.env_var_names = (row.env_var_names ?? []).map((name) => ({ name }));
+  form.env_vars = (row.env_vars ?? []).map((e) => ({
+    key: e.key,
+    value: "",
+    has_value: e.has_value,
+  }));
+  dialogOpen.value = true;
 }
 
 async function copyWorkspacePath() {

@@ -25,6 +25,8 @@ func NewDictionaryHandler(dicts *service.DictionaryService, perm *rbacservice.Pe
 func (h *DictionaryHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	g := rg.Group("/dictionaries", authMW)
 	g.GET("", rbacmw.RequirePermission(h.perm, "system_dictionaries:view"), h.List)
+	// code 路由须在 /:id 之前，供业务模块按编码读取选项（登录即可）
+	g.GET("/code/:code", h.GetByCode)
 	g.GET("/:id", rbacmw.RequirePermission(h.perm, "system_dictionaries:view"), h.Get)
 	g.POST("", rbacmw.RequirePermission(h.perm, "system_dictionaries:create"), h.Create)
 	g.PUT("/:id", rbacmw.RequirePermission(h.perm, "system_dictionaries:update"), h.Update)
@@ -48,6 +50,15 @@ func (h *DictionaryHandler) Get(c *gin.Context) {
 		return
 	}
 	d, err := h.dicts.Get(uint(id))
+	if err != nil {
+		pkg.Error(c, http.StatusNotFound, "字典不存在")
+		return
+	}
+	pkg.Success(c, d)
+}
+
+func (h *DictionaryHandler) GetByCode(c *gin.Context) {
+	d, err := h.dicts.GetByCode(c.Param("code"))
 	if err != nil {
 		pkg.Error(c, http.StatusNotFound, "字典不存在")
 		return

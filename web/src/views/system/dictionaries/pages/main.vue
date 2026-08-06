@@ -5,7 +5,7 @@ import { reactive, ref, useTemplateRef } from "vue";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
 
-import { createDictionary, deleteDictionary, getDictionary, updateDictionary } from "@/api/system";
+import { createDictionary, deleteDictionary, updateDictionary } from "@/api/system";
 import type { DictItem, Dictionary } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
@@ -41,34 +41,16 @@ function openCreate() {
   dialogOpen.value = true;
 }
 
-const openEdit = bind(async (row: Dictionary) => {
-  try {
-    const full = await getDictionary(row.id);
-    editing.value = full;
-    o(form).extend(full);
-    form.items = (full.items ?? []).map((it) => ({
-      label: it.label,
-      value: it.value,
-      sort_order: it.sort_order ?? 0,
-      enabled: it.enabled !== false,
-    }));
-    dialogOpen.value = true;
-  } catch (err) {
-    message.error(err instanceof Error ? err.message : "加载失败");
-  }
-});
-
-function addItem() {
-  form.items.push({
-    label: "",
-    value: "",
-    sort_order: form.items.length,
-    enabled: true,
-  });
-}
-
-function removeItem(idx: number) {
-  form.items.splice(idx, 1);
+function openEdit(row: Dictionary) {
+  editing.value = row;
+  o(form).extend(row);
+  form.items = (row.items ?? []).map((it) => ({
+    label: it.label,
+    value: it.value,
+    sort_order: it.sort_order ?? 0,
+    enabled: it.enabled !== false,
+  }));
+  dialogOpen.value = true;
 }
 
 async function save() {
@@ -163,36 +145,27 @@ const remove = bind(async (row: Dictionary) => {
         <u-input label="描述" field="description" />
       </template>
       <template #group:items>
-        <div class="items-toolbar">
-          <u-button size="small" @click="addItem">添加项</u-button>
-        </div>
-        <div v-if="!form.items.length" class="items-empty">暂无字典项</div>
-        <div v-for="(it, idx) in form.items" :key="idx" class="item-row">
-          <u-input v-model="it.label" placeholder="标签" style="flex: 1" />
-          <u-input v-model="it.value" placeholder="值" style="flex: 1" />
-          <u-switch v-model="it.enabled" />
-          <u-button size="small" @click="removeItem(idx)">删</u-button>
-        </div>
+        <u-group-input
+          field="items"
+          label="字典项"
+          span="full"
+          :item-default="{ label: '', value: '', sort_order: 0, enabled: true }"
+          :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
+        >
+          <template #default="{ item }">
+            <u-input v-model="item.label" placeholder="标签" />
+            <u-input v-model="item.value" placeholder="值" />
+            <u-switch v-model="item.enabled" />
+          </template>
+        </u-group-input>
       </template>
     </FormDialog>
   </div>
 </template>
 
 <style scoped>
-.items-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 8px;
-}
-.items-empty {
-  color: #6b7280;
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-.item-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
+:deep(.u-group-input__item > .u-input) {
+  flex: 1;
+  min-width: 0;
 }
 </style>

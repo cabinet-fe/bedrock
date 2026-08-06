@@ -12,15 +12,15 @@
 ### GET /build-jobs — 列出构建任务
 
 权限：`cicd_build_jobs:view`
-查询参数：page: integer, page_size: integer, repository_id: integer, keyword: string
+查询参数：page: integer, page_size: integer, repository_id: integer, keyword: string, tag: string
 响应 200：data = BuildJobPage
 
 ### POST /build-jobs — 创建构建任务
 
 权限：`cicd_build_jobs:create`
-请求：{ repository_id*, name*, description, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
+请求：{ repository_id*, name*, description, tags, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
 响应 201：data = BuildJob
-说明：`artifact_paths` 为相对仓库根的制品路径列表（文件或目录，最多约 10 条；须相对、禁止 `..`/绝对路径）。写入优先 `artifact_paths`；若为空且提供 `output_dir` 则视为单元素列表。响应含 `artifact_paths`，并回显 `output_dir` 为第一项（兼容）。`env_var_names` 为宿主机环境变量名称列表（运行时 `LookupEnv`）；`env_vars` 为加密 Key-Value 全量键列表 `[{key, value?}]`（带 value 写入；响应仅回显 `[{key, has_value}]`）。运行时合并顺序：进程环境 → 名称列表注入 → Key-Value 覆盖同名键。`post_build_script` 在主构建脚本成功后、缓存保存/归档前执行（同 shell/cwd/env）；失败则 run=`failed`。响应只读字段 `workspace_path` 为任务 checkout 绝对路径：`{build.workspace_dir}/jobs/job-{id}/`（与 Agent 的 `agents/agent-{id}/` 对齐；旧路径 `repo-{repository_id}/job-{id}/` 不再使用，不自动搬迁）。`build_script` / `post_build_script` 执行前做 `${{...}}` 文本替换（见下文「脚本模板」）；未知变量则构建失败。
+说明：`artifact_paths` 为相对仓库根的制品路径列表（文件或目录，最多约 10 条；须相对、禁止 `..`/绝对路径）。写入优先 `artifact_paths`；若为空且提供 `output_dir` 则视为单元素列表。响应含 `artifact_paths`，并回显 `output_dir` 为第一项（兼容）。`env_var_names` 为宿主机环境变量名称列表（运行时 `LookupEnv`）；`env_vars` 为加密 Key-Value 全量键列表 `[{key, value?}]`（带 value 写入；响应仅回显 `[{key, has_value}]`）。运行时合并顺序：进程环境 → 名称列表注入 → Key-Value 覆盖同名键。`post_build_script` 在主构建脚本成功后、缓存保存/归档前执行（同 shell/cwd/env）；失败则 run=`failed`。响应只读字段 `workspace_path` 为任务 checkout 绝对路径：`{build.workspace_dir}/jobs/job-{id}/`（与 Agent 的 `agents/agent-{id}/` 对齐；旧路径 `repo-{repository_id}/job-{id}/` 不再使用，不自动搬迁）。`build_script` / `post_build_script` 执行前做 `${{...}}` 文本替换（见下文「脚本模板」）；未知变量则构建失败。`tags` 为逗号分隔的类型标签，选项来自数据字典 `repo_type`。
 
 ### GET /build-jobs/{id} — 获取构建任务（含部署目标）
 
@@ -32,7 +32,7 @@
 
 权限：`cicd_build_jobs:update`
 路径参数：id*: integer
-请求：{ name, description, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
+请求：{ name, description, tags, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
 响应 200：data = BuildJob
 说明：`artifact_paths` 写入优先于 `output_dir`（见创建说明）。`env_vars` 若提交则为全量键列表（带 value 更新/新建；已有键未带 value 保留；请求中消失的键删除；省略字段则不改）；永不回显明文。
 
@@ -257,6 +257,7 @@
 | `repository_id` | `integer` |  |  |
 | `name` | `string` |  |  |
 | `description` | `string` |  |  |
+| `tags` | `string` |  | 逗号分隔的类型标签；选项来自字典 `repo_type` |
 | `enabled` | `boolean` |  |  |
 | `is_public` | `boolean` |  |  |
 | `branch` | `string` |  |  |
@@ -298,6 +299,7 @@
 | `repository_id` | `integer` | 是 |  |
 | `name` | `string` | 是 |  |
 | `description` | `string` |  |  |
+| `tags` | `string` |  | 逗号分隔的类型标签；选项来自字典 `repo_type` |
 | `enabled` | `boolean` |  |  |
 | `is_public` | `boolean` |  |  |
 | `branch` | `string` |  |  |
@@ -346,6 +348,7 @@
 | --- | --- | --- | --- |
 | `name` | `string` |  |  |
 | `description` | `string` |  |  |
+| `tags` | `string` |  | 逗号分隔的类型标签；选项来自字典 `repo_type` |
 | `enabled` | `boolean` |  |  |
 | `branch` | `string` |  |  |
 | `shallow_clone` | `boolean` |  |  |

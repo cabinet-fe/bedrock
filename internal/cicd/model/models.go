@@ -61,6 +61,7 @@ type BuildJob struct {
 	RepositoryID       uint         `json:"repository_id" gorm:"index;not null"`
 	Name               string       `json:"name" gorm:"size:100;not null"`
 	Description        string       `json:"description" gorm:"size:500"`
+	Tags               string       `json:"tags" gorm:"size:500"`
 	Enabled            bool         `json:"enabled" gorm:"not null"` // no gorm default: must persist false
 	Branch             string       `json:"branch" gorm:"size:200;default:main"`
 	ShallowClone       bool         `json:"shallow_clone" gorm:"not null"` // no gorm default: must persist false

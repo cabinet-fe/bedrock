@@ -55,7 +55,7 @@ func (r *BuildJobRepository) FindByID(id uint) (*model.BuildJob, error) {
 	return &job, nil
 }
 
-func (r *BuildJobRepository) List(q pkg.ListQuery, repositoryID *uint, keyword string, createdBy *uint) ([]model.BuildJob, int64, error) {
+func (r *BuildJobRepository) List(q pkg.ListQuery, repositoryID *uint, keyword, tag string, createdBy *uint) ([]model.BuildJob, int64, error) {
 	db := r.db.Model(&model.BuildJob{})
 	if repositoryID != nil && *repositoryID > 0 {
 		db = db.Where("repository_id = ?", *repositoryID)
@@ -67,12 +67,17 @@ func (r *BuildJobRepository) List(q pkg.ListQuery, repositoryID *uint, keyword s
 		like := "%" + keyword + "%"
 		db = db.Where("name LIKE ? OR description LIKE ?", like, like)
 	}
+	if tag != "" {
+		db = db.Where("tags LIKE ?", "%"+tag+"%")
+	}
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var items []model.BuildJob
-	err := db.Order("id DESC").Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
+	err := db.Preload("DeployTargets", func(db *gorm.DB) *gorm.DB {
+		return db.Order("sort_order ASC, id ASC")
+	}).Order("id DESC").Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
 	return items, total, err
 }
 

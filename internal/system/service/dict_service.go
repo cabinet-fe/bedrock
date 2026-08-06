@@ -26,6 +26,14 @@ func (s *DictionaryService) Get(id uint) (*model.Dictionary, error) {
 	return s.dicts.FindByID(id)
 }
 
+func (s *DictionaryService) GetByCode(code string) (*model.Dictionary, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, errors.New("编码不能为空")
+	}
+	return s.dicts.FindByCode(code)
+}
+
 func (s *DictionaryService) Create(name, code, description string, items []model.DictItem) (*model.Dictionary, error) {
 	name = strings.TrimSpace(name)
 	code = strings.TrimSpace(code)

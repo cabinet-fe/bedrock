@@ -49,6 +49,7 @@ type CreateBuildJobInput struct {
 	RepositoryID       uint                `json:"repository_id"`
 	Name               string              `json:"name"`
 	Description        string              `json:"description"`
+	Tags               string              `json:"tags"`
 	Enabled            *bool               `json:"enabled"`
 	Branch             string              `json:"branch"`
 	ShallowClone       *bool               `json:"shallow_clone"`
@@ -81,6 +82,7 @@ type CreateBuildJobInput struct {
 type UpdateBuildJobInput struct {
 	Name               *string              `json:"name"`
 	Description        *string              `json:"description"`
+	Tags               *string              `json:"tags"`
 	Enabled            *bool                `json:"enabled"`
 	Branch             *string              `json:"branch"`
 	ShallowClone       *bool                `json:"shallow_clone"`
@@ -130,6 +132,7 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 		RepositoryID:       in.RepositoryID,
 		Name:               name,
 		Description:        strings.TrimSpace(in.Description),
+		Tags:               strings.TrimSpace(in.Tags),
 		Enabled:            boolOr(in.Enabled, true),
 		Branch:             stringOr(in.Branch, "main"),
 		ShallowClone:       boolOr(in.ShallowClone, true),
@@ -207,6 +210,9 @@ func (s *BuildJobService) Update(id uint, userID uint, dataScope string, in Upda
 	}
 	if in.Description != nil {
 		job.Description = strings.TrimSpace(*in.Description)
+	}
+	if in.Tags != nil {
+		job.Tags = strings.TrimSpace(*in.Tags)
 	}
 	if in.Enabled != nil {
 		job.Enabled = *in.Enabled
@@ -399,12 +405,12 @@ func (s *BuildJobService) RotateWebhookSecret(id uint, userID uint, dataScope st
 	return out, nil
 }
 
-func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword string, userID uint, dataScope string) ([]model.BuildJob, int64, error) {
+func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword, tag string, userID uint, dataScope string) ([]model.BuildJob, int64, error) {
 	var createdBy *uint
 	if dataScope != rbacmodel.DataScopeAll {
 		createdBy = &userID
 	}
-	items, total, err := s.jobs.List(q, repositoryID, keyword, createdBy)
+	items, total, err := s.jobs.List(q, repositoryID, keyword, tag, createdBy)
 	if err != nil {
 		return nil, 0, err
 	}

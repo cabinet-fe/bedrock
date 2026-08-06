@@ -135,6 +135,11 @@ export async function getDictionary(id: number): Promise<Dictionary> {
   return body;
 }
 
+export async function getDictionaryByCode(code: string): Promise<Dictionary> {
+  const { body } = await http.get<Dictionary>(`/dictionaries/code/${encodeURIComponent(code)}`);
+  return body;
+}
+
 export async function createDictionary(body: Record<string, unknown>): Promise<Dictionary> {
   const { body: data } = await http.post<Dictionary>("/dictionaries", body);
   return data;

@@ -199,6 +199,7 @@
 查询参数：page: integer, page_size: integer
 响应 200：data = DictionaryPage
 错误：403
+说明：列表项预加载 `items`。
 
 ### POST /dictionaries — 创建字典
 
@@ -206,6 +207,13 @@
 请求：{ name*, code*, description, items }
 响应 201：data = Dictionary
 错误：400
+
+### GET /dictionaries/code/{code} — 按编码获取字典（含字典项）
+
+权限：登录即可
+路径参数：code*: string
+响应 200：data = Dictionary
+错误：404
 
 ### GET /dictionaries/{id} — 获取字典
 

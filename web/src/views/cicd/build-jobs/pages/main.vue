@@ -13,12 +13,12 @@ import {
   createBuildJob,
   deleteBuildJob,
   enqueueBuildRun,
-  getBuildJob,
   getBuildJobWebhookSecret,
   rotateBuildJobWebhookSecret,
   updateBuildJob,
 } from "@/api/cicd";
 import { listRepositories, listRepositoryBranches, listServers } from "@/api/resource";
+import { getDictionaryByCode } from "@/api/system";
 import type {
   AiAgent,
   AiAgentEnvVarInput,
@@ -129,7 +129,11 @@ const { busy: rotateBusy, run: runRotate } = useBusy();
 const router = useRouter();
 const listRef = useTemplateRef("list");
 const historyRef = useTemplateRef("history");
-const query = reactive({ keyword: "", repository_id: undefined as number | undefined });
+const query = reactive({
+  keyword: "",
+  repository_id: undefined as number | undefined,
+  tag: undefined as string | undefined,
+});
 const dialogOpen = ref(false);
 const secretOpen = ref(false);
 const historyOpen = ref(false);
@@ -141,11 +145,13 @@ const repoOptions = ref<{ label: string; value: number }[]>([]);
 const serverOptions = ref<{ label: string; value: number }[]>([]);
 const agentOptions = ref<{ label: string; value: number }[]>([]);
 const branchOptions = ref<{ label: string; value: string }[]>([]);
+const repoTypeOptions = ref<{ label: string; value: string }[]>([]);
 const branchesLoading = ref(false);
 const form = reactive({
   repository_id: undefined as number | undefined,
   name: "",
   description: "",
+  tags: [] as string[],
   enabled: true,
   branch: "main",
   shallow_clone: true,
@@ -206,11 +212,32 @@ const repoNameMap = computed(() => {
 const columns = defineProTableColumns([
   { key: "name", name: "名称" },
   { key: "repository", name: "仓库" },
+  { key: "tags", name: "类型", width: 160 },
   { key: "branch", name: "分支" },
   { key: "enabled", name: "启用", width: 80, align: "center" },
   { key: "triggers", name: "触发" },
   { key: "action", name: "操作", width: 400, align: "center", fixed: "right" },
 ]);
+
+const repoTypeLabelMap = computed(() => {
+  const map = new Map<string, string>();
+  for (const opt of repoTypeOptions.value) {
+    map.set(opt.value, opt.label);
+  }
+  return map;
+});
+
+function splitTags(raw?: string | null): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function tagLabel(value: string): string {
+  return repoTypeLabelMap.value.get(value) ?? value;
+}
 
 const historyColumns = defineProTableColumns([
   { key: "build_number", name: "#" },
@@ -284,6 +311,14 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+  try {
+    const dict = await getDictionaryByCode("repo_type");
+    repoTypeOptions.value = (dict.items ?? [])
+      .filter((it) => it.enabled !== false)
+      .map((it) => ({ label: it.label, value: it.value }));
+  } catch {
+    /* ignore */
+  }
   // 无 AI 模块权限时静默失败，Agent 选项留空
   try {
     const agents = await listAgents({ page: 1, page_size: 100 });
@@ -349,40 +384,37 @@ function parseArtifactPaths(job: BuildJob): string[] {
   return legacy ? [legacy] : [];
 }
 
-async function openEdit(row: BuildJob) {
-  try {
-    const full = await getBuildJob(row.id);
-    editing.value = full;
-    o(form).extend(
-      o(full).omit([
-        "cache_paths",
-        "artifact_paths",
-        "env_var_names",
-        "env_vars",
-        "deploy_targets",
-        "agent_ids",
-        "post_build_script",
-        "workspace_path",
-      ]),
-    );
-    form.env_var_names = (full.env_var_names ?? []).map((name) => ({ name }));
-    form.env_vars = (full.env_vars ?? []).map((e) => ({
-      key: e.key,
-      value: "",
-      has_value: e.has_value,
-    }));
-    form.cache_paths = parseCachePaths(full.cache_paths).map((path) => ({ path }));
-    form.artifact_paths = parseArtifactPaths(full).map((path) => ({ path }));
-    form.post_build_script = full.post_build_script ?? "";
-    form.agent_ids = full.agent_ids ?? [];
-    form.deploy_targets = (full.deploy_targets ?? []).map((t) => ({
-      ...t,
-      mirror: !!t.mirror,
-    }));
-    dialogOpen.value = true;
-  } catch (err) {
-    message.error(err instanceof Error ? err.message : "加载失败");
-  }
+function openEdit(row: BuildJob) {
+  editing.value = row;
+  o(form).extend(
+    o(row).omit([
+      "cache_paths",
+      "artifact_paths",
+      "env_var_names",
+      "env_vars",
+      "deploy_targets",
+      "agent_ids",
+      "post_build_script",
+      "workspace_path",
+      "tags",
+    ]),
+  );
+  form.tags = splitTags(row.tags);
+  form.env_var_names = (row.env_var_names ?? []).map((name) => ({ name }));
+  form.env_vars = (row.env_vars ?? []).map((e) => ({
+    key: e.key,
+    value: "",
+    has_value: e.has_value,
+  }));
+  form.cache_paths = parseCachePaths(row.cache_paths).map((path) => ({ path }));
+  form.artifact_paths = parseArtifactPaths(row).map((path) => ({ path }));
+  form.post_build_script = row.post_build_script ?? "";
+  form.agent_ids = row.agent_ids ?? [];
+  form.deploy_targets = (row.deploy_targets ?? []).map((t) => ({
+    ...t,
+    mirror: !!t.mirror,
+  }));
+  dialogOpen.value = true;
 }
 
 async function copyWorkspacePath() {
@@ -445,7 +477,9 @@ function buildBody(): Record<string, unknown> | undefined {
       "cache_paths",
       "artifact_paths",
       "deploy_targets",
+      "tags",
     ]),
+    tags: form.tags.join(","),
     env_var_names: form.env_var_names.map((e) => e.name.trim()).filter(Boolean),
     env_vars: envVars,
     artifact_paths: form.artifact_paths.map((a) => a.path.trim()).filter(Boolean),
@@ -533,7 +567,7 @@ async function rotateWebhookSecret() {
       url="/build-jobs"
       :query="query"
       :columns="columns"
-      :auto-query-fields="['repository_id']"
+      :auto-query-fields="['repository_id', 'tag']"
       pagination
     >
       <template #filters>
@@ -543,6 +577,13 @@ async function rotateWebhookSecret() {
           placeholder="全部仓库"
           clearable
           style="width: 180px"
+        />
+        <u-select
+          v-model="query.tag"
+          :options="repoTypeOptions"
+          placeholder="全部类型"
+          clearable
+          style="width: 140px"
         />
         <u-input v-model="query.keyword" placeholder="名称" style="width: 160px" />
       </template>
@@ -557,6 +598,16 @@ async function rotateWebhookSecret() {
       </template>
       <template #column:repository="{ rowData }">
         {{ repoName((rowData as BuildJob).repository_id) }}
+      </template>
+      <template #column:tags="{ rowData }">
+        <span class="tag-cell">
+          <template v-for="parts in [splitTags((rowData as BuildJob).tags)]" :key="0">
+            <u-tag v-for="tag in parts" :key="tag" size="small" type="info">
+              {{ tagLabel(tag) }}
+            </u-tag>
+            <template v-if="!parts.length">—</template>
+          </template>
+        </span>
       </template>
       <template #column:enabled="{ rowData }">
         <u-tag size="small" :type="(rowData as BuildJob).enabled ? 'success' : undefined">
@@ -632,6 +683,14 @@ async function rotateWebhookSecret() {
         />
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
         <u-input label="描述" field="description" />
+        <u-multi-select
+          label="标签"
+          field="tags"
+          :options="repoTypeOptions"
+          placeholder="选择类型标签"
+          filterable
+          tips="选项来自数据字典 repo_type"
+        />
         <u-switch label="启用" field="enabled" />
         <u-switch
           label="公开"
