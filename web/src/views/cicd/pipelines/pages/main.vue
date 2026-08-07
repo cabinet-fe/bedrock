@@ -127,7 +127,6 @@ async function runPipeline(row: BuildPipeline) {
   try {
     const run = await enqueuePipelineRun(row.id, { trigger_type: "manual" });
     message.success(`已触发 #${run.run_number}`);
-    void router.push({ name: "cicd-pipeline-run-detail", params: { id: String(run.id) } });
   } catch (e) {
     message.error(e instanceof Error ? e.message : "触发失败");
   }

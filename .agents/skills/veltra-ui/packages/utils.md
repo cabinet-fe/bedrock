@@ -31,17 +31,17 @@ import type {
 
 ## 共享类型
 
-| 类型                  | 含义                                                                        |
-| --------------------- | --------------------------------------------------------------------------- |
-| `ComponentSize`       | `'small' \| 'default' \| 'large'`                                           |
-| `ColorType`           | `'primary' \| 'info' \| 'success' \| 'warning' \| 'danger'`                 |
-| `BreakpointName`      | `'xs' \| 'sm' \| 'md' \| 'lg' \| 'xl'`                                      |
-| `ComponentProps`      | `{ size?: ComponentSize }`                                                  |
+| 类型                  | 含义                                                                                                                                                                   |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ComponentSize`       | `'small' \| 'default' \| 'large'`                                                                                                                                      |
+| `ColorType`           | `'primary' \| 'info' \| 'success' \| 'warning' \| 'danger'`                                                                                                            |
+| `BreakpointName`      | `'xs' \| 'sm' \| 'md' \| 'lg' \| 'xl'`                                                                                                                                 |
+| `ComponentProps`      | `{ size?: ComponentSize }`                                                                                                                                             |
 | `FormComponentProps`  | 继承 `ComponentProps`，增加 `label/field/tips/disabled/readonly/span/rules`。在 `UForm` 内必须提供 `field` 才会生成表单项并绑定 `model`；有 `field` 时不要再 `v-model` |
-| `FormContextProps`    | 见下方「表单上下文」                                                        |
-| `FormFieldItem`       | 字段注册项：`validate()`、`clearValidate?()`                                |
-| `DeconstructValue<E>` | 把 `_XxxExposed`（含 ShallowRef）解为 `XxxExposed`（值类型）                |
-| `RenderReturn`        | 渲染函数允许的返回类型联合（VNode / string / null / 数组）                  |
+| `FormContextProps`    | 见下方「表单上下文」                                                                                                                                                   |
+| `FormFieldItem`       | 字段注册项：`validate()`、`clearValidate?()`                                                                                                                           |
+| `DeconstructValue<E>` | 把 `_XxxExposed`（含 ShallowRef）解为 `XxxExposed`（值类型）                                                                                                           |
+| `RenderReturn`        | 渲染函数允许的返回类型联合（VNode / string / null / 数组）                                                                                                             |
 
 ### 表单上下文
 
@@ -136,6 +136,15 @@ new ExpandTransition({ transition: 'height 0.25s ease', opacity: true })
 // .enter / .leave / .setExpanded(el, expanded) — Collapse、Menu 复用的高度展开动画
 
 new Tween({ from, to, duration, easing, onUpdate }) // 简易补间
+```
+
+## 溢出滚动导航（tabs / toolbar 共享）
+
+```ts
+computeOverflowNavState(vp) // { overflowing, canPrev, canNext } — 滚动按钮状态
+scrollViewportByStep(vp, dir) // 箭头按视口宽度 80% 平滑步进
+scrollElementIntoView(vp, el, (offset = 8)) // 活动项滚入视野
+applyWheelHorizontalScroll(e, vp, navActive) // 纵向滚轮转横滚（触控板横滑不拦截）
 ```
 
 ## 相关

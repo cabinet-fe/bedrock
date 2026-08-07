@@ -527,7 +527,6 @@ const trigger = bind(async (row: BuildJob) => {
   try {
     const run = await enqueueBuildRun(row.id, { trigger_type: "manual" });
     message.success(`已入队 #${run.build_number}`);
-    await router.push({ name: "cicd-build-run-detail", params: { id: run.id } });
   } catch (err) {
     message.error(err instanceof Error ? err.message : "构建失败");
   }

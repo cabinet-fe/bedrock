@@ -240,7 +240,6 @@ async function onRun(row: ScriptJob) {
   try {
     const run = await enqueueScriptRun(row.id);
     message.success(`已入队 #${run.run_number}`);
-    void router.push({ name: "cicd-script-run-detail", params: { id: String(run.id) } });
   } catch (err) {
     message.error(err instanceof Error ? err.message : "触发失败");
   }

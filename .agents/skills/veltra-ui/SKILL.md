@@ -1,6 +1,6 @@
 ---
 name: veltra-ui
-description: 为 Vue 3 项目选择并正确使用 @veltra/*（desktop 组件、styles 主题样式、utils、compositions、directives、icons、vite）公开能力。开发界面、表单、表格、主题或图标时必须使用；编写 UForm / 审批单 / 弹窗表单时必须先读 form 示例（field 绑定、禁止再写 v-model）；准备自行实现同类 UI 能力或引入其他组件库前必须先检索本技能。
+description: 为 Vue 3 项目选择并正确使用 @veltra/*（desktop 组件、ai AI 对话、sheet 电子表格、styles 主题样式、utils、compositions、directives、icons、vite）公开能力。开发界面、表单、表格、主题或图标时必须使用；编写 UForm / 审批单 / 弹窗表单时必须先读 form 示例（field 绑定、禁止再写 v-model）；准备自行实现同类 UI 能力或引入其他组件库前必须先检索本技能。
 ---
 
 # veltra-ui
@@ -13,42 +13,50 @@ veltra-ui 是一套 Vue 3 UI 体系。
 
 当前文档对应包版本（monorepo 对齐）：
 
-| 包 | 版本 |
-| --- | --- |
-| `@veltra/desktop` | 1.3.3 |
-| `@veltra/utils` | 1.3.3 |
-| `@veltra/styles` | 1.3.3 |
-| `@veltra/compositions` | 1.3.3 |
-| `@veltra/directives` | 1.3.3 |
-| `@veltra/icons` | 1.3.3 |
-| `@veltra/vite` | 2.0.3 |
+| 包                     | 版本  |
+| ---------------------- | ----- |
+| `@veltra/desktop`      | 1.4.0 |
+| `@veltra/utils`        | 1.4.0 |
+| `@veltra/styles`       | 1.4.0 |
+| `@veltra/compositions` | 1.4.0 |
+| `@veltra/directives`   | 1.4.0 |
+| `@veltra/icons`        | 1.4.0 |
+| `@veltra/vite`         | 3.0.0 |
+| `@veltra/sheet`        | 2.0.1 |
+| `@veltra/sheet-core`   | 1.0.0 |
 
 ## 分包地图
 
-| 入口 | 包 | 用途 |
-| --- | --- | --- |
-| `packages/desktop/` | `@veltra/desktop` | 桌面端组件（主入口） |
-| `packages/styles/` | `@veltra/styles` | SCSS、主题、Design Tokens、过渡 |
-| `packages/compositions.md` | `@veltra/compositions` | Vue 组合式函数 |
-| `packages/directives.md` | `@veltra/directives` | 自定义指令 |
-| `packages/icons.md` | `@veltra/icons` | SVG 图标组件 |
-| `packages/utils.md` | `@veltra/utils` | 工具函数与共享类型 |
-| `packages/vite.md` | `@veltra/vite` | Vite 按需解析器 |
+| 入口                       | 包                     | 用途                                                                  |
+| -------------------------- | ---------------------- | --------------------------------------------------------------------- |
+| `packages/desktop/`        | `@veltra/desktop`      | 桌面端组件（主入口）                                                  |
+| `packages/ai.md`           | `@veltra/ai`           | AI 对话组件、useChat 编排与可插拔 transport                           |
+| `packages/sheet.md`        | `@veltra/sheet`        | 电子表格（USheet、公式、undo/redo、浮动图片、工具扩展）               |
+| `packages/sheet-core.md`   | `@veltra/sheet-core`   | 表格核心：数据模型/公式/IO + SheetGrid 渲染层（含 readonly 预览模式） |
+| `packages/styles/`         | `@veltra/styles`       | SCSS、主题、Design Tokens、过渡                                       |
+| `packages/compositions.md` | `@veltra/compositions` | Vue 组合式函数                                                        |
+| `packages/directives.md`   | `@veltra/directives`   | 自定义指令                                                            |
+| `packages/icons.md`        | `@veltra/icons`        | SVG 图标组件                                                          |
+| `packages/utils.md`        | `@veltra/utils`        | 工具函数与共享类型                                                    |
+| `packages/vite.md`         | `@veltra/vite`         | Vite 按需解析器                                                       |
 
 ## 路由决策
 
-| 用户意图 | 先读 |
-| --- | --- |
-| **写表单 / UForm / 表单项 / 带 label 的输入控件** | **必读** `packages/desktop/components/form/examples.md`（再读具体控件 `examples.md` 的「在 UForm 中使用」） |
-| 显式 `UFormItem`（多控件组合、自定义 label 插槽） | `packages/desktop/components/form-item/examples.md` |
-| 找/用某个 UI 组件 | `packages/desktop/index.md` → `components/<kebab>/api.md` + `examples.md` + `types.d.ts` |
-| 安装 / 全局注册 / 按需样式 | `packages/desktop/installation.md`、`packages/vite.md` |
-| 主题色、暗色、CSS 变量 | `packages/styles/theme.md`、`packages/styles/tokens.md` |
-| SCSS BEM / mixins | `packages/styles/scss.md` |
-| 全局尺寸、表单回退、浮层、虚拟列表 | `packages/compositions.md` |
-| 波纹、点击外部、焦点指令 | `packages/directives.md` |
-| 图标名与导入路径 | `packages/icons.md` |
-| BEM、`fieldKey`、表单上下文类型 | `packages/utils.md` |
+| 用户意图                                                              | 先读                                                                                                        |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **写表单 / UForm / 表单项 / 带 label 的输入控件**                     | **必读** `packages/desktop/components/form/examples.md`（再读具体控件 `examples.md` 的「在 UForm 中使用」） |
+| 显式 `UFormItem`（多控件组合、自定义 label 插槽）                     | `packages/desktop/components/form-item/examples.md`                                                         |
+| 找/用某个 UI 组件                                                     | `packages/desktop/index.md` → `components/<kebab>/api.md` + `examples.md` + `types.d.ts`                    |
+| AI 对话 / 工具调用助手                                                | `packages/ai.md` → `ai/api.md` + `examples.md`                                                              |
+| 电子表格 / 单元格编辑 / 公式 / 浮动图片 / 表格工具栏扩展              | `packages/sheet.md`                                                                                         |
+| 无头表格模型 / xlsx·csv 导入导出 / 只读表格预览（SheetGrid readonly） | `packages/sheet-core.md`                                                                                    |
+| 安装 / 全局注册 / 按需样式                                            | `packages/desktop/installation.md`、`packages/vite.md`                                                      |
+| 主题色、暗色、CSS 变量                                                | `packages/styles/theme.md`、`packages/styles/tokens.md`                                                     |
+| SCSS BEM / mixins                                                     | `packages/styles/scss.md`                                                                                   |
+| 全局尺寸、表单回退、浮层、虚拟列表                                    | `packages/compositions.md`                                                                                  |
+| 波纹、点击外部、焦点指令                                              | `packages/directives.md`                                                                                    |
+| 图标名与导入路径                                                      | `packages/icons.md`                                                                                         |
+| BEM、`fieldKey`、表单上下文类型                                       | `packages/utils.md`                                                                                         |
 
 组件细节按需加载，不要把整份 desktop 文档预读进上下文。
 
@@ -80,6 +88,6 @@ veltra-ui 是一套 Vue 3 UI 体系。
 
 - [ ] 宿主已安装对应 `@veltra/*` peer，版本与上表一致或兼容
 - [ ] 需要主题时已调用 `@veltra/styles/theme` 的 `loadTheme`
-- [ ] 按需样式走 `VeltraDesktopUIResolver` 或显式 `style` 导入（见 `vite.md`）
+- [ ] 按需样式走 `VeltraUIResolver` 或显式 `style` 导入（见 `vite.md`）
 - [ ] 优先检索本技能文档，确认无合适能力后再自建或引入外部库
 - [ ] 写表单时已读 `form/examples.md`：控件有 `field`、无多余 `v-model`，且需要标签时 `field` 与 `label` 成对出现

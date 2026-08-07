@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
-import { message } from "@veltra/desktop";
-import { Books, Folder } from "@veltra/icons/normal";
+import { computed, reactive, ref, shallowRef, watch } from "vue";
+import { message, messageConfirm, type ContextMenuItem, type TreeNode } from "@veltra/desktop";
+import { ArrowLeft, ArrowRight, Books, Delete, FileAdd, Folder, Move } from "@veltra/icons/normal";
 
 import {
   createDevDocNode,
@@ -23,7 +23,7 @@ import {
 } from "@/api/projects";
 import type { ProductProject, ProjectDocNode, ProjectRole } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
-import MarkdownViewer from "@/components/markdown-viewer";
+import { MarkdownScrollPane } from "@/components/markdown-viewer";
 import { usePermission } from "@/composables/use-permission";
 
 const props = withDefaults(
@@ -46,6 +46,7 @@ const selectedID = ref<number>();
 const selected = ref<ProjectDocNode | null>(null);
 const content = ref("");
 const docPane = ref("preview");
+const treeCollapsed = ref(false);
 const nodeDialogOpen = ref(false);
 const moveDialogOpen = ref(false);
 const creatingKind = ref<"dir" | "doc">("doc");
@@ -54,6 +55,10 @@ const createParentID = ref<number | null>(null);
 const movingNode = ref<ProjectDocNode | null>(null);
 const nodeForm = reactive({ name: "" });
 const moveForm = reactive({ parent_id: undefined as number | undefined, sort_order: 0 });
+
+const menuOpen = ref(false);
+const menuPos = ref({ x: 0, y: 0 });
+const menuItems = shallowRef<ContextMenuItem[]>([]);
 
 const canEditProjectContent = computed(
   () =>
@@ -186,12 +191,11 @@ async function saveContent() {
   }
 }
 
-async function removeNode() {
-  if (!selected.value) return;
+async function removeNode(node: ProjectDocNode) {
   try {
-    if (isDev.value) await deleteDevDocNode(props.project.id, selected.value.id);
-    else await deleteDocNode(props.project.id, selected.value.id);
-    await selectNode();
+    if (isDev.value) await deleteDevDocNode(props.project.id, node.id);
+    else await deleteDocNode(props.project.id, node.id);
+    if (selectedID.value === node.id) await selectNode();
     await loadTree();
     message.success("节点已删除");
   } catch (error) {
@@ -199,11 +203,48 @@ async function removeNode() {
   }
 }
 
+async function confirmRemoveNode(node: ProjectDocNode) {
+  const action = await messageConfirm.danger(`删除「${node.name}」？`, {
+    cancelButtonText: "取消",
+  }).onClosed;
+  if (action !== "confirm") return;
+  await removeNode(node);
+}
+
 function openMove(node: ProjectDocNode) {
   movingNode.value = node;
   moveForm.parent_id = node.parent_id ?? undefined;
   moveForm.sort_order = node.sort_order;
   moveDialogOpen.value = true;
+}
+
+function openMenu(e: MouseEvent, items: ContextMenuItem[]) {
+  menuPos.value = { x: e.clientX, y: e.clientY };
+  menuItems.value = items;
+  menuOpen.value = true;
+}
+
+function onNodeContextMenu(e: MouseEvent, node: TreeNode) {
+  e.preventDefault();
+  const data = node.data as ProjectDocNode;
+  const items: ContextMenuItem[] = [];
+  if (data.kind === "dir" && canCreate.value) {
+    items.push({ label: "新建文档", icon: FileAdd, callback: () => openCreateDoc(data.id) });
+  }
+  if (canUpdate.value) {
+    items.push({ label: "移动", icon: Move, callback: () => openMove(data) });
+  }
+  if (canDelete.value) {
+    items.push({
+      label: "删除",
+      icon: Delete,
+      callback: () => {
+        void confirmRemoveNode(data);
+      },
+    });
+  }
+  if (!items.length) return;
+  openMenu(e, items);
 }
 
 async function move() {
@@ -272,66 +313,60 @@ watch(canUpdate, (ok) => {
 </script>
 
 <template>
-  <section class="docs">
-    <aside class="tree-panel">
+  <section class="docs" :class="{ 'is-tree-collapsed': treeCollapsed }">
+    <aside class="tree-panel" :class="{ 'is-collapsed': treeCollapsed }">
       <div class="tree-head">
-        <strong>文档树</strong>
-        <u-action v-if="canCreate" @run="openCreate('dir')">新建目录</u-action>
+        <template v-if="!treeCollapsed">
+          <strong>文档树</strong>
+          <div class="tree-head__actions">
+            <u-action v-if="canCreate" @run="openCreate('dir')">新建目录</u-action>
+            <u-button plain size="small" aria-label="收窄文档树" @click="treeCollapsed = true">
+              <u-icon :size="14"><ArrowLeft /></u-icon>
+            </u-button>
+          </div>
+        </template>
+        <u-button v-else plain size="small" aria-label="展开文档树" @click="treeCollapsed = false">
+          <u-icon :size="14"><ArrowRight /></u-icon>
+        </u-button>
       </div>
-      <u-tree
-        v-model:selected="selectedID"
-        class="doc-tree"
-        :data="tree"
-        label-key="name"
-        value-key="id"
-        children-key="children"
-        selectable
-        expand-all
-        @update:selected="selectNode"
-      >
-        <template #default="{ data }">
-          <div class="tree-node" :class="data.kind === 'dir' ? 'is-dir' : 'is-doc'">
-            <span class="tree-node__main">
+      <template v-if="!treeCollapsed">
+        <u-tree
+          v-model:selected="selectedID"
+          class="doc-tree"
+          :data="tree"
+          label-key="name"
+          value-key="id"
+          children-key="children"
+          selectable
+          expand-all
+          @update:selected="selectNode"
+          @node-contextmenu="onNodeContextMenu"
+        >
+          <template #default="{ data }">
+            <div class="tree-node" :class="data.kind === 'dir' ? 'is-dir' : 'is-doc'">
               <u-icon class="tree-node__icon" :size="14">
                 <Folder v-if="data.kind === 'dir'" />
                 <Books v-else />
               </u-icon>
               <span class="tree-node__name">{{ data.name }}</span>
-            </span>
-            <span
-              v-if="canUpdate || (canCreate && data.kind === 'dir')"
-              class="tree-node__actions"
-              @click.stop
-            >
-              <u-action v-if="canUpdate" @run="openMove(data as ProjectDocNode)">移动</u-action>
-              <u-action v-if="canCreate && data.kind === 'dir'" @run="openCreateDoc(data.id)">
-                新建文档
-              </u-action>
-            </span>
-          </div>
-        </template>
-      </u-tree>
-      <div v-if="canCreate" class="uploads">
-        <u-file-picker accept=".md,text/markdown" @pick="uploadMarkdownFile" />
-        <u-file-picker accept=".zip,application/zip" @pick="importZIPFile" />
-      </div>
+            </div>
+          </template>
+        </u-tree>
+        <div v-if="canCreate" class="uploads">
+          <u-file-picker accept=".md,text/markdown" @pick="uploadMarkdownFile" />
+          <u-file-picker accept=".zip,application/zip" @pick="importZIPFile" />
+        </div>
+      </template>
     </aside>
 
     <section class="editor-panel">
       <u-empty v-if="!selected" text="从左侧选择文档节点" />
       <template v-else>
         <div class="editor-head">
-          <div>
-            <h3>{{ selected.name }}</h3>
-            <p>
-              <u-tag size="small" :type="selected.kind === 'dir' ? undefined : 'primary'">{{
-                selected.kind === "dir" ? "目录" : "文档"
-              }}</u-tag>
-            </p>
-          </div>
-          <u-action-group v-if="canDelete" :max="4">
-            <u-action need-confirm type="danger" @run="removeNode">删除</u-action>
-          </u-action-group>
+          <h3>{{ selected.name }}</h3>
+          <u-tag size="small" :type="selected.kind === 'dir' ? undefined : 'primary'">{{
+            selected.kind === "dir" ? "目录" : "文档"
+          }}</u-tag>
         </div>
 
         <template v-if="selected.kind === 'doc'">
@@ -343,9 +378,7 @@ watch(canUpdate, (ok) => {
             class="doc-tabs"
           >
             <template #preview>
-              <u-scroll class="doc-pane">
-                <MarkdownViewer :content="content" />
-              </u-scroll>
+              <MarkdownScrollPane class="doc-pane" :content="content" />
             </template>
             <template v-if="canUpdate" #edit>
               <u-code-editor v-model="content" :langs="['markdown']" class="doc-pane doc-editor" />
@@ -358,6 +391,13 @@ watch(canUpdate, (ok) => {
         <u-empty v-else text="目录不包含 Markdown 内容" />
       </template>
     </section>
+
+    <u-contextmenu
+      v-if="menuOpen"
+      :mouse-position="menuPos"
+      :menus="menuItems"
+      @destroy="menuOpen = false"
+    />
 
     <FormDialog
       v-model="nodeDialogOpen"
@@ -404,6 +444,10 @@ watch(canUpdate, (ok) => {
   min-height: 0;
   grid-template-columns: 360px minmax(0, 1fr);
   gap: 16px;
+
+  &.is-tree-collapsed {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
 }
 
 .tree-panel,
@@ -420,6 +464,11 @@ watch(canUpdate, (ok) => {
   flex-direction: column;
   gap: 12px;
   overflow: hidden;
+
+  &.is-collapsed {
+    padding: 8px;
+    align-items: center;
+  }
 }
 
 .doc-tree {
@@ -430,16 +479,8 @@ watch(canUpdate, (ok) => {
 .tree-node {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-}
-
-.tree-node__main {
-  display: flex;
-  align-items: center;
   gap: 6px;
+  width: 100%;
   min-width: 0;
 }
 
@@ -461,34 +502,28 @@ watch(canUpdate, (ok) => {
   white-space: nowrap;
 }
 
-.tree-node__actions {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.tree-node:hover .tree-node__actions,
-.tree-node:focus-within .tree-node__actions {
-  opacity: 1;
-}
-
 .tree-head,
-.editor-head,
-.editor-head p,
 .uploads,
 .doc-footer {
   display: flex;
   align-items: center;
 }
 
-.tree-head,
-.editor-head {
+.tree-head {
   flex-shrink: 0;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  width: 100%;
+}
+
+.tree-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tree-panel.is-collapsed .tree-head {
+  justify-content: center;
 }
 
 .uploads {
@@ -508,32 +543,41 @@ watch(canUpdate, (ok) => {
   flex-shrink: 0;
 }
 
-.editor-head h3,
-.editor-head p {
-  margin: 0;
-}
-
-.editor-head p {
+.editor-head {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  margin-top: 5px;
-  color: var(--u-text-color-assist, #7c8494);
-  font-size: 13px;
+  min-width: 0;
+
+  h3 {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .doc-tabs {
   flex: 1;
   height: 100%;
   min-height: 0;
+
+  /* UTabs 插槽会被其内部 u-scroll 包裹，需让内容占满容器高度（同 handbook） */
+  :deep(.u-scroll__content) {
+    height: 100%;
+  }
 }
 
 .doc-pane {
-  flex: 1 1 auto;
+  height: 100%;
   width: 100%;
   min-height: 0;
 }
 
 .doc-editor {
   height: 100%;
+  min-height: 0;
+  max-height: none;
 }
 
 .doc-footer {

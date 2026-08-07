@@ -5,8 +5,8 @@ import type { Component } from 'vue'
  * 右键菜单项
  */
 export interface ContextmenuItem {
-  /** 菜单名称 */
-  label: string
+  /** 菜单名称（divider 时可空） */
+  label?: string
   /** 菜单描述 */
   description?: string
   /** 菜单图标 */
@@ -17,6 +17,12 @@ export interface ContextmenuItem {
   callback?: () => any
   /** 是否禁用 */
   disabled?: boolean | (() => boolean)
+  /** 渲染为分割线（忽略其余字段） */
+  divider?: boolean
+  /** 自定义内容组件（替代 label 文本渲染） */
+  render?: Component
+  /** 点击本项不触发关闭流程（供内嵌交互组件使用） */
+  keepOpen?: boolean
 }
 
 /** 鼠标右键菜单组件属性 */
@@ -24,8 +30,8 @@ export interface ContextmenuProps extends ComponentProps {
   /** 鼠标位置 */
   mousePosition: { x: number; y: number }
   /**
-   * 菜单宽度
-   * @default 200
+   * 菜单宽度。传数字为固定 px；传 `'max-content'` 时由内容撑开（配合根样式 min-width: 120px）。
+   * @default 150
    */
   width?: number | string
   /** 菜单项 */

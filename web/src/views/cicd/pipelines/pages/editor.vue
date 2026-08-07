@@ -4,7 +4,7 @@ defineOptions({ name: "CicdPipelineEditor" });
 import type { Edge, Node } from "@vue-flow/core";
 import { message } from "@veltra/desktop";
 import { computed, onMounted, provide, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 
 import { listAgents } from "@/api/ai";
 import {
@@ -30,7 +30,6 @@ import {
 } from "../graph";
 
 const route = useRoute();
-const router = useRouter();
 const tabsStore = useTabsStore();
 const { hasPermission } = usePermission();
 
@@ -146,7 +145,6 @@ async function run() {
     }
     const r = await enqueuePipelineRun(pipelineId, { trigger_type: "manual" });
     message.success(`已触发 #${r.run_number}`);
-    void router.push({ name: "cicd-pipeline-run-detail", params: { id: String(r.id) } });
   } catch (e) {
     message.error(e instanceof Error ? e.message : "触发失败");
   } finally {

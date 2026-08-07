@@ -2,7 +2,6 @@
 defineOptions({ name: "AiAgents" });
 
 import { computed, onMounted, reactive, ref, useTemplateRef } from "vue";
-import { useRouter } from "vue-router";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
 
@@ -82,7 +81,6 @@ type EnvVarDraft = {
 
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
-const router = useRouter();
 const table = useTemplateRef("table");
 const dialogOpen = ref(false);
 const runDialogOpen = ref(false);
@@ -456,7 +454,6 @@ async function confirmRun() {
     const agentRun = await manualRunAgent(agent.id, { user_prompt: runForm.user_prompt });
     runDialogOpen.value = false;
     message.success(`已创建运行 #${agentRun.id}`);
-    await router.push(`/ai/runs/${agentRun.id}`);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "触发失败");
   }

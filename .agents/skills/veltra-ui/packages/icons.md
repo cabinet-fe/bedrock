@@ -10,7 +10,7 @@ Vue 图标，每一个都是一个 SFC 组件。
 
 ```ts
 import { Search, Close, Plus, Edit } from '@veltra/icons/normal'
-import { Excel, Pdf } from '@veltra/icons/colorful'
+import { Excel, Pdf, FontColor } from '@veltra/icons/colorful'
 // 或
 import { Search, Excel } from '@veltra/icons'
 ```
@@ -40,7 +40,7 @@ import { Search, Excel } from '@veltra/icons'
 
 各种方向指示、箭头、排序、拉伸及位置对齐图标。包括：
 
-`ArrowUp`、`ArrowDown`、`ArrowLeft`、`ArrowRight`、`ArrowUpdown`、`CaretTop`、`CaretBottom`、`CaretLeft`、`CaretRight`、`DArrowLeft`、`DArrowRight`、`Left`、`Right`、`Bottom`、`Backtop`、`PageFirst`、`PageLast`、`Sort`、`SortLeft`、`SortRight`、`Rollback`、`Rollfront`、`Move`、`MoveHorizontal`、`Rotation`、`RotateLeft`、`RotateRight`、`AlignTop`、`AlignBottom`、`AlignCenter`、`VerticalAlignCenter`、`VerticalAlignLeft`、`VerticalAlignRight`、`InsertToNext`、`InsertToPrev`、`Maximum`、`House`、`HouseFilled`
+`ArrowUp`、`ArrowDown`、`ArrowLeft`、`ArrowRight`、`ArrowUpdown`、`CaretTop`、`CaretBottom`、`CaretLeft`、`CaretRight`、`DArrowLeft`、`DArrowRight`、`Left`、`Right`、`Up`、`Down`、`Backtop`、`PageFirst`、`PageLast`、`Sort`、`SortLeft`、`SortRight`、`SortUp`、`SortDown`、`Rollback`、`Rollfront`、`Move`、`MoveHorizontal`、`Rotation`、`RotateLeft`、`RotateRight`、`AlignTop`、`AlignBottom`、`AlignCenter`、`VerticalAlignCenter`、`VerticalAlignLeft`、`VerticalAlignRight`、`InsertToNext`、`InsertToPrev`、`Maximum`、`House`、`HouseFilled`
 
 ### 常规操作与状态
 
@@ -70,4 +70,4 @@ import { Search, Excel } from '@veltra/icons'
 
 多色 SVG 保留源文件配色，不受 `u-icon` 的 `color` 或外部 CSS `color` 影响。从 `@veltra/icons/colorful` 导入。包括：
 
-`Archive`、`Excel`、`Fold`、`Image`、`MiddleGround`、`Pdf`、`PowerPoint`、`Title`、`Txt`、`UnknownFile`、`Video`、`Word`
+`Archive`、`Excel`、`Fold`、`FontColor`、`Image`、`Logo`、`MiddleGround`、`Pdf`、`PowerPoint`、`Title`、`Txt`、`UnknownFile`、`Video`、`Word`

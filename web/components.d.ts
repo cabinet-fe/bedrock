@@ -22,6 +22,7 @@ declare module 'vue' {
     DashboardSystemStatusCard: typeof import('./src/components/dashboard-system-status-card/dashboard-system-status-card.vue')['default']
     DashboardWidgetHost: typeof import('./src/components/dashboard-grid/dashboard-widget-host.vue')['default']
     FormDialog: typeof import('./src/components/form-dialog/form-dialog.vue')['default']
+    MarkdownScrollPane: typeof import('./src/components/markdown-viewer/markdown-scroll-pane.vue')['default']
     MarkdownViewer: typeof import('./src/components/markdown-viewer/markdown-viewer.vue')['default']
     NotificationBell: typeof import('./src/components/notification-bell/notification-bell.vue')['default']
     ProTable: typeof import('./src/components/pro-table/pro-table.vue')['default']
