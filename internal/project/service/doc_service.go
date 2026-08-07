@@ -38,7 +38,7 @@ func (s *ProjectService) ListDocTree(actor AccessContext, projectID uint) ([]pro
 	if _, err := s.acl.Require(projectID, actor, "project_docs:view", capDocView); err != nil {
 		return nil, err
 	}
-	nodes, err := s.repo.ListDocNodes(projectID)
+	nodes, err := s.repo.ListDocTreeNodes(projectID)
 	if err != nil {
 		return nil, err
 	}

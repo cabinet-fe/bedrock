@@ -85,7 +85,6 @@ type AiAgent struct {
 	TimeoutSec      int           `json:"timeout_sec" gorm:"not null;default:600"`
 	WorkspaceStatus string        `json:"workspace_status" gorm:"size:20;not null;default:ready"`
 	WorkspaceError  string        `json:"workspace_error" gorm:"type:text"`
-	ProjectID       *uint         `json:"project_id" gorm:"index"`
 	CreatedBy       uint          `json:"created_by" gorm:"index"`
 	CreatedAt       time.Time     `json:"created_at"`
 	UpdatedAt       time.Time     `json:"updated_at"`

@@ -80,11 +80,8 @@ func (r *AIRepository) FindAgent(id uint) (*model.AiAgent, error) {
 	return &agent, nil
 }
 
-func (r *AIRepository) ListAgents(page, pageSize int, projectID *uint) ([]model.AiAgent, int64, error) {
+func (r *AIRepository) ListAgents(page, pageSize int) ([]model.AiAgent, int64, error) {
 	q := r.db.Model(&model.AiAgent{})
-	if projectID != nil && *projectID > 0 {
-		q = q.Where("project_id = ?", *projectID)
-	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err

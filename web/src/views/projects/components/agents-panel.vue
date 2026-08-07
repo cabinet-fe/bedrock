@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, useTemplateRef } from "vue";
+import { onMounted, ref, useTemplateRef } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@veltra/desktop";
 
@@ -12,13 +12,12 @@ import { JOB_STATUS_TAG, tagType } from "@/lib/tag";
 
 import RunHistoryDialog from "@/views/ai/agents/components/run-history-dialog.vue";
 
-const props = defineProps<{ project: ProductProject }>();
+defineProps<{ project: ProductProject }>();
 
 const router = useRouter();
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
 const tableRef = useTemplateRef("table");
-const query = reactive({ project_id: props.project.id });
 const recentStatus = ref(new Map<number, string>());
 const historyOpen = ref(false);
 const historyAgent = ref<AiAgent | null>(null);
@@ -45,16 +44,13 @@ function runDisabledTip(row: AiAgent) {
 }
 
 function goCreate() {
-  void router.push({
-    path: "/ai/agents",
-    query: { project_id: String(props.project.id), create: "1" },
-  });
+  void router.push({ path: "/ai/agents", query: { create: "1" } });
 }
 
 function goEdit(row: AiAgent) {
   void router.push({
     path: "/ai/agents",
-    query: { project_id: String(props.project.id), id: String(row.id) },
+    query: { id: String(row.id) },
   });
 }
 
@@ -80,11 +76,7 @@ const trigger = bind(async (row: AiAgent) => {
 
 async function loadRecentStatus() {
   try {
-    const res = await listRuns({
-      project_id: props.project.id,
-      page: 1,
-      page_size: 50,
-    });
+    const res = await listRuns({ page: 1, page_size: 50 });
     const map = new Map<number, string>();
     for (const run of res.items ?? []) {
       if (!map.has(run.agent_id)) map.set(run.agent_id, run.status);
@@ -102,14 +94,7 @@ onMounted(() => {
 
 <template>
   <div class="resource-panel">
-    <ProTable
-      ref="table"
-      url="/ai/agents"
-      :query="query"
-      :columns="columns"
-      pagination
-      height="100%"
-    >
+    <ProTable ref="table" url="/ai/agents" :columns="columns" pagination height="100%">
       <template #toolbar>
         <u-button v-if="hasPermission('ai_agents:create')" type="primary" @click.prevent="goCreate">
           新建

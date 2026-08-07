@@ -345,6 +345,20 @@ func TestUpsertAndPullDocByPath(t *testing.T) {
 	if len(tree) != 1 || tree[0].Name != "ic-common-resource" || len(tree[0].Children) != 1 {
 		t.Fatalf("dirs must be auto-created: %#v", tree)
 	}
+	controllers := tree[0].Children[0]
+	if controllers.Name != "controllers" || len(controllers.Children) != 1 {
+		t.Fatalf("controllers dir: %#v", controllers)
+	}
+	if controllers.Children[0].Content != "" {
+		t.Fatalf("tree must omit content, got %q", controllers.Children[0].Content)
+	}
+	got, err := svc.GetDocNode(owner, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Content != "# v1" {
+		t.Fatalf("detail must include content: %#v", got)
+	}
 
 	updated, isNew, err := svc.UpsertDocByPath(owner, project.ID, "ic-common-resource/controllers", "UserController.md", "# v2")
 	if err != nil || isNew || updated.ID != created.ID {

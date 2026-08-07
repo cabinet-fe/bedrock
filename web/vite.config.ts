@@ -3,7 +3,7 @@ import { fileURLToPath, URL } from "node:url";
 import { defineConfig, lazyPlugins } from "vite-plus";
 import vue from "@vitejs/plugin-vue";
 import Components from "unplugin-vue-components/vite";
-import { VeltraDesktopUIResolver } from "@veltra/vite";
+import { VeltraUIResolver } from "@veltra/vite";
 import { NodePackageImporter } from "sass-embedded";
 
 export default defineConfig({
@@ -23,7 +23,7 @@ export default defineConfig({
   plugins: lazyPlugins(() => [
     vue(),
     Components({
-      resolvers: [VeltraDesktopUIResolver()],
+      resolvers: [VeltraUIResolver()],
     }),
   ]),
   resolve: {

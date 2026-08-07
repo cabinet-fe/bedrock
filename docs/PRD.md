@@ -23,7 +23,7 @@
 | 运维     | 宿主机级能力，仅内置超级管理员可用                                      |
 | 资源管理 | 共享资源域：代码仓库、服务器、凭证                                              |
 | CI/CD    | 独立交付域：任务、执行、部署（引用资源管理中的仓库/服务器/凭证）                |
-| 项目管理 | 研发资源聚合根：产品项目、成员、需求、接口文档；构建任务 / 脚本任务 / 流水线 / 智能体可**可选归属**项目 |
+| 项目管理 | 研发资源聚合根：产品项目、成员、需求、接口文档；构建任务 / 脚本任务 / 流水线可**可选归属**项目；智能体跨项目共用 |
 | AI       | CLI 运行时、智能体编排、Skills 资产库                                   |
 | 系统管理 | 用户、角色、权限资源、字典、操作日志                                    |
 
@@ -387,7 +387,7 @@ database:
 
 ## 8. 项目管理
 
-> 项目为研发资源**聚合根**：成员、需求、文档在此协作；构建任务 / 脚本任务 / 流水线 / 智能体可通过可空 `project_id` **可选归属**。未归属资源仍在各域全局列表管理。写权限：项目内容写走成员 ACL；CI/CD / AI 写/执行仍走各域全局 RBAC（不因归属项目而放宽）。Skills 不绑定项目。
+> 项目为研发资源**聚合根**：成员、需求、文档在此协作；构建任务 / 脚本任务 / 流水线可通过可空 `project_id` **可选归属**。智能体跨项目共用、不绑定项目。未归属资源仍在各域全局列表管理。写权限：项目内容写走成员 ACL；CI/CD / AI 写/执行仍走各域全局 RBAC（不因归属项目而放宽）。Skills 不绑定项目。
 
 ### 8.1 产品项目
 
@@ -714,7 +714,7 @@ flowchart TB
 
 **关键规则汇总：**
 
-1. 项目管理 ↔ CI/CD / AI：BuildJob / ScriptJob / BuildPipeline / AiAgent 可选 `project_id`（可空）；Skills 不绑定；不强制流水线节点与流水线同项目。
+1. 项目管理 ↔ CI/CD / AI：BuildJob / ScriptJob / BuildPipeline 可选 `project_id`（可空）；AiAgent / Skills 不绑定；不强制流水线节点与流水线同项目。
 2. 构建事件 → 智能体：异步解耦；智能体失败不修改 Build Run 成功状态。
 3. Skill → 智能体：仅显式绑定注入。
 4. 仪表盘卡片 → 权限资源：无权限即不可见。
@@ -754,7 +754,7 @@ flowchart TB
 - Repository 1—N BuildJob；BuildJob 1—N BuildRun；BuildRun 1—N BuildDeployRun。
 - BuildJob N—M DeployTarget（或内嵌有序列表）→ Server。
 - ProductProject 1—N Requirement；1—N ApiDocNode（树）。
-- ProductProject 0—N BuildJob / ScriptJob / BuildPipeline / AiAgent（可空 `project_id` 归属）。
+- ProductProject 0—N BuildJob / ScriptJob / BuildPipeline（可空 `project_id` 归属）；AiAgent 全局共用。
 - AiAgent N—M SkillPackage；AiAgent N—0..1 Repository（默认上下文）。
 - AgentTrigger 属于 AiAgent；可引用 BuildJob 事件过滤器。
 

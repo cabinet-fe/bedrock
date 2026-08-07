@@ -274,13 +274,11 @@ onMounted(async () => {
         <u-input label="名称" field="name" :rules="{ required: '必填' }" span="full" />
         <u-textarea label="描述" field="description" :rows="2" span="full" />
         <ProjectSelect label="所属项目" field="project_id" span="full" />
-        <div class="switch-grid">
-          <u-switch label="启用" field="enabled" />
-          <u-switch label="公开只读" field="is_public" />
-          <u-switch label="手动触发" field="trigger_manual" />
-          <u-switch label="Webhook" field="trigger_webhook" />
-          <u-switch label="Cron" field="trigger_cron" />
-        </div>
+        <u-switch label="启用" field="enabled" />
+        <u-switch label="公开只读" field="is_public" />
+        <u-switch label="手动触发" field="trigger_manual" />
+        <u-switch label="Webhook" field="trigger_webhook" />
+        <u-switch label="Cron" field="trigger_cron" />
         <template v-if="form.trigger_cron">
           <u-input label="表达式" field="cron_expression" placeholder="0 2 * * *" />
           <u-input label="时区" field="cron_timezone" placeholder="UTC" />
@@ -299,11 +297,5 @@ onMounted(async () => {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 4px;
-}
-
-.switch-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  column-gap: 24px;
 }
 </style>

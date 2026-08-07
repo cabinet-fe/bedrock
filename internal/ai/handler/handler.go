@@ -70,12 +70,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 func (h *Handler) ListAgents(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	projectID, err := parseOptionalUintQuery(c, "project_id")
-	if err != nil {
-		pkg.Error(c, http.StatusBadRequest, "无效 project_id")
-		return
-	}
-	items, total, err := h.agents.ListAgents(page, pageSize, projectID)
+	items, total, err := h.agents.ListAgents(page, pageSize)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return

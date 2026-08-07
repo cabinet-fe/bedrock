@@ -374,6 +374,13 @@ func (r *ProjectRepository) ListDocNodes(projectID uint) ([]model.ApiDocNode, er
 	return nodes, err
 }
 
+// ListDocTreeNodes 仅供文档树：不加载 content，避免首屏拉全文。
+func (r *ProjectRepository) ListDocTreeNodes(projectID uint) ([]model.ApiDocNode, error) {
+	var nodes []model.ApiDocNode
+	err := r.db.Omit("Content").Where("project_id = ?", projectID).Order("sort_order ASC, id ASC").Find(&nodes).Error
+	return nodes, err
+}
+
 func (r *ProjectRepository) UpdateDocNode(node *model.ApiDocNode) error {
 	return r.db.Save(node).Error
 }
@@ -400,6 +407,13 @@ func (r *ProjectRepository) FindDevDocNode(id uint) (*model.DevDocNode, error) {
 func (r *ProjectRepository) ListDevDocNodes(projectID uint) ([]model.DevDocNode, error) {
 	var nodes []model.DevDocNode
 	err := r.db.Where("project_id = ?", projectID).Order("sort_order ASC, id ASC").Find(&nodes).Error
+	return nodes, err
+}
+
+// ListDevDocTreeNodes 仅供开发文档树：不加载 content，避免首屏拉全文。
+func (r *ProjectRepository) ListDevDocTreeNodes(projectID uint) ([]model.DevDocNode, error) {
+	var nodes []model.DevDocNode
+	err := r.db.Omit("Content").Where("project_id = ?", projectID).Order("sort_order ASC, id ASC").Find(&nodes).Error
 	return nodes, err
 }
 

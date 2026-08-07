@@ -214,7 +214,6 @@ func main() {
 	notifHandler := systemhandler.NewNotificationHandler(notifSvc)
 
 	agentSvc := aiservice.NewAgentService(aiRepo, cliSvc, skillSvc, hub, logger, agentWorkDir, agentArtifactDir, cfg.Build.LogDir, auditSvc)
-	agentSvc.SetProjectRepo(projectRepo)
 	agentSvc.SetDocDraftWriter(projectSvc)
 	agentSvc.SetRepoCheckoutDeps(repoRepo, resourceservice.NewCredentialSecretResolver(credSvc))
 	agentSvc.SetTerminalNotifier(notifSvc)

@@ -195,7 +195,8 @@
 
 权限：`project_docs:view`
 路径参数：id*: integer
-响应 200：文档树；Markdown 渲染前须消毒
+响应 200：文档树（节点**不含** `content`；正文用 `GET .../docs/{nodeID}` / pull / export）
+说明：Markdown 渲染前须消毒
 
 ### POST /projects/{id}/docs — 创建目录或文档节点
 
@@ -261,7 +262,7 @@
 
 权限：`project_docs:view`
 路径参数：id*: integer, nodeID*: integer
-响应 200
+响应 200：ApiDocNode（含 `content`）
 错误：404
 
 ### PUT /projects/{id}/docs/{nodeID} — 重命名节点或写入文档内容
@@ -288,7 +289,8 @@
 
 权限：`project_dev_docs:view`
 路径参数：id*: integer
-响应 200：文档树；Markdown 渲染前须消毒
+响应 200：文档树（节点**不含** `content`；正文用 `GET .../dev-docs/{nodeID}` / pull / export）
+说明：Markdown 渲染前须消毒
 
 ### POST /projects/{id}/dev-docs — 创建目录或开发文档节点
 
@@ -345,7 +347,7 @@
 
 权限：`project_dev_docs:view`
 路径参数：id*: integer, nodeID*: integer
-响应 200
+响应 200：DevDocNode（含 `content`）
 错误：404
 
 ### PUT /projects/{id}/dev-docs/{nodeID} — 重命名节点或写入开发文档内容

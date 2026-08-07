@@ -133,9 +133,7 @@ async function loadStats() {
   }
   if (hasPermission("ai_agents:view")) {
     tasks.push(
-      settleTotal("agents", "智能体", "/ai/agents", () =>
-        listAgents({ project_id: props.project.id, page: 1, page_size: 1 }),
-      ),
+      settleTotal("agents", "智能体", "/ai/agents", () => listAgents({ page: 1, page_size: 1 })),
     );
   }
   if (hasPermission("project_requirements:view")) {
@@ -245,11 +243,12 @@ async function loadTimeline() {
   if (hasPermission("ai_runs:view")) {
     blocks.push(
       settleBlock(async () => {
+        // AgentRun.project_id 仅 docs_generate 等显式场景写入；智能体本身不归属项目
         const runs = await listRuns({ project_id: pid, page: 1, page_size: 5 });
         const names = new Map<number, string>();
         if (hasPermission("ai_agents:view")) {
           try {
-            const agents = await listAgents({ project_id: pid, page: 1, page_size: 100 });
+            const agents = await listAgents({ page: 1, page_size: 100 });
             for (const a of agents.items ?? []) names.set(a.id, a.name);
           } catch {
             /* 名称降级为 id */
@@ -298,6 +297,11 @@ function openItem(item: TimelineItem) {
 
 function openStat(card: StatCard) {
   if (!card.href) return;
+  // 智能体跨项目共用，不带 project_id 过滤
+  if (card.key === "agents") {
+    void router.push({ path: card.href });
+    return;
+  }
   void router.push({ path: card.href, query: { project_id: String(props.project.id) } });
 }
 </script>

@@ -16,20 +16,20 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 - Agent 可配置任意键值环境变量：AES-GCM 加密存于 `env_vars_cipher`；API 仅回显 `{key, has_value}`；Sync/Run 时解密写入 `{agentRoot}/.env`、注入 `cmd.Env`，并设置 `BEDROCK_AGENT_ENV_FILE`（工作区 `.env` 同 UID 可见）。
 - AgentRun **成功**时将产出目录快照归档为 `{artifact_dir}/agent-{id}/run-{runID}.zip`，并写入 `artifact_path`（`artifact_kind=archive`）；空目录不归档；归档失败只记日志、不阻断成功态。可通过 `GET /ai/runs/:id/artifact` 下载。此能力与 CI/CD BuildRun 制品相互独立。
 - 构建事件触发（`AgentTrigger.build_event` / `BuildJob.agent_ids`）与工作区绑定解耦，语义不变。
-- **项目归属（`project_id`）**：AiAgent 可选归属产品项目（可空；Skills **不**绑定项目）。创建/更新传正整数绑定；传 `0` 解除绑定（存为 null）；更新时省略字段则不改。`GET /ai/agents`、`GET /ai/runs` 可带 `project_id` 过滤。AgentRun 创建时若未显式指定 `project_id`，则从所属 Agent 回填；`docs_generate` 等显式传入优先。
+- **智能体不归属项目**：同一 Agent 可被多个项目复用（Skills 同理）。`GET /ai/runs` 可带 `project_id` 过滤（仅匹配 Run 上显式写入的值，如 `docs_generate`）。
 
 ### GET /ai/agents — 列出 Agents
 
 权限：`ai_agents:view`
-查询参数：page: integer, page_size: integer, project_id: integer
+查询参数：page: integer, page_size: integer
 响应 200
 
 ### POST /ai/agents — 创建 Agent
 
 权限：`ai_agents:create`
-请求：{ name, description, enabled, cli_key, system_prompt, skill_ids, repo_bindings, env_vars, output_dir, stream_output, timeout_sec, project_id }
+请求：{ name, description, enabled, cli_key, system_prompt, skill_ids, repo_bindings, env_vars, output_dir, stream_output, timeout_sec }
 响应 201
-说明：持久化元数据与 bindings 后立即返回，`workspace_status=pending`；后台异步初始化持久根工作区 `{workspace}/agents/agent-{id}/`（技能解压到 `.agents/skills`，每个 `repo_bindings` 项 checkout 到 `repo-{repository_id}-{sanitizedBranch}/`，环境变量写入 `.env`）。成功 → `ready`，失败 → `failed` 并写入 `workspace_error`（不回滚删除 Agent）。`output_dir` 为相对产出目录名，默认 `output`。同一 Agent 内 `(repository_id, branch)` 唯一；`branch` 缺省为 `main`。保存时不校验远程分支是否存在。`env_vars` 为全量键列表：`[{key, value?}]`，带 `value` 则写入；响应不回显明文。`project_id` 见文首说明。
+说明：持久化元数据与 bindings 后立即返回，`workspace_status=pending`；后台异步初始化持久根工作区 `{workspace}/agents/agent-{id}/`（技能解压到 `.agents/skills`，每个 `repo_bindings` 项 checkout 到 `repo-{repository_id}-{sanitizedBranch}/`，环境变量写入 `.env`）。成功 → `ready`，失败 → `failed` 并写入 `workspace_error`（不回滚删除 Agent）。`output_dir` 为相对产出目录名，默认 `output`。同一 Agent 内 `(repository_id, branch)` 唯一；`branch` 缺省为 `main`。保存时不校验远程分支是否存在。`env_vars` 为全量键列表：`[{key, value?}]`，带 `value` 则写入；响应不回显明文。
 
 ### GET /ai/agents/{id} — 获取 Agent
 
@@ -42,9 +42,9 @@ AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁�
 
 权限：`ai_agents:update`
 路径参数：id*: integer
-请求：{ name, description, enabled, cli_key, system_prompt, skill_ids, repo_bindings, env_vars, output_dir, stream_output, timeout_sec, project_id }
+请求：{ name, description, enabled, cli_key, system_prompt, skill_ids, repo_bindings, env_vars, output_dir, stream_output, timeout_sec }
 响应 200
-说明：更新元数据后立即返回并将 `workspace_status` 置为 `pending`，后台重新异步初始化工作区（含仓库 checkout 与 `.env`），不清空其中已有非绑定文件。`env_vars` 若提交则为全量键列表：带 `value` 则更新/新建；已有键未带 `value` 则保留旧密文；请求中消失的键删除；省略该字段则不改环境变量。`project_id` 见文首说明。
+说明：更新元数据后立即返回并将 `workspace_status` 置为 `pending`，后台重新异步初始化工作区（含仓库 checkout 与 `.env`），不清空其中已有非绑定文件。`env_vars` 若提交则为全量键列表：带 `value` 则更新/新建；已有键未带 `value` 则保留旧密文；请求中消失的键删除；省略该字段则不改环境变量。
 
 ### DELETE /ai/agents/{id} — 删除 Agent
 
@@ -290,7 +290,6 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 | `timeout_sec` | `integer` |  |  |
 | `workspace_status` | `'pending' \| 'ready' \| 'failed'` |  | 异步工作区初始化状态；存量默认 `ready` |
 | `workspace_error` | `string` |  | `failed` 时的失败原因；成功时为空 |
-| `project_id` | `integer` |  | 可空；归属产品项目 |
 | `created_by` | `integer` |  |  |
 | `created_at` | `string` |  |  |
 | `updated_at` | `string` |  |  |
@@ -310,7 +309,6 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 | `output_dir` | `string` |  | 相对产出目录名；默认 `output`；路径为 `{agentRoot}/{output_dir}`，跨 Run 固定复用 |
 | `stream_output` | `boolean` |  | 启用后使用 CLI 默认可读流式输出；关闭时部分 CLI 仅输出最终摘要（如 Reasonix `-p`），默认 `false` |
 | `timeout_sec` | `integer` |  |  |
-| `project_id` | `integer` |  | 可空；创建时 `0`/省略表示不绑定；更新时传 `0` 解除绑定，省略不改 |
 
 ### AgentRun
 
@@ -324,7 +322,7 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 | `artifact_path` | `string` |  | 成功快照归档绝对路径；空目录或未归档时为空 |
 | `artifact_kind` | `string` |  | 归档时为 `archive` |
 | `build_run_id` | `integer` |  |  |
-| `project_id` | `integer` |  | 可空；未显式指定时从 Agent 回填；`docs_generate` 显式传入优先 |
+| `project_id` | `integer` |  | 可空；仅显式传入时写入（如 `docs_generate`） |
 | `doc_node_id` | `integer` |  |  |
 | `user_prompt` | `string` |  | 触发时附加的用户提示词；可空 |
 | `error_message` | `string` |  |  |

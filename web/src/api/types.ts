@@ -733,7 +733,6 @@ export interface AiAgent {
   timeout_sec: number;
   workspace_status: "pending" | "ready" | "failed";
   workspace_error?: string;
-  project_id?: number | null;
   created_by: number;
   created_at: string;
   updated_at: string;

@@ -20,7 +20,7 @@
 | D1 | 交付切片 | 分阶段完成全量 2.0 GA：P0→P1→P2→P3→P4→P5（见 ROADMAP） |
 | D2 | 用户角色 | 多角色；权限取**并集**；**不支持**显式 deny |
 | D3 | 1.x 升级 | **仅全新安装**；不提供 1.x 数据迁移 |
-| D4 | 对象 ACL 与项目归属 | **仅产品项目**使用成员 ACL（写侧）；项目域读侧：持有对应 `:view` 即可读全部项目内容。BuildJob / ScriptJob / BuildPipeline / AiAgent 可选 `project_id`（可空）。CI/CD 全局列表另受角色 `data_scope`；运维/凭证/Skills 等仍为全局 RBAC |
+| D4 | 对象 ACL 与项目归属 | **仅产品项目**使用成员 ACL（写侧）；项目域读侧：持有对应 `:view` 即可读全部项目内容。BuildJob / ScriptJob / BuildPipeline 可选 `project_id`（可空）；AiAgent 跨项目共用。CI/CD 全局列表另受角色 `data_scope`；运维/凭证/Skills 等仍为全局 RBAC |
 | D5 | 全局项目权限 | 显式 `project_projects:view_all` / `manage_all`（`view_all` 保留兼容；读侧已由 `:view` 覆盖全员可读）；普通 `:update` 不隐含全局越权；角色 `data_scope=all` 仅影响 CI/CD 等非项目域列表读 |
 | D6 | AI 文档发布 | 同节点双态草稿；人工确认发布；`expected_version` 乐观锁 |
 | D7 | AI CLI | Claude Code / OpenCode / Reasonix / Codex **并行**交付，均为 GA 条件 |
@@ -210,7 +210,7 @@ RbacResource
 - **`ProductProject.is_public`**：字段保留兼容，**不再影响**项目读可见性；写、成员管理不因该字段放宽。
 - **对象级成员 ACL**：仅产品项目（`ProductProject` / 成员）的**写**路径。
 - **CI/CD**：无成员表；可选 `project_id` 归属项目。全局列表（不带 `project_id`）在 `data_scope=self` 时可见 `created_by=自己` 或 `is_public`；BuildRun / ScriptRun / PipelineRun 跟随 Job/Pipeline。列表带 `?project_id=` 时跳过上述数据范围过滤（仍需各域 `:view`）。**写/执行**仍仅本人（`data_scope=self`）或 `data_scope=all` / 超管，不因项目归属放宽。
-- **AI Agent**：可选 `project_id`；列表可按项目过滤。Skills **不**绑定项目；列表/详情遵循 `data_scope=all OR visibility=public OR created_by=自己`；改删仍仅创建者/超管。运维、凭证等域仍为全局 RBAC only。
+- **AI Agent**：跨项目共用，**不**绑定 `project_id`。Skills **不**绑定项目；列表/详情遵循 `data_scope=all OR visibility=public OR created_by=自己`；改删仍仅创建者/超管。运维、凭证等域仍为全局 RBAC only。
 - **安全边界**：上述规则是应用层授权，**不是** OS/租户隔离；同 UID 执行与凭证注入边界见 §1.2 / 安全表述。
 
 ### 4.5 凭证与服务器认证

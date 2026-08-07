@@ -21,7 +21,7 @@ import (
 	resourcemodel "bedrock/internal/resource/model"
 )
 
-func TestAgentRunCopiesProjectIDFromAgent(t *testing.T) {
+func TestAgentRunKeepsExplicitProjectID(t *testing.T) {
 	_, agents, _, projectSvc := setupAI(t)
 	owner := projectservice.NewAccessContext(1, true, []string{"project_projects:create"})
 	project, err := projectSvc.CreateProject(owner, projectservice.CreateProjectInput{Name: "A", Slug: "a-run"})
@@ -29,36 +29,28 @@ func TestAgentRunCopiesProjectIDFromAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "with-proj", CliKey: "codex", SystemPrompt: "x", TimeoutSec: 2, ProjectID: &project.ID,
+		Name: "shared", CliKey: "codex", SystemPrompt: "x", TimeoutSec: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	agent = requireWorkspaceReady(t, agents, agent.ID)
-	if agent.ProjectID == nil || *agent.ProjectID != project.ID {
-		t.Fatalf("agent.project_id=%v", agent.ProjectID)
-	}
 	run, err := agents.ManualRun(agent.ID, 1, "hi")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.ProjectID == nil || *run.ProjectID != project.ID {
-		t.Fatalf("run.project_id=%v want %d", run.ProjectID, project.ID)
+	if run.ProjectID != nil {
+		t.Fatalf("manual run should not bind project, got %v", run.ProjectID)
 	}
-	// docs_generate 显式传入优先
-	otherID := project.ID + 1000
+	// docs_generate 显式传入 project_id
 	explicit, err := agents.CreateRun(agent.ID, service.CreateRunInput{
-		TriggerType: model.TriggerDocsGen, TriggeredBy: 1, ProjectID: &otherID,
+		TriggerType: model.TriggerDocsGen, TriggeredBy: 1, ProjectID: &project.ID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if explicit.ProjectID == nil || *explicit.ProjectID != otherID {
-		t.Fatalf("explicit project_id=%v want %d", explicit.ProjectID, otherID)
-	}
-	items, total, err := agents.ListAgents(1, 20, &project.ID)
-	if err != nil || total != 1 || len(items) != 1 || items[0].ID != agent.ID {
-		t.Fatalf("list by project = %#v total=%d err=%v", items, total, err)
+	if explicit.ProjectID == nil || *explicit.ProjectID != project.ID {
+		t.Fatalf("explicit project_id=%v want %d", explicit.ProjectID, project.ID)
 	}
 	runs, total, err := agents.ListRuns(1, 20, 0, "", &project.ID)
 	if err != nil || total < 1 {

@@ -18,7 +18,7 @@
 3. **前端**：旁路新建 `web/`（Vue 3 + Veltra + CatKit + Vite+）；达标后一次切换 embed，旧 `web/` 保留回滚窗口。
 4. **安全边界（已接受风险）**：允许 HTTP；`access_token` Web Storage + Bearer，`refresh_token` HttpOnly Cookie（不设 Secure）；构建/AI CLI **同 Bedrock UID** 直接执行。
 5. **CI/CD 状态**：归档成功后 BuildRun 保持 `success`；`distribution_summary` 反映最新分发；重新分发**追加** `BuildDeployAttempt`，不新建 BuildRun。
-6. **ACL**：仅**产品项目**使用对象级成员 ACL（写侧）；项目域读对持有 `:view` 的认证用户开放。资源管理 / CI/CD / AI 写与执行依赖全局 RBAC；CI/CD 全局列表另受 `data_scope`；显式 `manage_all` 绕过成员写范围。BuildJob / ScriptJob / BuildPipeline / AiAgent 可选归属项目（可空 `project_id`）。
+6. **ACL**：仅**产品项目**使用对象级成员 ACL（写侧）；项目域读对持有 `:view` 的认证用户开放。资源管理 / CI/CD / AI 写与执行依赖全局 RBAC；CI/CD 全局列表另受 `data_scope`；显式 `manage_all` 绕过成员写范围。BuildJob / ScriptJob / BuildPipeline 可选归属项目（可空 `project_id`）；AiAgent 跨项目共用、不绑定项目。
 7. **验收**：仅功能 Gate；不设容量与延迟 SLO。
 
 ```mermaid
@@ -162,7 +162,7 @@ flowchart LR
 
 ### 5.1 目标
 
-产品协作与资源聚合：产品项目、成员角色、需求列表、Markdown 接口文档树；构建任务 / 脚本任务 / 流水线 / 智能体可经可空 `project_id` 可选归属（项目中心化，归属非强制）。
+产品协作与资源聚合：产品项目、成员角色、需求列表、Markdown 接口文档树；构建任务 / 脚本任务 / 流水线可经可空 `project_id` 可选归属（项目中心化，归属非强制）；智能体跨项目共用。
 
 ### 5.2 交付物
 
@@ -172,7 +172,7 @@ flowchart LR
 | 需求 | Requirement、评论、附件（走 StorageObject）；状态字典可扩展 |
 | 文档 | ApiDocNode 树；同节点 `published_content` + `draft_content` + `base_version`；上传/移动/删除；发布 `expected_version` 乐观锁 |
 | 权限 | 全局 RBAC **且** 项目成员 ACL（写侧）；读侧持有 `:view` 即可；manage_all 可管理全部项目且无需加入 |
-| 归属 | BuildJob / ScriptJob / BuildPipeline / AiAgent 可选 `project_id`；列表 `?project_id=` 跳过 CI/CD `data_scope` 读过滤；写/执行不变；Skills 不绑定 |
+| 归属 | BuildJob / ScriptJob / BuildPipeline 可选 `project_id`；列表 `?project_id=` 跳过 CI/CD `data_scope` 读过滤；写/执行不变；AiAgent / Skills 不绑定 |
 | 前端 | 项目卡片列表、详情工作台（概览/各域面板）、成员、需求、文档树、草稿 diff 与发布确认；各域表单 ProjectSelect |
 | 测试 | 非成员可读、不可写；view_all/manage_all 行为；`?project_id=` 读放宽；并发发布 409；附件配额与 XSS 防护 |
 
