@@ -130,10 +130,13 @@ func TestContract_MigrationsAndCICDTables(t *testing.T) {
 			if err := projectRepo.CreateDevDocNode(devDoc); err != nil {
 				t.Fatalf("create dev doc node: %v", err)
 			}
-			for _, table := range []string{"build_jobs", "script_jobs", "build_pipelines", "ai_agents"} {
+			for _, table := range []string{"build_jobs", "script_jobs", "build_pipelines"} {
 				if !gdb.Migrator().HasColumn(table, "project_id") {
 					t.Fatalf("%s.project_id missing on %s", table, driver)
 				}
+			}
+			if gdb.Migrator().HasColumn("ai_agents", "project_id") {
+				t.Fatalf("ai_agents.project_id should be removed on %s", driver)
 			}
 			for _, check := range []struct {
 				model any
@@ -142,11 +145,13 @@ func TestContract_MigrationsAndCICDTables(t *testing.T) {
 				{projectIDIndexBuildJobs{}, "idx_build_jobs_project_id"},
 				{projectIDIndexScriptJobs{}, "idx_script_jobs_project_id"},
 				{projectIDIndexBuildPipelines{}, "idx_build_pipelines_project_id"},
-				{projectIDIndexAIAgents{}, "idx_ai_agents_project_id"},
 			} {
 				if !gdb.Migrator().HasIndex(check.model, check.index) {
 					t.Fatalf("%s missing on %s", check.index, driver)
 				}
+			}
+			if gdb.Migrator().HasIndex(projectIDIndexAIAgents{}, "idx_ai_agents_project_id") {
+				t.Fatalf("idx_ai_agents_project_id should be removed on %s", driver)
 			}
 			_ = repoRepo.Delete(repo.ID)
 			_ = credRepo.Delete(cred.ID)

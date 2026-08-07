@@ -35,6 +35,7 @@ declare module 'vue' {
     UBreadcrumb: typeof import('@veltra/desktop')['UBreadcrumb']
     UButton: typeof import('@veltra/desktop')['UButton']
     UCard: typeof import('@veltra/desktop')['UCard']
+    UCardAction: typeof import('@veltra/desktop')['UCardAction']
     UCardContent: typeof import('@veltra/desktop')['UCardContent']
     UCardHeader: typeof import('@veltra/desktop')['UCardHeader']
     UCheckbox: typeof import('@veltra/desktop')['UCheckbox']

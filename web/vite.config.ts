@@ -1,6 +1,6 @@
 import { fileURLToPath, URL } from "node:url";
 
-import { defineConfig, lazyPlugins } from "vite-plus";
+import { defineConfig } from "vite-plus";
 import vue from "@vitejs/plugin-vue";
 import Components from "unplugin-vue-components/vite";
 import { VeltraUIResolver } from "@veltra/vite";
@@ -20,12 +20,13 @@ export default defineConfig({
       typeCheck: true,
     },
   },
-  plugins: lazyPlugins(() => [
+  plugins: [
     vue(),
+
     Components({
       resolvers: [VeltraUIResolver()],
     }),
-  ]),
+  ] as any,
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

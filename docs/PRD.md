@@ -29,7 +29,7 @@
 
 ### 1.3 设计原则
 
-1. **项目聚合，归属可选**：项目是协作与资源浏览的聚合根；CI/CD / AI 资源可绑定 `project_id`，亦可保持未归属；写权限仍走各域全局 RBAC（及项目域写侧 ACL）。
+1. **项目聚合，归属可选**：项目是协作与资源浏览的聚合根；BuildJob / ScriptJob / BuildPipeline 可绑定可空 `project_id`，亦可保持未归属；AiAgent / Skills 跨项目共用、不绑定项目；写权限仍走各域全局 RBAC（及项目域写侧 ACL）。
 2. **配置驱动扩展**：数据库驱动、安装源、开发环境、CLI 等通过配置扩展，默认零依赖。
 3. **权限即可见性**：菜单、页面、API、仪表盘卡片均受 RBAC 资源控制；侧栏由登录下发的两层分组菜单驱动（`u-group-nav`）；菜单项支持自定义图标。
 4. **命名消歧**：避免「Agent / Environment / Project / Proxy / Resource」多义混用。
@@ -406,7 +406,7 @@ database:
 
 - 创建项目者默认为负责人。
 - **读可见性**：持有 `project_projects:view` 的认证用户可列出并查看全部项目（含非成员）；非成员 `my_role` 为空、`permissions` 能力位全 false。`project_projects:view_all` 保留兼容。`manage_all` 可管理全部项目成员与内容且无需加入。普通 `project_projects:update` **不**隐含全局越权（与 DESIGN §4.4 一致）。
-- **项目内资源列表**：各域列表带 `?project_id=` 时可读该项目下资源（仍需各域 `:view`）；不带参数时全局列表仍受 CI/CD `data_scope` / `is_public` 等原规则约束。写/执行规则不变。
+- **项目内资源列表**：CI/CD 列表带 `?project_id=` 时可读该项目下 Job/Pipeline（仍需各域 `:view`）；智能体不按项目过滤。不带参数时全局列表仍受 CI/CD `data_scope` / `is_public` 等原规则约束。写/执行规则不变。
 
 ### 8.2 需求管理（结构化列表）
 

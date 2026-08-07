@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { Agent, Build, Books, Layers, Terminal } from "@veltra/icons/normal";
 
-import { listAgents, listRuns } from "@/api/ai";
+import { listRuns } from "@/api/ai";
 import {
   listBuildJobs,
   listBuildPipelines,
@@ -18,7 +18,7 @@ import { usePermission } from "@/composables/use-permission";
 import { formatDateTime, formatDurationBetween, formatDurationMs } from "@/lib/datetime";
 import { JOB_STATUS_TAG, tagType } from "@/lib/tag";
 
-type StatKey = "build" | "script" | "pipeline" | "agents" | "requirements";
+type StatKey = "build" | "script" | "pipeline" | "requirements";
 
 type StatCard = {
   key: StatKey;
@@ -52,7 +52,6 @@ const STAT_ICON: Record<StatKey, unknown> = {
   build: Build,
   script: Terminal,
   pipeline: Layers,
-  agents: Agent,
   requirements: Books,
 };
 
@@ -129,11 +128,6 @@ async function loadStats() {
       settleTotal("pipeline", "流水线", "/cicd/pipelines", () =>
         listBuildPipelines({ project_id: props.project.id, page: 1, page_size: 1 }),
       ),
-    );
-  }
-  if (hasPermission("ai_agents:view")) {
-    tasks.push(
-      settleTotal("agents", "智能体", "/ai/agents", () => listAgents({ page: 1, page_size: 1 })),
     );
   }
   if (hasPermission("project_requirements:view")) {
@@ -245,19 +239,10 @@ async function loadTimeline() {
       settleBlock(async () => {
         // AgentRun.project_id 仅 docs_generate 等显式场景写入；智能体本身不归属项目
         const runs = await listRuns({ project_id: pid, page: 1, page_size: 5 });
-        const names = new Map<number, string>();
-        if (hasPermission("ai_agents:view")) {
-          try {
-            const agents = await listAgents({ page: 1, page_size: 100 });
-            for (const a of agents.items ?? []) names.set(a.id, a.name);
-          } catch {
-            /* 名称降级为 id */
-          }
-        }
         return (runs.items ?? []).map((r) => ({
           key: `ai-${r.id}`,
           type: "ai" as const,
-          name: names.get(r.agent_id) ?? `智能体#${r.agent_id}`,
+          name: `智能体#${r.agent_id}`,
           status: r.status,
           duration: formatDurationMs(r.duration_ms) || "—",
           triggeredBy: "—",
@@ -297,11 +282,6 @@ function openItem(item: TimelineItem) {
 
 function openStat(card: StatCard) {
   if (!card.href) return;
-  // 智能体跨项目共用，不带 project_id 过滤
-  if (card.key === "agents") {
-    void router.push({ path: card.href });
-    return;
-  }
   void router.push({ path: card.href, query: { project_id: String(props.project.id) } });
 }
 </script>

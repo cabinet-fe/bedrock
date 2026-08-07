@@ -12,7 +12,8 @@ func init() {
 	migration.Register("000045_resource_project_id", upResourceProjectID)
 }
 
-// upResourceProjectID adds nullable project_id (+ index) to cicd/ai resource tables.
+// upResourceProjectID adds nullable project_id (+ index) to CI/CD resource tables
+// and historically also ai_agents (removed by 000046; AiAgent is cross-project).
 func upResourceProjectID(ctx context.Context, db *gorm.DB, driver migration.Driver) error {
 	_ = ctx
 	_ = driver

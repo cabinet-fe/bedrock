@@ -10,7 +10,6 @@ import type { ProductProject } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
 import { useTabsStore } from "@/stores/tabs";
 
-import AgentsPanel from "../../components/agents-panel.vue";
 import BuildJobsPanel from "../../components/build-jobs-panel.vue";
 import DocsPanel from "../../components/docs-panel.vue";
 import OverviewPanel from "../../components/overview-panel.vue";
@@ -46,7 +45,6 @@ const tabs = computed(
       hasPermission("cicd_build_jobs:view") ? { key: "build-jobs", name: "构建任务" } : null,
       hasPermission("cicd_script_jobs:view") ? { key: "script-jobs", name: "脚本任务" } : null,
       hasPermission("cicd_pipelines:view") ? { key: "pipelines", name: "流水线" } : null,
-      hasPermission("ai_agents:view") ? { key: "agents", name: "智能体" } : null,
       hasPermission("project_requirements:view") ? { key: "requirements", name: "需求" } : null,
       hasPermission("project_docs:view") ? { key: "docs", name: "接口文档" } : null,
       hasPermission("project_dev_docs:view") ? { key: "dev-docs", name: "开发文档" } : null,
@@ -121,11 +119,6 @@ watch(tab, (next) => {
       />
       <PipelinesPanel
         v-else-if="tab === 'pipelines' && hasPermission('cicd_pipelines:view')"
-        class="project-detail__panel"
-        :project="project"
-      />
-      <AgentsPanel
-        v-else-if="tab === 'agents' && hasPermission('ai_agents:view')"
         class="project-detail__panel"
         :project="project"
       />
