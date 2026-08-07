@@ -52,7 +52,12 @@ func (h *PipelineRunHandler) List(c *gin.Context) {
 			pipelineID = &u
 		}
 	}
-	items, total, err := h.orchestrator.List(q, pipelineID, c.Query("status"), userID, scope)
+	projectID, err := parseOptionalUintQuery(c, "project_id")
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "无效 project_id")
+		return
+	}
+	items, total, err := h.orchestrator.List(q, pipelineID, c.Query("status"), projectID, userID, scope)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return

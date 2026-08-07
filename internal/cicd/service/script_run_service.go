@@ -35,12 +35,13 @@ func (s *ScriptRunService) SetTerminalHook(h engine.ScriptRunTerminalHook) {
 	s.termHook = h
 }
 
-func (s *ScriptRunService) List(q pkg.ListQuery, scriptJobID *uint, status string, userID uint, dataScope string) ([]model.ScriptRun, int64, error) {
+func (s *ScriptRunService) List(q pkg.ListQuery, scriptJobID *uint, status string, projectID *uint, userID uint, dataScope string) ([]model.ScriptRun, int64, error) {
 	var jobCreatedBy *uint
-	if dataScope != rbacmodel.DataScopeAll {
+	// D3: 带 project_id 时跳过 created_by/is_public 数据范围过滤
+	if projectID == nil && dataScope != rbacmodel.DataScopeAll {
 		jobCreatedBy = &userID
 	}
-	return s.runs.List(q, scriptJobID, status, jobCreatedBy)
+	return s.runs.List(q, scriptJobID, status, jobCreatedBy, projectID)
 }
 
 func (s *ScriptRunService) Get(id uint, userID uint, dataScope string) (*model.ScriptRun, error) {

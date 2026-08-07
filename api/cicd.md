@@ -7,20 +7,22 @@
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
 业务语义与权限模型见 [docs/DESIGN.md](../docs/DESIGN.md)。
 
+**项目归属（`project_id`）**：BuildJob / BuildPipeline 可选归属产品项目（可空）。创建/更新传正整数绑定；传 `0` 解除绑定（存为 null）；更新时省略字段则不改。列表查询带 `project_id` 时按归属过滤，并跳过角色 `data_scope` 下的 `created_by`/`is_public` 数据范围限制（仍需本端点 `:view`）；**写/执行规则不变**。不带 `project_id` 时全局列表行为与原先一致。流水线节点引用的 Job/Agent **不强制**与流水线同属一项目。
+
 ## 构建任务
 
 ### GET /build-jobs — 列出构建任务
 
 权限：`cicd_build_jobs:view`
-查询参数：page: integer, page_size: integer, repository_id: integer, keyword: string, tag: string
+查询参数：page: integer, page_size: integer, repository_id: integer, keyword: string, tag: string, project_id: integer
 响应 200：data = BuildJobPage
 
 ### POST /build-jobs — 创建构建任务
 
 权限：`cicd_build_jobs:create`
-请求：{ repository_id*, name*, description, tags, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
+请求：{ repository_id*, name*, description, tags, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, is_public, project_id, deploy_targets }
 响应 201：data = BuildJob
-说明：`artifact_paths` 为相对仓库根的制品路径列表（文件或目录，最多约 10 条；须相对、禁止 `..`/绝对路径）。写入优先 `artifact_paths`；若为空且提供 `output_dir` 则视为单元素列表。响应含 `artifact_paths`，并回显 `output_dir` 为第一项（兼容）。`env_var_names` 为宿主机环境变量名称列表（运行时 `LookupEnv`）；`env_vars` 为加密 Key-Value 全量键列表 `[{key, value?}]`（带 value 写入；响应仅回显 `[{key, has_value}]`）。运行时合并顺序：进程环境 → 名称列表注入 → Key-Value 覆盖同名键。`post_build_script` 在主构建脚本成功后、缓存保存/归档前执行（同 shell/cwd/env）；失败则 run=`failed`。响应只读字段 `workspace_path` 为任务 checkout 绝对路径：`{build.workspace_dir}/jobs/job-{id}/`（与 Agent 的 `agents/agent-{id}/` 对齐；旧路径 `repo-{repository_id}/job-{id}/` 不再使用，不自动搬迁）。`build_script` / `post_build_script` 执行前做 `${{...}}` 文本替换（见下文「脚本模板」）；未知变量则构建失败。`tags` 为逗号分隔的类型标签，选项来自数据字典 `repo_type`。
+说明：`artifact_paths` 为相对仓库根的制品路径列表（文件或目录，最多约 10 条；须相对、禁止 `..`/绝对路径）。写入优先 `artifact_paths`；若为空且提供 `output_dir` 则视为单元素列表。响应含 `artifact_paths`，并回显 `output_dir` 为第一项（兼容）。`env_var_names` 为宿主机环境变量名称列表（运行时 `LookupEnv`）；`env_vars` 为加密 Key-Value 全量键列表 `[{key, value?}]`（带 value 写入；响应仅回显 `[{key, has_value}]`）。运行时合并顺序：进程环境 → 名称列表注入 → Key-Value 覆盖同名键。`post_build_script` 在主构建脚本成功后、缓存保存/归档前执行（同 shell/cwd/env）；失败则 run=`failed`。响应只读字段 `workspace_path` 为任务 checkout 绝对路径：`{build.workspace_dir}/jobs/job-{id}/`（与 Agent 的 `agents/agent-{id}/` 对齐；旧路径 `repo-{repository_id}/job-{id}/` 不再使用，不自动搬迁）。`build_script` / `post_build_script` 执行前做 `${{...}}` 文本替换（见下文「脚本模板」）；未知变量则构建失败。`tags` 为逗号分隔的类型标签，选项来自数据字典 `repo_type`。`project_id` 见文首说明。
 
 ### GET /build-jobs/{id} — 获取构建任务（含部署目标）
 
@@ -32,9 +34,9 @@
 
 权限：`cicd_build_jobs:update`
 路径参数：id*: integer
-请求：{ name, description, tags, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, deploy_targets }
+请求：{ name, description, tags, enabled, branch, shallow_clone, build_script_type, build_script, post_build_script, work_dir, artifact_paths, output_dir, cache_paths, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, webhook_secret, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, cron_expression, cron_timezone, max_artifacts, artifact_format, agent_trigger_event, agent_ids, is_public, project_id, deploy_targets }
 响应 200：data = BuildJob
-说明：`artifact_paths` 写入优先于 `output_dir`（见创建说明）。`env_vars` 若提交则为全量键列表（带 value 更新/新建；已有键未带 value 保留；请求中消失的键删除；省略字段则不改）；永不回显明文。
+说明：`artifact_paths` 写入优先于 `output_dir`（见创建说明）。`env_vars` 若提交则为全量键列表（带 value 更新/新建；已有键未带 value 保留；请求中消失的键删除；省略字段则不改）；永不回显明文。`project_id` 见文首说明。
 
 ### DELETE /build-jobs/{id} — 删除构建任务
 
@@ -67,8 +69,9 @@
 ### GET /build-runs — 列出构建运行
 
 权限：`cicd_build_runs:view`
-查询参数：page: integer, page_size: integer, build_job_id: integer, status: string, sort: string
+查询参数：page: integer, page_size: integer, build_job_id: integer, status: string, sort: string, project_id: integer
 响应 200：data = BuildRunPage
+说明：`project_id` 按所属 BuildJob 的归属过滤；携带时跳过 Job 侧 `created_by`/`is_public` 数据范围限制（仍需 `:view`）。
 
 ### GET /build-runs/{id} — 获取构建运行详情（含部署尝试）
 
@@ -137,15 +140,15 @@
 ### GET /build-pipelines — 列出构建流水线
 
 权限：`cicd_pipelines:view`
-查询参数：page: integer, page_size: integer, keyword: string
+查询参数：page: integer, page_size: integer, keyword: string, project_id: integer
 响应 200：data = BuildPipelinePage
 
 ### POST /build-pipelines — 创建构建流水线
 
 权限：`cicd_pipelines:create`
-请求：{ name*, description, enabled, graph_json, trigger_manual, trigger_webhook, trigger_cron, cron_expression, cron_timezone, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, is_public }
+请求：{ name*, description, enabled, graph_json, trigger_manual, trigger_webhook, trigger_cron, cron_expression, cron_timezone, webhook_type, webhook_ref_path, webhook_commit_path, webhook_message_path, is_public, project_id }
 响应 201：data = BuildPipeline
-说明：`graph_json` 为 VueFlow `{nodes,edges}`；空图允许保存（编辑器草稿）；非空须为合法 DAG。
+说明：`graph_json` 为 VueFlow `{nodes,edges}`；空图允许保存（编辑器草稿）；非空须为合法 DAG。`project_id` 见文首说明。
 
 ### GET /build-pipelines/{id} — 获取构建流水线
 
@@ -157,7 +160,7 @@
 
 权限：`cicd_pipelines:update`
 路径参数：id*: integer
-请求：同创建（字段可选）
+请求：同创建（字段可选，含 `project_id`）
 响应 200：data = BuildPipeline
 
 ### DELETE /build-pipelines/{id} — 删除构建流水线
@@ -190,8 +193,9 @@
 ### GET /pipeline-runs — 列出流水线运行
 
 权限：`cicd_pipeline_runs:view`
-查询参数：page: integer, page_size: integer, build_pipeline_id: integer, status: string, sort: string
+查询参数：page: integer, page_size: integer, build_pipeline_id: integer, status: string, sort: string, project_id: integer
 响应 200：data = PipelineRunPage
+说明：`project_id` 按所属 BuildPipeline 的归属过滤；携带时跳过 Pipeline 侧 `created_by`/`is_public` 数据范围限制（仍需 `:view`）。
 
 ### GET /pipeline-runs/{id} — 获取流水线运行详情（含 stages）
 
@@ -259,7 +263,6 @@
 | `description` | `string` |  |  |
 | `tags` | `string` |  | 逗号分隔的类型标签；选项来自字典 `repo_type` |
 | `enabled` | `boolean` |  |  |
-| `is_public` | `boolean` |  |  |
 | `branch` | `string` |  |  |
 | `shallow_clone` | `boolean` |  |  |
 | `build_script_type` | `string` |  |  |
@@ -286,7 +289,8 @@
 | `artifact_format` | `string` |  |  |
 | `agent_trigger_event` | `'artifact_ready' \| 'distribution_finished' \| 'none'` |  | Default artifact_ready; override distribution_finished or none |
 | `agent_ids` | `integer[]` |  | Agents executed on the build-event trigger |
-| `is_public` | `boolean` |  | 公开只读；默认 false |
+| `is_public` | `boolean` |  | 全局列表 `data_scope=self` 时放宽读；默认 false；带 `project_id` 列表过滤时不依赖此字段 |
+| `project_id` | `integer` |  | 可空；归属产品项目 |
 | `deploy_targets` | `DeployTarget[]` |  |  |
 | `created_by` | `integer` |  |  |
 | `created_at` | `string(date-time)` |  |  |
@@ -302,6 +306,7 @@
 | `tags` | `string` |  | 逗号分隔的类型标签；选项来自字典 `repo_type` |
 | `enabled` | `boolean` |  |  |
 | `is_public` | `boolean` |  |  |
+| `project_id` | `integer` |  | 可空；`0` 表示不绑定 |
 | `branch` | `string` |  |  |
 | `shallow_clone` | `boolean` |  |  |
 | `build_script_type` | `string` |  |  |
@@ -375,6 +380,8 @@
 | `artifact_format` | `string` |  |  |
 | `agent_trigger_event` | `'artifact_ready' \| 'distribution_finished' \| 'none'` |  |  |
 | `agent_ids` | `integer[]` |  |  |
+| `is_public` | `boolean` |  |  |
+| `project_id` | `integer` |  | 可空；传 `0` 解除绑定；省略不改 |
 | `deploy_targets` | `DeployTarget[]` |  |  |
 
 ### BuildRun
@@ -445,7 +452,8 @@
 | `webhook_type` | `string` |  |  |
 | `cron_expression` | `string` |  |  |
 | `cron_timezone` | `string` |  |  |
-| `is_public` | `boolean` |  |  |
+| `is_public` | `boolean` |  | 全局列表 `data_scope=self` 时放宽读；带 `project_id` 列表过滤时不依赖此字段 |
+| `project_id` | `integer` |  | 可空；归属产品项目 |
 | `created_by` | `integer` |  |  |
 | `created_at` | `string(date-time)` |  |  |
 | `updated_at` | `string(date-time)` |  |  |

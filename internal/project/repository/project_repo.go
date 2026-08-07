@@ -51,17 +51,9 @@ func (r *ProjectRepository) FindProjectBySlug(slug string) (*model.ProductProjec
 	return &project, nil
 }
 
-func (r *ProjectRepository) ListProjects(q pkg.ListQuery, keyword, status string, userID uint, all bool) ([]model.ProductProject, int64, error) {
+// ListProjects 返回全部项目（D2：不再按成员/公开/创建人过滤）。
+func (r *ProjectRepository) ListProjects(q pkg.ListQuery, keyword, status string) ([]model.ProductProject, int64, error) {
 	db := r.db.Model(&model.ProductProject{})
-	if !all {
-		// 成员 / 公开 / 创建人（创建人通常已是成员，兜底非成员场景）
-		db = db.Where(
-			`product_projects.id IN (SELECT project_id FROM project_members WHERE user_id = ?)
-				OR product_projects.is_public = ?
-				OR product_projects.created_by = ?`,
-			userID, true, userID,
-		)
-	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		like := "%" + keyword + "%"
 		db = db.Where("product_projects.name LIKE ? OR product_projects.slug LIKE ? OR product_projects.tags LIKE ?", like, like, like)
@@ -138,14 +130,6 @@ func (r *ProjectRepository) ListMemberRoles(projectIDs []uint, userID uint) (map
 		roles[member.ProjectID] = member.Role
 	}
 	return roles, nil
-}
-
-func (r *ProjectRepository) HasProjectMembership(userID uint) (bool, error) {
-	var count int64
-	if err := r.db.Model(&model.ProjectMember{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
-		return false, err
-	}
-	return count > 0, nil
 }
 
 func (r *ProjectRepository) ListMembers(projectID uint) ([]model.ProjectMember, error) {

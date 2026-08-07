@@ -10,15 +10,20 @@ import type { ProductProject } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
 import { useTabsStore } from "@/stores/tabs";
 
+import AgentsPanel from "../../components/agents-panel.vue";
+import BuildJobsPanel from "../../components/build-jobs-panel.vue";
 import DocsPanel from "../../components/docs-panel.vue";
+import OverviewPanel from "../../components/overview-panel.vue";
+import PipelinesPanel from "../../components/pipelines-panel.vue";
 import RequirementsPanel from "../../components/requirements-panel.vue";
+import ScriptJobsPanel from "../../components/script-jobs-panel.vue";
 
 const route = useRoute();
 const router = useRouter();
 const tabsStore = useTabsStore();
 const { hasPermission } = usePermission();
 const project = ref<ProductProject | null>(null);
-const tab = ref("requirements");
+const tab = ref("overview");
 
 function parseRouteId(raw: unknown): number | null {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -37,6 +42,11 @@ const canManageAll = computed(() => hasPermission("project_projects:manage_all")
 const tabs = computed(
   () =>
     [
+      { key: "overview", name: "概览" },
+      hasPermission("cicd_build_jobs:view") ? { key: "build-jobs", name: "构建任务" } : null,
+      hasPermission("cicd_script_jobs:view") ? { key: "script-jobs", name: "脚本任务" } : null,
+      hasPermission("cicd_pipelines:view") ? { key: "pipelines", name: "流水线" } : null,
+      hasPermission("ai_agents:view") ? { key: "agents", name: "智能体" } : null,
       hasPermission("project_requirements:view") ? { key: "requirements", name: "需求" } : null,
       hasPermission("project_docs:view") ? { key: "docs", name: "接口文档" } : null,
       hasPermission("project_dev_docs:view") ? { key: "dev-docs", name: "开发文档" } : null,
@@ -46,7 +56,7 @@ const tabs = computed(
 function resolveTab(preferred?: unknown): string {
   const key = typeof preferred === "string" ? preferred : "";
   if (key && tabs.value.some((item) => item.key === key)) return key;
-  return tabs.value[0]?.key ?? "";
+  return tabs.value[0]?.key ?? "overview";
 }
 
 function isThisDetailActive() {
@@ -98,8 +108,29 @@ watch(tab, (next) => {
   <div class="project-detail">
     <template v-if="project">
       <u-tabs v-model="tab" :items="tabs" />
+      <OverviewPanel v-if="tab === 'overview'" class="project-detail__panel" :project="project" />
+      <BuildJobsPanel
+        v-else-if="tab === 'build-jobs' && hasPermission('cicd_build_jobs:view')"
+        class="project-detail__panel"
+        :project="project"
+      />
+      <ScriptJobsPanel
+        v-else-if="tab === 'script-jobs' && hasPermission('cicd_script_jobs:view')"
+        class="project-detail__panel"
+        :project="project"
+      />
+      <PipelinesPanel
+        v-else-if="tab === 'pipelines' && hasPermission('cicd_pipelines:view')"
+        class="project-detail__panel"
+        :project="project"
+      />
+      <AgentsPanel
+        v-else-if="tab === 'agents' && hasPermission('ai_agents:view')"
+        class="project-detail__panel"
+        :project="project"
+      />
       <RequirementsPanel
-        v-if="tab === 'requirements' && hasPermission('project_requirements:view')"
+        v-else-if="tab === 'requirements' && hasPermission('project_requirements:view')"
         class="project-detail__panel"
         :project="project"
         :project-role="projectRole"

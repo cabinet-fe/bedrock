@@ -170,15 +170,16 @@ func main() {
 	serverSvc := resourceservice.NewServerService(serverRepo, credSvc)
 	cliSvc := resourceservice.NewCLIService(cliRepo, auditSvc)
 	patSvc := resourceservice.NewPATService(patRepo, auditSvc)
-	jobSvc := cicdservice.NewBuildJobService(jobRepo, repoRepo)
+	projectRepo := projectrepo.NewProjectRepository(gdb)
+	jobSvc := cicdservice.NewBuildJobService(jobRepo, repoRepo, projectRepo)
 	jobSvc.SetWorkspaceDir(cfg.Build.WorkspaceDir)
 	runSvc := cicdservice.NewBuildRunService(runRepo, jobRepo)
 	webhookSvc := cicdservice.NewWebhookService(jobRepo, deliveryRepo, runSvc)
-	scriptJobSvc := cicdservice.NewScriptJobService(scriptJobRepo)
+	scriptJobSvc := cicdservice.NewScriptJobService(scriptJobRepo, projectRepo)
 	scriptJobSvc.SetWorkspaceDir(cfg.Build.WorkspaceDir)
 	scriptRunSvc := cicdservice.NewScriptRunService(scriptRunRepo, scriptJobRepo)
 	scriptWebhookSvc := cicdservice.NewScriptWebhookService(scriptJobRepo, scriptDeliveryRepo, scriptRunSvc)
-	pipelineSvc := cicdservice.NewBuildPipelineService(pipelineRepo, jobRepo, scriptJobRepo)
+	pipelineSvc := cicdservice.NewBuildPipelineService(pipelineRepo, jobRepo, scriptJobRepo, projectRepo)
 
 	dashboardRepo := dashboardrepo.NewDashboardRepository(gdb)
 	dashboardSvc := dashboardservice.NewDashboardService(
@@ -200,7 +201,6 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to init storage service", zap.Error(err))
 	}
-	projectRepo := projectrepo.NewProjectRepository(gdb)
 	projectSvc := projectservice.NewProjectService(projectRepo, storageSvc)
 	projectHandler := projecthandler.NewProjectHandler(projectSvc, permSvc)
 
@@ -214,6 +214,7 @@ func main() {
 	notifHandler := systemhandler.NewNotificationHandler(notifSvc)
 
 	agentSvc := aiservice.NewAgentService(aiRepo, cliSvc, skillSvc, hub, logger, agentWorkDir, agentArtifactDir, cfg.Build.LogDir, auditSvc)
+	agentSvc.SetProjectRepo(projectRepo)
 	agentSvc.SetDocDraftWriter(projectSvc)
 	agentSvc.SetRepoCheckoutDeps(repoRepo, resourceservice.NewCredentialSecretResolver(credSvc))
 	agentSvc.SetTerminalNotifier(notifSvc)

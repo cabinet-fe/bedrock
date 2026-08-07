@@ -80,8 +80,11 @@ func (r *AIRepository) FindAgent(id uint) (*model.AiAgent, error) {
 	return &agent, nil
 }
 
-func (r *AIRepository) ListAgents(page, pageSize int) ([]model.AiAgent, int64, error) {
+func (r *AIRepository) ListAgents(page, pageSize int, projectID *uint) ([]model.AiAgent, int64, error) {
 	q := r.db.Model(&model.AiAgent{})
+	if projectID != nil && *projectID > 0 {
+		q = q.Where("project_id = ?", *projectID)
+	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -158,10 +161,13 @@ func (r *AIRepository) FindRun(id uint) (*model.AgentRun, error) {
 	return &run, nil
 }
 
-func (r *AIRepository) ListRuns(page, pageSize int, agentID uint, status string) ([]model.AgentRun, int64, error) {
+func (r *AIRepository) ListRuns(page, pageSize int, agentID uint, status string, projectID *uint) ([]model.AgentRun, int64, error) {
 	q := r.db.Model(&model.AgentRun{})
 	if agentID > 0 {
 		q = q.Where("agent_id = ?", agentID)
+	}
+	if projectID != nil && *projectID > 0 {
+		q = q.Where("project_id = ?", *projectID)
 	}
 	if status != "" {
 		q = q.Where("status = ?", status)

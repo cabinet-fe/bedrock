@@ -19,6 +19,8 @@ import (
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
 	_ "bedrock/internal/platform/migration/migrations"
+	projectmodel "bedrock/internal/project/model"
+	projectrepo "bedrock/internal/project/repository"
 	resourcerepo "bedrock/internal/resource/repository"
 	resourceservice "bedrock/internal/resource/service"
 
@@ -72,11 +74,12 @@ func setupCICD(t *testing.T) (
 	serverRepo := resourcerepo.NewServerRepository(gdb)
 	jobRepo := repository.NewBuildJobRepository(gdb)
 	runRepo := repository.NewBuildRunRepository(gdb)
+	projectRepo := projectrepo.NewProjectRepository(gdb)
 
 	credSvc := resourceservice.NewCredentialService(credRepo)
 	repoSvc := resourceservice.NewRepositoryService(repoRepo, credSvc, stubGit{branches: []string{"main", "develop"}})
 	serverSvc := resourceservice.NewServerService(serverRepo, credSvc)
-	jobSvc := service.NewBuildJobService(jobRepo, repoRepo)
+	jobSvc := service.NewBuildJobService(jobRepo, repoRepo, projectRepo)
 	jobSvc.SetWorkspaceDir(filepath.Join(t.TempDir(), "workspaces"))
 	runSvc := service.NewBuildRunService(runRepo, jobRepo)
 	return credSvc, repoSvc, serverSvc, jobSvc, runSvc, gdb
@@ -520,11 +523,11 @@ func TestBuildJob_DataScopeFiltersListAndMutate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", 1, "self")
+	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", nil, 1, "self")
 	if err != nil || total != 1 || len(items) != 1 || items[0].ID != mine.ID {
 		t.Fatalf("self list = %#v total=%d err=%v", items, total, err)
 	}
-	allItems, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", 1, "all")
+	allItems, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", nil, 1, "all")
 	if err != nil || total != 2 || len(allItems) != 2 {
 		t.Fatalf("all list = %#v total=%d err=%v", allItems, total, err)
 	}
@@ -545,7 +548,7 @@ func TestBuildJob_DataScopeFiltersListAndMutate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runs, total, err := runSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", 1, "self")
+	runs, total, err := runSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", nil, 1, "self")
 	if err != nil || total != 0 || len(runs) != 0 {
 		t.Fatalf("self run list must hide other job runs = %#v total=%d err=%v", runs, total, err)
 	}
@@ -572,7 +575,7 @@ func TestBuildJob_PublicReadableBySelfScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", 1, "self")
+	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", nil, 1, "self")
 	if err != nil || total != 1 || len(items) != 1 || items[0].ID != job.ID {
 		t.Fatalf("self list public = %#v total=%d err=%v", items, total, err)
 	}
@@ -597,6 +600,165 @@ func TestBuildJob_PublicReadableBySelfScope(t *testing.T) {
 	}
 	if _, err := runSvc.Redeploy(run.ID, 1, "self", service.RedeployInput{}); !service.IsForbidden(err) {
 		t.Fatalf("public must not grant redeploy, got %v", err)
+	}
+}
+
+func TestBuildJob_ProjectID_D3ListReadAndWriteForbidden(t *testing.T) {
+	_, repoSvc, _, jobSvc, runSvc, gdb := setupCICD(t)
+	projectRepo := projectrepo.NewProjectRepository(gdb)
+	project := &projectmodel.ProductProject{
+		Name: "d3-proj", Slug: "d3-proj", Status: projectmodel.ProjectStatusActive, OwnerID: 2, CreatedBy: 2,
+	}
+	if err := projectRepo.CreateProjectWithOwner(project); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := repoSvc.Create(2, resourceservice.CreateRepositoryInput{
+		Name: "d3-repo", RepoURL: "https://example.com/d3.git",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := jobSvc.Create(2, service.CreateBuildJobInput{
+		RepositoryID: repo.ID, Name: "bound-private", BuildScript: "echo 1", ProjectID: &project.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.ProjectID == nil || *bound.ProjectID != project.ID {
+		t.Fatalf("project_id=%v", bound.ProjectID)
+	}
+	unbound, err := jobSvc.Create(2, service.CreateBuildJobInput{
+		RepositoryID: repo.ID, Name: "unbound-private", BuildScript: "echo 2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 不带 project_id：self 仍不可见他人私有任务
+	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", nil, 1, "self")
+	if err != nil || total != 0 || len(items) != 0 {
+		t.Fatalf("global self list = %#v total=%d err=%v", items, total, err)
+	}
+	if _, err := jobSvc.Get(bound.ID, 1, "self"); err != nil {
+		t.Fatalf("bound job should be readable via D3 detail: %v", err)
+	}
+	if _, err := jobSvc.Get(unbound.ID, 1, "self"); !service.IsForbidden(err) {
+		t.Fatalf("unbound private still forbidden: %v", err)
+	}
+
+	// 带 project_id：跳过 data-scope，可见项目内任务
+	pid := project.ID
+	items, total, err = jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", &pid, 1, "self")
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != bound.ID {
+		t.Fatalf("project list = %#v total=%d err=%v", items, total, err)
+	}
+
+	// 写仍 403
+	if _, err := jobSvc.Update(bound.ID, 1, "self", service.UpdateBuildJobInput{}); !service.IsForbidden(err) {
+		t.Fatalf("update must stay forbidden: %v", err)
+	}
+	if _, err := runSvc.Enqueue(bound.ID, 1, "self", service.EnqueueRunInput{TriggerType: "manual"}); !service.IsForbidden(err) {
+		t.Fatalf("enqueue must stay forbidden: %v", err)
+	}
+
+	badID := uint(999999)
+	if _, err := jobSvc.Create(2, service.CreateBuildJobInput{
+		RepositoryID: repo.ID, Name: "bad-proj", BuildScript: "echo 3", ProjectID: &badID,
+	}); err == nil {
+		t.Fatal("expected missing project error")
+	}
+}
+
+func TestScriptJob_ProjectID_D3ListReadAndWriteForbidden(t *testing.T) {
+	_, _, _, _, _, gdb := setupCICD(t)
+	projectRepo := projectrepo.NewProjectRepository(gdb)
+	project := &projectmodel.ProductProject{
+		Name: "d3-script-proj", Slug: "d3-script-proj", Status: projectmodel.ProjectStatusActive, OwnerID: 2, CreatedBy: 2,
+	}
+	if err := projectRepo.CreateProjectWithOwner(project); err != nil {
+		t.Fatal(err)
+	}
+	jobSvc := service.NewScriptJobService(repository.NewScriptJobRepository(gdb), projectRepo)
+	bound, err := jobSvc.Create(2, service.CreateScriptJobInput{
+		Name: "bound-script", Script: "echo 1", ProjectID: &project.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unbound, err := jobSvc.Create(2, service.CreateScriptJobInput{
+		Name: "unbound-script", Script: "echo 2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, "", nil, 1, "self")
+	if err != nil || total != 0 || len(items) != 0 {
+		t.Fatalf("global self list = %#v total=%d err=%v", items, total, err)
+	}
+	if _, err := jobSvc.Get(bound.ID, 1, "self"); err != nil {
+		t.Fatalf("bound script should be readable via D3 detail: %v", err)
+	}
+	if _, err := jobSvc.Get(unbound.ID, 1, "self"); !service.IsForbidden(err) {
+		t.Fatalf("unbound private still forbidden: %v", err)
+	}
+
+	pid := project.ID
+	items, total, err = jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, "", &pid, 1, "self")
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != bound.ID {
+		t.Fatalf("project list = %#v total=%d err=%v", items, total, err)
+	}
+	if _, err := jobSvc.Update(bound.ID, 1, "self", service.UpdateScriptJobInput{}); !service.IsForbidden(err) {
+		t.Fatalf("update must stay forbidden: %v", err)
+	}
+}
+
+func TestBuildPipeline_ProjectID_D3ListReadAndWriteForbidden(t *testing.T) {
+	_, _, _, _, _, gdb := setupCICD(t)
+	projectRepo := projectrepo.NewProjectRepository(gdb)
+	project := &projectmodel.ProductProject{
+		Name: "d3-pipe-proj", Slug: "d3-pipe-proj", Status: projectmodel.ProjectStatusActive, OwnerID: 2, CreatedBy: 2,
+	}
+	if err := projectRepo.CreateProjectWithOwner(project); err != nil {
+		t.Fatal(err)
+	}
+	pipeSvc := service.NewBuildPipelineService(
+		repository.NewBuildPipelineRepository(gdb),
+		repository.NewBuildJobRepository(gdb),
+		repository.NewScriptJobRepository(gdb),
+		projectRepo,
+	)
+	bound, err := pipeSvc.Create(2, service.CreateBuildPipelineInput{
+		Name: "bound-pipe", ProjectID: &project.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unbound, err := pipeSvc.Create(2, service.CreateBuildPipelineInput{
+		Name: "unbound-pipe",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, total, err := pipeSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, "", nil, 1, "self")
+	if err != nil || total != 0 || len(items) != 0 {
+		t.Fatalf("global self list = %#v total=%d err=%v", items, total, err)
+	}
+	if _, err := pipeSvc.Get(bound.ID, 1, "self"); err != nil {
+		t.Fatalf("bound pipeline should be readable via D3 detail: %v", err)
+	}
+	if _, err := pipeSvc.Get(unbound.ID, 1, "self"); !service.IsForbidden(err) {
+		t.Fatalf("unbound private still forbidden: %v", err)
+	}
+
+	pid := project.ID
+	items, total, err = pipeSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, "", &pid, 1, "self")
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != bound.ID {
+		t.Fatalf("project list = %#v total=%d err=%v", items, total, err)
+	}
+	if _, err := pipeSvc.Update(bound.ID, 1, "self", service.UpdateBuildPipelineInput{}); !service.IsForbidden(err) {
+		t.Fatalf("update must stay forbidden: %v", err)
 	}
 }
 

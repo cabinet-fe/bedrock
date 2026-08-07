@@ -74,6 +74,11 @@ export async function enqueueBuildRun(
 }
 
 // —— Build runs ——
+export async function listBuildRuns(params?: ListQuery): Promise<PageResult<BuildRun>> {
+  const { body } = await http.get<PageResult<BuildRun>>("/build-runs", { query: toQuery(params) });
+  return body;
+}
+
 export async function getBuildRun(id: number): Promise<BuildRun> {
   const { body } = await http.get<BuildRun>(`/build-runs/${id}`);
   return body;
@@ -173,6 +178,13 @@ export async function enqueueScriptRun(jobId: number): Promise<ScriptRun> {
 }
 
 // —— Script runs ——
+export async function listScriptRuns(params?: ListQuery): Promise<PageResult<ScriptRun>> {
+  const { body } = await http.get<PageResult<ScriptRun>>("/script-runs", {
+    query: toQuery(params),
+  });
+  return body;
+}
+
 export async function getScriptRun(id: number): Promise<ScriptRun> {
   const { body } = await http.get<ScriptRun>(`/script-runs/${id}`);
   return body;
@@ -254,6 +266,13 @@ export async function enqueuePipelineRun(
 }
 
 // —— Pipeline runs ——
+export async function listPipelineRuns(params?: ListQuery): Promise<PageResult<PipelineRun>> {
+  const { body } = await http.get<PageResult<PipelineRun>>("/pipeline-runs", {
+    query: toQuery(params),
+  });
+  return body;
+}
+
 export async function getPipelineRun(id: number): Promise<PipelineRun> {
   const { body } = await http.get<PipelineRun>(`/pipeline-runs/${id}`);
   return body;

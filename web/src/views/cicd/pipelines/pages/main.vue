@@ -1,26 +1,43 @@
 <script setup lang="ts">
 defineOptions({ name: "CicdPipelines" });
 
-import { reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+import { onMounted, reactive, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { message } from "@veltra/desktop";
 
 import {
   createBuildPipeline,
   deleteBuildPipeline,
   enqueuePipelineRun,
+  getBuildPipeline,
   getBuildPipelineWebhookSecret,
   updateBuildPipeline,
 } from "@/api/cicd";
 import type { BuildPipeline } from "@/api/types";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import ProjectSelect from "@/components/project-select";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
 
+function parsePositiveInt(raw: unknown): number | undefined {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const id = typeof value === "number" ? value : Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+}
+
+function queryFlag(raw: unknown): boolean {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "1" || value === "true";
+}
+
+const route = useRoute();
 const router = useRouter();
 const { hasPermission } = usePermission();
 const tableRef = ref<InstanceType<typeof ProTable> | null>(null);
-const query = reactive({ keyword: "" });
+const query = reactive({
+  keyword: "",
+  project_id: parsePositiveInt(route.query.project_id),
+});
 const dialogOpen = ref(false);
 const saving = ref(false);
 const editingId = ref<number | null>(null);
@@ -34,6 +51,7 @@ const form = reactive({
   cron_expression: "",
   cron_timezone: "UTC",
   is_public: false,
+  project_id: undefined as number | undefined,
 });
 
 const columns = defineProTableColumns([
@@ -58,7 +76,7 @@ function triggerParts(row: BuildPipeline): string[] {
   return parts;
 }
 
-function resetForm() {
+function resetForm(projectID?: number) {
   Object.assign(form, {
     name: "",
     description: "",
@@ -69,12 +87,13 @@ function resetForm() {
     cron_expression: "",
     cron_timezone: "UTC",
     is_public: false,
+    project_id: typeof projectID === "number" ? projectID : undefined,
   });
   editingId.value = null;
 }
 
-function openCreate() {
-  resetForm();
+function openCreate(projectID?: number) {
+  resetForm(projectID);
   dialogOpen.value = true;
 }
 
@@ -90,6 +109,7 @@ function openEdit(row: BuildPipeline) {
     cron_expression: row.cron_expression,
     cron_timezone: row.cron_timezone || "UTC",
     is_public: row.is_public,
+    project_id: row.project_id ?? undefined,
   });
   dialogOpen.value = true;
 }
@@ -101,7 +121,7 @@ async function save() {
   }
   saving.value = true;
   try {
-    const payload = { ...form };
+    const payload = { ...form, project_id: form.project_id ?? 0 };
     if (editingId.value == null) {
       const created = await createBuildPipeline({
         ...payload,
@@ -154,6 +174,20 @@ async function showWebhook(row: BuildPipeline) {
 function openEditor(row: BuildPipeline) {
   void router.push({ name: "cicd-pipeline-editor", params: { id: String(row.id) } });
 }
+
+onMounted(async () => {
+  const editID = parsePositiveInt(route.query.id);
+  const prefillID = parsePositiveInt(route.query.project_id);
+  if (editID != null && hasPermission("cicd_pipelines:update")) {
+    try {
+      openEdit(await getBuildPipeline(editID));
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "加载流水线失败");
+    }
+  } else if (queryFlag(route.query.create) && hasPermission("cicd_pipelines:create")) {
+    openCreate(prefillID);
+  }
+});
 </script>
 
 <template>
@@ -163,14 +197,19 @@ function openEditor(row: BuildPipeline) {
       url="/build-pipelines"
       :query="query"
       :columns="columns"
-      :auto-query-fields="['keyword']"
+      :auto-query-fields="['keyword', 'project_id']"
       pagination
     >
       <template #filters>
+        <ProjectSelect v-model="query.project_id" placeholder="全部项目" style="width: 180px" />
         <u-input v-model="query.keyword" clearable placeholder="搜索" style="width: 200px" />
       </template>
       <template #toolbar>
-        <u-button v-if="hasPermission('cicd_pipelines:create')" type="primary" @click="openCreate">
+        <u-button
+          v-if="hasPermission('cicd_pipelines:create')"
+          type="primary"
+          @click="openCreate()"
+        >
           新建流水线
         </u-button>
       </template>
@@ -231,37 +270,20 @@ function openEditor(row: BuildPipeline) {
       :title="editingId ? '编辑流水线' : '新建流水线'"
       style="width: 720px"
     >
-      <u-form label-width="100px">
-        <u-form-item label="名称" required span="full">
-          <u-input v-model="form.name" />
-        </u-form-item>
-        <u-form-item label="描述" span="full">
-          <u-input v-model="form.description" type="textarea" :rows="2" />
-        </u-form-item>
+      <u-form :model="form" label-width="100px">
+        <u-input label="名称" field="name" :rules="{ required: '必填' }" span="full" />
+        <u-textarea label="描述" field="description" :rows="2" span="full" />
+        <ProjectSelect label="所属项目" field="project_id" span="full" />
         <div class="switch-grid">
-          <u-form-item label="启用">
-            <u-switch v-model="form.enabled" />
-          </u-form-item>
-          <u-form-item label="公开只读">
-            <u-switch v-model="form.is_public" />
-          </u-form-item>
-          <u-form-item label="手动触发">
-            <u-switch v-model="form.trigger_manual" />
-          </u-form-item>
-          <u-form-item label="Webhook">
-            <u-switch v-model="form.trigger_webhook" />
-          </u-form-item>
-          <u-form-item label="Cron">
-            <u-switch v-model="form.trigger_cron" />
-          </u-form-item>
+          <u-switch label="启用" field="enabled" />
+          <u-switch label="公开只读" field="is_public" />
+          <u-switch label="手动触发" field="trigger_manual" />
+          <u-switch label="Webhook" field="trigger_webhook" />
+          <u-switch label="Cron" field="trigger_cron" />
         </div>
         <template v-if="form.trigger_cron">
-          <u-form-item label="表达式">
-            <u-input v-model="form.cron_expression" placeholder="0 2 * * *" />
-          </u-form-item>
-          <u-form-item label="时区">
-            <u-input v-model="form.cron_timezone" placeholder="UTC" />
-          </u-form-item>
+          <u-input label="表达式" field="cron_expression" placeholder="0 2 * * *" />
+          <u-input label="时区" field="cron_timezone" placeholder="UTC" />
         </template>
       </u-form>
       <template #footer>

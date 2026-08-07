@@ -92,6 +92,7 @@ type BuildJob struct {
 	AgentTriggerEvent  string       `json:"agent_trigger_event" gorm:"size:40;default:artifact_ready"`
 	AgentIDs           UintList     `json:"agent_ids" gorm:"type:text"`
 	IsPublic           bool         `json:"is_public" gorm:"not null;default:false;index"`
+	ProjectID          *uint        `json:"project_id" gorm:"index"`
 	CreatedBy          uint         `json:"created_by" gorm:"index"`
 	CreatedAt          time.Time    `json:"created_at"`
 	UpdatedAt          time.Time    `json:"updated_at"`
@@ -190,6 +191,7 @@ type ScriptJob struct {
 	CronExpression  string       `json:"cron_expression" gorm:"size:100"`
 	CronTimezone    string       `json:"cron_timezone" gorm:"size:100;default:UTC"`
 	IsPublic        bool         `json:"is_public" gorm:"not null;default:false;index"`
+	ProjectID       *uint        `json:"project_id" gorm:"index"`
 	CreatedBy       uint         `json:"created_by" gorm:"index"`
 	CreatedAt       time.Time    `json:"created_at"`
 	UpdatedAt       time.Time    `json:"updated_at"`
@@ -246,6 +248,7 @@ type BuildPipeline struct {
 	CronExpression     string    `json:"cron_expression" gorm:"size:100"`
 	CronTimezone       string    `json:"cron_timezone" gorm:"size:100;default:UTC"`
 	IsPublic           bool      `json:"is_public" gorm:"not null;default:false;index"`
+	ProjectID          *uint     `json:"project_id" gorm:"index"`
 	CreatedBy          uint      `json:"created_by" gorm:"index"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`

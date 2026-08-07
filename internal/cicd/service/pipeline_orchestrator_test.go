@@ -143,7 +143,7 @@ func setupOrchestrator(t *testing.T) *orchFixture {
 		resourceservice.NewCredentialService(credRepo),
 		stubGitBranches{branches: []string{"main"}},
 	)
-	jobSvc := NewBuildJobService(jobRepo, repoRepo)
+	jobSvc := NewBuildJobService(jobRepo, repoRepo, nil)
 	buildRuns := NewBuildRunService(buildRunRepo, jobRepo)
 	sched := &stubRunScheduler{}
 	buildRuns.SetScheduler(sched)

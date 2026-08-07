@@ -25,10 +25,13 @@ func (r *ScriptRunRepository) FindByID(id uint) (*model.ScriptRun, error) {
 	return &run, nil
 }
 
-func (r *ScriptRunRepository) List(q pkg.ListQuery, scriptJobID *uint, status string, jobCreatedBy *uint) ([]model.ScriptRun, int64, error) {
+func (r *ScriptRunRepository) List(q pkg.ListQuery, scriptJobID *uint, status string, jobCreatedBy *uint, projectID *uint) ([]model.ScriptRun, int64, error) {
 	db := r.db.Model(&model.ScriptRun{})
 	if scriptJobID != nil && *scriptJobID > 0 {
 		db = db.Where("script_job_id = ?", *scriptJobID)
+	}
+	if projectID != nil && *projectID > 0 {
+		db = db.Where("script_job_id IN (SELECT id FROM script_jobs WHERE project_id = ?)", *projectID)
 	}
 	if jobCreatedBy != nil {
 		db = db.Joins("JOIN script_jobs ON script_jobs.id = script_runs.script_job_id").

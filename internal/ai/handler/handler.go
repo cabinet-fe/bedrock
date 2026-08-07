@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -69,7 +70,12 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 func (h *Handler) ListAgents(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	items, total, err := h.agents.ListAgents(page, pageSize)
+	projectID, err := parseOptionalUintQuery(c, "project_id")
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "无效 project_id")
+		return
+	}
+	items, total, err := h.agents.ListAgents(page, pageSize, projectID)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -220,7 +226,12 @@ func (h *Handler) ListRuns(c *gin.Context) {
 		v, _ := strconv.ParseUint(raw, 10, 64)
 		agentID = uint(v)
 	}
-	items, total, err := h.agents.ListRuns(page, pageSize, agentID, c.Query("status"))
+	projectID, err := parseOptionalUintQuery(c, "project_id")
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "无效 project_id")
+		return
+	}
+	items, total, err := h.agents.ListRuns(page, pageSize, agentID, c.Query("status"), projectID)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -482,6 +493,19 @@ func (h *Handler) skillScope(c *gin.Context) (uint, string, bool) {
 		return 0, "", false
 	}
 	return uint(id), scope, true
+}
+
+func parseOptionalUintQuery(c *gin.Context, key string) (*uint, error) {
+	v := c.Query(key)
+	if v == "" {
+		return nil, nil
+	}
+	id, err := strconv.ParseUint(v, 10, 64)
+	if err != nil || id == 0 {
+		return nil, fmt.Errorf("invalid %s", key)
+	}
+	u := uint(id)
+	return &u, nil
 }
 
 func writeErr(c *gin.Context, err error) {

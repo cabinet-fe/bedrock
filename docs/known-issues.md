@@ -21,5 +21,8 @@
 | 三库进程冒烟 | CI 默认跑 SQLite；Postgres/MySQL 需本地/CI 服务 + `BEDROCK_SMOKE_*` / contract DSN |
 | Linux 包启动冒烟 | 交叉编译在 macOS/CI 均可产出 amd64/arm64；**本机执行**启动冒烟仅在 Linux amd64 主机自动跑 |
 | Playwright | 需已启动后端或 `E2E_BASE_URL`；CI 以 API smoke 为主路径证据 |
+| 流水线节点同项目 | 流水线 `project_id` 与节点引用的 BuildJob / ScriptJob / Agent **不强制**同属一项目 |
+| 项目卡片统计 | 卡片列表不做后端聚合统计；概览由前端并行调各域列表拼装 |
+| 项目全员可见门槛 | 无内置普通业务角色种子；「全员可见」依赖管理员给目标角色配置 `project_projects:view`（超管除外） |
 
 无未关闭落地阻塞项时，本文件应保持「仅非阻塞」状态。

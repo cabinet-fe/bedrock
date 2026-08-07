@@ -18,7 +18,6 @@ import (
 	"bedrock/internal/platform/seed"
 	projectmodel "bedrock/internal/project/model"
 	projectrepo "bedrock/internal/project/repository"
-	rbacmodel "bedrock/internal/rbac/model"
 	rbacrepo "bedrock/internal/rbac/repository"
 	rbacservice "bedrock/internal/rbac/service"
 	storagemodel "bedrock/internal/storage/model"
@@ -46,10 +45,11 @@ func TestProjectACLListAndGlobalBypass(t *testing.T) {
 		t.Fatalf("joined list = %#v total=%d err=%v", items, total, err)
 	}
 
-	viewAll := actor(3, "project_projects:view", "project_projects:view_all")
-	items, total, err = svc.ListProjects(viewAll, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
+	// D2：仅持有 view 的非成员也可列出全部项目
+	nonMember := actor(3, "project_projects:view")
+	items, total, err = svc.ListProjects(nonMember, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
 	if err != nil || total != 1 || len(items) != 1 {
-		t.Fatalf("view_all list = %#v total=%d err=%v", items, total, err)
+		t.Fatalf("non-member list = %#v total=%d err=%v", items, total, err)
 	}
 
 	manager := actor(4, "project_projects:update", "project_projects:manage_all")
@@ -57,36 +57,59 @@ func TestProjectACLListAndGlobalBypass(t *testing.T) {
 		t.Fatalf("manage_all must manage without joining: %v", err)
 	}
 	ordinary := actor(6, "project_projects:update")
-	if _, err := svc.AddMember(ordinary, project.ID, MemberInput{UserID: 7, Role: projectmodel.ProjectRoleMember}); !IsNotFound(err) {
+	if _, err := svc.AddMember(ordinary, project.ID, MemberInput{UserID: 7, Role: projectmodel.ProjectRoleMember}); !IsForbidden(err) {
 		t.Fatalf("ordinary update must not bypass membership, got %v", err)
 	}
 }
 
-func TestProjectDataScopeAllListsWithoutViewAll(t *testing.T) {
+func TestProjectNonMemberCanListAndGetButNotWrite(t *testing.T) {
 	svc := newProjectService(t)
 	owner := actor(1, "project_projects:create", "project_projects:view", "project_projects:update")
-	project := createProject(t, svc, owner, "data-scope-all")
+	project := createProject(t, svc, owner, "private-for-non-member")
 
-	scoped := actorWithScope(8, rbacmodel.DataScopeAll, "project_projects:view")
-	items, total, err := svc.ListProjects(scoped, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
+	viewer := actor(9, "project_projects:view", "project_projects:update", "project_projects:delete",
+		"project_requirements:view", "project_requirements:create")
+	items, total, err := svc.ListProjects(viewer, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
 	if err != nil || total != 1 || len(items) != 1 || items[0].ID != project.ID {
-		t.Fatalf("data_scope=all list = %#v total=%d err=%v", items, total, err)
+		t.Fatalf("non-member list = %#v total=%d err=%v", items, total, err)
 	}
-	if _, err := svc.GetProject(scoped, project.ID); err != nil {
-		t.Fatalf("data_scope=all must read project: %v", err)
+	if items[0].MyRole != "" {
+		t.Fatalf("non-member my_role must be empty: %#v", items[0])
 	}
-	writer := actorWithScope(8, rbacmodel.DataScopeAll, "project_projects:view", "project_projects:update")
-	if _, err := svc.UpdateProject(writer, project.ID, UpdateProjectInput{}); !IsNotFound(err) {
-		t.Fatalf("data_scope=all must not grant write, got %v", err)
+	if items[0].Permissions.Update || items[0].Permissions.Archive || items[0].Permissions.Delete ||
+		items[0].Permissions.ManageMembers || items[0].Permissions.TransferOwner {
+		t.Fatalf("non-member permissions must be all false: %#v", items[0].Permissions)
 	}
 
-	selfOnly := actorWithScope(9, rbacmodel.DataScopeSelf, "project_projects:view")
-	items, total, err = svc.ListProjects(selfOnly, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
-	if err != nil || total != 0 || len(items) != 0 {
-		t.Fatalf("data_scope=self non-member list = %#v total=%d err=%v", items, total, err)
+	got, err := svc.GetProject(viewer, project.ID)
+	if err != nil {
+		t.Fatalf("non-member get: %v", err)
 	}
-	if _, err := svc.GetProject(selfOnly, project.ID); !IsNotFound(err) {
-		t.Fatalf("data_scope=self non-member get = %v, want not found", err)
+	if got.MyRole != "" {
+		t.Fatalf("non-member get my_role must be empty: %#v", got)
+	}
+	if got.Permissions.Update || got.Permissions.Archive || got.Permissions.Delete ||
+		got.Permissions.ManageMembers || got.Permissions.TransferOwner {
+		t.Fatalf("non-member get permissions must be all false: %#v", got.Permissions)
+	}
+
+	if _, err := svc.ListMembers(viewer, project.ID); err != nil {
+		t.Fatalf("non-member list members: %v", err)
+	}
+	if _, err := svc.UpdateProject(viewer, project.ID, UpdateProjectInput{}); !IsForbidden(err) {
+		t.Fatalf("non-member update = %v, want forbidden", err)
+	}
+	if _, err := svc.ArchiveProject(viewer, project.ID); !IsForbidden(err) {
+		t.Fatalf("non-member archive = %v, want forbidden", err)
+	}
+	if err := svc.DeleteProject(viewer, project.ID); !IsForbidden(err) {
+		t.Fatalf("non-member delete = %v, want forbidden", err)
+	}
+	if _, err := svc.AddMember(viewer, project.ID, MemberInput{UserID: 10, Role: projectmodel.ProjectRoleMember}); !IsForbidden(err) {
+		t.Fatalf("non-member add member = %v, want forbidden", err)
+	}
+	if _, err := svc.CreateRequirement(viewer, project.ID, RequirementInput{Title: "blocked"}); !IsForbidden(err) {
+		t.Fatalf("non-member create requirement = %v, want forbidden", err)
 	}
 }
 
@@ -114,7 +137,7 @@ func TestProjectListCapabilitiesReflectProjectACL(t *testing.T) {
 	if items[0].Permissions.Update || items[0].Permissions.Archive || items[0].Permissions.Delete {
 		t.Fatalf("view_all without manage_all must not expose project mutations: %#v", items[0].Permissions)
 	}
-	if _, err := svc.UpdateProject(viewAll, project.ID, UpdateProjectInput{}); !IsNotFound(err) {
+	if _, err := svc.UpdateProject(viewAll, project.ID, UpdateProjectInput{}); !IsForbidden(err) {
 		t.Fatalf("view_all update must not bypass membership, got %v", err)
 	}
 
@@ -155,8 +178,16 @@ func TestRequirementStatusMetadataAllowsMemberWithoutDictionaryPermission(t *tes
 		t.Fatalf("requirement status values = %v, want %v", values, want)
 	}
 
-	if _, err := svc.ListRequirementStatuses(actor(3, "project_requirements:view")); !IsForbidden(err) {
-		t.Fatalf("non-member requirement reader must not read metadata, got %v", err)
+	// D2：非成员持有 project_requirements:view 亦可读状态元数据
+	statuses, err = svc.ListRequirementStatuses(actor(3, "project_requirements:view"))
+	if err != nil {
+		t.Fatalf("non-member requirement reader must read metadata: %v", err)
+	}
+	if len(statuses) != len(want) {
+		t.Fatalf("non-member status count = %d, want %d", len(statuses), len(want))
+	}
+	if _, err := svc.ListRequirementStatuses(actor(4)); !IsForbidden(err) {
+		t.Fatalf("missing permission must be forbidden, got %v", err)
 	}
 }
 
@@ -504,12 +535,6 @@ func actor(userID uint, permissions ...string) AccessContext {
 	return NewAccessContext(userID, false, permissions)
 }
 
-func actorWithScope(userID uint, scope string, permissions ...string) AccessContext {
-	a := NewAccessContext(userID, false, permissions)
-	a.DataScope = scope
-	return a
-}
-
 func makeZIP(t *testing.T, entries map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -546,25 +571,28 @@ func makeZIPBomb(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
-func TestProjectPublicReadableBySelfScope(t *testing.T) {
+func TestProjectIsPublicNoLongerGatesRead(t *testing.T) {
 	svc := newProjectService(t)
 	owner := actor(1, "project_projects:create", "project_projects:view", "project_projects:update")
-	project := createProject(t, svc, owner, "public-project")
+	project := createProject(t, svc, owner, "still-private")
+
+	viewer := actor(9, "project_projects:view", "project_projects:update")
+	items, total, err := svc.ListProjects(viewer, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != project.ID {
+		t.Fatalf("non-member list private = %#v total=%d err=%v", items, total, err)
+	}
+	if _, err := svc.GetProject(viewer, project.ID); err != nil {
+		t.Fatalf("non-member get private: %v", err)
+	}
+	if _, err := svc.UpdateProject(viewer, project.ID, UpdateProjectInput{}); !IsForbidden(err) {
+		t.Fatalf("is_public=false must not grant write, got %v", err)
+	}
+
 	pub := true
 	if _, err := svc.UpdateProject(owner, project.ID, UpdateProjectInput{IsPublic: &pub}); err != nil {
 		t.Fatalf("mark public: %v", err)
 	}
-
-	selfOnly := actorWithScope(9, rbacmodel.DataScopeSelf, "project_projects:view")
-	items, total, err := svc.ListProjects(selfOnly, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
-	if err != nil || total != 1 || len(items) != 1 || items[0].ID != project.ID {
-		t.Fatalf("self list public = %#v total=%d err=%v", items, total, err)
-	}
-	if _, err := svc.GetProject(selfOnly, project.ID); err != nil {
-		t.Fatalf("self get public: %v", err)
-	}
-	writer := actorWithScope(9, rbacmodel.DataScopeSelf, "project_projects:view", "project_projects:update")
-	if _, err := svc.UpdateProject(writer, project.ID, UpdateProjectInput{}); !IsNotFound(err) {
-		t.Fatalf("public must not grant write, got %v", err)
+	if _, err := svc.UpdateProject(viewer, project.ID, UpdateProjectInput{}); !IsForbidden(err) {
+		t.Fatalf("is_public=true must not grant write, got %v", err)
 	}
 }

@@ -18,7 +18,7 @@
 3. **前端**：旁路新建 `web/`（Vue 3 + Veltra + CatKit + Vite+）；达标后一次切换 embed，旧 `web/` 保留回滚窗口。
 4. **安全边界（已接受风险）**：允许 HTTP；`access_token` Web Storage + Bearer，`refresh_token` HttpOnly Cookie（不设 Secure）；构建/AI CLI **同 Bedrock UID** 直接执行。
 5. **CI/CD 状态**：归档成功后 BuildRun 保持 `success`；`distribution_summary` 反映最新分发；重新分发**追加** `BuildDeployAttempt`，不新建 BuildRun。
-6. **ACL**：仅**产品项目**使用对象级成员 ACL；资源管理 / CI/CD / AI 等依赖全局 RBAC；显式 `view_all` / `manage_all` 绕过成员范围。
+6. **ACL**：仅**产品项目**使用对象级成员 ACL（写侧）；项目域读对持有 `:view` 的认证用户开放。资源管理 / CI/CD / AI 写与执行依赖全局 RBAC；CI/CD 全局列表另受 `data_scope`；显式 `manage_all` 绕过成员写范围。BuildJob / ScriptJob / BuildPipeline / AiAgent 可选归属项目（可空 `project_id`）。
 7. **验收**：仅功能 Gate；不设容量与延迟 SLO。
 
 ```mermaid
@@ -41,7 +41,7 @@ flowchart LR
 | **P0** | 平台底座 + web-v2 骨架 | 多库、migration、OpenAPI 契约、空壳前端可登录 | 无 | 业务域 CRUD、CI/CD 重构、运维/项目/AI |
 | **P1** | RBAC + CI/CD 重构 | 动态权限、菜单下发、仓库/任务/执行/部署闭环 | P0 | 项目管理、AI/Skills、开发环境安装、可配置仪表盘卡片 |
 | **P2** | 仪表盘 + 运维 | 三卡片布局、进程、开发环境与每环境安装源 | P1 | 产品项目、Agent、Skills |
-| **P3** | 项目管理 | 产品项目、成员 ACL、需求、文档树与草稿发布 | P2 | AI CLI 四件套、Skill 安装器（文档生成可先 stub 或依赖 P4 并行接入点） |
+| **P3** | 项目管理 | 产品项目、成员 ACL（写）、全员可读、资源可选归属、文档树 | P2 | AI CLI 四件套、Skill 安装器（文档生成可先 stub 或依赖 P4 并行接入点） |
 | **P4** | AI + Skills | 四 CLI 并行、智能体、触发器、AgentRun、Skill/PAT | P1（可与 P3 部分并行，GA 依赖两者） | 非功能容量调优、多节点调度 |
 | **P5** | 全域集成与 2.0 GA | 端到端回归、embed 切换、文档与发布包 | P0–P4 全部 Gate | 1.x 数据迁移、远程 Runner、对象存储 |
 
@@ -162,23 +162,25 @@ flowchart LR
 
 ### 5.1 目标
 
-独立产品协作域：产品项目、成员角色、需求列表、Markdown 接口文档树；与 CI/CD 松耦合可选关联。
+产品协作与资源聚合：产品项目、成员角色、需求列表、Markdown 接口文档树；构建任务 / 脚本任务 / 流水线 / 智能体可经可空 `project_id` 可选归属（项目中心化，归属非强制）。
 
 ### 5.2 交付物
 
 | 类别 | 内容 |
 | --- | --- |
-| 项目 | ProductProject、ProjectMember（Owner/Admin/Member/Readonly）；显式 `project_projects:view_all` / `manage_all` |
+| 项目 | ProductProject、ProjectMember（Owner/Admin/Member/Readonly）；显式 `project_projects:view_all` / `manage_all`（读侧已由 `:view` 覆盖全员可读，`view_all` 保留兼容） |
 | 需求 | Requirement、评论、附件（走 StorageObject）；状态字典可扩展 |
 | 文档 | ApiDocNode 树；同节点 `published_content` + `draft_content` + `base_version`；上传/移动/删除；发布 `expected_version` 乐观锁 |
-| 权限 | 全局 RBAC **且** 项目成员 ACL（无 view_all/manage_all 时）；manage_all 可管理全部项目且无需加入 |
-| 前端 | 项目列表/详情、成员、需求、文档树、草稿 diff 与发布确认 |
-| 测试 | 非成员不可见；view_all/manage_all 行为；并发发布 409；附件配额与 XSS 防护 |
+| 权限 | 全局 RBAC **且** 项目成员 ACL（写侧）；读侧持有 `:view` 即可；manage_all 可管理全部项目且无需加入 |
+| 归属 | BuildJob / ScriptJob / BuildPipeline / AiAgent 可选 `project_id`；列表 `?project_id=` 跳过 CI/CD `data_scope` 读过滤；写/执行不变；Skills 不绑定 |
+| 前端 | 项目卡片列表、详情工作台（概览/各域面板）、成员、需求、文档树、草稿 diff 与发布确认；各域表单 ProjectSelect |
+| 测试 | 非成员可读、不可写；view_all/manage_all 行为；`?project_id=` 读放宽；并发发布 409；附件配额与 XSS 防护 |
 
 ### 5.3 明确不做
 
 - 可配置任意需求状态机（首期固定 + 字典扩展）
-- 强制绑定 CI/CD 仓库
+- 强制绑定 CI/CD 仓库或强制流水线节点同项目
+- 项目卡片列表后端聚合统计（前端并行取 total）
 - Skill 市场器（属 P4）
 
 ### 5.4 与 P4 的接口
@@ -188,10 +190,13 @@ flowchart LR
 
 ### 5.5 退出 Gate
 
-1. 成员角色能力符合 PRD；普通用户仅见加入的项目。
-2. `view_all` 可见全部；`manage_all` 可管理成员与内容且无需加入项目；普通 `:update` **不**隐含全局越权。
+1. 成员角色写能力符合 PRD；持有 `project_projects:view` 的用户可读全部项目；非成员不可写。
+2. `manage_all` 可管理成员与内容且无需加入项目；普通 `:update` **不**隐含全局越权；`view_all` 保留兼容。
 3. 多级文档树、上传 `.md`/压缩包导入可用。
 4. 生成结果只写 draft；发布需确认；`expected_version` 冲突返回 409；可查看 diff 摘要。
+5. （项目中心化）四类资源可绑定/解绑 `project_id`；带 `project_id` 的列表读不受 CI/CD `data_scope` 限制；写/执行不变。
+
+> **状态**：P3 协作基线已交付；项目中心化（可选归属 + 全员可读 + 卡片/工作台）已落地，契约见 `api/project.md`、`api/cicd*.md`、`api/ai.md`。
 
 ---
 

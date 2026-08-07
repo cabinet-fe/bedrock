@@ -6,6 +6,7 @@ import (
 	"bedrock/internal/cicd/model"
 	"bedrock/internal/cicd/repository"
 	"bedrock/internal/pkg"
+	projectrepo "bedrock/internal/project/repository"
 	rbacmodel "bedrock/internal/rbac/model"
 )
 
@@ -19,6 +20,7 @@ type BuildPipelineService struct {
 	pipelines   *repository.BuildPipelineRepository
 	jobs        *repository.BuildJobRepository
 	scriptJobs  *repository.ScriptJobRepository
+	projects    *projectrepo.ProjectRepository
 	agentExists func(id uint) bool
 	cron        PipelineCronRegistrar
 }
@@ -27,8 +29,9 @@ func NewBuildPipelineService(
 	pipelines *repository.BuildPipelineRepository,
 	jobs *repository.BuildJobRepository,
 	scriptJobs *repository.ScriptJobRepository,
+	projects *projectrepo.ProjectRepository,
 ) *BuildPipelineService {
-	return &BuildPipelineService{pipelines: pipelines, jobs: jobs, scriptJobs: scriptJobs}
+	return &BuildPipelineService{pipelines: pipelines, jobs: jobs, scriptJobs: scriptJobs, projects: projects}
 }
 
 func (s *BuildPipelineService) SetCron(c PipelineCronRegistrar) { s.cron = c }
@@ -51,6 +54,7 @@ type CreateBuildPipelineInput struct {
 	WebhookCommitPath  string `json:"webhook_commit_path"`
 	WebhookMessagePath string `json:"webhook_message_path"`
 	IsPublic           *bool  `json:"is_public"`
+	ProjectID          *uint  `json:"project_id"`
 }
 
 type UpdateBuildPipelineInput struct {
@@ -68,6 +72,7 @@ type UpdateBuildPipelineInput struct {
 	WebhookCommitPath  *string `json:"webhook_commit_path"`
 	WebhookMessagePath *string `json:"webhook_message_path"`
 	IsPublic           *bool   `json:"is_public"`
+	ProjectID          *uint   `json:"project_id"`
 }
 
 func (s *BuildPipelineService) Create(createdBy uint, in CreateBuildPipelineInput) (*model.BuildPipeline, error) {
@@ -75,11 +80,15 @@ func (s *BuildPipelineService) Create(createdBy uint, in CreateBuildPipelineInpu
 	if name == "" {
 		return nil, errorsNew("名称不能为空")
 	}
+	projectID, err := resolveProjectID(s.projects, in.ProjectID)
+	if err != nil {
+		return nil, err
+	}
 	graphJSON := strings.TrimSpace(in.GraphJSON)
 	if graphJSON == "" {
 		graphJSON = `{"nodes":[],"edges":[]}`
 	}
-	graphJSON, err := EncryptGraphEnvVars(graphJSON, "")
+	graphJSON, err = EncryptGraphEnvVars(graphJSON, "")
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +123,7 @@ func (s *BuildPipelineService) Create(createdBy uint, in CreateBuildPipelineInpu
 		CronExpression:     strings.TrimSpace(in.CronExpression),
 		CronTimezone:       defaultStr(in.CronTimezone, "UTC"),
 		IsPublic:           in.IsPublic != nil && *in.IsPublic,
+		ProjectID:          projectID,
 		CreatedBy:          createdBy,
 	}
 	if err := s.pipelines.Create(p); err != nil {
@@ -188,6 +198,13 @@ func (s *BuildPipelineService) Update(id, userID uint, dataScope string, in Upda
 	if in.IsPublic != nil {
 		p.IsPublic = *in.IsPublic
 	}
+	if in.ProjectID != nil {
+		projectID, err := resolveProjectID(s.projects, in.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		p.ProjectID = projectID
+	}
 	if err := s.pipelines.Update(p); err != nil {
 		return nil, err
 	}
@@ -250,12 +267,13 @@ func (s *BuildPipelineService) RotateWebhookSecret(id, userID uint, dataScope st
 	return publicPipeline(p, true), nil
 }
 
-func (s *BuildPipelineService) List(q pkg.ListQuery, keyword string, userID uint, dataScope string) ([]model.BuildPipeline, int64, error) {
+func (s *BuildPipelineService) List(q pkg.ListQuery, keyword string, projectID *uint, userID uint, dataScope string) ([]model.BuildPipeline, int64, error) {
 	var createdBy *uint
-	if dataScope != rbacmodel.DataScopeAll {
+	// D3: 带 project_id 时跳过 created_by/is_public 数据范围过滤
+	if projectID == nil && dataScope != rbacmodel.DataScopeAll {
 		createdBy = &userID
 	}
-	items, total, err := s.pipelines.List(q, keyword, createdBy)
+	items, total, err := s.pipelines.List(q, keyword, createdBy, projectID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -320,6 +338,10 @@ func defaultStr(v, fallback string) string {
 
 func requirePipelineRead(p *model.BuildPipeline, userID uint, dataScope string) error {
 	if dataScope == rbacmodel.DataScopeAll || p.IsPublic || p.CreatedBy == userID {
+		return nil
+	}
+	// D3: 已关联项目的资源对具备 view 权限的用户可读
+	if p.ProjectID != nil {
 		return nil
 	}
 	return NewForbidden("无权访问该流水线")

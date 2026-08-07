@@ -72,7 +72,7 @@ cd web && vp check    # format + lint + typecheck
 │   └── src/
 │       ├── api/                # 按域封装的 HTTP 客户端
 │       ├── assets/             # 静态资源
-│       ├── components/         # 跨页面可复用组件
+│       ├── components/         # 跨页面可复用组件（含 project-select 项目归属选择器）
 │       ├── composables/        # 组合式函数（权限、面包屑等）
 │       ├── content/            # 内置手册等 Markdown 内容
 │       ├── lib/                # 纯工具与第三方薄封装

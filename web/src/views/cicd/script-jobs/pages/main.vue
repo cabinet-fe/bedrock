@@ -1,8 +1,8 @@
 <script setup lang="ts">
 defineOptions({ name: "CicdScriptJobs" });
 
-import { computed, nextTick, reactive, ref, useTemplateRef } from "vue";
-import { useRouter } from "vue-router";
+import { computed, nextTick, onMounted, reactive, ref, useTemplateRef } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { o } from "@cat-kit/core";
 import { clipboard } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
@@ -12,6 +12,7 @@ import {
   createScriptJob,
   deleteScriptJob,
   enqueueScriptRun,
+  getScriptJob,
   getScriptJobWebhookSecret,
   rotateScriptJobWebhookSecret,
   updateScriptJob,
@@ -19,10 +20,22 @@ import {
 import type { AiAgentEnvVarInput, ScriptJob, ScriptRun } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import ProjectSelect from "@/components/project-select";
 import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType, type TagType } from "@/lib/tag";
+
+function parsePositiveInt(raw: unknown): number | undefined {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const id = typeof value === "number" ? value : Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+}
+
+function queryFlag(raw: unknown): boolean {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "1" || value === "true";
+}
 
 const TIMEZONE_OPTIONS = [
   { label: "Asia/Shanghai（北京）", value: "Asia/Shanghai" },
@@ -52,15 +65,22 @@ type EnvVarDraft = { key: string; value: string; has_value?: boolean };
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
 const { busy: rotateBusy, run: runRotate } = useBusy();
+const route = useRoute();
 const router = useRouter();
 const listRef = useTemplateRef("list");
 const historyRef = useTemplateRef("history");
-const query = reactive({ keyword: "" });
+const query = reactive({
+  keyword: "",
+  project_id: parsePositiveInt(route.query.project_id),
+});
 const dialogOpen = ref(false);
 const secretOpen = ref(false);
 const historyOpen = ref(false);
 const historyJob = ref<ScriptJob | null>(null);
-const historyQuery = reactive({ script_job_id: undefined as number | undefined });
+const historyQuery = reactive({
+  script_job_id: undefined as number | undefined,
+  project_id: undefined as number | undefined,
+});
 const editing = ref<ScriptJob | null>(null);
 const webhookInfo = reactive({ secret: "", url: "" });
 
@@ -80,6 +100,7 @@ const form = reactive({
   cron_expression: "",
   cron_timezone: "Asia/Shanghai",
   is_public: false,
+  project_id: undefined as number | undefined,
 });
 
 const editorLangs = computed(() => {
@@ -134,7 +155,7 @@ function canRun(job: ScriptJob) {
   return job.enabled && job.trigger_manual;
 }
 
-function openCreate() {
+function openCreate(projectID?: number) {
   editing.value = null;
   o(form).extend({
     name: "",
@@ -152,6 +173,7 @@ function openCreate() {
     cron_expression: "",
     cron_timezone: "Asia/Shanghai",
     is_public: false,
+    project_id: typeof projectID === "number" ? projectID : undefined,
   });
   dialogOpen.value = true;
 }
@@ -205,6 +227,7 @@ function buildBody(): Record<string, unknown> | undefined {
     ...o(form).omit(["env_var_names", "env_vars"]),
     env_var_names: form.env_var_names.map((e) => e.name.trim()).filter(Boolean),
     env_vars: envVars,
+    project_id: form.project_id ?? 0,
   };
 }
 
@@ -270,6 +293,7 @@ async function onRotateSecret() {
 function openHistory(row: ScriptJob) {
   historyJob.value = row;
   historyQuery.script_job_id = row.id;
+  historyQuery.project_id = row.project_id ?? undefined;
   historyOpen.value = true;
   void nextTick(() => historyRef.value?.reload());
 }
@@ -278,19 +302,41 @@ function openRunDetail(row: ScriptRun) {
   historyOpen.value = false;
   void router.push({ name: "cicd-script-run-detail", params: { id: String(row.id) } });
 }
+
+onMounted(async () => {
+  const editID = parsePositiveInt(route.query.id);
+  const prefillID = parsePositiveInt(route.query.project_id);
+  if (editID != null && hasPermission("cicd_script_jobs:update")) {
+    try {
+      openEdit(await getScriptJob(editID));
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "加载任务失败");
+    }
+  } else if (queryFlag(route.query.create) && hasPermission("cicd_script_jobs:create")) {
+    openCreate(prefillID);
+  }
+});
 </script>
 
 <template>
   <div>
-    <ProTable ref="list" url="/script-jobs" :query="query" :columns="columns" pagination>
+    <ProTable
+      ref="list"
+      url="/script-jobs"
+      :query="query"
+      :columns="columns"
+      :auto-query-fields="['project_id']"
+      pagination
+    >
       <template #filters>
+        <ProjectSelect v-model="query.project_id" placeholder="全部项目" style="width: 180px" />
         <u-input v-model="query.keyword" clearable placeholder="搜索名称" style="width: 200px" />
       </template>
       <template #toolbar>
         <u-button
           v-if="hasPermission('cicd_script_jobs:create')"
           type="primary"
-          @click="openCreate"
+          @click="openCreate()"
         >
           新建
         </u-button>
@@ -362,6 +408,7 @@ function openRunDetail(row: ScriptRun) {
       <template #group:basic>
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
         <u-input label="描述" field="description" />
+        <ProjectSelect label="所属项目" field="project_id" />
         <u-switch label="启用" field="enabled" />
         <u-switch
           label="公开"

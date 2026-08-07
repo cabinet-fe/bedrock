@@ -4,6 +4,7 @@ import { http } from "./http";
 import type {
   ApiDocNode,
   DevDocNode,
+  PageResult,
   ProductProject,
   ProjectMember,
   ProjectRole,
@@ -55,6 +56,11 @@ export async function listUserOptions(keyword?: string): Promise<UserOption[]> {
   return body.items ?? [];
 }
 
+export async function listMembers(projectID: number): Promise<ProjectMember[]> {
+  const { body } = await http.get<{ items: ProjectMember[] }>(`/projects/${projectID}/members`);
+  return body.items ?? [];
+}
+
 export async function addProjectMember(
   projectID: number,
   userID: number,
@@ -92,6 +98,19 @@ export async function transferProjectOwner(
       user_id: userID,
     },
   );
+  return body;
+}
+
+export async function listRequirements(
+  projectID: number,
+  query?: Record<string, string | number | boolean | undefined>,
+): Promise<PageResult<Requirement>> {
+  const q = Object.fromEntries(
+    Object.entries(query ?? {}).filter(([, v]) => v !== undefined && v !== ""),
+  ) as Record<string, string | number | boolean>;
+  const { body } = await http.get<PageResult<Requirement>>(`/projects/${projectID}/requirements`, {
+    query: q,
+  });
   return body;
 }
 

@@ -21,6 +21,7 @@ import (
 	"bedrock/internal/ai/repository"
 	cicdmodel "bedrock/internal/cicd/model"
 	"bedrock/internal/engine"
+	projectrepo "bedrock/internal/project/repository"
 	resourcemodel "bedrock/internal/resource/model"
 	"bedrock/internal/ws"
 )
@@ -69,6 +70,7 @@ type AgentService struct {
 	artifactDir string
 	logDir      string
 	docs        DocDraftWriter
+	projects    *projectrepo.ProjectRepository
 	repos       RepositoryFinder
 	secrets     SecretResolver
 	gitCheckout GitCheckoutFunc
@@ -149,6 +151,11 @@ func NewAgentService(
 
 func (s *AgentService) SetDocDraftWriter(w DocDraftWriter) { s.docs = w }
 
+// SetProjectRepo wires project existence checks for agent.project_id.
+func (s *AgentService) SetProjectRepo(projects *projectrepo.ProjectRepository) {
+	s.projects = projects
+}
+
 func (s *AgentService) Start() {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
@@ -205,6 +212,7 @@ type AgentInput struct {
 	OutputDir    string              `json:"output_dir"`
 	StreamOutput *bool               `json:"stream_output"`
 	TimeoutSec   int                 `json:"timeout_sec"`
+	ProjectID    *uint               `json:"project_id"`
 }
 
 func (s *AgentService) CreateAgent(createdBy uint, in AgentInput) (*model.AiAgent, error) {
@@ -215,6 +223,10 @@ func (s *AgentService) CreateAgent(createdBy uint, in AgentInput) (*model.AiAgen
 	if _, err := s.cli.FindByKey(in.CliKey); err != nil {
 		return nil, errors.New("CLI 不存在")
 	}
+	projectID, err := s.resolveProjectID(in.ProjectID)
+	if err != nil {
+		return nil, err
+	}
 	agent := &model.AiAgent{
 		Name: name, Description: strings.TrimSpace(in.Description),
 		Enabled: boolOr(in.Enabled, true), CliKey: in.CliKey,
@@ -222,6 +234,7 @@ func (s *AgentService) CreateAgent(createdBy uint, in AgentInput) (*model.AiAgen
 		OutputDir:    stringOr(in.OutputDir, "output"),
 		StreamOutput: boolOr(in.StreamOutput, false),
 		TimeoutSec:   intOr(in.TimeoutSec, 600), CreatedBy: createdBy,
+		ProjectID:       projectID,
 		WorkspaceStatus: model.WorkspacePending,
 		WorkspaceError:  "",
 	}
@@ -305,6 +318,13 @@ func (s *AgentService) UpdateAgent(id, userID uint, in AgentInput) (*model.AiAge
 	if in.TimeoutSec > 0 {
 		agent.TimeoutSec = in.TimeoutSec
 	}
+	if in.ProjectID != nil {
+		projectID, err := s.resolveProjectID(in.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		agent.ProjectID = projectID
+	}
 	agent.WorkspaceStatus = model.WorkspacePending
 	agent.WorkspaceError = ""
 	if err := s.repo.UpdateAgent(agent); err != nil {
@@ -353,8 +373,8 @@ func (s *AgentService) GetAgent(id uint) (*model.AiAgent, error) {
 	return agent, nil
 }
 
-func (s *AgentService) ListAgents(page, pageSize int) ([]model.AiAgent, int64, error) {
-	items, total, err := s.repo.ListAgents(page, pageSize)
+func (s *AgentService) ListAgents(page, pageSize int, projectID *uint) ([]model.AiAgent, int64, error) {
+	items, total, err := s.repo.ListAgents(page, pageSize, projectID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -502,6 +522,10 @@ func (s *AgentService) CreateRun(agentID uint, in CreateRunInput) (*model.AgentR
 		SnapshotJSON: string(snapshot),
 		WorkDir:      s.agentRoot(agentID),
 	}
+	// Agent.project_id 回填；显式传入（如 docs_generate）优先
+	if run.ProjectID == nil && agent.ProjectID != nil {
+		run.ProjectID = agent.ProjectID
+	}
 	if err := s.repo.CreateRun(run); err != nil {
 		return nil, err
 	}
@@ -608,8 +632,8 @@ func (s *AgentService) ArtifactPath(id uint) (path string, filename string, err 
 	return path, filepath.Base(path), nil
 }
 
-func (s *AgentService) ListRuns(page, pageSize int, agentID uint, status string) ([]model.AgentRun, int64, error) {
-	return s.repo.ListRuns(page, pageSize, agentID, status)
+func (s *AgentService) ListRuns(page, pageSize int, agentID uint, status string, projectID *uint) ([]model.AgentRun, int64, error) {
+	return s.repo.ListRuns(page, pageSize, agentID, status, projectID)
 }
 
 func (s *AgentService) CancelRun(id uint) error {
@@ -1073,6 +1097,19 @@ func boolOr(p *bool, def bool) bool {
 		return def
 	}
 	return *p
+}
+
+func (s *AgentService) resolveProjectID(id *uint) (*uint, error) {
+	if id == nil || *id == 0 {
+		return nil, nil
+	}
+	if s.projects == nil {
+		return nil, errors.New("所属项目不存在")
+	}
+	if _, err := s.projects.FindProject(*id); err != nil {
+		return nil, errors.New("所属项目不存在")
+	}
+	return id, nil
 }
 
 func intOr(v, def int) int {

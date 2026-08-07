@@ -48,12 +48,13 @@ type RedeployInput struct {
 	TargetIDs []uint `json:"target_ids"`
 }
 
-func (s *BuildRunService) List(q pkg.ListQuery, buildJobID *uint, status string, userID uint, dataScope string) ([]model.BuildRun, int64, error) {
+func (s *BuildRunService) List(q pkg.ListQuery, buildJobID *uint, status string, projectID *uint, userID uint, dataScope string) ([]model.BuildRun, int64, error) {
 	var jobCreatedBy *uint
-	if dataScope != rbacmodel.DataScopeAll {
+	// D3: 带 project_id 时跳过 created_by/is_public 数据范围过滤
+	if projectID == nil && dataScope != rbacmodel.DataScopeAll {
 		jobCreatedBy = &userID
 	}
-	return s.runs.List(q, buildJobID, status, jobCreatedBy)
+	return s.runs.List(q, buildJobID, status, jobCreatedBy, projectID)
 }
 
 func (s *BuildRunService) Get(id uint, userID uint, dataScope string) (*model.BuildRun, error) {

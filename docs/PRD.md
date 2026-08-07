@@ -23,13 +23,13 @@
 | 运维     | 宿主机级能力，仅内置超级管理员可用                                      |
 | 资源管理 | 共享资源域：代码仓库、服务器、凭证                                              |
 | CI/CD    | 独立交付域：任务、执行、部署（引用资源管理中的仓库/服务器/凭证）                |
-| 项目管理 | 独立协作域：产品项目、需求、接口文档；与 CI/CD **解耦**，需要时手动关联 |
+| 项目管理 | 研发资源聚合根：产品项目、成员、需求、接口文档；构建任务 / 脚本任务 / 流水线 / 智能体可**可选归属**项目 |
 | AI       | CLI 运行时、智能体编排、Skills 资产库                                   |
 | 系统管理 | 用户、角色、权限资源、字典、操作日志                                    |
 
 ### 1.3 设计原则
 
-1. **域独立，松耦合关联**：项目管理与 CI/CD 各自一等公民，不强制绑定。
+1. **项目聚合，归属可选**：项目是协作与资源浏览的聚合根；CI/CD / AI 资源可绑定 `project_id`，亦可保持未归属；写权限仍走各域全局 RBAC（及项目域写侧 ACL）。
 2. **配置驱动扩展**：数据库驱动、安装源、开发环境、CLI 等通过配置扩展，默认零依赖。
 3. **权限即可见性**：菜单、页面、API、仪表盘卡片均受 RBAC 资源控制；侧栏由登录下发的两层分组菜单驱动（`u-group-nav`）；菜单项支持自定义图标。
 4. **命名消歧**：避免「Agent / Environment / Project / Proxy / Resource」多义混用。
@@ -49,7 +49,7 @@
 
 | 术语                            | 定义                                                                                                       | 禁止混用为                            |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| **产品项目（Product Project）** | 项目管理域的协作聚合根：成员、需求、接口文档                                                               | CI/CD 仓库或构建任务                  |
+| **产品项目（Product Project）** | 研发资源聚合根：成员、需求、接口文档；可聚合归属的构建任务 / 脚本任务 / 流水线 / 智能体 | 代码仓库实体本身 |
 | **代码仓库（Repository）**      | CI/CD 中的 Git 源码地址与认证配置                                                                          | 产品项目                              |
 | **构建任务（Build Job）**       | 仓库下的可重复执行配置（脚本、分支策略、部署目标等）                                                       | 单次执行记录                          |
 | **构建执行（Build Run）**       | 某次构建任务的运行实例与日志/制品                                                                          | 构建任务配置                          |
@@ -187,8 +187,8 @@ database:
 | `ops_processes:view`           | 查看进程（`super_admin_only`） |
 | `ops_processes:execute`        | 终止进程等执行类操作           |
 | `ops_dev_environments:execute` | 执行安装/升级/卸载/切版本      |
-| `project_projects:view`        | 查看产品项目                   |
-| `project_projects:view_all`    | 查看全部项目（无需加入）       |
+| `project_projects:view`        | 查看产品项目（全员可读门槛）   |
+| `project_projects:view_all`    | 查看全部项目（保留兼容；读侧已由 `:view` 覆盖） |
 | `project_projects:manage_all`  | 管理全部项目（无需加入）       |
 | `project_requirements:create`  | 创建需求                       |
 | `project_docs:execute`         | 触发智能体生成文档             |
@@ -387,11 +387,11 @@ database:
 
 ## 8. 项目管理
 
-> 与 CI/CD **完全独立**。可手动建立关联（例如需求关联某仓库、接口文档生成时选择仓库），但不强制。
+> 项目为研发资源**聚合根**：成员、需求、文档在此协作；构建任务 / 脚本任务 / 流水线 / 智能体可通过可空 `project_id` **可选归属**。未归属资源仍在各域全局列表管理。写权限：项目内容写走成员 ACL；CI/CD / AI 写/执行仍走各域全局 RBAC（不因归属项目而放宽）。Skills 不绑定项目。
 
 ### 8.1 产品项目
 
-**字段（核心）：** 名称、标识（唯一 slug）、描述、状态（活跃/归档）、负责人、标签、创建时间。
+**字段（核心）：** 名称、标识（唯一 slug）、描述、状态（活跃/归档）、负责人、标签、创建时间。`is_public` 保留兼容，**不再影响**读可见性。
 
 **成员与项目角色：**
 
@@ -405,7 +405,8 @@ database:
 **规则：**
 
 - 创建项目者默认为负责人。
-- 列表可见性：无 `project_projects:view_all` 时仅见自己加入的项目；持有 `view_all` 可见全部。`manage_all` 可管理全部项目成员与内容且无需加入。普通 `project_projects:update` **不**隐含全局越权（与 DESIGN §4.4 一致）。
+- **读可见性**：持有 `project_projects:view` 的认证用户可列出并查看全部项目（含非成员）；非成员 `my_role` 为空、`permissions` 能力位全 false。`project_projects:view_all` 保留兼容。`manage_all` 可管理全部项目成员与内容且无需加入。普通 `project_projects:update` **不**隐含全局越权（与 DESIGN §4.4 一致）。
+- **项目内资源列表**：各域列表带 `?project_id=` 时可读该项目下资源（仍需各域 `:view`）；不带参数时全局列表仍受 CI/CD `data_scope` / `is_public` 等原规则约束。写/执行规则不变。
 
 ### 8.2 需求管理（结构化列表）
 
@@ -713,7 +714,7 @@ flowchart TB
 
 **关键规则汇总：**
 
-1. 项目管理 ↔ CI/CD：无强制外键；关联为可选引用。
+1. 项目管理 ↔ CI/CD / AI：BuildJob / ScriptJob / BuildPipeline / AiAgent 可选 `project_id`（可空）；Skills 不绑定；不强制流水线节点与流水线同项目。
 2. 构建事件 → 智能体：异步解耦；智能体失败不修改 Build Run 成功状态。
 3. Skill → 智能体：仅显式绑定注入。
 4. 仪表盘卡片 → 权限资源：无权限即不可见。
@@ -753,6 +754,7 @@ flowchart TB
 - Repository 1—N BuildJob；BuildJob 1—N BuildRun；BuildRun 1—N BuildDeployRun。
 - BuildJob N—M DeployTarget（或内嵌有序列表）→ Server。
 - ProductProject 1—N Requirement；1—N ApiDocNode（树）。
+- ProductProject 0—N BuildJob / ScriptJob / BuildPipeline / AiAgent（可空 `project_id` 归属）。
 - AiAgent N—M SkillPackage；AiAgent N—0..1 Repository（默认上下文）。
 - AgentTrigger 属于 AiAgent；可引用 BuildJob 事件过滤器。
 

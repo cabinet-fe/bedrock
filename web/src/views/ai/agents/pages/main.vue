@@ -2,6 +2,7 @@
 defineOptions({ name: "AiAgents" });
 
 import { computed, onMounted, reactive, ref, useTemplateRef } from "vue";
+import { useRoute } from "vue-router";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
 
@@ -10,6 +11,7 @@ import {
   createTrigger,
   deleteAgent,
   deleteTrigger,
+  getAgent,
   listSkills,
   listTriggers,
   manualRunAgent,
@@ -26,11 +28,23 @@ import type {
 } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import ProjectSelect from "@/components/project-select";
 import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { tagType, type TagType } from "@/lib/tag";
 import RunHistoryDialog from "../components/run-history-dialog.vue";
 import { repoBindingPath } from "../repo-dir-name";
+
+function parsePositiveInt(raw: unknown): number | undefined {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const id = typeof value === "number" ? value : Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+}
+
+function queryFlag(raw: unknown): boolean {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "1" || value === "true";
+}
 
 const CLI_KEY_TAG: Record<string, TagType> = {
   claude_code: "primary",
@@ -81,6 +95,7 @@ type EnvVarDraft = {
 
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
+const route = useRoute();
 const table = useTemplateRef("table");
 const dialogOpen = ref(false);
 const runDialogOpen = ref(false);
@@ -97,6 +112,9 @@ const branchesLoadingByRepo = ref<Record<number, boolean>>({});
 const formTriggers = ref<TriggerDraft[]>([]);
 /** Snapshot of server trigger ids when the edit dialog opened. */
 const initialTriggerIDs = ref<number[]>([]);
+const query = reactive({
+  project_id: parsePositiveInt(route.query.project_id),
+});
 
 const form = reactive({
   name: "",
@@ -110,6 +128,7 @@ const form = reactive({
   output_dir: "output",
   stream_output: false,
   timeout_sec: 600,
+  project_id: undefined as number | undefined,
 });
 
 const runForm = reactive({ user_prompt: "" });
@@ -196,6 +215,18 @@ onMounted(async () => {
     );
   }
   await Promise.all(tasks);
+
+  const editID = parsePositiveInt(route.query.id);
+  const prefillID = parsePositiveInt(route.query.project_id);
+  if (editID != null && hasPermission("ai_agents:update")) {
+    try {
+      await openEdit(await getAgent(editID));
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "加载智能体失败");
+    }
+  } else if (queryFlag(route.query.create) && hasPermission("ai_agents:create")) {
+    openCreate(prefillID);
+  }
 });
 
 function resetTriggerDraft() {
@@ -252,7 +283,7 @@ function runDisabledTip(row: AiAgent) {
   return "";
 }
 
-function openCreate() {
+function openCreate(projectID?: number) {
   editing.value = null;
   form.skill_ids = [];
   form.repo_bindings = [];
@@ -260,6 +291,7 @@ function openCreate() {
   formTriggers.value = [];
   initialTriggerIDs.value = [];
   resetTriggerDraft();
+  form.project_id = typeof projectID === "number" ? projectID : undefined;
   dialogOpen.value = true;
 }
 
@@ -420,6 +452,7 @@ async function save() {
     output_dir: form.output_dir || "output",
     repo_bindings: bindings,
     env_vars: envVars,
+    project_id: form.project_id ?? 0,
   };
   try {
     let agentID: number;
@@ -471,12 +504,22 @@ const remove = bind(async (row: AiAgent) => {
 
 <template>
   <div>
-    <ProTable ref="table" url="/ai/agents" pagination :columns="columns">
+    <ProTable
+      ref="table"
+      url="/ai/agents"
+      pagination
+      :columns="columns"
+      :query="query"
+      :auto-query-fields="['project_id']"
+    >
+      <template #filters>
+        <ProjectSelect v-model="query.project_id" placeholder="全部项目" style="width: 180px" />
+      </template>
       <template #toolbar>
         <u-button
           v-if="hasPermission('ai_agents:create')"
           type="primary"
-          @click.prevent="openCreate"
+          @click.prevent="openCreate()"
         >
           新建
         </u-button>
@@ -543,6 +586,7 @@ const remove = bind(async (row: AiAgent) => {
       <template #group:basic>
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
         <u-input label="描述" field="description" />
+        <ProjectSelect label="所属项目" field="project_id" />
         <u-select
           label="CLI"
           field="cli_key"

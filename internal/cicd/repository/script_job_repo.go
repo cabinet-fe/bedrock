@@ -41,8 +41,11 @@ func (r *ScriptJobRepository) FindByID(id uint) (*model.ScriptJob, error) {
 	return &job, nil
 }
 
-func (r *ScriptJobRepository) List(q pkg.ListQuery, keyword string, createdBy *uint) ([]model.ScriptJob, int64, error) {
+func (r *ScriptJobRepository) List(q pkg.ListQuery, keyword string, createdBy *uint, projectID *uint) ([]model.ScriptJob, int64, error) {
 	db := r.db.Model(&model.ScriptJob{})
+	if projectID != nil && *projectID > 0 {
+		db = db.Where("project_id = ?", *projectID)
+	}
 	if createdBy != nil {
 		db = db.Where("created_by = ? OR is_public = ?", *createdBy, true)
 	}

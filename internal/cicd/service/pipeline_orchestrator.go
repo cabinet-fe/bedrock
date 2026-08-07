@@ -105,12 +105,13 @@ type EnqueuePipelineInput struct {
 	TriggerType string `json:"trigger_type"`
 }
 
-func (o *PipelineOrchestrator) List(q pkg.ListQuery, pipelineID *uint, status string, userID uint, dataScope string) ([]model.PipelineRun, int64, error) {
+func (o *PipelineOrchestrator) List(q pkg.ListQuery, pipelineID *uint, status string, projectID *uint, userID uint, dataScope string) ([]model.PipelineRun, int64, error) {
 	var createdBy *uint
-	if dataScope != rbacmodel.DataScopeAll {
+	// D3: 带 project_id 时跳过 created_by/is_public 数据范围过滤
+	if projectID == nil && dataScope != rbacmodel.DataScopeAll {
 		createdBy = &userID
 	}
-	items, total, err := o.runs.List(q, pipelineID, status, createdBy)
+	items, total, err := o.runs.List(q, pipelineID, status, createdBy, projectID)
 	if err != nil {
 		return nil, 0, err
 	}

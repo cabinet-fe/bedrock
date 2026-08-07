@@ -9,11 +9,13 @@ import (
 	"bedrock/internal/cicd/repository"
 	"bedrock/internal/engine"
 	"bedrock/internal/pkg"
+	projectrepo "bedrock/internal/project/repository"
 	rbacmodel "bedrock/internal/rbac/model"
 )
 
 type ScriptJobService struct {
 	jobs         *repository.ScriptJobRepository
+	projects     *projectrepo.ProjectRepository
 	cron         ScriptCronRegistrar
 	workspaceDir string
 }
@@ -24,8 +26,8 @@ type ScriptCronRegistrar interface {
 	Remove(jobID uint)
 }
 
-func NewScriptJobService(jobs *repository.ScriptJobRepository) *ScriptJobService {
-	return &ScriptJobService{jobs: jobs}
+func NewScriptJobService(jobs *repository.ScriptJobRepository, projects *projectrepo.ProjectRepository) *ScriptJobService {
+	return &ScriptJobService{jobs: jobs, projects: projects}
 }
 
 func (s *ScriptJobService) SetCron(c ScriptCronRegistrar) { s.cron = c }
@@ -48,6 +50,7 @@ type CreateScriptJobInput struct {
 	CronTimezone   string        `json:"cron_timezone"`
 	WebhookType    string        `json:"webhook_type"`
 	IsPublic       *bool         `json:"is_public"`
+	ProjectID      *uint         `json:"project_id"`
 }
 
 type UpdateScriptJobInput struct {
@@ -66,12 +69,17 @@ type UpdateScriptJobInput struct {
 	CronTimezone   *string        `json:"cron_timezone"`
 	WebhookType    *string        `json:"webhook_type"`
 	IsPublic       *bool          `json:"is_public"`
+	ProjectID      *uint          `json:"project_id"`
 }
 
 func (s *ScriptJobService) Create(createdBy uint, in CreateScriptJobInput) (*model.ScriptJob, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return nil, errorsNew("名称不能为空")
+	}
+	projectID, err := resolveProjectID(s.projects, in.ProjectID)
+	if err != nil {
+		return nil, err
 	}
 	secret, err := generateWebhookSecret()
 	if err != nil {
@@ -96,6 +104,7 @@ func (s *ScriptJobService) Create(createdBy uint, in CreateScriptJobInput) (*mod
 		CronExpression: strings.TrimSpace(in.CronExpression),
 		CronTimezone:   stringOr(in.CronTimezone, "UTC"),
 		IsPublic:       boolOr(in.IsPublic, false),
+		ProjectID:      projectID,
 		CreatedBy:      createdBy,
 	}
 	if err := validateOptionalRelPath(job.WorkDir, "工作目录"); err != nil {
@@ -186,6 +195,13 @@ func (s *ScriptJobService) Update(id uint, userID uint, dataScope string, in Upd
 	if in.IsPublic != nil {
 		job.IsPublic = *in.IsPublic
 	}
+	if in.ProjectID != nil {
+		projectID, err := resolveProjectID(s.projects, in.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		job.ProjectID = projectID
+	}
 	if err := s.jobs.Update(job); err != nil {
 		return nil, err
 	}
@@ -266,12 +282,13 @@ func (s *ScriptJobService) RotateWebhookSecret(id uint, userID uint, dataScope s
 	return out, nil
 }
 
-func (s *ScriptJobService) List(q pkg.ListQuery, keyword string, userID uint, dataScope string) ([]model.ScriptJob, int64, error) {
+func (s *ScriptJobService) List(q pkg.ListQuery, keyword string, projectID *uint, userID uint, dataScope string) ([]model.ScriptJob, int64, error) {
 	var createdBy *uint
-	if dataScope != rbacmodel.DataScopeAll {
+	// D3: 带 project_id 时跳过 created_by/is_public 数据范围过滤
+	if projectID == nil && dataScope != rbacmodel.DataScopeAll {
 		createdBy = &userID
 	}
-	items, total, err := s.jobs.List(q, keyword, createdBy)
+	items, total, err := s.jobs.List(q, keyword, createdBy, projectID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -405,6 +422,10 @@ func publicScriptJob(job *model.ScriptJob, revealSecret bool) *model.ScriptJob {
 
 func requireScriptJobRead(job *model.ScriptJob, userID uint, dataScope string) error {
 	if dataScope == rbacmodel.DataScopeAll || job.IsPublic || job.CreatedBy == userID {
+		return nil
+	}
+	// D3: 已关联项目的资源对具备 view 权限的用户可读
+	if job.ProjectID != nil {
 		return nil
 	}
 	return NewForbidden("无权访问该脚本任务")

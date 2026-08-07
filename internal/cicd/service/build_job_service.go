@@ -10,6 +10,7 @@ import (
 	"bedrock/internal/cicd/repository"
 	"bedrock/internal/engine"
 	"bedrock/internal/pkg"
+	projectrepo "bedrock/internal/project/repository"
 	rbacmodel "bedrock/internal/rbac/model"
 	resourcerepo "bedrock/internal/resource/repository"
 )
@@ -17,6 +18,7 @@ import (
 type BuildJobService struct {
 	jobs         *repository.BuildJobRepository
 	repos        *resourcerepo.RepositoryRepository
+	projects     *projectrepo.ProjectRepository
 	cron         CronRegistrar
 	workspaceDir string
 }
@@ -27,8 +29,8 @@ type CronRegistrar interface {
 	Remove(jobID uint)
 }
 
-func NewBuildJobService(jobs *repository.BuildJobRepository, repos *resourcerepo.RepositoryRepository) *BuildJobService {
-	return &BuildJobService{jobs: jobs, repos: repos}
+func NewBuildJobService(jobs *repository.BuildJobRepository, repos *resourcerepo.RepositoryRepository, projects *projectrepo.ProjectRepository) *BuildJobService {
+	return &BuildJobService{jobs: jobs, repos: repos, projects: projects}
 }
 
 func (s *BuildJobService) SetCron(c CronRegistrar) { s.cron = c }
@@ -76,6 +78,7 @@ type CreateBuildJobInput struct {
 	WebhookCommitPath  string              `json:"webhook_commit_path"`
 	WebhookMessagePath string              `json:"webhook_message_path"`
 	IsPublic           *bool               `json:"is_public"`
+	ProjectID          *uint               `json:"project_id"`
 	DeployTargets      []DeployTargetInput `json:"deploy_targets"`
 }
 
@@ -109,12 +112,17 @@ type UpdateBuildJobInput struct {
 	WebhookCommitPath  *string              `json:"webhook_commit_path"`
 	WebhookMessagePath *string              `json:"webhook_message_path"`
 	IsPublic           *bool                `json:"is_public"`
+	ProjectID          *uint                `json:"project_id"`
 	DeployTargets      *[]DeployTargetInput `json:"deploy_targets"`
 }
 
 func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model.BuildJob, error) {
 	if _, err := s.repos.FindByID(in.RepositoryID); err != nil {
 		return nil, errorsNew("所属仓库不存在")
+	}
+	projectID, err := resolveProjectID(s.projects, in.ProjectID)
+	if err != nil {
+		return nil, err
 	}
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
@@ -156,6 +164,7 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 		AgentTriggerEvent:  normalizeAgentEvent(in.AgentTriggerEvent),
 		AgentIDs:           cleanAgentIDs(in.AgentIDs),
 		IsPublic:           boolOr(in.IsPublic, false),
+		ProjectID:          projectID,
 		CreatedBy:          createdBy,
 	}
 	if err := validateOptionalRelPath(job.WorkDir, "工作目录"); err != nil {
@@ -288,6 +297,13 @@ func (s *BuildJobService) Update(id uint, userID uint, dataScope string, in Upda
 	if in.IsPublic != nil {
 		job.IsPublic = *in.IsPublic
 	}
+	if in.ProjectID != nil {
+		projectID, err := resolveProjectID(s.projects, in.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		job.ProjectID = projectID
+	}
 	if in.CronExpression != nil {
 		job.CronExpression = strings.TrimSpace(*in.CronExpression)
 	}
@@ -405,12 +421,13 @@ func (s *BuildJobService) RotateWebhookSecret(id uint, userID uint, dataScope st
 	return out, nil
 }
 
-func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword, tag string, userID uint, dataScope string) ([]model.BuildJob, int64, error) {
+func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword, tag string, projectID *uint, userID uint, dataScope string) ([]model.BuildJob, int64, error) {
 	var createdBy *uint
-	if dataScope != rbacmodel.DataScopeAll {
+	// D3: 带 project_id 时跳过 created_by/is_public 数据范围过滤
+	if projectID == nil && dataScope != rbacmodel.DataScopeAll {
 		createdBy = &userID
 	}
-	items, total, err := s.jobs.List(q, repositoryID, keyword, tag, createdBy)
+	items, total, err := s.jobs.List(q, repositoryID, keyword, tag, createdBy, projectID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -579,6 +596,10 @@ func generateWebhookSecret() (string, error) {
 
 func requireJobRead(job *model.BuildJob, userID uint, dataScope string) error {
 	if dataScope == rbacmodel.DataScopeAll || job.IsPublic || job.CreatedBy == userID {
+		return nil
+	}
+	// D3: 已关联项目的资源对具备 view 权限的用户可读
+	if job.ProjectID != nil {
 		return nil
 	}
 	return NewForbidden("无权访问该构建任务")

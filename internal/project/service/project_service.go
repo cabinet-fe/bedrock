@@ -113,11 +113,10 @@ func (s *ProjectService) CreateProject(actor AccessContext, input CreateProjectI
 }
 
 func (s *ProjectService) ListProjects(actor AccessContext, filter ProjectListFilter) ([]ProjectView, int64, error) {
-	all, err := s.acl.CanListProjects(actor)
-	if err != nil {
+	if err := s.acl.CanListProjects(actor); err != nil {
 		return nil, 0, err
 	}
-	projects, total, err := s.repo.ListProjects(filter.ListQuery, filter.Keyword, filter.Status, actor.UserID, all)
+	projects, total, err := s.repo.ListProjects(filter.ListQuery, filter.Keyword, filter.Status)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -208,21 +207,11 @@ func projectCapabilities(actor AccessContext, role string) ProjectCapabilities {
 }
 
 // ListRequirementStatuses returns only enabled status options. Requirement
-// readers may retrieve this business metadata without dictionary-admin access,
-// but must still have project ACL visibility through membership or a global
-// project scope permission.
+// readers may retrieve this business metadata without dictionary-admin access
+// （D2：持有 project_requirements:view 即可，无需项目成员身份）。
 func (s *ProjectService) ListRequirementStatuses(actor AccessContext) ([]projectmodel.RequirementStatusOption, error) {
 	if !actor.Has("project_requirements:view") {
 		return nil, NewForbidden("缺少全局权限: project_requirements:view")
-	}
-	if !actor.SuperAdmin && !actor.Has("project_projects:view_all") && !actor.Has("project_projects:manage_all") && !actor.HasDataScopeAll() {
-		member, err := s.repo.HasProjectMembership(actor.UserID)
-		if err != nil {
-			return nil, err
-		}
-		if !member {
-			return nil, NewForbidden("未加入任何项目")
-		}
 	}
 	return s.repo.ListRequirementStatuses()
 }

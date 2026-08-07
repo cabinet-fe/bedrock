@@ -37,7 +37,7 @@ func setupScriptJobSvc(t *testing.T) *service.ScriptJobService {
 	if err := migration.Up(context.Background(), gdb, "sqlite"); err != nil {
 		t.Fatal(err)
 	}
-	svc := service.NewScriptJobService(repository.NewScriptJobRepository(gdb))
+	svc := service.NewScriptJobService(repository.NewScriptJobRepository(gdb), nil)
 	svc.SetWorkspaceDir(filepath.Join(t.TempDir(), "workspaces"))
 	return svc
 }
@@ -107,7 +107,7 @@ func TestScriptRunServiceEnqueue(t *testing.T) {
 	}
 	jobRepo := repository.NewScriptJobRepository(gdb)
 	runRepo := repository.NewScriptRunRepository(gdb)
-	jobSvc := service.NewScriptJobService(jobRepo)
+	jobSvc := service.NewScriptJobService(jobRepo, nil)
 	runSvc := service.NewScriptRunService(runRepo, jobRepo)
 
 	enabled := true

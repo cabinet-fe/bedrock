@@ -21,6 +21,52 @@ import (
 	resourcemodel "bedrock/internal/resource/model"
 )
 
+func TestAgentRunCopiesProjectIDFromAgent(t *testing.T) {
+	_, agents, _, projectSvc := setupAI(t)
+	owner := projectservice.NewAccessContext(1, true, []string{"project_projects:create"})
+	project, err := projectSvc.CreateProject(owner, projectservice.CreateProjectInput{Name: "A", Slug: "a-run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := agents.CreateAgent(1, service.AgentInput{
+		Name: "with-proj", CliKey: "codex", SystemPrompt: "x", TimeoutSec: 2, ProjectID: &project.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent = requireWorkspaceReady(t, agents, agent.ID)
+	if agent.ProjectID == nil || *agent.ProjectID != project.ID {
+		t.Fatalf("agent.project_id=%v", agent.ProjectID)
+	}
+	run, err := agents.ManualRun(agent.ID, 1, "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.ProjectID == nil || *run.ProjectID != project.ID {
+		t.Fatalf("run.project_id=%v want %d", run.ProjectID, project.ID)
+	}
+	// docs_generate 显式传入优先
+	otherID := project.ID + 1000
+	explicit, err := agents.CreateRun(agent.ID, service.CreateRunInput{
+		TriggerType: model.TriggerDocsGen, TriggeredBy: 1, ProjectID: &otherID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explicit.ProjectID == nil || *explicit.ProjectID != otherID {
+		t.Fatalf("explicit project_id=%v want %d", explicit.ProjectID, otherID)
+	}
+	items, total, err := agents.ListAgents(1, 20, &project.ID)
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != agent.ID {
+		t.Fatalf("list by project = %#v total=%d err=%v", items, total, err)
+	}
+	runs, total, err := agents.ListRuns(1, 20, 0, "", &project.ID)
+	if err != nil || total < 1 {
+		t.Fatalf("list runs by project total=%d err=%v", total, err)
+	}
+	_ = runs
+}
+
 func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
 	_, agents, _, _ := setupAI(t)
 	agent, err := agents.CreateAgent(1, service.AgentInput{
@@ -53,7 +99,7 @@ func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
 	job := &cicdmodel.BuildJob{ID: 99, AgentTriggerEvent: model.EventArtifactReady, AgentIDs: cicdmodel.UintList{agent.ID}}
 	buildRun := &cicdmodel.BuildRun{ID: 77, BuildJobID: 99, Status: "success", TriggeredBy: 1, ArtifactPath: "/tmp/a.tgz"}
 	agents.OnBuildEvent(model.EventArtifactReady, job, buildRun)
-	items, _, _ := agents.ListRuns(1, 50, agent.ID, "")
+	items, _, _ := agents.ListRuns(1, 50, agent.ID, "", nil)
 	var buildEventRun *model.AgentRun
 	for i := range items {
 		if items[i].TriggerType == model.TriggerBuildEvent {

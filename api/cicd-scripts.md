@@ -4,20 +4,22 @@
 
 通用约定见 [.agents/api.md](../.agents/api.md)。构建任务见 [cicd.md](cicd.md)。
 
+**项目归属（`project_id`）**：ScriptJob 可选归属产品项目（可空）。创建/更新传正整数绑定；传 `0` 解除绑定（存为 null）；更新时省略字段则不改。列表查询带 `project_id` 时按归属过滤，并跳过角色 `data_scope` 下的 `created_by`/`is_public` 数据范围限制（仍需本端点 `:view`）；**写/执行规则不变**。
+
 ## 脚本任务
 
 ### GET /script-jobs — 列出脚本任务
 
 权限：`cicd_script_jobs:view`
-查询参数：page: integer, page_size: integer, keyword: string
+查询参数：page: integer, page_size: integer, keyword: string, project_id: integer
 响应 200：data = ScriptJobPage
 
 ### POST /script-jobs — 创建脚本任务
 
 权限：`cicd_script_jobs:create`
-请求：{ name*, description, enabled, script_type, script, work_dir, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, cron_expression, cron_timezone, webhook_type, is_public }
+请求：{ name*, description, enabled, script_type, script, work_dir, env_var_names, env_vars, trigger_manual, trigger_webhook, trigger_cron, cron_expression, cron_timezone, webhook_type, is_public, project_id }
 响应 201：data = ScriptJob
-说明：自动生成 `webhook_secret`。响应只读字段 `workspace_path` 为绝对路径 `{build.workspace_dir}/scripts/script-{id}/`（跨 run 持久复用，不清空）。`script` 执行前做 `${{...}}` 文本替换；内置变量：`job.id`、`job.name`、`run.id`、`workspace`；用户变量 `${{ env.KEY }}`。未知变量 → 执行失败。
+说明：自动生成 `webhook_secret`。响应只读字段 `workspace_path` 为绝对路径 `{build.workspace_dir}/scripts/script-{id}/`（跨 run 持久复用，不清空）。`script` 执行前做 `${{...}}` 文本替换；内置变量：`job.id`、`job.name`、`run.id`、`workspace`；用户变量 `${{ env.KEY }}`。未知变量 → 执行失败。`project_id` 见文首说明。
 
 ### GET /script-jobs/{id} — 获取脚本任务
 
@@ -29,7 +31,7 @@
 
 权限：`cicd_script_jobs:update`
 路径参数：id*: integer
-请求：同创建（字段均可选）
+请求：同创建（字段均可选，含 `project_id`）
 响应 200：data = ScriptJob
 
 ### DELETE /script-jobs/{id} — 删除脚本任务
@@ -62,8 +64,9 @@
 ### GET /script-runs — 列出脚本运行
 
 权限：`cicd_script_runs:view`
-查询参数：page: integer, page_size: integer, script_job_id: integer, status: string, sort: string
+查询参数：page: integer, page_size: integer, script_job_id: integer, status: string, sort: string, project_id: integer
 响应 200：data = ScriptRunPage
+说明：`project_id` 按所属 ScriptJob 的归属过滤；携带时跳过 Job 侧 `created_by`/`is_public` 数据范围限制（仍需 `:view`）。
 
 ### GET /script-runs/{id} — 获取脚本运行详情
 
@@ -131,7 +134,8 @@
 | `webhook_type` | `string` | 默认 generic |
 | `cron_expression` | `string` |  |
 | `cron_timezone` | `string` |  |
-| `is_public` | `boolean` |  |
+| `is_public` | `boolean` | 全局列表 `data_scope=self` 时放宽读；带 `project_id` 列表过滤时不依赖此字段 |
+| `project_id` | `integer` | 可空；归属产品项目 |
 | `created_by` | `integer` |  |
 | `created_at` | `string(date-time)` |  |
 | `updated_at` | `string(date-time)` |  |

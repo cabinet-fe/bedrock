@@ -20,19 +20,20 @@ const (
 )
 
 type ProductProject struct {
-	ID           uint           `json:"id" gorm:"primaryKey"`
-	Name         string         `json:"name" gorm:"size:200;not null"`
-	Slug         string         `json:"slug" gorm:"size:120;not null;uniqueIndex"`
-	Description  string         `json:"description" gorm:"type:text"`
-	Status       string         `json:"status" gorm:"size:20;not null;default:active;index"`
-	OwnerID      uint           `json:"owner_id" gorm:"not null;index"`
-	RepositoryID *uint          `json:"repository_id,omitempty" gorm:"index"`
-	Tags         string         `json:"tags"`
-	IsPublic     bool           `json:"is_public" gorm:"not null;default:false;index"`
-	CreatedBy    uint           `json:"created_by" gorm:"index"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`
+	ID           uint   `json:"id" gorm:"primaryKey"`
+	Name         string `json:"name" gorm:"size:200;not null"`
+	Slug         string `json:"slug" gorm:"size:120;not null;uniqueIndex"`
+	Description  string `json:"description" gorm:"type:text"`
+	Status       string `json:"status" gorm:"size:20;not null;default:active;index"`
+	OwnerID      uint   `json:"owner_id" gorm:"not null;index"`
+	RepositoryID *uint  `json:"repository_id,omitempty" gorm:"index"`
+	Tags         string `json:"tags"`
+	// IsPublic 不再影响读可见性（D2 全员可读），保留字段以兼容存量数据与 API。
+	IsPublic  bool           `json:"is_public" gorm:"not null;default:false;index"`
+	CreatedBy uint           `json:"created_by" gorm:"index"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 func (ProductProject) TableName() string { return "product_projects" }

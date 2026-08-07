@@ -877,14 +877,7 @@ func (h *ProjectHandler) actor(c *gin.Context) (projectservice.AccessContext, bo
 		pkg.Error(c, http.StatusInternalServerError, "权限校验失败")
 		return projectservice.AccessContext{}, false
 	}
-	scope, err := h.perm.ResolveDataScope(userID, isSuper)
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "权限校验失败")
-		return projectservice.AccessContext{}, false
-	}
-	actor := projectservice.NewAccessContext(userID, isSuper, permissions)
-	actor.DataScope = scope
-	return actor, true
+	return projectservice.NewAccessContext(userID, isSuper, permissions), true
 }
 
 func (h *ProjectHandler) requirementActor(c *gin.Context, globalPermission string, write bool) (uint, uint, projectservice.AccessContext, bool) {

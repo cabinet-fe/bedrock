@@ -2,7 +2,7 @@
 defineOptions({ name: "CicdBuildJobs" });
 
 import { computed, nextTick, onMounted, reactive, ref, useTemplateRef, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { o } from "@cat-kit/core";
 import { clipboard } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
@@ -13,6 +13,7 @@ import {
   createBuildJob,
   deleteBuildJob,
   enqueueBuildRun,
+  getBuildJob,
   getBuildJobWebhookSecret,
   rotateBuildJobWebhookSecret,
   updateBuildJob,
@@ -30,6 +31,7 @@ import type {
 } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import ProjectSelect from "@/components/project-select";
 import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime, formatDurationMs } from "@/lib/datetime";
@@ -40,6 +42,17 @@ import {
   tagType,
   type TagType,
 } from "@/lib/tag";
+
+function parsePositiveInt(raw: unknown): number | undefined {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const id = typeof value === "number" ? value : Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+}
+
+function queryFlag(raw: unknown): boolean {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "1" || value === "true";
+}
 
 const METHOD_OPTIONS = [
   { label: "rsync", value: "rsync" },
@@ -126,6 +139,7 @@ const SCRIPT_TYPE_LANG: Record<string, CodeEditorLang | undefined> = {
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
 const { busy: rotateBusy, run: runRotate } = useBusy();
+const route = useRoute();
 const router = useRouter();
 const listRef = useTemplateRef("list");
 const historyRef = useTemplateRef("history");
@@ -133,12 +147,16 @@ const query = reactive({
   keyword: "",
   repository_id: undefined as number | undefined,
   tag: undefined as string | undefined,
+  project_id: parsePositiveInt(route.query.project_id),
 });
 const dialogOpen = ref(false);
 const secretOpen = ref(false);
 const historyOpen = ref(false);
 const historyJob = ref<BuildJob | null>(null);
-const historyQuery = reactive({ build_job_id: undefined as number | undefined });
+const historyQuery = reactive({
+  build_job_id: undefined as number | undefined,
+  project_id: undefined as number | undefined,
+});
 const editing = ref<BuildJob | null>(null);
 const webhookInfo = reactive({ secret: "", url: "" });
 const repoOptions = ref<{ label: string; value: number }[]>([]);
@@ -177,6 +195,7 @@ const form = reactive({
   agent_trigger_event: "artifact_ready",
   agent_ids: [] as number[],
   is_public: false,
+  project_id: undefined as number | undefined,
   deploy_targets: [] as DeployTarget[],
 });
 
@@ -329,6 +348,18 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+
+  const editID = parsePositiveInt(route.query.id);
+  const prefillID = parsePositiveInt(route.query.project_id);
+  if (editID != null && hasPermission("cicd_build_jobs:update")) {
+    try {
+      openEdit(await getBuildJob(editID));
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "加载任务失败");
+    }
+  } else if (queryFlag(route.query.create) && hasPermission("cicd_build_jobs:create")) {
+    openCreate(prefillID);
+  }
 });
 
 function repoName(repositoryId: number): string {
@@ -338,12 +369,14 @@ function repoName(repositoryId: number): string {
 function openHistory(row: BuildJob) {
   historyJob.value = row;
   historyQuery.build_job_id = row.id;
+  historyQuery.project_id = row.project_id ?? undefined;
   historyOpen.value = true;
 }
 
 watch(historyOpen, async (open) => {
   if (!open || !historyJob.value) return;
   historyQuery.build_job_id = historyJob.value.id;
+  historyQuery.project_id = historyJob.value.project_id ?? undefined;
   await nextTick();
   void historyRef.value?.reload();
 });
@@ -371,9 +404,10 @@ function buildDisabledTip(job: BuildJob) {
   return "";
 }
 
-function openCreate() {
+function openCreate(projectID?: number) {
   editing.value = null;
   dialogOpen.value = true;
+  form.project_id = typeof projectID === "number" ? projectID : undefined;
 }
 
 function parseArtifactPaths(job: BuildJob): string[] {
@@ -484,6 +518,8 @@ function buildBody(): Record<string, unknown> | undefined {
     env_vars: envVars,
     artifact_paths: form.artifact_paths.map((a) => a.path.trim()).filter(Boolean),
     cache_paths: JSON.stringify(form.cache_paths.map((c) => c.path.trim()).filter(Boolean)),
+    // 后端 Update 用 *uint：0 表示解除关联（省略字段则不改）
+    project_id: form.project_id ?? 0,
     deploy_targets: form.deploy_targets.map((t, i) => ({
       server_id: t.method === "local" ? null : t.server_id,
       remote_path: t.remote_path,
@@ -566,10 +602,11 @@ async function rotateWebhookSecret() {
       url="/build-jobs"
       :query="query"
       :columns="columns"
-      :auto-query-fields="['repository_id', 'tag']"
+      :auto-query-fields="['repository_id', 'tag', 'project_id']"
       pagination
     >
       <template #filters>
+        <ProjectSelect v-model="query.project_id" placeholder="全部项目" style="width: 180px" />
         <u-select
           v-model="query.repository_id"
           :options="repoOptions"
@@ -590,7 +627,7 @@ async function rotateWebhookSecret() {
         <u-button
           v-if="hasPermission('cicd_build_jobs:create')"
           type="primary"
-          @click.prevent="openCreate"
+          @click.prevent="openCreate()"
         >
           新建任务
         </u-button>
@@ -682,6 +719,7 @@ async function rotateWebhookSecret() {
         />
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
         <u-input label="描述" field="description" />
+        <ProjectSelect label="所属项目" field="project_id" />
         <u-multi-select
           label="标签"
           field="tags"

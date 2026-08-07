@@ -34,10 +34,13 @@ func (r *PipelineRunRepository) FindByID(id uint) (*model.PipelineRun, error) {
 	return &run, nil
 }
 
-func (r *PipelineRunRepository) List(q pkg.ListQuery, pipelineID *uint, status string, pipelineCreatedBy *uint) ([]model.PipelineRun, int64, error) {
+func (r *PipelineRunRepository) List(q pkg.ListQuery, pipelineID *uint, status string, pipelineCreatedBy *uint, projectID *uint) ([]model.PipelineRun, int64, error) {
 	db := r.db.Model(&model.PipelineRun{})
 	if pipelineID != nil && *pipelineID > 0 {
 		db = db.Where("build_pipeline_id = ?", *pipelineID)
+	}
+	if projectID != nil && *projectID > 0 {
+		db = db.Where("build_pipeline_id IN (SELECT id FROM build_pipelines WHERE project_id = ?)", *projectID)
 	}
 	if pipelineCreatedBy != nil {
 		db = db.Joins("JOIN build_pipelines ON build_pipelines.id = pipeline_runs.build_pipeline_id").

@@ -3,7 +3,6 @@ package service
 import (
 	"bedrock/internal/project/model"
 	"bedrock/internal/project/repository"
-	rbacmodel "bedrock/internal/rbac/model"
 )
 
 // AccessContext is resolved from the authenticated user once per request.
@@ -11,8 +10,6 @@ type AccessContext struct {
 	UserID      uint
 	SuperAdmin  bool
 	Permissions map[string]struct{}
-	// DataScope is the widest role data_scope (self|all). Super-admin is always all.
-	DataScope string
 }
 
 func NewAccessContext(userID uint, superAdmin bool, permissions []string) AccessContext {
@@ -20,11 +17,7 @@ func NewAccessContext(userID uint, superAdmin bool, permissions []string) Access
 	for _, permission := range permissions {
 		set[permission] = struct{}{}
 	}
-	scope := rbacmodel.DataScopeSelf
-	if superAdmin {
-		scope = rbacmodel.DataScopeAll
-	}
-	return AccessContext{UserID: userID, SuperAdmin: superAdmin, Permissions: set, DataScope: scope}
+	return AccessContext{UserID: userID, SuperAdmin: superAdmin, Permissions: set}
 }
 
 func (a AccessContext) Has(permission string) bool {
@@ -33,11 +26,6 @@ func (a AccessContext) Has(permission string) bool {
 	}
 	_, ok := a.Permissions[permission]
 	return ok
-}
-
-// HasDataScopeAll reports whether the actor may read all projects (role data_scope).
-func (a AccessContext) HasDataScopeAll() bool {
-	return a.SuperAdmin || a.DataScope == rbacmodel.DataScopeAll
 }
 
 type aclCapability string
@@ -59,8 +47,8 @@ const (
 	capDevDocAdmin      aclCapability = "dev_doc_admin"
 )
 
-// projectACL implements DESIGN §4.4. Every object operation requires the
-// endpoint's global permission first, then manage_all/view_all/data_scope or membership.
+// projectACL implements DESIGN §4.4（读侧已按 D2 放开：全局权限通过后即可读）。
+// 写操作仍需 manage_all 或项目成员角色。
 type projectACL struct {
 	repo *repository.ProjectRepository
 }
@@ -76,25 +64,20 @@ func (a *projectACL) Require(projectID uint, actor AccessContext, globalPermissi
 	if actor.SuperAdmin {
 		return nil, nil
 	}
-	manageAll := actor.Has("project_projects:manage_all")
-	viewAll := actor.Has("project_projects:view_all") || manageAll || actor.HasDataScopeAll()
-	if isReadCapability(capability) && viewAll {
+	// D2：全局权限通过后，读能力对任意认证用户放行
+	if isReadCapability(capability) {
 		return nil, nil
 	}
-	if isWriteCapability(capability) && manageAll {
+	if actor.Has("project_projects:manage_all") {
 		return nil, nil
 	}
 
 	member, err := a.repo.FindMember(projectID, actor.UserID)
 	if err != nil {
-		// 非成员：公开项目仅放宽读
-		if isReadCapability(capability) {
-			project, perr := a.repo.FindProject(projectID)
-			if perr == nil && project.IsPublic {
-				return nil, nil
-			}
+		if _, projErr := a.repo.FindProject(projectID); projErr != nil {
+			return nil, NewNotFound("项目不存在")
 		}
-		return nil, NewNotFound("项目不存在或无权访问")
+		return nil, NewForbidden("非项目成员无权操作")
 	}
 	if roleAllows(member.Role, capability) {
 		return member, nil
@@ -102,11 +85,12 @@ func (a *projectACL) Require(projectID uint, actor AccessContext, globalPermissi
 	return nil, NewForbidden("项目角色无此操作权限")
 }
 
-func (a *projectACL) CanListProjects(actor AccessContext) (bool, error) {
+// CanListProjects 校验列表权限。D2：持有 project_projects:view 即可列出全部项目。
+func (a *projectACL) CanListProjects(actor AccessContext) error {
 	if !actor.Has("project_projects:view") {
-		return false, NewForbidden("缺少全局权限: project_projects:view")
+		return NewForbidden("缺少全局权限: project_projects:view")
 	}
-	return actor.SuperAdmin || actor.Has("project_projects:view_all") || actor.Has("project_projects:manage_all") || actor.HasDataScopeAll(), nil
+	return nil
 }
 
 func isReadCapability(capability aclCapability) bool {
@@ -116,10 +100,6 @@ func isReadCapability(capability aclCapability) bool {
 	default:
 		return false
 	}
-}
-
-func isWriteCapability(capability aclCapability) bool {
-	return !isReadCapability(capability)
 }
 
 func roleAllows(role string, capability aclCapability) bool {

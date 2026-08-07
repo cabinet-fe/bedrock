@@ -125,7 +125,9 @@ func setupAI(t *testing.T) (*gorm.DB, *service.AgentService, *service.SkillServi
 	agents.Start()
 	t.Cleanup(agents.Shutdown)
 
-	projectSvc := projectservice.NewProjectService(projectrepo.NewProjectRepository(gdb), storageSvc)
+	projectRepo := projectrepo.NewProjectRepository(gdb)
+	projectSvc := projectservice.NewProjectService(projectRepo, storageSvc)
+	agents.SetProjectRepo(projectRepo)
 	agents.SetDocDraftWriter(projectSvc)
 	projectSvc.SetDocsAIBridge(service.NewDocsBridge(agents))
 	return gdb, agents, skills, projectSvc

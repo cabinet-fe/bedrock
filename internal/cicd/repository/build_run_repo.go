@@ -27,10 +27,13 @@ func (r *BuildRunRepository) FindByID(id uint) (*model.BuildRun, error) {
 	return &run, nil
 }
 
-func (r *BuildRunRepository) List(q pkg.ListQuery, buildJobID *uint, status string, jobCreatedBy *uint) ([]model.BuildRun, int64, error) {
+func (r *BuildRunRepository) List(q pkg.ListQuery, buildJobID *uint, status string, jobCreatedBy *uint, projectID *uint) ([]model.BuildRun, int64, error) {
 	db := r.db.Model(&model.BuildRun{})
 	if buildJobID != nil && *buildJobID > 0 {
 		db = db.Where("build_job_id = ?", *buildJobID)
+	}
+	if projectID != nil && *projectID > 0 {
+		db = db.Where("build_job_id IN (SELECT id FROM build_jobs WHERE project_id = ?)", *projectID)
 	}
 	if jobCreatedBy != nil {
 		db = db.Joins("JOIN build_jobs ON build_jobs.id = build_runs.build_job_id").

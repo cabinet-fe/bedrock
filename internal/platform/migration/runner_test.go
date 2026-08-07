@@ -73,4 +73,46 @@ func TestUp_idempotent(t *testing.T) {
 	if !gdb.Migrator().HasColumn("build_runs", "artifact_kind") {
 		t.Fatal("build_runs.artifact_kind missing")
 	}
+	for _, table := range []string{"build_jobs", "script_jobs", "build_pipelines", "ai_agents"} {
+		if !gdb.Migrator().HasColumn(table, "project_id") {
+			t.Fatalf("%s.project_id missing", table)
+		}
+	}
+	for _, check := range []struct {
+		model any
+		index string
+	}{
+		{runnerProjectIDIndexBuildJobs{}, "idx_build_jobs_project_id"},
+		{runnerProjectIDIndexScriptJobs{}, "idx_script_jobs_project_id"},
+		{runnerProjectIDIndexBuildPipelines{}, "idx_build_pipelines_project_id"},
+		{runnerProjectIDIndexAIAgents{}, "idx_ai_agents_project_id"},
+	} {
+		if !gdb.Migrator().HasIndex(check.model, check.index) {
+			t.Fatalf("%s missing", check.index)
+		}
+	}
 }
+
+type runnerProjectIDIndexBuildJobs struct {
+	ProjectID *uint `gorm:"index:idx_build_jobs_project_id"`
+}
+
+func (runnerProjectIDIndexBuildJobs) TableName() string { return "build_jobs" }
+
+type runnerProjectIDIndexScriptJobs struct {
+	ProjectID *uint `gorm:"index:idx_script_jobs_project_id"`
+}
+
+func (runnerProjectIDIndexScriptJobs) TableName() string { return "script_jobs" }
+
+type runnerProjectIDIndexBuildPipelines struct {
+	ProjectID *uint `gorm:"index:idx_build_pipelines_project_id"`
+}
+
+func (runnerProjectIDIndexBuildPipelines) TableName() string { return "build_pipelines" }
+
+type runnerProjectIDIndexAIAgents struct {
+	ProjectID *uint `gorm:"index:idx_ai_agents_project_id"`
+}
+
+func (runnerProjectIDIndexAIAgents) TableName() string { return "ai_agents" }

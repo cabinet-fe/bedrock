@@ -130,6 +130,24 @@ func TestContract_MigrationsAndCICDTables(t *testing.T) {
 			if err := projectRepo.CreateDevDocNode(devDoc); err != nil {
 				t.Fatalf("create dev doc node: %v", err)
 			}
+			for _, table := range []string{"build_jobs", "script_jobs", "build_pipelines", "ai_agents"} {
+				if !gdb.Migrator().HasColumn(table, "project_id") {
+					t.Fatalf("%s.project_id missing on %s", table, driver)
+				}
+			}
+			for _, check := range []struct {
+				model any
+				index string
+			}{
+				{projectIDIndexBuildJobs{}, "idx_build_jobs_project_id"},
+				{projectIDIndexScriptJobs{}, "idx_script_jobs_project_id"},
+				{projectIDIndexBuildPipelines{}, "idx_build_pipelines_project_id"},
+				{projectIDIndexAIAgents{}, "idx_ai_agents_project_id"},
+			} {
+				if !gdb.Migrator().HasIndex(check.model, check.index) {
+					t.Fatalf("%s missing on %s", check.index, driver)
+				}
+			}
 			_ = repoRepo.Delete(repo.ID)
 			_ = credRepo.Delete(cred.ID)
 		})
@@ -195,3 +213,27 @@ func openDriver(t *testing.T, driver string) *gorm.DB {
 		return nil
 	}
 }
+
+type projectIDIndexBuildJobs struct {
+	ProjectID *uint `gorm:"index:idx_build_jobs_project_id"`
+}
+
+func (projectIDIndexBuildJobs) TableName() string { return "build_jobs" }
+
+type projectIDIndexScriptJobs struct {
+	ProjectID *uint `gorm:"index:idx_script_jobs_project_id"`
+}
+
+func (projectIDIndexScriptJobs) TableName() string { return "script_jobs" }
+
+type projectIDIndexBuildPipelines struct {
+	ProjectID *uint `gorm:"index:idx_build_pipelines_project_id"`
+}
+
+func (projectIDIndexBuildPipelines) TableName() string { return "build_pipelines" }
+
+type projectIDIndexAIAgents struct {
+	ProjectID *uint `gorm:"index:idx_ai_agents_project_id"`
+}
+
+func (projectIDIndexAIAgents) TableName() string { return "ai_agents" }

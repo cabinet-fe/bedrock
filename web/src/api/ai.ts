@@ -70,6 +70,13 @@ export async function manualRunAgent(
   return body;
 }
 
+export async function listRuns(query?: Query): Promise<PageResult<AgentRun>> {
+  const { body } = await http.get<PageResult<AgentRun>>("/ai/runs", {
+    query: compactQuery(query),
+  });
+  return body;
+}
+
 export async function getRun(id: number): Promise<AgentRun> {
   const { body } = await http.get<AgentRun>(`/ai/runs/${id}`);
   return body;

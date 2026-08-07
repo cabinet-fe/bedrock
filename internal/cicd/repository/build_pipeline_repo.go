@@ -50,8 +50,11 @@ func (r *BuildPipelineRepository) FindByID(id uint) (*model.BuildPipeline, error
 	return &p, nil
 }
 
-func (r *BuildPipelineRepository) List(q pkg.ListQuery, keyword string, createdBy *uint) ([]model.BuildPipeline, int64, error) {
+func (r *BuildPipelineRepository) List(q pkg.ListQuery, keyword string, createdBy *uint, projectID *uint) ([]model.BuildPipeline, int64, error) {
 	db := r.db.Model(&model.BuildPipeline{})
+	if projectID != nil && *projectID > 0 {
+		db = db.Where("project_id = ?", *projectID)
+	}
 	if createdBy != nil {
 		db = db.Where("created_by = ? OR is_public = ?", *createdBy, true)
 	}

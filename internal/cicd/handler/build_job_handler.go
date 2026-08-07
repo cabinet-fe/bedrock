@@ -59,7 +59,12 @@ func (h *BuildJobHandler) List(c *gin.Context) {
 			repoID = &u
 		}
 	}
-	items, total, err := h.svc.List(q, repoID, c.Query("keyword"), c.Query("tag"), userID, scope)
+	projectID, err := parseOptionalUintQuery(c, "project_id")
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "无效 project_id")
+		return
+	}
+	items, total, err := h.svc.List(q, repoID, c.Query("keyword"), c.Query("tag"), projectID, userID, scope)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return

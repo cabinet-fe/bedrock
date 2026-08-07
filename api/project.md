@@ -5,6 +5,8 @@
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
 业务语义与权限模型见 [docs/DESIGN.md](../docs/DESIGN.md)。
 
+**读可见性**：持有 `project_projects:view`（或对应子域 `:view`）的认证用户可读项目域列表/详情（成员、需求、文档等读接口同样在全局权限通过后放行），**不**要求是项目成员。写操作（创建/更新/归档/删除/成员管理及需求/文档写）仍走项目成员 ACL 或 `manage_all`。非成员响应中 `my_role` 可为空（omit），`permissions` 能力位均为 false。`is_public` 字段保留兼容，**不再影响**项目读可见性。
+
 ## 项目
 
 ### GET /projects — 列出项目
@@ -13,6 +15,7 @@
 查询参数：page: integer, page_size: integer, keyword: string, status: 'active' | 'archived', sort: string
 响应 200：data = ProductProjectPage
 错误：403
+说明：持有 `project_projects:view` 即可列出全部项目（含非成员）；写能力由每条 `permissions` / `my_role` 表达。
 
 ### POST /projects — 创建项目（创建者成为 Owner）
 
@@ -413,7 +416,7 @@
 | `owner_id` | `integer` |  |  |
 | `repository_id` | `integer` |  |  |
 | `tags` | `string` |  |  |
-| `is_public` | `boolean` |  | 公开只读；默认 false |
+| `is_public` | `boolean` |  | 保留兼容；**不再影响**读可见性；默认 false |
 | `created_by` | `integer` |  |  |
 | `created_at` | `string(date-time)` |  |  |
 | `updated_at` | `string(date-time)` |  |  |
@@ -427,7 +430,7 @@
 | `description` | `string` |  |  |
 | `repository_id` | `integer` |  |  |
 | `tags` | `string` |  |  |
-| `is_public` | `boolean` |  |  |
+| `is_public` | `boolean` |  | 保留兼容；不再影响读可见性 |
 
 ### ProductProjectPage
 
@@ -453,7 +456,7 @@
 | `repository_id` | `integer` |  |  |
 | `clear_repository` | `boolean` |  |  |
 | `tags` | `string` |  |  |
-| `is_public` | `boolean` |  |  |
+| `is_public` | `boolean` |  | 保留兼容；不再影响读可见性 |
 
 ### ProductProjectView
 
@@ -469,12 +472,12 @@
 | `owner_id` | `integer` |  |  |
 | `repository_id` | `integer` |  |  |
 | `tags` | `string` |  |  |
-| `is_public` | `boolean` |  |  |
+| `is_public` | `boolean` |  | 保留兼容；不再影响读可见性 |
 | `created_by` | `integer` |  |  |
 | `created_at` | `string(date-time)` |  |  |
 | `updated_at` | `string(date-time)` |  |  |
-| `my_role` | `'owner' \| 'admin' \| 'member' \| 'readonly'` |  |  |
-| `permissions` | `ProjectCapabilities` | 是 |  |
+| `my_role` | `'owner' \| 'admin' \| 'member' \| 'readonly'` |  | 非成员可为空（omit） |
+| `permissions` | `ProjectCapabilities` | 是 | 当前调用方可执行的项目级写能力；非成员通常全 false |
 
 ### ProjectCapabilities
 

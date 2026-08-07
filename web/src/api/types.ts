@@ -264,6 +264,7 @@ export interface BuildJob {
   agent_trigger_event: string;
   agent_ids?: number[];
   is_public: boolean;
+  project_id?: number | null;
   deploy_targets?: DeployTarget[];
   created_by: number;
   created_at: string;
@@ -324,6 +325,7 @@ export interface ScriptJob {
   cron_expression: string;
   cron_timezone: string;
   is_public: boolean;
+  project_id?: number | null;
   created_by: number;
   created_at: string;
   updated_at: string;
@@ -362,6 +364,7 @@ export interface BuildPipeline {
   cron_expression: string;
   cron_timezone: string;
   is_public: boolean;
+  project_id?: number | null;
   created_by: number;
   created_at: string;
   updated_at: string;
@@ -730,6 +733,7 @@ export interface AiAgent {
   timeout_sec: number;
   workspace_status: "pending" | "ready" | "failed";
   workspace_error?: string;
+  project_id?: number | null;
   created_by: number;
   created_at: string;
   updated_at: string;

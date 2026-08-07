@@ -20,8 +20,8 @@
 | D1 | 交付切片 | 分阶段完成全量 2.0 GA：P0→P1→P2→P3→P4→P5（见 ROADMAP） |
 | D2 | 用户角色 | 多角色；权限取**并集**；**不支持**显式 deny |
 | D3 | 1.x 升级 | **仅全新安装**；不提供 1.x 数据迁移 |
-| D4 | 对象 ACL | **仅产品项目**使用成员 ACL；CI/CD 另受角色 `data_scope` 约束；运维/凭证/AI 等仍为全局 RBAC |
-| D5 | 全局项目权限 | 显式 `project_projects:view_all` / `manage_all`；普通 `:update` 不隐含全局越权；角色 `data_scope=all` 与 `view_all` 并存（只提升读） |
+| D4 | 对象 ACL 与项目归属 | **仅产品项目**使用成员 ACL（写侧）；项目域读侧：持有对应 `:view` 即可读全部项目内容。BuildJob / ScriptJob / BuildPipeline / AiAgent 可选 `project_id`（可空）。CI/CD 全局列表另受角色 `data_scope`；运维/凭证/Skills 等仍为全局 RBAC |
+| D5 | 全局项目权限 | 显式 `project_projects:view_all` / `manage_all`（`view_all` 保留兼容；读侧已由 `:view` 覆盖全员可读）；普通 `:update` 不隐含全局越权；角色 `data_scope=all` 仅影响 CI/CD 等非项目域列表读 |
 | D6 | AI 文档发布 | 同节点双态草稿；人工确认发布；`expected_version` 乐观锁 |
 | D7 | AI CLI | Claude Code / OpenCode / Reasonix / Codex **并行**交付，均为 GA 条件 |
 | D8 | 构建事件触发 Agent | 默认 `artifact_ready`；BuildJob 可覆盖为 `distribution_finished` |
@@ -186,7 +186,7 @@ RbacResource
 | Member | 按细则创建/编辑需求与文档、评论 |
 | Readonly | 只读 |
 
-角色级字段 `data_scope`：`self` | `all`。多角色取**最宽**（任一为 `all` 或超管 → 有效范围为 `all`）。新建角色默认 `self`；已有角色 migration 置 `all`（避免 CI/CD 行为突变）。
+角色级字段 `data_scope`：`self` | `all`。多角色取**最宽**（任一为 `all` 或超管 → 有效范围为 `all`）。新建角色默认 `self`；已有角色 migration 置 `all`（避免 CI/CD 行为突变）。`data_scope` **不再**用于过滤产品项目列表。
 
 项目鉴权公式：
 
@@ -194,21 +194,24 @@ RbacResource
 允许 = 全局功能权限(full_code)
      AND (
            超管
-        OR 有效 data_scope = all（仅读侧，等同 view_all；不授予写）
-        OR 持有 project_projects:view_all/manage_all（按动作）
+        OR（读侧）全局权限已通过 → 放行项目域读
+        OR 持有 project_projects:manage_all（写/管理）
         OR 是项目成员且项目角色允许该动作
-        OR（读侧）资源标记公开：项目/BuildJob 的 is_public，或 Skill visibility=public
+        OR（CI/CD 全局列表读侧）data_scope=all
+           或 created_by=自己 或 is_public
+        OR（Skill 读侧）visibility=public 或 created_by=自己 或 data_scope=all
          )
 ```
 
-- `data_scope=self` 且无 `view_all`：列表返回自己加入的项目，以及 `is_public` 项目；创建人创建时已入 `project_members`。
-- `data_scope=all`：可读全部项目，**不**授予写（写仍靠成员角色或 `manage_all`）；与 `view_all` 并存、不替换。
+- **项目域读**：持有 `project_projects:view`（及子域 `:view`）即可列出/查看全部项目及相关读接口；**不**要求成员身份。非成员 `my_role` 为空，`permissions` 能力位全 false。
+- **项目域写**：仍需成员角色允许，或 `manage_all` / 超管；普通 `:update` **不**隐含全局越权。
 - `manage_all`：可管理全部项目成员与内容，**无需**加入项目。
 - Owner 转让：仅当前 Owner 或 `manage_all`。
-- **公开只读**：`ProductProject.is_public` / `BuildJob.is_public` / Skill `visibility=public` 仅放宽读（列表/详情）；写、执行、成员管理不因公开放宽。
-- **对象级成员 ACL**：仅产品项目（`ProductProject` / 成员）。
-- **CI/CD**：无成员表；`data_scope=self` 时可见 `created_by=自己` 或 `is_public` 的 BuildJob；BuildRun 跟随 Job；写/执行仍仅本人或 `data_scope=all`。
-- **AI Skill**：列表/详情遵循 `data_scope=all OR visibility=public OR created_by=自己`；改删仍仅创建者/超管。运维、凭证等域仍为全局 RBAC only。
+- **`ProductProject.is_public`**：字段保留兼容，**不再影响**项目读可见性；写、成员管理不因该字段放宽。
+- **对象级成员 ACL**：仅产品项目（`ProductProject` / 成员）的**写**路径。
+- **CI/CD**：无成员表；可选 `project_id` 归属项目。全局列表（不带 `project_id`）在 `data_scope=self` 时可见 `created_by=自己` 或 `is_public`；BuildRun / ScriptRun / PipelineRun 跟随 Job/Pipeline。列表带 `?project_id=` 时跳过上述数据范围过滤（仍需各域 `:view`）。**写/执行**仍仅本人（`data_scope=self`）或 `data_scope=all` / 超管，不因项目归属放宽。
+- **AI Agent**：可选 `project_id`；列表可按项目过滤。Skills **不**绑定项目；列表/详情遵循 `data_scope=all OR visibility=public OR created_by=自己`；改删仍仅创建者/超管。运维、凭证等域仍为全局 RBAC only。
+- **安全边界**：上述规则是应用层授权，**不是** OS/租户隔离；同 UID 执行与凭证注入边界见 §1.2 / 安全表述。
 
 ### 4.5 凭证与服务器认证
 

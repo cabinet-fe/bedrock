@@ -55,7 +55,12 @@ func (h *BuildPipelineHandler) List(c *gin.Context) {
 		return
 	}
 	q := pkg.ParseListQuery(c)
-	items, total, err := h.svc.List(q, c.Query("keyword"), userID, scope)
+	projectID, err := parseOptionalUintQuery(c, "project_id")
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "无效 project_id")
+		return
+	}
+	items, total, err := h.svc.List(q, c.Query("keyword"), projectID, userID, scope)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return

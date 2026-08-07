@@ -53,7 +53,7 @@ func TestBuildRunHandler_ArtifactDownload(t *testing.T) {
 	runRepo := repository.NewBuildRunRepository(gdb)
 
 	repoSvc := resourceservice.NewRepositoryService(repoRepo, resourceservice.NewCredentialService(credRepo))
-	jobSvc := service.NewBuildJobService(jobRepo, repoRepo)
+	jobSvc := service.NewBuildJobService(jobRepo, repoRepo, nil)
 	runSvc := service.NewBuildRunService(runRepo, jobRepo)
 
 	repo, err := repoSvc.Create(1, resourceservice.CreateRepositoryInput{

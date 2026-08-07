@@ -1,26 +1,32 @@
 <script setup lang="ts">
 defineOptions({ name: "Projects" });
 
-import { reactive, ref, useTemplateRef } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
 import { useRouter } from "vue-router";
 
 import { archiveProject, createProject, deleteProject, updateProject } from "@/api/projects";
-import type { ProductProject } from "@/api/types";
+import { http } from "@/api/http";
+import type { PageResult, ProductProject } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
-import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
-import { formatDateTime } from "@/lib/datetime";
 
 import MembersPanel from "../../components/members-panel.vue";
+import ProjectCard from "../components/project-card.vue";
 
 const router = useRouter();
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
-const tableRef = useTemplateRef("table");
+
 const query = reactive({ keyword: "", status: "" });
+const items = ref<ProductProject[]>([]);
+const loading = ref(false);
+const page = ref(1);
+const pageSize = ref(12);
+const total = ref(0);
+
 const dialogOpen = ref(false);
 const membersOpen = ref(false);
 const membersProject = ref<ProductProject | null>(null);
@@ -33,22 +39,56 @@ const form = reactive({
   is_public: false,
 });
 
-const columns = defineProTableColumns([
-  { key: "name", name: "项目", sortable: true },
-  { key: "slug", name: "标识" },
-  { key: "status", name: "状态", width: 100, align: "center" },
-  { key: "is_public", name: "公开", width: 80, align: "center" },
-  { key: "tags", name: "标签" },
-  {
-    key: "updated_at",
-    name: "更新时间",
-    width: 170,
-    align: "center",
-    sortable: true,
-    render: ({ val }) => formatDateTime(val),
-  },
-  { key: "action", name: "操作", width: 380, align: "center", fixed: "right" },
-]);
+function cleanQuery(params: Record<string, unknown>): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+async function load() {
+  loading.value = true;
+  try {
+    const { body } = await http.get<PageResult<ProductProject>>("/projects", {
+      query: cleanQuery({
+        ...query,
+        page: page.value,
+        page_size: pageSize.value,
+      }),
+    });
+    items.value = body?.items ?? [];
+    total.value = body?.total ?? 0;
+    if (typeof body?.page === "number") page.value = body.page;
+    if (typeof body?.page_size === "number") pageSize.value = body.page_size;
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "加载失败");
+    items.value = [];
+    total.value = 0;
+  } finally {
+    loading.value = false;
+  }
+}
+
+function search() {
+  page.value = 1;
+  return load();
+}
+
+function reload() {
+  return load();
+}
+
+function onPageSizeChange(size: number) {
+  if (typeof size === "number" && size > 0) {
+    pageSize.value = size;
+  }
+  page.value = 1;
+  void load();
+}
 
 function openCreate() {
   editing.value = null;
@@ -78,7 +118,7 @@ async function save() {
       message.success("项目已创建");
     }
     dialogOpen.value = false;
-    await tableRef.value?.reload();
+    await reload();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "保存失败");
   }
@@ -88,7 +128,7 @@ const archive = bind(async (project: ProductProject) => {
   try {
     await archiveProject(project.id);
     message.success("项目已归档");
-    await tableRef.value?.reload();
+    await reload();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "归档失败");
   }
@@ -98,7 +138,7 @@ const remove = bind(async (project: ProductProject) => {
   try {
     await deleteProject(project.id);
     message.success("项目已解散");
-    await tableRef.value?.reload();
+    await reload();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "解散失败");
   }
@@ -108,30 +148,27 @@ function openProject(project: ProductProject) {
   void router.push({ name: "project-detail", params: { id: project.id } });
 }
 
-function splitTags(raw?: string | null): string[] {
-  if (!raw?.trim()) return [];
-  return raw
-    .split(/[,，]/)
-    .map((t) => t.trim())
-    .filter(Boolean);
+async function onOwnerTransferred() {
+  await reload();
 }
 
-async function onOwnerTransferred() {
-  await tableRef.value?.reload();
-}
+watch(
+  () => query.status,
+  () => {
+    page.value = 1;
+    void load();
+  },
+);
+
+onMounted(() => {
+  void load();
+});
 </script>
 
 <template>
-  <div>
-    <ProTable
-      ref="table"
-      url="/projects"
-      :query="query"
-      :columns="columns"
-      pagination
-      :auto-query-fields="['status']"
-    >
-      <template #filters>
+  <div class="projects-page">
+    <form class="projects-page__toolbar" @submit.prevent="search">
+      <div class="projects-page__filters">
         <u-input v-model="query.keyword" placeholder="名称、标识或标签" style="width: 240px" />
         <u-select
           v-model="query.status"
@@ -143,8 +180,9 @@ async function onOwnerTransferred() {
           ]"
           style="width: 130px"
         />
-      </template>
-      <template #toolbar>
+        <u-button type="primary" :loading="loading" @click="search">查询</u-button>
+      </div>
+      <div class="projects-page__actions">
         <u-button
           v-if="hasPermission('project_projects:create')"
           type="primary"
@@ -152,61 +190,36 @@ async function onOwnerTransferred() {
         >
           新建项目
         </u-button>
-      </template>
-      <template #column:name="{ rowData }">
-        <u-action @run="openProject(rowData as ProductProject)">
-          {{ (rowData as ProductProject).name }}
-        </u-action>
-      </template>
-      <template #column:is_public="{ rowData }">
-        {{ (rowData as ProductProject).is_public ? "是" : "否" }}
-      </template>
-      <template #column:status="{ rowData }">
-        <u-tag
-          size="small"
-          :type="(rowData as ProductProject).status === 'archived' ? 'warning' : 'success'"
-        >
-          {{ (rowData as ProductProject).status === "archived" ? "已归档" : "活跃" }}
-        </u-tag>
-      </template>
-      <template #column:tags="{ rowData }">
-        <span class="tag-cell">
-          <u-tag v-for="tag in splitTags((rowData as ProductProject).tags)" :key="tag" size="small">
-            {{ tag }}
-          </u-tag>
-        </span>
-      </template>
-      <template #column:action="{ rowData }">
-        <u-action-group :max="5" :loading="busyKey === (rowData as ProductProject).id">
-          <u-action @run="openProject(rowData as ProductProject)">进入</u-action>
-          <u-action @run="openMembers(rowData as ProductProject)">成员</u-action>
-          <u-action
-            v-if="(rowData as ProductProject).permissions?.update"
-            @run="openEdit(rowData as ProductProject)"
-          >
-            编辑
-          </u-action>
-          <u-action
-            v-if="
-              (rowData as ProductProject).permissions?.archive &&
-              (rowData as ProductProject).status === 'active'
-            "
-            need-confirm
-            @run="archive(rowData as ProductProject)"
-          >
-            归档
-          </u-action>
-          <u-action
-            v-if="(rowData as ProductProject).permissions?.delete"
-            need-confirm
-            type="danger"
-            @run="remove(rowData as ProductProject)"
-          >
-            解散
-          </u-action>
-        </u-action-group>
-      </template>
-    </ProTable>
+      </div>
+    </form>
+
+    <div v-loading="loading" class="projects-page__body">
+      <div v-if="items.length" class="projects-page__grid">
+        <ProjectCard
+          v-for="project in items"
+          :key="project.id"
+          :project="project"
+          :loading="busyKey === project.id"
+          @enter="openProject(project)"
+          @members="openMembers(project)"
+          @edit="openEdit(project)"
+          @archive="archive(project)"
+          @remove="remove(project)"
+        />
+      </div>
+      <u-empty v-else-if="!loading" text="暂无项目" />
+    </div>
+
+    <div v-if="total > 0" class="projects-page__footer">
+      <u-paginator
+        v-model:page-number="page"
+        v-model:page-size="pageSize"
+        :page-size-options="[12, 24, 48]"
+        :total="total"
+        @change:page-number="load"
+        @change:page-size="onPageSizeChange"
+      />
+    </div>
 
     <FormDialog
       v-model="dialogOpen"
@@ -231,7 +244,7 @@ async function onOwnerTransferred() {
       <u-switch
         label="公开"
         field="is_public"
-        tips="开启后，仅自己数据权限的用户也可读取该项目（含需求/文档）；不授予写权限"
+        tips="兼容字段：项目读可见性已对全员放开，此开关不再影响能否查看"
       />
       <u-textarea label="描述" field="description" :rows="4" />
     </FormDialog>
@@ -254,16 +267,49 @@ async function onOwnerTransferred() {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
+.projects-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.projects-page__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.projects-page__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.projects-page__body {
+  min-height: 200px;
+}
+
+.projects-page__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.projects-page__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .slug-tip {
   margin: 0 0 4px;
   font-size: 13px;
   color: var(--u-color-text-secondary, #666);
   line-height: 1.5;
-}
-.tag-cell {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
 }
 </style>
