@@ -207,7 +207,9 @@ onMounted(() => {
           @remove="remove(project)"
         />
       </div>
-      <u-empty v-else-if="!loading" text="暂无项目" />
+      <div v-else-if="!loading" class="projects-page__empty">
+        <u-empty text="暂无项目" />
+      </div>
     </div>
 
     <div v-if="total > 0" class="projects-page__footer">
@@ -268,11 +270,14 @@ onMounted(() => {
 </template>
 
 <style scoped lang="scss">
+@use "@/lib/empty-center.scss" as empty;
+
 .projects-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  height: 100%;
 }
 
 .projects-page__toolbar {
@@ -291,7 +296,14 @@ onMounted(() => {
 }
 
 .projects-page__body {
-  min-height: 200px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.projects-page__empty {
+  @include empty.center(280px);
 }
 
 .projects-page__grid {

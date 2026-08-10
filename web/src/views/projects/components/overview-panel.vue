@@ -331,8 +331,12 @@ function openStat(card: StatCard) {
     <!-- 最近运行 -->
     <section class="overview-panel__section overview-panel__timeline">
       <h3 class="overview-panel__section-title">最近运行</h3>
-      <u-empty v-if="timelineError" text="最近运行加载失败" />
-      <u-empty v-else-if="!loading && !timeline.length" text="暂无运行记录" />
+      <div v-if="timelineError" class="overview-panel__timeline-empty">
+        <u-empty text="最近运行加载失败" />
+      </div>
+      <div v-else-if="!loading && !timeline.length" class="overview-panel__timeline-empty">
+        <u-empty text="暂无运行记录" />
+      </div>
       <button
         v-for="item in timeline"
         :key="item.key"
@@ -357,6 +361,7 @@ function openStat(card: StatCard) {
 
 <style scoped lang="scss">
 @use "pkg:@veltra/styles/functions" as fn;
+@use "@/lib/empty-center.scss" as empty;
 
 .overview-panel {
   display: flex;
@@ -550,5 +555,9 @@ function openStat(card: StatCard) {
 
 .overview-panel__time {
   white-space: nowrap;
+}
+
+.overview-panel__timeline-empty {
+  @include empty.center(120px);
 }
 </style>

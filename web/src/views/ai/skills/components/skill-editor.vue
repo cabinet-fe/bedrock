@@ -322,7 +322,9 @@ function onTreeSelect(path?: string, data?: Record<string, any>) {
           </div>
         </div>
         <u-scroll class="tree-scroll">
-          <u-empty v-if="!loadingTree && tree.length === 0" text="暂无文件" />
+          <div v-if="!loadingTree && tree.length === 0" class="tree-scroll__empty">
+            <u-empty text="暂无文件" />
+          </div>
           <u-tree
             v-else
             v-model:selected="selectedPath"
@@ -367,9 +369,15 @@ function onTreeSelect(path?: string, data?: Record<string, any>) {
       </aside>
 
       <section class="editor-panel">
-        <u-empty v-if="!selectedPath" text="从左侧选择文件开始浏览或编辑" />
-        <u-empty v-else-if="selectedKind === 'dir'" text="已选择目录，可在左侧新建子项或选择文件" />
-        <u-empty v-else-if="binary" text="二进制文件不支持在线编辑，请下载 ZIP 后本地处理" />
+        <div v-if="!selectedPath" class="editor-panel__empty">
+          <u-empty text="从左侧选择文件开始浏览或编辑" />
+        </div>
+        <div v-else-if="selectedKind === 'dir'" class="editor-panel__empty">
+          <u-empty text="已选择目录，可在左侧新建子项或选择文件" />
+        </div>
+        <div v-else-if="binary" class="editor-panel__empty">
+          <u-empty text="二进制文件不支持在线编辑，请下载 ZIP 后本地处理" />
+        </div>
         <template v-else>
           <div class="editor-head">
             <code>{{ selectedPath }}</code>
@@ -417,6 +425,8 @@ function onTreeSelect(path?: string, data?: Record<string, any>) {
 </template>
 
 <style scoped lang="scss">
+@use "@/lib/empty-center.scss" as empty;
+
 .skill-editor {
   display: flex;
   flex-direction: column;
@@ -511,6 +521,10 @@ function onTreeSelect(path?: string, data?: Record<string, any>) {
   padding: 8px;
 }
 
+.tree-scroll__empty {
+  @include empty.center(160px);
+}
+
 .file-tree {
   min-height: 100%;
 }
@@ -576,6 +590,10 @@ function onTreeSelect(path?: string, data?: Record<string, any>) {
 .editor-head code {
   font-size: 12px;
   color: var(--u-color-text-secondary, #666);
+}
+
+.editor-panel__empty {
+  @include empty.center(240px);
 }
 
 .code-pane {

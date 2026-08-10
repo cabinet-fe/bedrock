@@ -213,6 +213,7 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 @use "pkg:@veltra/styles/functions" as fn;
+@use "@/lib/empty-center.scss" as empty;
 
 /* 默认 UBadge 无 top/right，会落在触发器后方并叠到头像上；钉到铃铛右上角 */
 .notif-badge {
@@ -287,8 +288,7 @@ onUnmounted(() => {
 }
 
 .notif-panel__empty {
-  padding: 32px 0;
-  text-align: center;
+  @include empty.center(120px);
 }
 
 .notif-panel__scroll {

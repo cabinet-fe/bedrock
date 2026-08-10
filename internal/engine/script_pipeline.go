@@ -103,7 +103,7 @@ func (p *ScriptPipeline) Execute(ctx context.Context, runID uint) {
 		"stage":      "running",
 		"started_at": now,
 	})
-	p.broadcastRefresh(run.ID)
+	p.broadcastRefresh(run.ID, run.Status)
 
 	wsRoot := ScriptWorkspace(p.workspaceDir, job.ID)
 	if err := os.MkdirAll(wsRoot, 0o755); err != nil {
@@ -190,7 +190,7 @@ func (p *ScriptPipeline) Execute(ctx context.Context, runID uint) {
 		"duration_ms":   dur,
 		"error_message": "",
 	})
-	p.broadcastRefresh(run.ID)
+	p.broadcastRefresh(run.ID, run.Status)
 	writeLine(fmt.Sprintf("=== Script succeeded in %dms ===", dur))
 	p.notifyTerminal(run, "success")
 }
@@ -252,11 +252,12 @@ func (p *ScriptPipeline) runScript(
 	return nil
 }
 
-func (p *ScriptPipeline) broadcastRefresh(runID uint) {
+func (p *ScriptPipeline) broadcastRefresh(runID uint, status string) {
 	if p.hub == nil {
 		return
 	}
 	p.hub.BroadcastToChannel(fmt.Sprintf("script-run:%d", runID), []byte("__REFRESH__"))
+	p.hub.BroadcastRunChanged("script", runID, status)
 }
 
 func (p *ScriptPipeline) failRun(run *model.ScriptRun, errMsg string) {
@@ -271,7 +272,7 @@ func (p *ScriptPipeline) failRun(run *model.ScriptRun, errMsg string) {
 		fields["duration_ms"] = finished.Sub(*run.StartedAt).Milliseconds()
 	}
 	_ = p.runs.UpdateFields(run.ID, fields)
-	p.broadcastRefresh(run.ID)
+	p.broadcastRefresh(run.ID, run.Status)
 	p.notifyTerminal(run, "failed")
 }
 
@@ -286,7 +287,7 @@ func (p *ScriptPipeline) cancelRun(run *model.ScriptRun) {
 		fields["duration_ms"] = finished.Sub(*run.StartedAt).Milliseconds()
 	}
 	_ = p.runs.UpdateFields(run.ID, fields)
-	p.broadcastRefresh(run.ID)
+	p.broadcastRefresh(run.ID, run.Status)
 	p.notifyTerminal(run, "cancelled")
 }
 

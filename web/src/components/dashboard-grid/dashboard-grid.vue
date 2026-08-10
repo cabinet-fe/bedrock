@@ -8,8 +8,12 @@ import type {
   AgentRunSummary,
   BuildSummary,
   DashboardCardLayout,
+  MyProject,
+  PipelineRunSummary,
+  ScriptRunSummary,
   SystemInfo,
   SystemStatus,
+  TaskOverview,
 } from "@/api/types";
 import {
   GridStackComponent,
@@ -33,6 +37,10 @@ const props = defineProps<{
   editing: boolean;
   buildSummary: BuildSummary | null;
   agentRunSummary: AgentRunSummary | null;
+  scriptRunSummary: ScriptRunSummary | null;
+  pipelineRunSummary: PipelineRunSummary | null;
+  taskOverview: TaskOverview | null;
+  myProjects: MyProject[] | null;
   systemInfo: SystemInfo | null;
   systemStatus: SystemStatus | null;
 }>();
@@ -41,6 +49,13 @@ const emit = defineEmits<{
   change: [cards: DashboardCardLayout[]];
   openBuildRun: [id: number];
   openAgentRun: [id: number];
+  openScriptRun: [id: number];
+  openPipelineRun: [id: number];
+  openProject: [id: number];
+  openBuildJobs: [];
+  openScriptJobs: [];
+  openPipelines: [];
+  showRunning: [kind: "build" | "script" | "pipeline"];
 }>();
 
 const gridRef = useTemplateRef("gridRef");
@@ -82,6 +97,10 @@ const components: ComponentMap = {
   agent_run_summary: DashboardWidgetHost,
   system_info: DashboardWidgetHost,
   system_status: DashboardWidgetHost,
+  script_run_summary: DashboardWidgetHost,
+  pipeline_run_summary: DashboardWidgetHost,
+  cicd_task_overview: DashboardWidgetHost,
+  my_projects: DashboardWidgetHost,
 };
 
 /** 经 provide 共享给 Teleport 挂载的卡片宿主（Teleport 下注入链保持不变）。 */
@@ -89,10 +108,21 @@ const hostCtx = reactive<DashboardWidgetHostContext>({
   editing: false,
   buildSummary: null,
   agentRunSummary: null,
+  scriptRunSummary: null,
+  pipelineRunSummary: null,
+  taskOverview: null,
+  myProjects: null,
   systemInfo: null,
   systemStatus: null,
   openBuildRun: (id: number) => emit("openBuildRun", id),
   openAgentRun: (id: number) => emit("openAgentRun", id),
+  openScriptRun: (id: number) => emit("openScriptRun", id),
+  openPipelineRun: (id: number) => emit("openPipelineRun", id),
+  openProject: (id: number) => emit("openProject", id),
+  openBuildJobs: () => emit("openBuildJobs"),
+  openScriptJobs: () => emit("openScriptJobs"),
+  openPipelines: () => emit("openPipelines"),
+  showRunning: (kind) => emit("showRunning", kind),
 });
 provide(DASHBOARD_WIDGET_CTX, hostCtx);
 
@@ -100,6 +130,10 @@ function syncHostCtx() {
   hostCtx.editing = props.editing;
   hostCtx.buildSummary = props.buildSummary;
   hostCtx.agentRunSummary = props.agentRunSummary;
+  hostCtx.scriptRunSummary = props.scriptRunSummary;
+  hostCtx.pipelineRunSummary = props.pipelineRunSummary;
+  hostCtx.taskOverview = props.taskOverview;
+  hostCtx.myProjects = props.myProjects;
   hostCtx.systemInfo = props.systemInfo;
   hostCtx.systemStatus = props.systemStatus;
 }
@@ -119,6 +153,10 @@ watch(
       props.editing,
       props.buildSummary,
       props.agentRunSummary,
+      props.scriptRunSummary,
+      props.pipelineRunSummary,
+      props.taskOverview,
+      props.myProjects,
       props.systemInfo,
       props.systemStatus,
     ] as const,

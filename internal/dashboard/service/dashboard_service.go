@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,13 +20,18 @@ import (
 	"bedrock/internal/dashboard/model"
 	"bedrock/internal/dashboard/repository"
 	"bedrock/internal/rbac"
+	"bedrock/internal/ws"
 )
 
 const (
-	CardBuildSummary    = "build_summary"
-	CardAgentRunSummary = "agent_run_summary"
-	CardSystemInfo      = "system_info"
-	CardSystemStatus    = "system_status"
+	CardBuildSummary        = "build_summary"
+	CardAgentRunSummary     = "agent_run_summary"
+	CardSystemInfo          = "system_info"
+	CardSystemStatus        = "system_status"
+	CardScriptRunSummary    = "script_run_summary"
+	CardPipelineRunSummary  = "pipeline_run_summary"
+	CardCICDTaskOverview    = "cicd_task_overview"
+	CardMyProjects          = "my_projects"
 
 	gridColumns = 12
 	minCardSize = 2
@@ -36,10 +42,14 @@ var ErrUnauthorizedCard = errors.New("仪表盘包含无权限卡片")
 // defaultCardGeometry is the 12-column layout used for new users and legacy
 // cards that omit x/y/w/h.
 var defaultCardGeometry = map[string]struct{ X, Y, W, H int }{
-	CardBuildSummary:    {0, 0, 6, 4},
-	CardAgentRunSummary: {6, 0, 6, 4},
-	CardSystemInfo:      {0, 4, 6, 3},
-	CardSystemStatus:    {6, 4, 6, 3},
+	CardBuildSummary:       {0, 0, 6, 4},
+	CardAgentRunSummary:    {6, 0, 6, 4},
+	CardSystemInfo:         {0, 4, 6, 3},
+	CardSystemStatus:       {6, 4, 6, 3},
+	CardScriptRunSummary:   {0, 7, 6, 4},
+	CardPipelineRunSummary: {6, 7, 6, 4},
+	CardCICDTaskOverview:   {0, 11, 6, 3},
+	CardMyProjects:         {6, 11, 6, 3},
 }
 
 type DashboardService struct {
@@ -155,6 +165,84 @@ func (s *DashboardService) AgentRunSummary() (*model.AgentRunSummary, error) {
 	return &model.AgentRunSummary{Running: running, Queued: queued, SuccessRate: rate, Recent: recent}, nil
 }
 
+func (s *DashboardService) ScriptRunSummary() (*model.ScriptRunSummary, error) {
+	running, err := s.repo.CountScriptRunsByStatus("running")
+	if err != nil {
+		return nil, err
+	}
+	queued, err := s.repo.CountScriptRunsByStatus("queued")
+	if err != nil {
+		return nil, err
+	}
+	total, success, err := s.repo.CountFinishedScriptRuns()
+	if err != nil {
+		return nil, err
+	}
+	recent, err := s.repo.ListRecentScriptRuns(8)
+	if err != nil {
+		return nil, err
+	}
+	rate := float64(0)
+	if total > 0 {
+		rate = float64(success) * 100 / float64(total)
+	}
+	return &model.ScriptRunSummary{Running: running, Queued: queued, SuccessRate: rate, Recent: recent}, nil
+}
+
+func (s *DashboardService) PipelineRunSummary() (*model.PipelineRunSummary, error) {
+	running, err := s.repo.CountPipelineRunsByStatus("running")
+	if err != nil {
+		return nil, err
+	}
+	queued, err := s.repo.CountPipelineRunsByStatus("queued")
+	if err != nil {
+		return nil, err
+	}
+	total, success, err := s.repo.CountFinishedPipelineRuns()
+	if err != nil {
+		return nil, err
+	}
+	recent, err := s.repo.ListRecentPipelineRuns(8)
+	if err != nil {
+		return nil, err
+	}
+	rate := float64(0)
+	if total > 0 {
+		rate = float64(success) * 100 / float64(total)
+	}
+	return &model.PipelineRunSummary{Running: running, Queued: queued, SuccessRate: rate, Recent: recent}, nil
+}
+
+func (s *DashboardService) TaskOverview(isSuperAdmin bool, permissions []string) (*model.TaskOverview, error) {
+	out := &model.TaskOverview{}
+	if isSuperAdmin || hasPermission(permissions, "cicd_build_jobs:view") {
+		n, err := s.repo.CountBuildJobs()
+		if err != nil {
+			return nil, err
+		}
+		out.BuildJobs = &n
+	}
+	if isSuperAdmin || hasPermission(permissions, "cicd_script_jobs:view") {
+		n, err := s.repo.CountScriptJobs()
+		if err != nil {
+			return nil, err
+		}
+		out.ScriptJobs = &n
+	}
+	if isSuperAdmin || hasPermission(permissions, "cicd_pipelines:view") {
+		n, err := s.repo.CountPipelines()
+		if err != nil {
+			return nil, err
+		}
+		out.Pipelines = &n
+	}
+	return out, nil
+}
+
+func (s *DashboardService) MyProjects(userID uint) ([]model.MyProject, error) {
+	return s.repo.ListMyProjects(userID, 10)
+}
+
 func (s *DashboardService) SystemInfo() (*model.SystemInfo, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -232,6 +320,39 @@ func directoryUsedBytes(root string) (uint64, error) {
 	return total, err
 }
 
+// StartStatusBroadcaster 在有订阅者时周期性采集系统状态并广播；无订阅者时跳过采样。
+func (s *DashboardService) StartStatusBroadcaster(ctx context.Context, hub *ws.Hub, interval time.Duration) {
+	if hub == nil || interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if hub.ChannelSubscriberCount(ws.ChannelDashboardSystemStatus) == 0 {
+					continue
+				}
+				status, err := s.SystemStatus()
+				if err != nil {
+					continue
+				}
+				payload, err := json.Marshal(map[string]interface{}{
+					"type": "system_status",
+					"data": status,
+				})
+				if err != nil {
+					continue
+				}
+				hub.BroadcastToChannel(ws.ChannelDashboardSystemStatus, payload)
+			}
+		}
+	}()
+}
+
 func allowedCards(isSuperAdmin bool, permissions []string) map[string]struct{} {
 	allowed := map[string]struct{}{}
 	if isSuperAdmin || hasPermission(permissions, "cicd_build_runs:view") {
@@ -246,6 +367,18 @@ func allowedCards(isSuperAdmin bool, permissions []string) map[string]struct{} {
 	if isSuperAdmin || hasPermission(permissions, "dashboard:system_status") {
 		allowed[CardSystemStatus] = struct{}{}
 	}
+	if isSuperAdmin || hasPermission(permissions, "cicd_script_runs:view") {
+		allowed[CardScriptRunSummary] = struct{}{}
+	}
+	if isSuperAdmin || hasPermission(permissions, "cicd_pipeline_runs:view") {
+		allowed[CardPipelineRunSummary] = struct{}{}
+	}
+	if isSuperAdmin || hasPermission(permissions, "dashboard:view") {
+		allowed[CardCICDTaskOverview] = struct{}{}
+	}
+	if isSuperAdmin || hasPermission(permissions, "project_projects:view") {
+		allowed[CardMyProjects] = struct{}{}
+	}
 	return allowed
 }
 
@@ -254,7 +387,10 @@ func hasPermission(codes []string, required string) bool {
 }
 
 func defaultLayout(allowed map[string]struct{}) []model.CardLayout {
-	all := []string{CardBuildSummary, CardAgentRunSummary, CardSystemInfo, CardSystemStatus}
+	all := []string{
+		CardBuildSummary, CardAgentRunSummary, CardSystemInfo, CardSystemStatus,
+		CardScriptRunSummary, CardPipelineRunSummary, CardCICDTaskOverview, CardMyProjects,
+	}
 	cards := make([]model.CardLayout, 0, len(all))
 	for _, id := range all {
 		if _, ok := allowed[id]; !ok {

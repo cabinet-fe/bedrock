@@ -206,13 +206,16 @@ onMounted(async () => {
           />
         </section>
       </template>
-      <u-empty v-else text="执行记录不存在或无权访问" />
+      <div v-else class="page-empty">
+        <u-empty text="执行记录不存在或无权访问" />
+      </div>
     </div>
   </u-scroll>
 </template>
 
 <style scoped lang="scss">
 @use "pkg:@veltra/styles/functions" as fn;
+@use "@/lib/empty-center.scss" as empty;
 
 .page {
   display: flex;
@@ -312,5 +315,9 @@ onMounted(async () => {
 .state {
   padding: 24px;
   color: fn.use-var(text-color, secondary);
+}
+
+.page-empty {
+  @include empty.center(320px);
 }
 </style>

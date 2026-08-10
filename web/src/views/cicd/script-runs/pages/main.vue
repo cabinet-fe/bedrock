@@ -8,7 +8,16 @@ import { listScriptJobs } from "@/api/cicd";
 import type { ScriptRun } from "@/api/types";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { formatDateTime, formatDurationMs } from "@/lib/datetime";
-import { BUILD_STAGE_TAG, JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
+import {
+  BUILD_STAGE_TAG,
+  JOB_STATUS_OPTIONS,
+  JOB_STATUS_TAG,
+  TRIGGER_TYPE_TAG,
+  buildStageLabel,
+  jobStatusLabel,
+  tagType,
+  triggerTypeLabel,
+} from "@/lib/tag";
 
 const router = useRouter();
 const query = reactive({
@@ -89,14 +98,7 @@ onMounted(async () => {
           clearable
           placeholder="状态"
           style="width: 140px"
-          :options="[
-            { label: 'queued', value: 'queued' },
-            { label: 'running', value: 'running' },
-            { label: 'success', value: 'success' },
-            { label: 'failed', value: 'failed' },
-            { label: 'cancelled', value: 'cancelled' },
-            { label: 'interrupted', value: 'interrupted' },
-          ]"
+          :options="JOB_STATUS_OPTIONS"
         />
       </template>
       <template #column:script_job_id="{ rowData }">
@@ -104,17 +106,17 @@ onMounted(async () => {
       </template>
       <template #column:status="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as ScriptRun).status, JOB_STATUS_TAG)">
-          {{ (rowData as ScriptRun).status }}
+          {{ jobStatusLabel((rowData as ScriptRun).status) }}
         </u-tag>
       </template>
       <template #column:stage="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as ScriptRun).stage, BUILD_STAGE_TAG)">
-          {{ (rowData as ScriptRun).stage || "—" }}
+          {{ buildStageLabel((rowData as ScriptRun).stage) || "—" }}
         </u-tag>
       </template>
       <template #column:trigger_type="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as ScriptRun).trigger_type, TRIGGER_TYPE_TAG)">
-          {{ (rowData as ScriptRun).trigger_type }}
+          {{ triggerTypeLabel((rowData as ScriptRun).trigger_type) }}
         </u-tag>
       </template>
       <template #column:action="{ rowData }">

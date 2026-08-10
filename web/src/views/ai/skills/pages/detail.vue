@@ -35,15 +35,23 @@ function onSkillLoaded(skill: SkillPackage) {
 <template>
   <div class="skill-detail">
     <SkillEditor v-if="skillId != null" :skill-id="skillId" @loaded="onSkillLoaded" />
-    <u-empty v-else text="无效的技能 ID" />
+    <div v-else class="skill-detail__empty">
+      <u-empty text="无效的技能 ID" />
+    </div>
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
+@use "@/lib/empty-center.scss" as empty;
+
 .skill-detail {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+}
+
+.skill-detail__empty {
+  @include empty.center(320px);
 }
 </style>

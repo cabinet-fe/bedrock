@@ -24,7 +24,14 @@ import ProjectSelect from "@/components/project-select";
 import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime, formatDurationMs } from "@/lib/datetime";
-import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType, type TagType } from "@/lib/tag";
+import {
+  JOB_STATUS_TAG,
+  TRIGGER_TYPE_TAG,
+  jobStatusLabel,
+  tagType,
+  triggerTypeLabel,
+  type TagType,
+} from "@/lib/tag";
 
 function parsePositiveInt(raw: unknown): number | undefined {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -513,7 +520,7 @@ onMounted(async () => {
       >
         <template #column:status="{ rowData }">
           <u-tag size="small" :type="tagType((rowData as ScriptRun).status, JOB_STATUS_TAG)">
-            {{ (rowData as ScriptRun).status }}
+            {{ jobStatusLabel((rowData as ScriptRun).status) }}
           </u-tag>
         </template>
         <template #column:trigger_type="{ rowData }">
@@ -521,7 +528,7 @@ onMounted(async () => {
             size="small"
             :type="tagType((rowData as ScriptRun).trigger_type, TRIGGER_TYPE_TAG)"
           >
-            {{ (rowData as ScriptRun).trigger_type }}
+            {{ triggerTypeLabel((rowData as ScriptRun).trigger_type) }}
           </u-tag>
         </template>
         <template #column:action="{ rowData }">

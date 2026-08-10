@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: "HomePage" });
 
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { message } from "@veltra/desktop";
 import { Edit, Setting } from "@veltra/icons/normal";
 import { useRouter } from "vue-router";
@@ -10,8 +10,12 @@ import {
   getAgentRunSummary,
   getBuildSummary,
   getDashboardLayout,
+  getMyProjects,
+  getPipelineRunSummary,
+  getScriptRunSummary,
   getSystemInfo,
   getSystemStatus,
+  getTaskOverview,
   saveDashboardLayout,
 } from "@/api/dashboard";
 import type {
@@ -19,12 +23,18 @@ import type {
   BuildSummary,
   DashboardCardID,
   DashboardCardLayout,
+  MyProject,
+  PipelineRunSummary,
+  ScriptRunSummary,
   SystemInfo,
   SystemStatus,
+  TaskOverview,
 } from "@/api/types";
 import DashboardGrid, { ensureCardGeometry } from "@/components/dashboard-grid";
-
-const STATUS_REFRESH_MS = 30_000;
+import DashboardRunningDialog, {
+  type RunningDialogKind,
+} from "@/components/dashboard-running-dialog";
+import { useDashboardWs, type DashboardRunType } from "@/composables/use-dashboard-ws";
 
 const router = useRouter();
 const layout = ref<DashboardCardLayout[]>([]);
@@ -36,9 +46,14 @@ const saving = ref(false);
 const loading = ref(true);
 const buildSummary = ref<BuildSummary | null>(null);
 const agentRunSummary = ref<AgentRunSummary | null>(null);
+const scriptRunSummary = ref<ScriptRunSummary | null>(null);
+const pipelineRunSummary = ref<PipelineRunSummary | null>(null);
+const taskOverview = ref<TaskOverview | null>(null);
+const myProjects = ref<MyProject[] | null>(null);
 const systemInfo = ref<SystemInfo | null>(null);
 const systemStatus = ref<SystemStatus | null>(null);
-let statusTimer: ReturnType<typeof setInterval> | undefined;
+const runningDialogOpen = ref(false);
+const runningDialogKind = ref<RunningDialogKind>("build");
 
 const visibleCards = computed(() => layout.value.filter((card) => card.visible));
 
@@ -47,6 +62,10 @@ const cardTitles: Record<DashboardCardID, string> = {
   agent_run_summary: "智能体运行摘要",
   system_info: "系统信息",
   system_status: "系统状态",
+  script_run_summary: "脚本运行摘要",
+  pipeline_run_summary: "流水线运行摘要",
+  cicd_task_overview: "任务概览",
+  my_projects: "我的项目",
 };
 
 function cloneCards(cards: DashboardCardLayout[]): DashboardCardLayout[] {
@@ -55,6 +74,52 @@ function cloneCards(cards: DashboardCardLayout[]): DashboardCardLayout[] {
 
 function isVisible(id: DashboardCardID): boolean {
   return layout.value.some((card) => card.id === id && card.visible);
+}
+
+function showLoadError(error: unknown) {
+  message.error(error instanceof Error ? error.message : "加载失败");
+}
+
+async function refreshBuildSummary() {
+  if (!isVisible("build_summary")) return;
+  try {
+    buildSummary.value = await getBuildSummary();
+  } catch (error) {
+    showLoadError(error);
+  }
+}
+
+async function refreshScriptRunSummary() {
+  if (!isVisible("script_run_summary")) return;
+  try {
+    scriptRunSummary.value = await getScriptRunSummary();
+  } catch (error) {
+    showLoadError(error);
+  }
+}
+
+async function refreshPipelineRunSummary() {
+  if (!isVisible("pipeline_run_summary")) return;
+  try {
+    pipelineRunSummary.value = await getPipelineRunSummary();
+  } catch (error) {
+    showLoadError(error);
+  }
+}
+
+function onRunChanged(runType: DashboardRunType) {
+  if (runType === "build") void refreshBuildSummary();
+  if (runType === "script") void refreshScriptRunSummary();
+  if (runType === "pipeline") void refreshPipelineRunSummary();
+}
+
+async function refreshStatus() {
+  if (!isVisible("system_status")) return;
+  try {
+    systemStatus.value = await getSystemStatus();
+  } catch (error) {
+    showLoadError(error);
+  }
 }
 
 async function loadCardData() {
@@ -77,6 +142,42 @@ async function loadCardData() {
         .catch(showLoadError),
     );
   }
+  if (isVisible("script_run_summary")) {
+    requests.push(
+      getScriptRunSummary()
+        .then((result) => {
+          scriptRunSummary.value = result;
+        })
+        .catch(showLoadError),
+    );
+  }
+  if (isVisible("pipeline_run_summary")) {
+    requests.push(
+      getPipelineRunSummary()
+        .then((result) => {
+          pipelineRunSummary.value = result;
+        })
+        .catch(showLoadError),
+    );
+  }
+  if (isVisible("cicd_task_overview")) {
+    requests.push(
+      getTaskOverview()
+        .then((result) => {
+          taskOverview.value = result;
+        })
+        .catch(showLoadError),
+    );
+  }
+  if (isVisible("my_projects")) {
+    requests.push(
+      getMyProjects()
+        .then((result) => {
+          myProjects.value = result;
+        })
+        .catch(showLoadError),
+    );
+  }
   if (isVisible("system_info")) {
     requests.push(
       getSystemInfo()
@@ -87,15 +188,6 @@ async function loadCardData() {
     );
   }
   await Promise.all(requests);
-}
-
-async function refreshStatus() {
-  if (!isVisible("system_status")) return;
-  try {
-    systemStatus.value = await getSystemStatus();
-  } catch (error) {
-    showLoadError(error);
-  }
 }
 
 async function loadDashboard() {
@@ -186,18 +278,41 @@ function openAgentRun(id: number) {
   void router.push({ name: "ai-run-detail", params: { id: String(id) } });
 }
 
-function showLoadError(error: unknown) {
-  message.error(error instanceof Error ? error.message : "加载失败");
+function openScriptRun(id: number) {
+  void router.push({ name: "cicd-script-run-detail", params: { id: String(id) } });
 }
 
-onMounted(() => {
-  void loadDashboard();
-  statusTimer = window.setInterval(() => void refreshStatus(), STATUS_REFRESH_MS);
+function openPipelineRun(id: number) {
+  void router.push({ name: "cicd-pipeline-run-detail", params: { id: String(id) } });
+}
+
+function openProject(id: number) {
+  void router.push({ name: "project-detail", params: { id: String(id) } });
+}
+
+function openBuildJobs() {
+  void router.push({ name: "cicd-build-jobs" });
+}
+
+function openScriptJobs() {
+  void router.push({ name: "cicd-script-jobs" });
+}
+
+function openPipelines() {
+  void router.push({ name: "cicd-pipelines" });
+}
+
+function showRunning(kind: RunningDialogKind) {
+  runningDialogKind.value = kind;
+  runningDialogOpen.value = true;
+}
+
+useDashboardWs({
+  systemStatus,
+  onRunChanged,
 });
 
-onUnmounted(() => {
-  if (statusTimer) window.clearInterval(statusTimer);
-});
+void loadDashboard();
 </script>
 
 <template>
@@ -233,6 +348,8 @@ onUnmounted(() => {
       </template>
     </u-dialog>
 
+    <DashboardRunningDialog v-model="runningDialogOpen" :kind="runningDialogKind" />
+
     <div v-if="loading" v-loading="true" class="dashboard__loading" />
     <u-scroll v-else class="dashboard__content">
       <DashboardGrid
@@ -241,19 +358,33 @@ onUnmounted(() => {
         :editing="editing"
         :build-summary="buildSummary"
         :agent-run-summary="agentRunSummary"
+        :script-run-summary="scriptRunSummary"
+        :pipeline-run-summary="pipelineRunSummary"
+        :task-overview="taskOverview"
+        :my-projects="myProjects"
         :system-info="systemInfo"
         :system-status="systemStatus"
         @change="onGridChange"
         @open-build-run="openBuildRun"
         @open-agent-run="openAgentRun"
+        @open-script-run="openScriptRun"
+        @open-pipeline-run="openPipelineRun"
+        @open-project="openProject"
+        @open-build-jobs="openBuildJobs"
+        @open-script-jobs="openScriptJobs"
+        @open-pipelines="openPipelines"
+        @show-running="showRunning"
       />
-      <u-empty v-else class="dashboard__empty" text="当前没有可见卡片。请打开「管理卡片」启用。" />
+      <div v-else class="dashboard__empty">
+        <u-empty text="当前没有可见卡片。请打开「管理卡片」启用。" />
+      </div>
     </u-scroll>
   </div>
 </template>
 
 <style scoped lang="scss">
 @use "pkg:@veltra/styles/functions" as fn;
+@use "@/lib/empty-center.scss" as empty;
 
 .dashboard {
   box-sizing: border-box;
@@ -311,6 +442,6 @@ onUnmounted(() => {
 }
 
 .dashboard__empty {
-  padding: 48px 0;
+  @include empty.center(320px);
 }
 </style>

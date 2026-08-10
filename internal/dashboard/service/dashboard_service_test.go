@@ -254,6 +254,27 @@ func TestDefaultLayoutIncludesGeometry(t *testing.T) {
 	}
 }
 
+func TestLayoutIncludesTaskOverviewWithDashboardViewOnly(t *testing.T) {
+	repo := newDashboardRepository(t)
+	svc := NewDashboardService(repo, "test", time.Now(), []string{"."})
+	permissions := []string{"dashboard:view"}
+
+	layout, err := svc.GetLayout(11, false, permissions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, card := range layout.Cards {
+		if card.ID == CardCICDTaskOverview {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected cicd_task_overview in layout: %#v", layout.Cards)
+	}
+}
+
 func newDashboardRepository(t *testing.T) *repository.DashboardRepository {
 	t.Helper()
 	gdb, err := db.Open(&config.DatabaseConfig{

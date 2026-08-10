@@ -64,6 +64,53 @@ type RecentAgentRun struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type ScriptRunSummary struct {
+	Running     int64             `json:"running"`
+	Queued      int64             `json:"queued"`
+	SuccessRate float64           `json:"success_rate"`
+	Recent      []RecentScriptRun `json:"recent"`
+}
+
+type RecentScriptRun struct {
+	ID          uint      `json:"id"`
+	ScriptJobID uint      `json:"script_job_id"`
+	JobName     string    `json:"job_name"`
+	RunNumber   int       `json:"run_number"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type PipelineRunSummary struct {
+	Running     int64               `json:"running"`
+	Queued      int64               `json:"queued"`
+	SuccessRate float64             `json:"success_rate"`
+	Recent      []RecentPipelineRun `json:"recent"`
+}
+
+type RecentPipelineRun struct {
+	ID              uint      `json:"id"`
+	BuildPipelineID uint      `json:"build_pipeline_id"`
+	PipelineName    string    `json:"pipeline_name"`
+	RunNumber       int       `json:"run_number"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// TaskOverview 按权限分项返回任务总数；无权限项为 null。
+type TaskOverview struct {
+	BuildJobs  *int64 `json:"build_jobs"`
+	ScriptJobs *int64 `json:"script_jobs"`
+	Pipelines  *int64 `json:"pipelines"`
+}
+
+type MyProject struct {
+	ID     uint   `json:"id"`
+	Name   string `json:"name"`
+	Slug   string `json:"slug"`
+	Status string `json:"status"`
+	MyRole string `json:"my_role"`
+}
+
 type SystemInfo struct {
 	Version   string    `json:"version"`
 	OS        string    `json:"os"`

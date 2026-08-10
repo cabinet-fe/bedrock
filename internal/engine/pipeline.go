@@ -151,7 +151,7 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 		})
 		run.Status = "success"
 		run.Stage = "distributing"
-		p.broadcastRunRefresh(run.ID)
+		p.broadcastRunRefresh(run.ID, run.Status)
 	} else {
 		p.setRunning(run, "cloning")
 	}
@@ -178,7 +178,7 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 		"stage":      run.Stage,
 		"status":     run.Status,
 	})
-	p.broadcastRunRefresh(run.ID)
+	p.broadcastRunRefresh(run.ID, run.Status)
 
 	channel := fmt.Sprintf("build-run:%d", run.ID)
 	var logMu sync.Mutex
@@ -240,7 +240,7 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 			hash := strings.TrimSpace(out)
 			run.CommitHash = hash
 			_ = p.runs.UpdateFields(run.ID, map[string]interface{}{"commit_hash": hash})
-			p.broadcastRunRefresh(run.ID)
+			p.broadcastRunRefresh(run.ID, run.Status)
 		}
 	}
 
@@ -368,7 +368,7 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 			"artifact_path": artifactPath,
 			"artifact_kind": prep.Kind,
 		})
-		p.broadcastRunRefresh(run.ID)
+		p.broadcastRunRefresh(run.ID, run.Status)
 		writeLine(fmt.Sprintf("Artifact saved (%s): %s", prep.Kind, artifactPath))
 		p.cleanupArtifacts(job)
 	}
@@ -388,7 +388,7 @@ func (p *Pipeline) Execute(ctx context.Context, runID uint) {
 				"stage":                "idle",
 				"distribution_summary": "all_failed",
 			})
-			p.broadcastRunRefresh(run.ID)
+			p.broadcastRunRefresh(run.ID, run.Status)
 			return
 		}
 		p.setStageKeepSuccess(run, "distributing")
@@ -420,11 +420,12 @@ func (p *Pipeline) resolveRepoGitAuth(repo *resourcemodel.Repository) (authType,
 	}
 }
 
-func (p *Pipeline) broadcastRunRefresh(runID uint) {
+func (p *Pipeline) broadcastRunRefresh(runID uint, status string) {
 	if p.hub == nil {
 		return
 	}
 	p.hub.BroadcastToChannel(fmt.Sprintf("build-run:%d", runID), []byte("__REFRESH__"))
+	p.hub.BroadcastRunChanged("build", runID, status)
 }
 
 func (p *Pipeline) setRunning(run *model.BuildRun, stage string) {
@@ -434,7 +435,7 @@ func (p *Pipeline) setRunning(run *model.BuildRun, stage string) {
 		"status": "running",
 		"stage":  stage,
 	})
-	p.broadcastRunRefresh(run.ID)
+	p.broadcastRunRefresh(run.ID, run.Status)
 }
 
 func (p *Pipeline) setStageKeepSuccess(run *model.BuildRun, stage string) {
@@ -443,7 +444,7 @@ func (p *Pipeline) setStageKeepSuccess(run *model.BuildRun, stage string) {
 		"status": "success",
 		"stage":  stage,
 	})
-	p.broadcastRunRefresh(run.ID)
+	p.broadcastRunRefresh(run.ID, run.Status)
 }
 
 func (p *Pipeline) failRun(run *model.BuildRun, errMsg string) {
@@ -462,7 +463,7 @@ func (p *Pipeline) failRun(run *model.BuildRun, errMsg string) {
 		fields["duration_ms"] = finished.Sub(*run.StartedAt).Milliseconds()
 	}
 	_ = p.runs.UpdateFields(run.ID, fields)
-	p.broadcastRunRefresh(run.ID)
+	p.broadcastRunRefresh(run.ID, run.Status)
 	p.notifyTerminal(run, "failed", errMsg)
 }
 
@@ -473,7 +474,7 @@ func (p *Pipeline) cancelRun(run *model.BuildRun) {
 			"stage":                "idle",
 			"distribution_summary": "cancelled",
 		})
-		p.broadcastRunRefresh(run.ID)
+		p.broadcastRunRefresh(run.ID, run.Status)
 		return
 	}
 	finished := time.Now()
@@ -486,7 +487,7 @@ func (p *Pipeline) cancelRun(run *model.BuildRun) {
 		fields["duration_ms"] = finished.Sub(*run.StartedAt).Milliseconds()
 	}
 	_ = p.runs.UpdateFields(run.ID, fields)
-	p.broadcastRunRefresh(run.ID)
+	p.broadcastRunRefresh(run.ID, run.Status)
 	p.notifyTerminal(run, "cancelled", "")
 }
 
@@ -514,7 +515,7 @@ func (p *Pipeline) markArtifactSuccess(run *model.BuildRun, writeLine func(strin
 		"error_message":        "",
 		"distribution_summary": summary,
 	})
-	p.broadcastRunRefresh(run.ID)
+	p.broadcastRunRefresh(run.ID, run.Status)
 	writeLine(fmt.Sprintf("=== Build phase succeeded in %dms (artifact ready) ===", run.DurationMs))
 	p.notifyTerminal(run, "success", "")
 	if p.agentHook != nil && run.ArtifactPath != "" {

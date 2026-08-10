@@ -116,7 +116,11 @@ func (s *ProjectService) ListProjects(actor AccessContext, filter ProjectListFil
 	if err := s.acl.CanListProjects(actor); err != nil {
 		return nil, 0, err
 	}
-	projects, total, err := s.repo.ListProjects(filter.ListQuery, filter.Keyword, filter.Status)
+	var scopeUserID *uint
+	if !actor.bypassProjectListFilter() {
+		scopeUserID = &actor.UserID
+	}
+	projects, total, err := s.repo.ListProjects(filter.ListQuery, filter.Keyword, filter.Status, scopeUserID)
 	if err != nil {
 		return nil, 0, err
 	}

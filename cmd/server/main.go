@@ -209,6 +209,8 @@ func main() {
 	skillSvc := aiservice.NewSkillService(aiRepo, storageSvc, skillsRoot, auditSvc)
 
 	hub := ws.NewHub()
+	runSvc.SetHub(hub)
+	scriptRunSvc.SetHub(hub)
 	notifRepo := systemrepo.NewNotificationRepository(gdb)
 	notifSvc := systemservice.NewNotificationService(notifRepo, hub)
 	notifHandler := systemhandler.NewNotificationHandler(notifSvc)
@@ -243,6 +245,7 @@ func main() {
 	pipelineOrch := cicdservice.NewPipelineOrchestrator(
 		pipelineRepo, pipelineRunRepo, jobRepo, scriptJobRepo, runSvc, scriptRunSvc, agentSvc, logger,
 	)
+	pipelineOrch.SetHub(hub)
 	pipeline.SetBuildRunTerminalHook(pipelineOrch)
 	runSvc.SetTerminalHook(pipelineOrch)
 	scriptPipeline.SetTerminalHook(pipelineOrch)
@@ -318,6 +321,11 @@ func main() {
 	aiWSHandler.RegisterRoutes(r)
 	notifWSHandler := systemhandler.NewNotificationWSHandler(authSvc, hub, corsCfg)
 	notifWSHandler.RegisterRoutes(r)
+	dashboardWSHandler := dashboardhandler.NewDashboardWSHandler(authSvc, patSvc, permSvc, hub, corsCfg)
+	dashboardWSHandler.RegisterRoutes(r)
+
+	statusBroadcasterCtx, cancelStatusBroadcaster := context.WithCancel(context.Background())
+	dashboardSvc.StartStatusBroadcaster(statusBroadcasterCtx, hub, 3*time.Second)
 
 	serveSPA(r, cfg.Encryption.Key)
 
@@ -371,6 +379,7 @@ func main() {
 	<-quit
 	logger.Info("Shutting down...")
 
+	cancelStatusBroadcaster()
 	cronSched.Stop()
 	scriptCronSched.Stop()
 	pipelineCronSched.Stop()

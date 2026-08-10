@@ -18,6 +18,7 @@ import (
 	"bedrock/internal/platform/seed"
 	projectmodel "bedrock/internal/project/model"
 	projectrepo "bedrock/internal/project/repository"
+	rbacmodel "bedrock/internal/rbac/model"
 	rbacrepo "bedrock/internal/rbac/repository"
 	rbacservice "bedrock/internal/rbac/service"
 	storagemodel "bedrock/internal/storage/model"
@@ -45,10 +46,10 @@ func TestProjectACLListAndGlobalBypass(t *testing.T) {
 		t.Fatalf("joined list = %#v total=%d err=%v", items, total, err)
 	}
 
-	// D2：仅持有 view 的非成员也可列出全部项目
+	// data_scope=self 时非成员不可见
 	nonMember := actor(3, "project_projects:view")
 	items, total, err = svc.ListProjects(nonMember, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
-	if err != nil || total != 1 || len(items) != 1 {
+	if err != nil || total != 0 || len(items) != 0 {
 		t.Fatalf("non-member list = %#v total=%d err=%v", items, total, err)
 	}
 
@@ -62,7 +63,7 @@ func TestProjectACLListAndGlobalBypass(t *testing.T) {
 	}
 }
 
-func TestProjectNonMemberCanListAndGetButNotWrite(t *testing.T) {
+func TestProjectNonMemberCannotReadOrWrite(t *testing.T) {
 	svc := newProjectService(t)
 	owner := actor(1, "project_projects:create", "project_projects:view", "project_projects:update")
 	project := createProject(t, svc, owner, "private-for-non-member")
@@ -70,31 +71,15 @@ func TestProjectNonMemberCanListAndGetButNotWrite(t *testing.T) {
 	viewer := actor(9, "project_projects:view", "project_projects:update", "project_projects:delete",
 		"project_requirements:view", "project_requirements:create")
 	items, total, err := svc.ListProjects(viewer, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
-	if err != nil || total != 1 || len(items) != 1 || items[0].ID != project.ID {
+	if err != nil || total != 0 || len(items) != 0 {
 		t.Fatalf("non-member list = %#v total=%d err=%v", items, total, err)
 	}
-	if items[0].MyRole != "" {
-		t.Fatalf("non-member my_role must be empty: %#v", items[0])
-	}
-	if items[0].Permissions.Update || items[0].Permissions.Archive || items[0].Permissions.Delete ||
-		items[0].Permissions.ManageMembers || items[0].Permissions.TransferOwner {
-		t.Fatalf("non-member permissions must be all false: %#v", items[0].Permissions)
-	}
 
-	got, err := svc.GetProject(viewer, project.ID)
-	if err != nil {
-		t.Fatalf("non-member get: %v", err)
+	if _, err := svc.GetProject(viewer, project.ID); !IsForbidden(err) {
+		t.Fatalf("non-member get = %v, want forbidden", err)
 	}
-	if got.MyRole != "" {
-		t.Fatalf("non-member get my_role must be empty: %#v", got)
-	}
-	if got.Permissions.Update || got.Permissions.Archive || got.Permissions.Delete ||
-		got.Permissions.ManageMembers || got.Permissions.TransferOwner {
-		t.Fatalf("non-member get permissions must be all false: %#v", got.Permissions)
-	}
-
-	if _, err := svc.ListMembers(viewer, project.ID); err != nil {
-		t.Fatalf("non-member list members: %v", err)
+	if _, err := svc.ListMembers(viewer, project.ID); !IsForbidden(err) {
+		t.Fatalf("non-member list members = %v, want forbidden", err)
 	}
 	if _, err := svc.UpdateProject(viewer, project.ID, UpdateProjectInput{}); !IsForbidden(err) {
 		t.Fatalf("non-member update = %v, want forbidden", err)
@@ -118,7 +103,7 @@ func TestProjectListCapabilitiesReflectProjectACL(t *testing.T) {
 	owner := actor(1, "project_projects:create", "project_projects:update", "project_projects:delete")
 	project := createProject(t, svc, owner, "capabilities")
 
-	viewAll := actor(2,
+	viewAll := actorWithScope(2, rbacmodel.DataScopeAll,
 		"project_projects:view",
 		"project_projects:view_all",
 		"project_projects:update",
@@ -549,6 +534,10 @@ func actor(userID uint, permissions ...string) AccessContext {
 	return NewAccessContext(userID, false, permissions)
 }
 
+func actorWithScope(userID uint, dataScope string, permissions ...string) AccessContext {
+	return NewAccessContextWithDataScope(userID, false, permissions, dataScope)
+}
+
 func makeZIP(t *testing.T, entries map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -592,11 +581,11 @@ func TestProjectIsPublicNoLongerGatesRead(t *testing.T) {
 
 	viewer := actor(9, "project_projects:view", "project_projects:update")
 	items, total, err := svc.ListProjects(viewer, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
-	if err != nil || total != 1 || len(items) != 1 || items[0].ID != project.ID {
+	if err != nil || total != 0 || len(items) != 0 {
 		t.Fatalf("non-member list private = %#v total=%d err=%v", items, total, err)
 	}
-	if _, err := svc.GetProject(viewer, project.ID); err != nil {
-		t.Fatalf("non-member get private: %v", err)
+	if _, err := svc.GetProject(viewer, project.ID); !IsForbidden(err) {
+		t.Fatalf("non-member get private = %v, want forbidden", err)
 	}
 	if _, err := svc.UpdateProject(viewer, project.ID, UpdateProjectInput{}); !IsForbidden(err) {
 		t.Fatalf("is_public=false must not grant write, got %v", err)

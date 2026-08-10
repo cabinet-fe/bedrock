@@ -367,13 +367,16 @@ onMounted(async () => {
           </div>
         </section>
       </template>
-      <u-empty v-else text="执行记录不存在或无权访问" />
+      <div v-else class="page-empty">
+        <u-empty text="执行记录不存在或无权访问" />
+      </div>
     </div>
   </u-scroll>
 </template>
 
 <style scoped lang="scss">
 @use "pkg:@veltra/styles/functions" as fn;
+@use "@/lib/empty-center.scss" as empty;
 
 .page {
   display: flex;
@@ -450,10 +453,7 @@ onMounted(async () => {
 }
 
 .panel--empty {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 120px;
+  @include empty.center(120px);
 }
 
 .meta-panel {
@@ -556,5 +556,9 @@ onMounted(async () => {
 
 .state {
   opacity: 0.7;
+}
+
+.page-empty {
+  @include empty.center(320px);
 }
 </style>

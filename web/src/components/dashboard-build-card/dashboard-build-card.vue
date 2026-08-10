@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   openRun: [id: number];
+  showRunning: [];
 }>();
 
 const STATUS_LABEL: Record<string, string> = {
@@ -59,13 +60,13 @@ function openRun(run: DashboardRecentBuildRun) {
 
     <u-card-content class="tile__body">
       <div class="metrics">
-        <div class="metric">
+        <button type="button" class="metric metric--clickable" @click="emit('showRunning')">
           <span class="metric__icon" aria-hidden="true">
             <u-icon :size="14"><Refresh /></u-icon>
           </span>
           <span class="metric__label">运行中</span>
           <strong class="metric__value">{{ metric(data?.running) }}</strong>
-        </div>
+        </button>
         <div class="metric">
           <span class="metric__icon" aria-hidden="true">
             <u-icon :size="14"><Queue /></u-icon>
@@ -180,6 +181,18 @@ function openRun(run: DashboardRecentBuildRun) {
 
   &--accent .metric__value {
     color: fn.use-var(color, primary);
+  }
+
+  &--clickable {
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s ease;
+
+    &:hover {
+      background: fn.use-var(bg-color, hover);
+    }
   }
 }
 

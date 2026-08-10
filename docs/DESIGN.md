@@ -186,7 +186,7 @@ RbacResource
 | Member | 按细则创建/编辑需求与文档、评论 |
 | Readonly | 只读 |
 
-角色级字段 `data_scope`：`self` | `all`。多角色取**最宽**（任一为 `all` 或超管 → 有效范围为 `all`）。新建角色默认 `self`；已有角色 migration 置 `all`（避免 CI/CD 行为突变）。`data_scope` **不再**用于过滤产品项目列表。
+角色级字段 `data_scope`：`self` | `all`。多角色取**最宽**（任一为 `all` 或超管 → 有效范围为 `all`）。新建角色默认 `self`；已有角色 migration 置 `all`（避免 CI/CD 行为突变）。产品项目列表/读详情在 `data_scope=self` 时按成员或 `created_by` 过滤；`manage_all` 或 `data_scope=all` 可见全部。
 
 项目鉴权公式：
 
@@ -194,16 +194,17 @@ RbacResource
 允许 = 全局功能权限(full_code)
      AND (
            超管
-        OR（读侧）全局权限已通过 → 放行项目域读
-        OR 持有 project_projects:manage_all（写/管理）
-        OR 是项目成员且项目角色允许该动作
+        OR 持有 project_projects:manage_all（写/管理；读侧亦可见全部）
+        OR（读侧）data_scope=all
+        OR（读侧）data_scope=self 且（是项目成员 OR created_by=自己）
+        OR 是项目成员且项目角色允许该动作（写）
         OR（CI/CD 全局列表读侧）data_scope=all
            或 created_by=自己 或 is_public
         OR（Skill 读侧）visibility=public 或 created_by=自己 或 data_scope=all
          )
 ```
 
-- **项目域读**：持有 `project_projects:view`（及子域 `:view`）即可列出/查看全部项目及相关读接口；**不**要求成员身份。非成员 `my_role` 为空，`permissions` 能力位全 false。
+- **项目域读**：持有 `project_projects:view`（及子域 `:view`）且满足上述数据范围；`data_scope=self` 时须为成员或创建人。非成员 `my_role` 为空，`permissions` 能力位全 false。
 - **项目域写**：仍需成员角色允许，或 `manage_all` / 超管；普通 `:update` **不**隐含全局越权。
 - `manage_all`：可管理全部项目成员与内容，**无需**加入项目。
 - Owner 转让：仅当前 Owner 或 `manage_all`。

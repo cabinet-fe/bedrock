@@ -42,12 +42,12 @@ const tabs = computed(
   () =>
     [
       { key: "overview", name: "概览" },
+      hasPermission("project_requirements:view") ? { key: "requirements", name: "需求" } : null,
       hasPermission("cicd_build_jobs:view") ? { key: "build-jobs", name: "构建任务" } : null,
       hasPermission("cicd_script_jobs:view") ? { key: "script-jobs", name: "脚本任务" } : null,
       hasPermission("cicd_pipelines:view") ? { key: "pipelines", name: "流水线" } : null,
-      hasPermission("project_requirements:view") ? { key: "requirements", name: "需求" } : null,
-      hasPermission("project_docs:view") ? { key: "docs", name: "接口文档" } : null,
       hasPermission("project_dev_docs:view") ? { key: "dev-docs", name: "开发文档" } : null,
+      hasPermission("project_docs:view") ? { key: "docs", name: "接口文档" } : null,
     ].filter(Boolean) as { key: string; name: string }[],
 );
 
@@ -107,6 +107,13 @@ watch(tab, (next) => {
     <template v-if="project">
       <u-tabs v-model="tab" :items="tabs" />
       <OverviewPanel v-if="tab === 'overview'" class="project-detail__panel" :project="project" />
+      <RequirementsPanel
+        v-else-if="tab === 'requirements' && hasPermission('project_requirements:view')"
+        class="project-detail__panel"
+        :project="project"
+        :project-role="projectRole"
+        :manage-all="canManageAll"
+      />
       <BuildJobsPanel
         v-else-if="tab === 'build-jobs' && hasPermission('cicd_build_jobs:view')"
         class="project-detail__panel"
@@ -122,9 +129,10 @@ watch(tab, (next) => {
         class="project-detail__panel"
         :project="project"
       />
-      <RequirementsPanel
-        v-else-if="tab === 'requirements' && hasPermission('project_requirements:view')"
+      <DocsPanel
+        v-else-if="tab === 'dev-docs' && hasPermission('project_dev_docs:view')"
         class="project-detail__panel"
+        doc-kind="dev"
         :project="project"
         :project-role="projectRole"
         :manage-all="canManageAll"
@@ -137,20 +145,16 @@ watch(tab, (next) => {
         :project-role="projectRole"
         :manage-all="canManageAll"
       />
-      <DocsPanel
-        v-else-if="tab === 'dev-docs' && hasPermission('project_dev_docs:view')"
-        class="project-detail__panel"
-        doc-kind="dev"
-        :project="project"
-        :project-role="projectRole"
-        :manage-all="canManageAll"
-      />
     </template>
-    <u-empty v-else text="项目不存在或无权访问" />
+    <div v-else class="project-detail__empty">
+      <u-empty text="项目不存在或无权访问" />
+    </div>
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
+@use "@/lib/empty-center.scss" as empty;
+
 .project-detail {
   display: flex;
   flex-direction: column;
@@ -162,5 +166,9 @@ watch(tab, (next) => {
 .project-detail__panel {
   flex: 1;
   min-height: 0;
+}
+
+.project-detail__empty {
+  @include empty.center(320px);
 }
 </style>

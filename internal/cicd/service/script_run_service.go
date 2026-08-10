@@ -12,6 +12,7 @@ import (
 	"bedrock/internal/engine"
 	"bedrock/internal/pkg"
 	rbacmodel "bedrock/internal/rbac/model"
+	"bedrock/internal/ws"
 )
 
 // ScriptRunService provides enqueue/cancel/retry for script runs.
@@ -20,6 +21,7 @@ type ScriptRunService struct {
 	jobs      *repository.ScriptJobRepository
 	scheduler engine.RunScheduler
 	termHook  engine.ScriptRunTerminalHook
+	hub       *ws.Hub
 }
 
 func NewScriptRunService(runs *repository.ScriptRunRepository, jobs *repository.ScriptJobRepository) *ScriptRunService {
@@ -33,6 +35,10 @@ func (s *ScriptRunService) SetScheduler(sched engine.RunScheduler) {
 // SetTerminalHook wires PipelineOrchestrator for queued cancels that bypass ScriptPipeline.Execute.
 func (s *ScriptRunService) SetTerminalHook(h engine.ScriptRunTerminalHook) {
 	s.termHook = h
+}
+
+func (s *ScriptRunService) SetHub(hub *ws.Hub) {
+	s.hub = hub
 }
 
 func (s *ScriptRunService) List(q pkg.ListQuery, scriptJobID *uint, status string, projectID *uint, userID uint, dataScope string) ([]model.ScriptRun, int64, error) {
@@ -131,6 +137,9 @@ func (s *ScriptRunService) EnqueueWithOverrides(jobID, triggeredBy uint, trigger
 	if s.scheduler != nil {
 		_ = s.scheduler.Submit(run.ID)
 	}
+	if s.hub != nil {
+		s.hub.BroadcastRunChanged("script", run.ID, run.Status)
+	}
 	return run, nil
 }
 
@@ -153,6 +162,9 @@ func (s *ScriptRunService) Cancel(id uint, userID uint, dataScope string) (*mode
 		if s.termHook != nil {
 			run.Status = "cancelled"
 			s.termHook.OnScriptRunTerminal(run, "cancelled")
+		}
+		if s.hub != nil {
+			s.hub.BroadcastRunChanged("script", id, "cancelled")
 		}
 	case "running":
 		if s.scheduler != nil {

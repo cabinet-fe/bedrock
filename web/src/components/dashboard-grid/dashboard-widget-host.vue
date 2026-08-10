@@ -7,8 +7,12 @@ import { Move } from "@veltra/icons/normal";
 import type { DashboardCardID } from "@/api/types";
 import DashboardAgentRunCard from "@/components/dashboard-agent-run-card";
 import DashboardBuildCard from "@/components/dashboard-build-card";
+import DashboardMyProjectsCard from "@/components/dashboard-my-projects-card";
+import DashboardPipelineRunCard from "@/components/dashboard-pipeline-run-card";
+import DashboardScriptRunCard from "@/components/dashboard-script-run-card";
 import DashboardSystemInfoCard from "@/components/dashboard-system-info-card";
 import DashboardSystemStatusCard from "@/components/dashboard-system-status-card";
+import DashboardTaskOverviewCard from "@/components/dashboard-task-overview-card";
 import { useGridStackItem } from "@/lib/gridstack-vue";
 
 import { DASHBOARD_WIDGET_CTX } from "./helper";
@@ -31,11 +35,36 @@ const cardId = id as DashboardCardID;
         v-if="cardId === 'build_summary'"
         :data="ctx.buildSummary"
         @open-run="ctx.openBuildRun"
+        @show-running="ctx.showRunning('build')"
       />
       <DashboardAgentRunCard
         v-else-if="cardId === 'agent_run_summary'"
         :data="ctx.agentRunSummary"
         @open-run="ctx.openAgentRun"
+      />
+      <DashboardScriptRunCard
+        v-else-if="cardId === 'script_run_summary'"
+        :data="ctx.scriptRunSummary"
+        @open-run="ctx.openScriptRun"
+        @show-running="ctx.showRunning('script')"
+      />
+      <DashboardPipelineRunCard
+        v-else-if="cardId === 'pipeline_run_summary'"
+        :data="ctx.pipelineRunSummary"
+        @open-run="ctx.openPipelineRun"
+        @show-running="ctx.showRunning('pipeline')"
+      />
+      <DashboardTaskOverviewCard
+        v-else-if="cardId === 'cicd_task_overview'"
+        :data="ctx.taskOverview"
+        @open-build-jobs="ctx.openBuildJobs"
+        @open-script-jobs="ctx.openScriptJobs"
+        @open-pipelines="ctx.openPipelines"
+      />
+      <DashboardMyProjectsCard
+        v-else-if="cardId === 'my_projects'"
+        :data="ctx.myProjects"
+        @open-project="ctx.openProject"
       />
       <DashboardSystemInfoCard v-else-if="cardId === 'system_info'" :data="ctx.systemInfo" />
       <DashboardSystemStatusCard v-else-if="cardId === 'system_status'" :data="ctx.systemStatus" />

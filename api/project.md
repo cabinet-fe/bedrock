@@ -5,7 +5,7 @@
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
 业务语义与权限模型见 [docs/DESIGN.md](../docs/DESIGN.md)。
 
-**读可见性**：持有 `project_projects:view`（或对应子域 `:view`）的认证用户可读项目域列表/详情（成员、需求、文档等读接口同样在全局权限通过后放行），**不**要求是项目成员。写操作（创建/更新/归档/删除/成员管理及需求/文档写）仍走项目成员 ACL 或 `manage_all`。非成员响应中 `my_role` 可为空（omit），`permissions` 能力位均为 false。`is_public` 字段保留兼容，**不再影响**项目读可见性。
+**读可见性**：持有 `project_projects:view`（或对应子域 `:view`）且满足数据范围：角色 `data_scope=all`、超管或 `project_projects:manage_all` 可读全部项目；`data_scope=self`（默认）仅可读本人为成员或创建人的项目。写操作（创建/更新/归档/删除/成员管理及需求/文档写）仍走项目成员 ACL 或 `manage_all`。非成员响应中 `my_role` 可为空（omit），`permissions` 能力位均为 false。`is_public` 字段保留兼容，**不再影响**项目读可见性。
 
 ## 项目
 
@@ -15,7 +15,7 @@
 查询参数：page: integer, page_size: integer, keyword: string, status: 'active' | 'archived', sort: string
 响应 200：data = ProductProjectPage
 错误：403
-说明：持有 `project_projects:view` 即可列出全部项目（含非成员）；写能力由每条 `permissions` / `my_role` 表达。
+说明：`data_scope=self` 时仅列出本人为成员或创建人的项目；`data_scope=all`、超管或 `manage_all` 可列出全部。写能力由每条 `permissions` / `my_role` 表达。
 
 ### POST /projects — 创建项目（创建者成为 Owner）
 

@@ -46,6 +46,39 @@
 错误：403
 说明：`disk_*` 为关键数据目录所在分区的宿主机磁盘占用；`directories` 为各关键目录自身占用大小（非分区剩余空间）。
 
+### GET /dashboard/script-run-summary — 脚本运行摘要卡片数据
+
+权限：`cicd_script_runs:view`
+响应 200：data = ScriptRunSummary
+错误：403
+
+### GET /dashboard/pipeline-run-summary — 流水线运行摘要卡片数据
+
+权限：`cicd_pipeline_runs:view`
+响应 200：data = PipelineRunSummary
+错误：403
+
+### GET /dashboard/task-overview — 任务概览卡片数据
+
+权限：`dashboard:view`（分项按 `cicd_build_jobs:view` / `cicd_script_jobs:view` / `cicd_pipelines:view` 返回对应计数，无权限项为 `null`）
+响应 200：data = TaskOverview
+错误：403
+
+### GET /dashboard/my-projects — 我的项目卡片数据
+
+权限：`project_projects:view`
+响应 200：data = MyProject[]
+错误：403
+说明：返回当前用户作为成员或创建者的项目，按 `updated_at` 倒序，最多 10 条。
+
+### GET /ws/dashboard — 仪表盘实时推送
+
+认证：查询参数 `token`（JWT / PAT），与 REST 相同；校验 WebSocket Origin（CORS 配置）。
+权限：有 `dashboard:view` 订阅 `dashboard:runs`；有 `dashboard:system_status` 额外订阅 `dashboard:system-status`。
+推送消息（JSON text）：
+- `{"type":"run_changed","run_type":"build|script|pipeline","run_id":N,"status":"..."}` — 运行状态变更（不含敏感数据，卡片数据仍走各自 REST）
+- `{"type":"system_status","data":{...}}` — 系统状态全量（服务端单例采集，约 3s，仅在有订阅者时采样）
+
 ## 运维
 
 ### GET /ops/processes — 列出主机进程（仅超管）
@@ -217,17 +250,53 @@
 | `success_rate` | `number` |  |  |
 | `recent` | `DashboardRecentBuildRun[]` |  |  |
 
+### ScriptRunSummary
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `running` | `integer` |  |  |
+| `queued` | `integer` |  |  |
+| `success_rate` | `number` |  |  |
+| `recent` | `DashboardRecentScriptRun[]` |  |  |
+
+### PipelineRunSummary
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `running` | `integer` |  |  |
+| `queued` | `integer` |  |  |
+| `success_rate` | `number` |  |  |
+| `recent` | `DashboardRecentPipelineRun[]` |  |  |
+
+### TaskOverview
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `build_jobs` | `integer \| null` |  | 无 `cicd_build_jobs:view` 时为 `null` |
+| `script_jobs` | `integer \| null` |  | 无 `cicd_script_jobs:view` 时为 `null` |
+| `pipelines` | `integer \| null` |  | 无 `cicd_pipelines:view` 时为 `null` |
+
+### MyProject
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `name` | `string` |  |  |
+| `slug` | `string` |  |  |
+| `status` | `string` |  |  |
+| `my_role` | `string` |  | 项目成员角色；非成员为空 |
+
 ### DashboardCardLayout
 
 12 列网格几何（GridStack）。`order` 由服务端按 `y * 12 + x` 归一；旧数据缺 `x/y/w/h` 时按卡片默认几何补全。
 
-默认几何：`build_summary` `(0,0) 6×4`，`agent_run_summary` `(6,0) 6×4`，`system_info` `(0,4) 6×3`，`system_status` `(6,4) 6×3`。
+默认几何：`build_summary` `(0,0) 6×4`，`agent_run_summary` `(6,0) 6×4`，`system_info` `(0,4) 6×3`，`system_status` `(6,4) 6×3`，`script_run_summary` `(0,7) 6×4`，`pipeline_run_summary` `(6,7) 6×4`，`cicd_task_overview` `(0,11) 6×3`，`my_projects` `(6,11) 6×3`。
 
 校验：`w`/`h` 最小 2，`w` 最大 12；未知或无权限 `id` 拒绝。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `id` | `'build_summary' \| 'agent_run_summary' \| 'system_info' \| 'system_status'` | 是 |  |
+| `id` | `'build_summary' \| 'agent_run_summary' \| 'system_info' \| 'system_status' \| 'script_run_summary' \| 'pipeline_run_summary' \| 'cicd_task_overview' \| 'my_projects'` | 是 |  |
 | `visible` | `boolean` | 是 |  |
 | `order` | `integer` | 是 | 由 `y * 12 + x` 归一，兼容旧客户端 |
 | `x` | `integer` | 是 | 列起点（0-based） |
@@ -260,6 +329,28 @@
 | `agent_id` | `integer` |  |  |
 | `agent_name` | `string` |  |  |
 | `trigger_type` | `string` |  |  |
+| `status` | `string` |  |  |
+| `created_at` | `string(date-time)` |  |  |
+
+### DashboardRecentScriptRun
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `script_job_id` | `integer` |  |  |
+| `job_name` | `string` |  | 父任务名称 |
+| `run_number` | `integer` |  |  |
+| `status` | `string` |  |  |
+| `created_at` | `string(date-time)` |  |  |
+
+### DashboardRecentPipelineRun
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `build_pipeline_id` | `integer` |  |  |
+| `pipeline_name` | `string` |  | 父流水线名称 |
+| `run_number` | `integer` |  |  |
 | `status` | `string` |  |  |
 | `created_at` | `string(date-time)` |  |  |
 

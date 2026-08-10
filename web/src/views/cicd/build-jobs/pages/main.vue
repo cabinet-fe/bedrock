@@ -39,7 +39,11 @@ import {
   BUILD_STAGE_TAG,
   JOB_STATUS_TAG,
   TRIGGER_TYPE_TAG,
+  buildStageLabel,
+  jobStatusLabel,
+  splitCommaTags,
   tagType,
+  triggerTypeLabel,
   type TagType,
 } from "@/lib/tag";
 
@@ -246,14 +250,6 @@ const repoTypeLabelMap = computed(() => {
   return map;
 });
 
-function splitTags(raw?: string | null): string[] {
-  if (!raw) return [];
-  return raw
-    .split(/[,，]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 function tagLabel(value: string): string {
   return repoTypeLabelMap.value.get(value) ?? value;
 }
@@ -433,7 +429,7 @@ function openEdit(row: BuildJob) {
       "tags",
     ]),
   );
-  form.tags = splitTags(row.tags);
+  form.tags = splitCommaTags(row.tags);
   form.env_var_names = (row.env_var_names ?? []).map((name) => ({ name }));
   form.env_vars = (row.env_vars ?? []).map((e) => ({
     key: e.key,
@@ -637,7 +633,7 @@ async function rotateWebhookSecret() {
       </template>
       <template #column:tags="{ rowData }">
         <span class="tag-cell">
-          <template v-for="parts in [splitTags((rowData as BuildJob).tags)]" :key="0">
+          <template v-for="parts in [splitCommaTags((rowData as BuildJob).tags)]" :key="0">
             <u-tag v-for="tag in parts" :key="tag" size="small" type="info">
               {{ tagLabel(tag) }}
             </u-tag>
@@ -949,17 +945,17 @@ async function rotateWebhookSecret() {
       >
         <template #column:status="{ rowData }">
           <u-tag size="small" :type="tagType((rowData as BuildRun).status, JOB_STATUS_TAG)">
-            {{ (rowData as BuildRun).status }}
+            {{ jobStatusLabel((rowData as BuildRun).status) }}
           </u-tag>
         </template>
         <template #column:stage="{ rowData }">
           <u-tag size="small" :type="tagType((rowData as BuildRun).stage, BUILD_STAGE_TAG)">
-            {{ (rowData as BuildRun).stage || "—" }}
+            {{ buildStageLabel((rowData as BuildRun).stage) || "—" }}
           </u-tag>
         </template>
         <template #column:trigger_type="{ rowData }">
           <u-tag size="small" :type="tagType((rowData as BuildRun).trigger_type, TRIGGER_TYPE_TAG)">
-            {{ (rowData as BuildRun).trigger_type }}
+            {{ triggerTypeLabel((rowData as BuildRun).trigger_type) }}
           </u-tag>
         </template>
         <template #column:action="{ rowData }">

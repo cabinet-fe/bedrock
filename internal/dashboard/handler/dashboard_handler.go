@@ -31,6 +31,10 @@ func (h *DashboardHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handle
 	g.GET("/agent-run-summary", rbacmw.RequirePermission(h.perm, "ai_runs:view"), h.AgentRunSummary)
 	g.GET("/system-info", rbacmw.RequirePermission(h.perm, "dashboard:system_info"), h.SystemInfo)
 	g.GET("/system-status", rbacmw.RequirePermission(h.perm, "dashboard:system_status"), h.SystemStatus)
+	g.GET("/script-run-summary", rbacmw.RequirePermission(h.perm, "cicd_script_runs:view"), h.ScriptRunSummary)
+	g.GET("/pipeline-run-summary", rbacmw.RequirePermission(h.perm, "cicd_pipeline_runs:view"), h.PipelineRunSummary)
+	g.GET("/task-overview", h.TaskOverview)
+	g.GET("/my-projects", rbacmw.RequirePermission(h.perm, "project_projects:view"), h.MyProjects)
 }
 
 func (h *DashboardHandler) GetLayout(c *gin.Context) {
@@ -99,6 +103,46 @@ func (h *DashboardHandler) SystemStatus(c *gin.Context) {
 	result, err := h.svc.SystemStatus()
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "读取系统状态失败")
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func (h *DashboardHandler) ScriptRunSummary(c *gin.Context) {
+	result, err := h.svc.ScriptRunSummary()
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "读取脚本运行摘要失败")
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func (h *DashboardHandler) PipelineRunSummary(c *gin.Context) {
+	result, err := h.svc.PipelineRunSummary()
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "读取流水线运行摘要失败")
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func (h *DashboardHandler) TaskOverview(c *gin.Context) {
+	perms, ok := h.permissions(c)
+	if !ok {
+		return
+	}
+	result, err := h.svc.TaskOverview(authmiddleware.IsSuperAdmin(c), perms)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "读取任务概览失败")
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func (h *DashboardHandler) MyProjects(c *gin.Context) {
+	result, err := h.svc.MyProjects(authmiddleware.GetUserID(c))
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "读取我的项目失败")
 		return
 	}
 	pkg.Success(c, result)

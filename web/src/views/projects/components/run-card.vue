@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-
-import { JOB_STATUS_TAG, tagType } from "@/lib/tag";
+import { CaretRight, History } from "@veltra/icons/normal";
 
 const props = defineProps<{
   name: string;
@@ -13,46 +12,59 @@ const props = defineProps<{
   /** 入队中或 run 未终态 */
   busy: boolean;
   canExecute: boolean;
+  canViewHistory?: boolean;
 }>();
 
-const emit = defineEmits<{ run: [] }>();
+const emit = defineEmits<{ run: []; history: [] }>();
 
 const blocked = computed(() => !props.runnable || props.busy);
 
-const tip = computed(() => {
-  if (props.busy) return "任务运行中";
-  return props.disabledTip;
+const runTitle = computed(() => {
+  if (props.busy) return "运行中";
+  if (!props.runnable) return props.disabledTip;
+  return "运行";
 });
 
-const label = computed(() => (props.busy ? "运行中" : "运行"));
+const statusClass = computed(() => {
+  if (!props.status) return "";
+  return `run-card--status-${props.status}`;
+});
 </script>
 
 <template>
-  <u-card integrate class="run-card">
+  <u-card class="run-card" :class="statusClass">
     <u-card-content class="run-card__body">
-      <div class="run-card__main">
-        <div class="run-card__title">
-          <h3 class="run-card__name" :title="name">{{ name }}</h3>
-          <u-tag v-if="status" size="small" :type="tagType(status, JOB_STATUS_TAG)">
-            {{ status }}
-          </u-tag>
+      <div class="run-card__head">
+        <h3 class="run-card__name" :title="name">{{ name }}</h3>
+        <div v-if="canViewHistory || canExecute" class="run-card__actions">
+          <u-button
+            v-if="canViewHistory"
+            plain
+            size="small"
+            circle
+            :icon="History"
+            title="运行历史"
+            @click.stop="emit('history')"
+          />
+          <u-button
+            v-if="canExecute"
+            type="primary"
+            size="small"
+            circle
+            :icon="CaretRight"
+            :disabled="blocked"
+            :loading="busy"
+            :title="runTitle"
+            @click.stop="emit('run')"
+          />
         </div>
-        <div class="run-card__meta">
-          <slot />
-        </div>
-        <p v-if="error" class="run-card__error">{{ error }}</p>
       </div>
-      <u-button
-        v-if="canExecute"
-        class="run-card__run"
-        type="primary"
-        :disabled="blocked"
-        :loading="busy"
-        :title="tip"
-        @click="emit('run')"
-      >
-        {{ label }}
-      </u-button>
+
+      <p v-if="$slots.default" class="run-card__meta">
+        <slot />
+      </p>
+
+      <p v-if="error" class="run-card__error">{{ error }}</p>
     </u-card-content>
   </u-card>
 </template>
@@ -62,31 +74,56 @@ const label = computed(() => (props.busy ? "运行中" : "运行"));
 
 .run-card {
   min-width: 0;
+  height: 100%;
+  border-left: 3px solid fn.use-var(border, muted);
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    box-shadow: fn.use-var(shadow);
+  }
+
+  &--status-queued,
+  &--status-pending {
+    border-left-color: fn.use-var(color, info);
+  }
+
+  &--status-running {
+    border-left-color: fn.use-var(color, primary);
+  }
+
+  &--status-success {
+    border-left-color: fn.use-var(color, success);
+  }
+
+  &--status-failed {
+    border-left-color: fn.use-var(color, danger);
+  }
+
+  &--status-cancelled,
+  &--status-interrupted {
+    border-left-color: fn.use-var(color, warning);
+  }
 }
 
 .run-card__body {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 16px !important;
-}
-
-.run-card__main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  padding: 14px !important;
 }
 
-.run-card__title {
+.run-card__head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
 }
 
 .run-card__name {
+  flex: 1;
   margin: 0;
   min-width: 0;
   overflow: hidden;
@@ -94,28 +131,42 @@ const label = computed(() => (props.busy ? "运行中" : "运行"));
   white-space: nowrap;
   font-size: 15px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.4;
   color: fn.use-var(text-color, title);
 }
 
 .run-card__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
+  margin: 0;
+  min-width: 0;
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
   color: fn.use-var(text-color, assist);
+
+  :slotted(.run-card__sep) {
+    margin: 0 6px;
+    color: fn.use-var(text-color, disabled);
+  }
+
+  :slotted(.run-card__mono) {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  :slotted(.run-card__warn) {
+    color: fn.use-var(color, warning);
+  }
 }
 
 .run-card__error {
   margin: 0;
   font-size: 12px;
+  line-height: 1.4;
   color: fn.use-var(color, danger);
 }
 
-.run-card__run {
+.run-card__actions {
+  display: flex;
   flex-shrink: 0;
-  min-width: 88px;
+  align-items: center;
+  gap: 6px;
 }
 </style>

@@ -1,23 +1,31 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import { enqueueBuildRun, getBuildRun, listBuildJobs, listBuildRuns } from "@/api/cicd";
 import { listRepositories } from "@/api/resource";
+import { getDictionaryByCode } from "@/api/system";
 import type { BuildJob, ProductProject } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
+import { splitCommaTags } from "@/lib/tag";
 
 import { isRunTerminal, useRunPoll } from "../composables/use-run-poll";
 import RunCard from "./run-card.vue";
+import RunHistoryDialog from "./run-history-dialog.vue";
 
 const props = defineProps<{ project: ProductProject }>();
 
 const { hasPermission } = usePermission();
 const canExecute = hasPermission("cicd_build_jobs:execute");
+const canViewHistory = hasPermission("cicd_build_jobs:view");
 
 const jobs = ref<BuildJob[]>([]);
 const loading = ref(true);
 const loadError = ref("");
 const repoNameMap = ref(new Map<number, string>());
+const repoTypeLabelMap = ref(new Map<string, string>());
+
+const historyOpen = ref(false);
+const historyJob = ref<BuildJob | null>(null);
 
 const { statusMap, errorMap, isBusy, enqueue, loadRecent } = useRunPoll({
   fetch: (id) => getBuildRun(id),
@@ -28,6 +36,10 @@ function repoName(id: number): string {
   return repoNameMap.value.get(id) ?? `#${id}`;
 }
 
+function tagLabel(value: string): string {
+  return repoTypeLabelMap.value.get(value) ?? value;
+}
+
 function canRun(job: BuildJob) {
   return job.enabled && job.trigger_manual;
 }
@@ -36,6 +48,21 @@ function disabledTip(job: BuildJob) {
   if (!job.enabled) return "任务已停用";
   if (!job.trigger_manual) return "未启用手动触发";
   return "";
+}
+
+function openHistory(job: BuildJob) {
+  historyJob.value = job;
+  historyOpen.value = true;
+}
+
+function buildMetaParts(job: BuildJob): string[] {
+  const parts = [
+    ...splitCommaTags(job.tags).map(tagLabel),
+    repoName(job.repository_id),
+    job.branch,
+  ];
+  if (!job.enabled) parts.push("已停用");
+  return parts;
 }
 
 async function load() {
@@ -63,6 +90,9 @@ async function loadRecentStatus() {
   }
 }
 
+const historyEntityId = computed(() => historyJob.value?.id ?? 0);
+const historyEntityName = computed(() => historyJob.value?.name ?? "");
+
 onMounted(() => {
   void load();
   void loadRecentStatus();
@@ -77,6 +107,18 @@ onMounted(() => {
         /* 仓库名降级为 #id */
       });
   }
+  void getDictionaryByCode("repo_type")
+    .then((dict) => {
+      const map = new Map<string, string>();
+      for (const item of dict.items ?? []) {
+        if (item.enabled === false) continue;
+        map.set(item.value, item.label);
+      }
+      repoTypeLabelMap.value = map;
+    })
+    .catch(() => {
+      /* 标签降级为原始值 */
+    });
 });
 </script>
 
@@ -96,19 +138,37 @@ onMounted(() => {
         :disabled-tip="disabledTip(job)"
         :busy="isBusy(job.id)"
         :can-execute="canExecute"
+        :can-view-history="canViewHistory"
+        @history="openHistory(job)"
         @run="enqueue(job.id, () => enqueueBuildRun(job.id, { trigger_type: 'manual' }))"
       >
-        <span>{{ repoName(job.repository_id) }}</span>
-        <span>{{ job.branch }}</span>
-        <u-tag size="small" :type="job.enabled ? 'success' : undefined">
-          {{ job.enabled ? "启用" : "停用" }}
-        </u-tag>
+        <template v-for="(part, index) in buildMetaParts(job)" :key="`${job.id}-${index}`">
+          <span v-if="index > 0" class="run-card__sep" aria-hidden="true">·</span>
+          <span
+            :class="[
+              part === job.branch && 'run-card__mono',
+              part === '已停用' && 'run-card__warn',
+            ]"
+          >
+            {{ part }}
+          </span>
+        </template>
       </RunCard>
     </div>
+
+    <RunHistoryDialog
+      v-model="historyOpen"
+      kind="build"
+      :entity-id="historyEntityId"
+      :entity-name="historyEntityName"
+      :project-id="project.id"
+    />
   </div>
 </template>
 
 <style scoped>
+@use "@/lib/empty-center.scss" as empty;
+
 .run-panel {
   display: flex;
   flex-direction: column;
@@ -118,15 +178,13 @@ onMounted(() => {
 }
 
 .run-panel__empty {
-  flex: 1;
-  display: grid;
-  place-items: center;
+  @include empty.center;
 }
 
 .run-panel__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
   align-content: start;
   padding: 2px 2px 16px;
 }

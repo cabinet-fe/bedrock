@@ -360,7 +360,9 @@ watch(canUpdate, (ok) => {
     </aside>
 
     <section class="editor-panel">
-      <u-empty v-if="!selected" text="从左侧选择文档节点" />
+      <div v-if="!selected" class="editor-panel__empty">
+        <u-empty text="从左侧选择文档节点" />
+      </div>
       <template v-else>
         <div class="editor-head">
           <h3>{{ selected.name }}</h3>
@@ -388,7 +390,9 @@ watch(canUpdate, (ok) => {
             <u-button type="primary" @click="saveContent">保存</u-button>
           </div>
         </template>
-        <u-empty v-else text="目录不包含 Markdown 内容" />
+        <div v-else class="editor-panel__empty">
+          <u-empty text="目录不包含 Markdown 内容" />
+        </div>
       </template>
     </section>
 
@@ -438,6 +442,8 @@ watch(canUpdate, (ok) => {
 </template>
 
 <style scoped lang="scss">
+@use "@/lib/empty-center.scss" as empty;
+
 .docs {
   display: grid;
   height: 100%;
@@ -536,6 +542,10 @@ watch(canUpdate, (ok) => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.editor-panel__empty {
+  @include empty.center(240px);
 }
 
 .editor-head,

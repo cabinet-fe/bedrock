@@ -8,7 +8,14 @@ import { listBuildPipelines } from "@/api/cicd";
 import type { PipelineRun } from "@/api/types";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { formatDateTime, formatDurationBetween } from "@/lib/datetime";
-import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
+import {
+  JOB_STATUS_OPTIONS,
+  JOB_STATUS_TAG,
+  TRIGGER_TYPE_TAG,
+  jobStatusLabel,
+  tagType,
+  triggerTypeLabel,
+} from "@/lib/tag";
 
 const router = useRouter();
 const query = reactive({
@@ -92,13 +99,7 @@ onMounted(async () => {
           clearable
           placeholder="状态"
           style="width: 140px"
-          :options="[
-            { label: 'queued', value: 'queued' },
-            { label: 'running', value: 'running' },
-            { label: 'success', value: 'success' },
-            { label: 'failed', value: 'failed' },
-            { label: 'cancelled', value: 'cancelled' },
-          ]"
+          :options="JOB_STATUS_OPTIONS"
         />
       </template>
       <template #column:build_pipeline_id="{ rowData }">
@@ -106,7 +107,7 @@ onMounted(async () => {
       </template>
       <template #column:status="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as PipelineRun).status, JOB_STATUS_TAG)">
-          {{ (rowData as PipelineRun).status }}
+          {{ jobStatusLabel((rowData as PipelineRun).status) }}
         </u-tag>
       </template>
       <template #column:trigger_type="{ rowData }">
@@ -114,7 +115,7 @@ onMounted(async () => {
           size="small"
           :type="tagType((rowData as PipelineRun).trigger_type, TRIGGER_TYPE_TAG)"
         >
-          {{ (rowData as PipelineRun).trigger_type }}
+          {{ triggerTypeLabel((rowData as PipelineRun).trigger_type) }}
         </u-tag>
       </template>
       <template #column:action="{ rowData }">

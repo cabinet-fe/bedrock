@@ -14,6 +14,7 @@ import (
 	"bedrock/internal/engine"
 	"bedrock/internal/pkg"
 	rbacmodel "bedrock/internal/rbac/model"
+	"bedrock/internal/ws"
 )
 
 // AgentRunLauncher abstracts aiservice.AgentService for pipeline agent stages.
@@ -39,6 +40,7 @@ type PipelineOrchestrator struct {
 	scriptRuns *ScriptRunService
 	agents     AgentRunLauncher
 	logger     *zap.Logger
+	hub        *ws.Hub
 
 	mu    sync.Mutex
 	locks map[uint]*sync.Mutex
@@ -76,6 +78,16 @@ func (o *PipelineOrchestrator) runLock(pipelineRunID uint) *sync.Mutex {
 	l := &sync.Mutex{}
 	o.locks[pipelineRunID] = l
 	return l
+}
+
+func (o *PipelineOrchestrator) SetHub(hub *ws.Hub) {
+	o.hub = hub
+}
+
+func (o *PipelineOrchestrator) broadcastPipelineRunChanged(runID uint, status string) {
+	if o.hub != nil {
+		o.hub.BroadcastRunChanged("pipeline", runID, status)
+	}
 }
 
 func (o *PipelineOrchestrator) refChecker() PipelineRefChecker {
@@ -228,7 +240,12 @@ func (o *PipelineOrchestrator) EnqueueInternal(pipelineID, triggeredBy uint, tri
 	if err := o.advanceLocked(pr); err != nil {
 		_ = o.failPipelineLocked(run.ID, err.Error())
 	}
-	return o.runs.FindByID(run.ID)
+	pr, err = o.runs.FindByID(run.ID)
+	if err != nil {
+		return nil, err
+	}
+	o.broadcastPipelineRunChanged(pr.ID, pr.Status)
+	return pr, nil
 }
 
 // Cancel stops a non-terminal PipelineRun: cancels in-flight runs, skips never-started stages.
@@ -607,6 +624,7 @@ func (o *PipelineOrchestrator) finalizePipelineLocked(pipelineRunID uint, status
 			zap.String("msg", msg),
 		)
 	}
+	o.broadcastPipelineRunChanged(pipelineRunID, status)
 	return nil
 }
 

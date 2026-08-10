@@ -6,18 +6,33 @@ import type {
   BuildSummary,
   DashboardCardID,
   DashboardCardLayout,
+  MyProject,
+  PipelineRunSummary,
+  ScriptRunSummary,
   SystemInfo,
   SystemStatus,
+  TaskOverview,
 } from "@/api/types";
 
 export interface DashboardWidgetHostContext {
   editing: boolean;
   buildSummary: BuildSummary | null;
   agentRunSummary: AgentRunSummary | null;
+  scriptRunSummary: ScriptRunSummary | null;
+  pipelineRunSummary: PipelineRunSummary | null;
+  taskOverview: TaskOverview | null;
+  myProjects: MyProject[] | null;
   systemInfo: SystemInfo | null;
   systemStatus: SystemStatus | null;
   openBuildRun: (id: number) => void;
   openAgentRun: (id: number) => void;
+  openScriptRun: (id: number) => void;
+  openPipelineRun: (id: number) => void;
+  openProject: (id: number) => void;
+  openBuildJobs: () => void;
+  openScriptJobs: () => void;
+  openPipelines: () => void;
+  showRunning: (kind: "build" | "script" | "pipeline") => void;
 }
 
 export const DASHBOARD_WIDGET_CTX: InjectionKey<DashboardWidgetHostContext> =
@@ -35,6 +50,10 @@ const DEFAULT_CARD_GEOMETRY: Record<
   agent_run_summary: { x: 6, y: 0, w: 6, h: 4 },
   system_info: { x: 0, y: 4, w: 6, h: 3 },
   system_status: { x: 6, y: 4, w: 6, h: 3 },
+  script_run_summary: { x: 0, y: 7, w: 6, h: 4 },
+  pipeline_run_summary: { x: 6, y: 7, w: 6, h: 4 },
+  cicd_task_overview: { x: 0, y: 11, w: 6, h: 3 },
+  my_projects: { x: 6, y: 11, w: 6, h: 3 },
 };
 
 /** Fill missing geometry from defaults (legacy layouts / incomplete API payloads). */

@@ -51,9 +51,15 @@ func (r *ProjectRepository) FindProjectBySlug(slug string) (*model.ProductProjec
 	return &project, nil
 }
 
-// ListProjects 返回全部项目（D2：不再按成员/公开/创建人过滤）。
-func (r *ProjectRepository) ListProjects(q pkg.ListQuery, keyword, status string) ([]model.ProductProject, int64, error) {
+// ListProjects 列出项目；scopeUserID 非空时仅返回该用户为成员或创建人的项目。
+func (r *ProjectRepository) ListProjects(q pkg.ListQuery, keyword, status string, scopeUserID *uint) ([]model.ProductProject, int64, error) {
 	db := r.db.Model(&model.ProductProject{})
+	if scopeUserID != nil {
+		db = db.Where(
+			"product_projects.id IN (SELECT project_id FROM project_members WHERE user_id = ?) OR product_projects.created_by = ?",
+			*scopeUserID, *scopeUserID,
+		)
+	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		like := "%" + keyword + "%"
 		db = db.Where("product_projects.name LIKE ? OR product_projects.slug LIKE ? OR product_projects.tags LIKE ?", like, like, like)

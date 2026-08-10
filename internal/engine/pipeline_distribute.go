@@ -30,7 +30,7 @@ func (p *Pipeline) runDistributions(
 			"stage":                "idle",
 			"distribution_summary": "all_failed",
 		})
-		p.broadcastRunRefresh(run.ID)
+		p.broadcastRunRefresh(run.ID, run.Status)
 		return
 	}
 	targets = filterDeployTargets(targets, filterIDs)
@@ -40,7 +40,7 @@ func (p *Pipeline) runDistributions(
 			"stage":                "idle",
 			"distribution_summary": "none",
 		})
-		p.broadcastRunRefresh(run.ID)
+		p.broadcastRunRefresh(run.ID, run.Status)
 		return
 	}
 
@@ -51,7 +51,7 @@ func (p *Pipeline) runDistributions(
 
 	p.setStageKeepSuccess(run, "distributing")
 	_ = p.runs.UpdateFields(run.ID, map[string]interface{}{"distribution_summary": "running"})
-	p.broadcastRunRefresh(run.ID)
+	p.broadcastRunRefresh(run.ID, run.Status)
 	writeLine(fmt.Sprintf("=== Stage: Distributing (batch %d) ===", batchNo))
 
 	var nOK, nFail int
@@ -74,7 +74,7 @@ func (p *Pipeline) runDistributions(
 			StartedAt:          new(time.Now()),
 		}
 		_ = p.runs.CreateAttempt(attempt)
-		p.broadcastRunRefresh(run.ID)
+		p.broadcastRunRefresh(run.ID, run.Status)
 		writeLine(fmt.Sprintf("--- Target #%d (%s → %s) ---", t.ID, t.Method, t.RemotePath))
 		err := p.deployOneTarget(ctx, &t, sourceDir, NormalizeArtifactFormat(job.ArtifactFormat), writeLine)
 		fin := time.Now()
@@ -88,7 +88,7 @@ func (p *Pipeline) runDistributions(
 				attempt.ErrorMessage = err.Error()
 			}
 			_ = p.runs.UpdateAttempt(attempt)
-			p.broadcastRunRefresh(run.ID)
+			p.broadcastRunRefresh(run.ID, run.Status)
 			writeLine("ERROR: " + err.Error())
 			nFail++
 			continue
@@ -96,7 +96,7 @@ func (p *Pipeline) runDistributions(
 		attempt.Status = "success"
 		attempt.ErrorMessage = ""
 		_ = p.runs.UpdateAttempt(attempt)
-		p.broadcastRunRefresh(run.ID)
+		p.broadcastRunRefresh(run.ID, run.Status)
 		nOK++
 	}
 
@@ -115,7 +115,7 @@ func (p *Pipeline) runDistributions(
 		"stage":                "idle",
 		"distribution_summary": summary,
 	})
-	p.broadcastRunRefresh(run.ID)
+	p.broadcastRunRefresh(run.ID, run.Status)
 	writeLine(fmt.Sprintf("=== Distribution phase finished (%s) ===", summary))
 	if p.agentHook != nil {
 		job, err := p.jobs.FindByID(run.BuildJobID)
@@ -138,7 +138,7 @@ func (p *Pipeline) recordAttemptCancelled(run *model.BuildRun, batchNo int, t *m
 		ErrorMessage:       "cancelled",
 		FinishedAt:         new(time.Now()),
 	})
-	p.broadcastRunRefresh(run.ID)
+	p.broadcastRunRefresh(run.ID, run.Status)
 }
 
 func filterDeployTargets(all []model.DeployTarget, ids []uint) []model.DeployTarget {
@@ -259,7 +259,7 @@ func (p *Pipeline) executeRedeployOnly(ctx context.Context, run *model.BuildRun,
 	if artifactPath == "" {
 		writeLine("ERROR: no artifact_path")
 		_ = p.runs.UpdateFields(run.ID, map[string]interface{}{"distribution_summary": "all_failed", "stage": "idle"})
-		p.broadcastRunRefresh(run.ID)
+		p.broadcastRunRefresh(run.ID, run.Status)
 		return
 	}
 	if !filepath.IsAbs(artifactPath) {
@@ -268,7 +268,7 @@ func (p *Pipeline) executeRedeployOnly(ctx context.Context, run *model.BuildRun,
 	if _, err := os.Stat(artifactPath); err != nil {
 		writeLine("ERROR: " + err.Error())
 		_ = p.runs.UpdateFields(run.ID, map[string]interface{}{"distribution_summary": "all_failed", "stage": "idle"})
-		p.broadcastRunRefresh(run.ID)
+		p.broadcastRunRefresh(run.ID, run.Status)
 		return
 	}
 	writeLine("=== Redeploy: using existing artifact ===")
@@ -283,7 +283,7 @@ func (p *Pipeline) executeRedeployOnly(ctx context.Context, run *model.BuildRun,
 	if err != nil {
 		writeLine("ERROR: " + err.Error())
 		_ = p.runs.UpdateFields(run.ID, map[string]interface{}{"distribution_summary": "all_failed", "stage": "idle"})
-		p.broadcastRunRefresh(run.ID)
+		p.broadcastRunRefresh(run.ID, run.Status)
 		return
 	}
 	defer cleanup()

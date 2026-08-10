@@ -14,6 +14,7 @@ import (
 	"bedrock/internal/engine"
 	"bedrock/internal/pkg"
 	rbacmodel "bedrock/internal/rbac/model"
+	"bedrock/internal/ws"
 )
 
 // BuildRunService provides enqueue/cancel/retry/redeploy and artifact paths.
@@ -22,6 +23,7 @@ type BuildRunService struct {
 	jobs      *repository.BuildJobRepository
 	scheduler engine.RunScheduler
 	termHook  engine.BuildRunTerminalHook
+	hub       *ws.Hub
 }
 
 func NewBuildRunService(runs *repository.BuildRunRepository, jobs *repository.BuildJobRepository) *BuildRunService {
@@ -35,6 +37,10 @@ func (s *BuildRunService) SetScheduler(sched engine.RunScheduler) {
 // SetTerminalHook wires PipelineOrchestrator for queued cancels that bypass Pipeline.Execute.
 func (s *BuildRunService) SetTerminalHook(h engine.BuildRunTerminalHook) {
 	s.termHook = h
+}
+
+func (s *BuildRunService) SetHub(hub *ws.Hub) {
+	s.hub = hub
 }
 
 type EnqueueRunInput struct {
@@ -155,6 +161,9 @@ func (s *BuildRunService) EnqueueInternal(jobID, triggeredBy uint, in engine.Enq
 	if s.scheduler != nil {
 		_ = s.scheduler.Submit(run.ID)
 	}
+	if s.hub != nil {
+		s.hub.BroadcastRunChanged("build", run.ID, run.Status)
+	}
 	return run, nil
 }
 
@@ -177,6 +186,9 @@ func (s *BuildRunService) Cancel(id uint, userID uint, dataScope string) (*model
 		if s.termHook != nil {
 			run.Status = "cancelled"
 			s.termHook.OnBuildRunTerminal(run, "cancelled")
+		}
+		if s.hub != nil {
+			s.hub.BroadcastRunChanged("build", id, "cancelled")
 		}
 	case "running":
 		if s.scheduler != nil {

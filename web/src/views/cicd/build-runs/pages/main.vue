@@ -11,9 +11,14 @@ import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import {
   BUILD_DISTRIBUTION_TAG,
   BUILD_STAGE_TAG,
+  JOB_STATUS_OPTIONS,
   JOB_STATUS_TAG,
   TRIGGER_TYPE_TAG,
+  buildDistributionLabel,
+  buildStageLabel,
+  jobStatusLabel,
   tagType,
+  triggerTypeLabel,
 } from "@/lib/tag";
 
 const router = useRouter();
@@ -97,14 +102,7 @@ onMounted(async () => {
           clearable
           placeholder="状态"
           style="width: 140px"
-          :options="[
-            { label: 'queued', value: 'queued' },
-            { label: 'running', value: 'running' },
-            { label: 'success', value: 'success' },
-            { label: 'failed', value: 'failed' },
-            { label: 'cancelled', value: 'cancelled' },
-            { label: 'interrupted', value: 'interrupted' },
-          ]"
+          :options="JOB_STATUS_OPTIONS"
         />
       </template>
       <template #column:build_job_id="{ rowData }">
@@ -112,12 +110,12 @@ onMounted(async () => {
       </template>
       <template #column:status="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as BuildRun).status, JOB_STATUS_TAG)">
-          {{ (rowData as BuildRun).status }}
+          {{ jobStatusLabel((rowData as BuildRun).status) }}
         </u-tag>
       </template>
       <template #column:stage="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as BuildRun).stage, BUILD_STAGE_TAG)">
-          {{ (rowData as BuildRun).stage || "—" }}
+          {{ buildStageLabel((rowData as BuildRun).stage) || "—" }}
         </u-tag>
       </template>
       <template #column:distribution_summary="{ rowData }">
@@ -125,12 +123,12 @@ onMounted(async () => {
           size="small"
           :type="tagType((rowData as BuildRun).distribution_summary, BUILD_DISTRIBUTION_TAG)"
         >
-          {{ (rowData as BuildRun).distribution_summary || "—" }}
+          {{ buildDistributionLabel((rowData as BuildRun).distribution_summary) || "—" }}
         </u-tag>
       </template>
       <template #column:trigger_type="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as BuildRun).trigger_type, TRIGGER_TYPE_TAG)">
-          {{ (rowData as BuildRun).trigger_type }}
+          {{ triggerTypeLabel((rowData as BuildRun).trigger_type) }}
         </u-tag>
       </template>
       <template #column:action="{ rowData }">

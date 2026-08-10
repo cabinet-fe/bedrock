@@ -1,0 +1,7 @@
+// 在页面/面板内居中展示 u-empty
+@mixin center($min-height: 200px) {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: $min-height;
+}

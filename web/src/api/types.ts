@@ -419,7 +419,11 @@ export type DashboardCardID =
   | "build_summary"
   | "agent_run_summary"
   | "system_info"
-  | "system_status";
+  | "system_status"
+  | "script_run_summary"
+  | "pipeline_run_summary"
+  | "cicd_task_overview"
+  | "my_projects";
 
 export interface DashboardCardLayout {
   id: DashboardCardID;
@@ -470,6 +474,52 @@ export interface AgentRunSummary {
   queued: number;
   success_rate: number;
   recent: DashboardRecentAgentRun[];
+}
+
+export interface DashboardRecentScriptRun {
+  id: number;
+  script_job_id: number;
+  job_name: string;
+  run_number: number;
+  status: string;
+  created_at: string;
+}
+
+export interface ScriptRunSummary {
+  running: number;
+  queued: number;
+  success_rate: number;
+  recent: DashboardRecentScriptRun[];
+}
+
+export interface DashboardRecentPipelineRun {
+  id: number;
+  build_pipeline_id: number;
+  pipeline_name: string;
+  run_number: number;
+  status: string;
+  created_at: string;
+}
+
+export interface PipelineRunSummary {
+  running: number;
+  queued: number;
+  success_rate: number;
+  recent: DashboardRecentPipelineRun[];
+}
+
+export interface TaskOverview {
+  build_jobs: number | null;
+  script_jobs: number | null;
+  pipelines: number | null;
+}
+
+export interface MyProject {
+  id: number;
+  name: string;
+  slug: string;
+  status: "active" | "archived";
+  my_role?: ProjectRole;
 }
 
 export interface SystemInfo {
