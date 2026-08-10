@@ -61,24 +61,12 @@ const emit = defineEmits<{
 const gridRef = useTemplateRef("gridRef");
 let syncingFromGrid = false;
 
-/** 12 列桌面布局；按网格容器宽度降列：>1450 用 12 列，≤1450 用 8 列，≤1100 用 6 列，
- *  ≤720 用 2 列（断点需降序排列；gridstack 构造时会再排一次，乱序也安全）。
- *  降列重排用 list：丢弃列坐标、按从左到右顺序重新装箱（保持卡片宽度，放不下的换行）。
- *  不要用 moveScale —— 它等比压缩卡片宽高，卡片再窄也挤在同一行，内容被挤烂；
- *  也不要用 move —— 它按列比缩放 x 坐标，相邻卡片 x 重叠后只会互相往下推，排成楼梯状。
+/** 固定 12 列：列宽随容器等比缩放，w=6 始终占 50% 宽，避免降列后 w 不变导致单列留白。
  *  注意：options 必须保持静态引用 —— wrapper 会 watch options 并调用 updateOptions，
  *  而 updateOptions 会把 children 当作全量布局重新 load。若 options 随 editing 重建，
  *  每次进出编辑模式都会用过期的 children 覆盖当前布局。editing 改走 setStatic。 */
 const gridOptions: GridStackOptions = {
   column: DASHBOARD_GRID_COLUMNS,
-  columnOpts: {
-    breakpoints: [
-      { w: 1450, c: 8 },
-      { w: 1100, c: 6 },
-      { w: 720, c: 2 },
-    ],
-    layout: "list",
-  },
   cellHeight: 80,
   margin: 10,
   animate: true,
