@@ -52,7 +52,7 @@ export interface CollapseItemProps {
    */
   modelValue?: boolean
 
-  /** 标题文本（也可使用 #title 插槽） */
+  /** 标题文本（也可通过 #header 插槽自定义整个头部） */
   title?: string
 
   /** 是否禁用 */
@@ -63,6 +63,13 @@ export interface CollapseItemProps {
    * 在 `UCollapse` 内由父组件 `expandIcon` 统一管理。
    */
   expandIcon?: Component
+
+  /**
+   * 折叠动画结束后卸载内容 DOM（展开时重新挂载），减少长列表的内存与渲染成本。
+   * 注意：卸载会丢失内容区的本地组件状态。
+   * @default false
+   */
+  destroyOnCollapse?: boolean
 }
 
 export interface CollapseItemEmits {

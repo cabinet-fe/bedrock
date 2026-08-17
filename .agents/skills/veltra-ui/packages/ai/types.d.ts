@@ -58,6 +58,16 @@ export interface ChatMessage {
   status?: 'streaming' | 'done' | 'error' | 'aborted'
 }
 
+/** 队列中的待发送消息（会话进行中提交的消息按序排队） */
+export interface ChatQueuedMessage {
+  /** 队列项 id */
+  id: string
+  /** 消息内容 */
+  content: string
+  /** 携带的附件 */
+  attachments?: ChatAttachment[]
+}
+
 /** 工具执行上下文 */
 export interface ChatToolContext {
   /** 本次工具调用 */
@@ -86,10 +96,29 @@ export interface ChatTool<A = any> {
   /**
    * 自定义工具卡片内容渲染（组件或渲染函数），props 为 ChatToolRenderProps。
    * 设置后替换卡片 body 的默认参数/结果展示；优先级高于 tool-<name> 插槽。
+   * renderTo 为 'panel' 时改为在右侧侧边面板中渲染。
    */
   render?: Component
-  /** 执行完成后是否自动折叠。缺省：设置了 render 时为 false，否则为 true */
+  /**
+   * 渲染位置。缺省 'inline'：render 组件展示在会话内的工具卡片中；
+   * 'panel'：render 组件展示在对话区右侧的侧边面板（新调用自动打开面板，
+   * 工具卡片内仅保留「查看面板」入口，面板与会话区宽度可拖拽调节）。
+   * 适合打开后台页面、表单、图表、列表等需要较大交互区域的工具。
+   */
+  renderTo?: 'inline' | 'panel'
+  /**
+   * 侧边面板默认宽度（px，最小 320），仅 renderTo: 'panel' 时生效，缺省 420。
+   * 聚焦到该工具的调用时应用；未指定宽度的工具面板保持当前宽度（含用户拖拽结果）。
+   */
+  panelWidth?: number
+  /** 执行完成后是否自动折叠。缺省：renderTo 为 'panel' 时为 true；否则设置了 render 时为 false，否则为 true */
   autoCollapse?: boolean
+  /**
+   * 终结工具：执行成功后对话即结束，结果不再回灌模型生成额外文字（工具 UI 即最终答复）。
+   * 适合天气卡片这类"UI 即答案"的工具，需配合 render 或 tool-<name> 插槽提供完整结果 UI。
+   * 工具结果仍会记录到消息历史供后续轮次使用；执行失败/被拒绝时错误照常回灌模型。
+   */
+  terminal?: boolean
   /** 工具实现，返回值（或 Promise 返回值）会被 JSON 序列化后回灌给模型 */
   execute: (args: A, ctx: ChatToolContext) => unknown
 }
@@ -114,6 +143,8 @@ export interface ChatModel {
   id: string
   /** UI 显示名，缺省取 id */
   label?: string
+  /** 模型一句话描述（选择器面板副标题） */
+  description?: string
   /** 未设或空数组 → 不展示推理选择器 */
   reasoningLevels?: ChatReasoningLevel[]
   /** 默认推理等级（须落在 reasoningLevels 内） */
@@ -216,6 +247,11 @@ export interface AiChatProps {
   tools?: ChatTool[]
   /** 系统提示词 */
   systemPrompt?: string
+  /**
+   * 单次发送允许的最大生成轮次（一轮 = 一次模型生成 + 可能的工具执行），默认 10。
+   * 模型持续调用工具不收敛时，达到上限即停止继续请求并发出 finish，防止失控循环。
+   */
+  maxToolRounds?: number
   /** 消息列表，支持 v-model:messages 受控 */
   messages?: ChatMessage[]
   /**
@@ -227,8 +263,8 @@ export interface AiChatProps {
   model?: string
   /** 当前推理等级，支持 v-model:reasoning-level */
   reasoningLevel?: string
-  /** 空状态欢迎语 */
-  welcome?: string
+  /** 空状态欢迎项（快捷提问，点击即发送）；字符串按单项处理 */
+  welcome?: string | string[]
   /** 输入框占位文本 */
   placeholder?: string
   /** 附件 accept 类型，默认 image/* */
@@ -248,7 +284,7 @@ export interface AiChatEmits {
   (e: 'update:reasoningLevel', reasoningLevel: string | undefined): void
   /** 用户发送消息 */
   (e: 'send', message: ChatMessage): void
-  /** 一轮对话完成（无更多工具调用） */
+  /** 一轮对话完成（无更多工具调用、命中 terminal 工具或达到 maxToolRounds 上限） */
   (e: 'finish', message: ChatMessage): void
   /** 对话出错 */
   (e: 'error', error: Error): void
@@ -257,17 +293,53 @@ export interface AiChatEmits {
 }
 
 export interface _AiChatExposed {
-  /** 发送一条用户消息 */
+  /** 发送一条用户消息（会话进行中时进入待发送队列） */
   send: (content: string, attachments?: ChatAttachment[]) => void
-  /** 中断当前生成 */
+  /** 中断当前生成（保留待发送队列） */
   abort: () => void
   /** 重新生成最后一条 assistant 回复 */
   regenerate: () => void
-  /** 清空消息 */
+  /** 清空消息与待发送队列 */
   clear: () => void
+  /** 待发送消息队列（会话进行中提交的消息按序排队，收尾后 FIFO 自动接续） */
+  queue: Ref<ChatQueuedMessage[]>
+  /** 立即执行队列中的某条：中断当前会话并插队为下一条 */
+  startQueued: (id: string) => void
+  /** 从队列移除某条（返回被移除项） */
+  removeQueued: (id: string) => ChatQueuedMessage | undefined
+  /** 向队列插入一条消息（beforeId 插到某条之前，缺省追加尾部；空闲时自动消耗队首） */
+  enqueue: (content: string, attachments?: ChatAttachment[], beforeId?: string) => ChatQueuedMessage
 }
 
 export type AiChatExposed = DeconstructValue<_AiChatExposed>
+
+/** 活体球生命状态：驱动常态动画（平静 / 思考 / 输出） */
+export type AiOrbStatus = 'idle' | 'thinking' | 'speaking'
+
+/**
+ * 瞬时表情：播放约 1-2s 后自动回到 status 驱动的常态。
+ * - happy：成功 / 回答完毕 —— 先睁大眼睛，再弯眼大笑 + 点头
+ * - shock：惊讶 —— 睁大眼睛 + 小嘴微张 + 轻微后仰
+ * - frustrated：受挫（如工具调用失败）—— 闭紧眼睛 + 摇头 + 嘴角下撇
+ */
+export type AiOrbReaction = 'happy' | 'shock' | 'frustrated'
+
+export interface AiOrbProps {
+  /** 球体直径（px），默认 48 */
+  size?: number
+  /** 生命状态，默认 idle */
+  status?: AiOrbStatus
+}
+
+export interface AiOrbEmits {
+  /** 点击球体（球体同时会做 Q 弹反馈） */
+  (e: 'click'): void
+}
+
+export interface AiOrbExposed {
+  /** 播放一次瞬时表情（对应阶段性事件，如回答完毕 / 工具调用失败） */
+  react: (reaction: AiOrbReaction) => void
+}
 
 /** useChat 入参（与 UAiChat 共用 props / emits 契约） */
 export interface UseChatOptions {
@@ -288,16 +360,24 @@ export declare function useChat(options: UseChatOptions): {
   reasoningLevel: Ref<string | undefined>
   /** 是否正在生成中（含工具执行与多轮循环） */
   running: Ref<boolean>
-  /** 发送一条用户消息并启动对话循环 */
+  /** 待发送队列（会话进行中提交的消息按序排队，收尾后 FIFO 自动接续） */
+  queue: Ref<ChatQueuedMessage[]>
+  /** 发送一条用户消息（会话进行中时进入待发送队列） */
   send: (content: string, attachments?: ChatAttachment[]) => void
-  /** 中断当前生成，挂起的工具确认按拒绝处理 */
+  /** 中断当前生成，挂起的工具确认按拒绝处理（保留待发送队列） */
   abort: () => void
   /** 重新生成：移除最后一条用户消息之后的所有消息，重新跑对话循环 */
   regenerate: () => void
-  /** 清空消息，生成中则先中断 */
+  /** 清空消息与待发送队列，生成中则先中断 */
   clear: () => void
   /** 响应 needsConfirm 工具的用户确认 */
   respondToolCall: (toolCallId: string, approved: boolean) => void
+  /** 向队列插入一条消息（beforeId 插到某条之前，缺省追加尾部；空闲时自动消耗队首） */
+  enqueue: (content: string, attachments?: ChatAttachment[], beforeId?: string) => ChatQueuedMessage
+  /** 立即执行队列中的某条：中断当前会话并插队为下一条 */
+  startQueued: (id: string) => void
+  /** 从队列移除某条（返回被移除项） */
+  removeQueued: (id: string) => ChatQueuedMessage | undefined
 }
 
 /** 单个提问项（内置 askQuestion 工具的模型输出） */

@@ -22,7 +22,7 @@ import {
 
 - 需要完整编辑器 UI（工具栏 / 公式栏 / sheet tabs）→ `@veltra/sheet` 的 `USheet`（见 `packages/sheet.md`）。
 - 无头模型操作、xlsx/csv 解析、自组渲染 UI、只读预览 → 本包。
-- `@veltra/sheet` 主入口 re-export 本包白名单，两边导入的符号相同；新代码的无头场景直接导入本包即可。
+- core 符号只从本包主入口（或深导入子路径）获取；`@veltra/sheet` 不做 re-export。
 
 ## 主入口导出分组
 
@@ -32,7 +32,7 @@ import {
 - **命令**：`defaultCommandRegistry`、`HistoryManager`、各命令类（`SetCellValueCommand` / `SetCellFormulaCommand` / `SetCellStyleCommand` / `InsertCellsCommand` / `MergeCellsCommand` / `InsertImageCommand` 等）与 `Patch` 系列类型。一切写操作走命令，天然可 `undo()` / `redo()`。
 - **公式**：`parseFormula` / `tokenizeFormula` / `evaluateAst` / `DependencyGraph`、`registerFormulaFunction` / `listFormulaFunctions` / `invokeFormulaFunction`。
 - **IO**：`importXlsx` / `importCsv` / `replaceWorkbook` / `exportWorkbookXlsx` / `exportSheetCsv`。
-- **渲染**：`SheetGrid`（类型 `SheetGridOptions` / `SheetGridContextMenuInfo`）。
+- **渲染**：`SheetGrid`（类型 `SheetGridOptions` / `SheetGridContextMenuInfo`）；**`resolveCellRenderer`**（ADR-0004，按格 customLayout hook，类型 `ResolveCellRenderer`）；布局构建 **`CustomLayout`**（`Container` / `Text` / `Rect` 等，类型 `ICustomLayoutObj`）。
 - **浮动图片**：类型 `SheetImage` / `ImageInput` / `SheetImageAnchor`，`createImageId` 等。
 - **查找 / 填充**：`findAll` / `findNext` / `findPrev`；`generateFill` / `computeFillTargetRange`。
 
@@ -68,6 +68,8 @@ const grid = new SheetGrid({
   sheet,
   rows: 100, // 渲染行数，默认 100
   cols: 26, // 渲染列数，默认 26
+  showRowHeader: true, // 行号列，默认 true
+  showColHeader: true, // 列字母表头，默认 true
   onContextMenu: (info) => {} // 单元格右键（已 preventDefault），菜单由宿主实现
 })
 
@@ -76,6 +78,10 @@ grid.release() // 销毁（含 VTable 实例与图片叠层）
 
 - 模型 → 视图自动同步（批量变更微任务合并为一次 flush）；`setVisible(false)` 挂起同步（LRU 缓存用），重新可见时一次性补齐。
 - 其它常用方法：`undo()` / `redo()` / `refresh()` / `getTable()`（裸 ListTable）。
+
+### resolveCellRenderer（ADR-0004）
+
+`SheetGridOptions.resolveCellRenderer` 与 `@veltra/sheet` 的 `USheet` 对称：仅在宿主提供 hook 时安装按格 customLayout 分发器；回调接收模型地址与 `base` 单元格值（合并格落锚点），返回 `undefined` 回落默认渲染。配套导出 `CustomLayout` 与类型 `ResolveCellRenderer` / `ICustomLayoutObj`。不写模型、不进快照。cell hook 性能契约：纯函数、同步、O(1)、禁大对象分配。
 
 ### readonly 只读预览
 

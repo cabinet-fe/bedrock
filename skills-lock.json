@@ -10,31 +10,28 @@
     },
     "frontend-expert": {
       "source": "cabinet-fe/prompt-engineering",
-      "ref": "main",
       "sourceType": "github",
-      "skillPath": "skills/frontend-expert/SKILL.md",
+      "skillPath": "skills/roles/frontend-expert/SKILL.md",
       "computedHash": "6bda388be2b39d912d3277464b0fb91f3303d67a3fcd385366d50c7e236349ff"
     },
     "git-commit": {
       "source": "cabinet-fe/prompt-engineering",
-      "ref": "main",
       "sourceType": "github",
-      "skillPath": "skills/git-commit/SKILL.md",
-      "computedHash": "c38af995173ff71610d9485e0461e8e4bb1808f682fb4bd31692a96aa7075aa7"
+      "skillPath": "skills/tools/git-commit/SKILL.md",
+      "computedHash": "0f2b056dac4959e7ce98b943964fc6bf2ecc7a28b538acef2b6af060590d8702"
     },
     "veltra-ui": {
       "source": "cabinet-fe/ultra-ui",
       "ref": "dev",
       "sourceType": "github",
       "skillPath": "skills/veltra-ui/SKILL.md",
-      "computedHash": "282f8773b527095de8ce58095a44e04fd75d586c358b1b319e858a0b813aeed6"
+      "computedHash": "936ee82cead51013f989c25df99027d19a2a1aa11c04a258fb062a12a88e71d7"
     },
-    "vue-best-practices": {
+    "vue": {
       "source": "cabinet-fe/prompt-engineering",
-      "ref": "main",
       "sourceType": "github",
-      "skillPath": "skills/vue-best-practices/SKILL.md",
-      "computedHash": "cee824892a1d576ea7cea2ee8c42e762df3b844433abc4b6da29b008e034a542"
+      "skillPath": "skills/frameworks/vue/SKILL.md",
+      "computedHash": "a7013616f9ca66f61171e8ef2f6fea60f05eb9eafe58c2a27e783d406a40623c"
     }
   }
 }
