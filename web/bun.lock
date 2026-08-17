@@ -10,12 +10,12 @@
         "@cat-kit/fe": "^1.1.8",
         "@cat-kit/http": "^1.1.8",
         "@noble/ciphers": "^2.2.0",
-        "@veltra/compositions": "1.5.0",
-        "@veltra/desktop": "^1.5.0",
-        "@veltra/directives": "1.5.0",
+        "@veltra/compositions": "1.6.0",
+        "@veltra/desktop": "^1.6.0",
+        "@veltra/directives": "1.6.0",
         "@veltra/icons": "^1.5.0",
-        "@veltra/styles": "^1.5.0",
-        "@veltra/utils": "1.5.0",
+        "@veltra/styles": "^1.6.0",
+        "@veltra/utils": "1.6.0",
         "@vue-flow/background": "^1.3.2",
         "@vue-flow/controls": "^1.1.3",
         "@vue-flow/core": "^1.48.2",
@@ -403,17 +403,17 @@
 
     "@upsetjs/venn.js": ["@upsetjs/venn.js@2.0.0", "", { "optionalDependencies": { "d3-selection": "^3.0.0", "d3-transition": "^3.0.1" } }, "sha512-WbBhLrooyePuQ1VZxrJjtLvTc4NVfpOyKx0sKqioq9bX1C1m7Jgykkn8gLrtwumBioXIqam8DLxp88Adbue6Hw=="],
 
-    "@veltra/compositions": ["@veltra/compositions@1.5.0", "", { "dependencies": { "@floating-ui/dom": "^1.8.0", "@formkit/drag-and-drop": "^0.6.1" }, "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@cat-kit/fe": ">=1.1.8", "@veltra/utils": "^1.5.0", "vue": ">=3.5.41" } }, "sha512-dvqLoS4ygEjAnmnhWKBwPic8tQS3ohu8xRnIwMZftoXQYt9KiwtHgV7W924TiFWuwlMMRyNZZnLBTaKPdUTVjg=="],
+    "@veltra/compositions": ["@veltra/compositions@1.6.0", "", { "dependencies": { "@floating-ui/dom": "^1.8.0", "@formkit/drag-and-drop": "^0.6.1" }, "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@cat-kit/fe": ">=1.1.8", "@veltra/utils": "^1.6.0", "vue": ">=3.5.41" } }, "sha512-LvLAlldWVfCsIE0Nhw0Ff5+3iDw/Q3ZsTOLmwfuiiiDHnpzJN2kiaHmrLPukGIR7z80GDBRIPzOWvp6W1RQq+w=="],
 
-    "@veltra/desktop": ["@veltra/desktop@1.5.0", "", { "dependencies": { "@embedpdf/core": "^2.15.0", "@embedpdf/engines": "^2.15.0", "@embedpdf/plugin-document-manager": "^2.15.0", "@embedpdf/plugin-render": "^2.15.0", "@embedpdf/plugin-scroll": "^2.15.0", "@embedpdf/plugin-viewport": "^2.15.0", "@embedpdf/plugin-zoom": "^2.15.0", "@lexical/history": "^0.49.0", "@lexical/html": "^0.49.0", "@lexical/link": "^0.49.0", "@lexical/list": "^0.49.0", "@lexical/rich-text": "^0.49.0", "@lexical/selection": "^0.49.0", "@lexical/utils": "^0.49.0", "docx-preview": "^0.4.0", "lexical": "^0.49.0" }, "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@cat-kit/fe": ">=1.1.8", "@veltra/compositions": "^1.5.0", "@veltra/directives": "^1.5.0", "@veltra/icons": "^1.5.0", "@veltra/sheet-core": "^2.1.1", "@veltra/styles": "^1.5.0", "@veltra/utils": "^1.5.0", "vue": ">=3.5.41" }, "optionalPeers": ["@veltra/sheet-core"] }, "sha512-E4nVT/VJwKNkioGMxmScwRQf6RHnxI03QTcDpzj4o9280oYwh/kdkFboLb1v7jpfBoPiH4iNkQnpY587FEStVQ=="],
+    "@veltra/desktop": ["@veltra/desktop@1.6.0", "", { "dependencies": { "@embedpdf/core": "^2.15.0", "@embedpdf/engines": "^2.15.0", "@embedpdf/plugin-document-manager": "^2.15.0", "@embedpdf/plugin-render": "^2.15.0", "@embedpdf/plugin-scroll": "^2.15.0", "@embedpdf/plugin-viewport": "^2.15.0", "@embedpdf/plugin-zoom": "^2.15.0", "@lexical/history": "^0.49.0", "@lexical/html": "^0.49.0", "@lexical/link": "^0.49.0", "@lexical/list": "^0.49.0", "@lexical/rich-text": "^0.49.0", "@lexical/selection": "^0.49.0", "@lexical/utils": "^0.49.0", "docx-preview": "^0.4.0", "lexical": "^0.49.0" }, "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@cat-kit/fe": ">=1.1.8", "@veltra/compositions": "^1.6.0", "@veltra/directives": "^1.6.0", "@veltra/icons": "^1.5.0", "@veltra/sheet-core": "^2.3.0", "@veltra/styles": "^1.6.0", "@veltra/utils": "^1.6.0", "vue": ">=3.5.41" }, "optionalPeers": ["@veltra/sheet-core"] }, "sha512-P1DCpRBGgzzDpFeu9yt9KUPf9h5KX+AtTTRhC+ek4hhFtbp0RpLa86ya0vKmKQJyW3bZEL7b2OymFBkJquTuCQ=="],
 
-    "@veltra/directives": ["@veltra/directives@1.5.0", "", { "peerDependencies": { "@veltra/styles": "^1.5.0", "@veltra/utils": "^1.5.0", "vue": ">=3.5.41" } }, "sha512-dKORA4xFmWN0davya+gDfrNkXCMlU4koSIA4quXA2T2OGs1AHjgGT2iKl4S9q9PZCTK2H3B7x8QDB2Qfo4AUkQ=="],
+    "@veltra/directives": ["@veltra/directives@1.6.0", "", { "peerDependencies": { "@veltra/styles": "^1.6.0", "@veltra/utils": "^1.6.0", "vue": ">=3.5.41" } }, "sha512-fVi3lKI4yK1XYDAUGYWQdHzRLRs928Zza6GdbtYE3Z9BYh768QCfngtPGLEFVHrlJiUuNjjgCUnAgPpJslVzWg=="],
 
     "@veltra/icons": ["@veltra/icons@1.5.0", "", { "peerDependencies": { "vue": ">=3.5.41" } }, "sha512-kjJUi1SMtvbQ5n9HRGbybivYfnbcoK/QY5TecW9ZX7w9487FWAfxso9W0Xe6+6W6Ye5aIivqtaxU/uTG/SqQoA=="],
 
-    "@veltra/styles": ["@veltra/styles@1.5.0", "", { "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@veltra/compositions": "^1.5.0", "@veltra/utils": "^1.5.0", "vue": ">=3.5.41" } }, "sha512-W0Q1fp8Xx3sM2KwueM/ODx21wCD63vmNhgEwIVwGNaD3ClBeae/iqSdLJgJAJzN67RZCqiQcE4K/YWg8Fe7t2Q=="],
+    "@veltra/styles": ["@veltra/styles@1.6.0", "", { "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@veltra/compositions": "^1.6.0", "@veltra/utils": "^1.6.0", "vue": ">=3.5.41" } }, "sha512-FS7k80n8b8aXEYGs58Z90g2GUcS9Xm3KIeLv/vPdd5chw8mt8qEYGJiKDNFUx46cSVI4xu599usxfza20Er/1w=="],
 
-    "@veltra/utils": ["@veltra/utils@1.5.0", "", { "peerDependencies": { "@cat-kit/core": ">=1.1.8", "vue": ">=3.5.41" } }, "sha512-CFx/1zj7X0W4WZxPYre1sR/eX/N4jmstJ6Ahd3F0E3KOEPWFQqLojnCdWSZ7IqbwWuOB1ygmw4IOnP6JZ3D9Hw=="],
+    "@veltra/utils": ["@veltra/utils@1.6.0", "", { "peerDependencies": { "@cat-kit/core": ">=1.1.8", "vue": ">=3.5.41" } }, "sha512-oTjWKMdbU/NI4GAf3kC08832b5iJEPOXOgVIC0FHpUbE5C3gHTUhJ824v5HPwjDSLDUdrRpIYoW33Kl7w0n2Lg=="],
 
     "@veltra/vite": ["@veltra/vite@4.0.0", "", { "peerDependencies": { "@veltra/ai": "^2.0.0", "@veltra/desktop": "^1.5.0", "@veltra/sheet": "^2.2.0", "unplugin-vue-components": ">=32.0.0" }, "optionalPeers": ["@veltra/ai", "@veltra/sheet"] }, "sha512-Ld3VpKOH3yZ8BT5hAAimk4dnYaKO3+2K4y4gtuEb4OYuILXETLgVF99N0iBh31bsmvrhTijH2fHG17+rF9PpyA=="],
 
