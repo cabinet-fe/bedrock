@@ -18,7 +18,7 @@ import {
   updateAgent,
 } from "@/api/ai";
 import { listBuildJobs } from "@/api/cicd";
-import { listRepositories, listRepositoryBranches } from "@/api/resource";
+import { listRepositoryBranches } from "@/api/resource";
 import type {
   AiAgent,
   AiAgentEnvVarInput,
@@ -28,9 +28,10 @@ import type {
 } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import RepoSelect from "@/components/repo-select";
 import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
-import { tagType, type TagType } from "@/lib/tag";
+import { tagType, triggerTypeLabel, type TagType } from "@/lib/tag";
 import RunHistoryDialog from "../components/run-history-dialog.vue";
 import { repoBindingPath } from "../repo-dir-name";
 
@@ -62,13 +63,6 @@ const WORKSPACE_STATUS_LABEL: Record<string, string> = {
   ready: "就绪",
   pending: "初始化中",
   failed: "失败",
-};
-
-const TRIGGER_TYPE_LABEL: Record<string, string> = {
-  manual: "手动",
-  api: "API",
-  cron: "Cron",
-  build_event: "构建事件",
 };
 
 type TriggerDraft = {
@@ -104,7 +98,6 @@ const historyAgent = ref<AiAgent | null>(null);
 const editing = ref<AiAgent | null>(null);
 const skills = ref<SkillPackage[]>([]);
 const buildJobs = ref<BuildJob[]>([]);
-const repoOptions = ref<{ label: string; value: number }[]>([]);
 const branchOptionsByRepo = ref<Record<number, { label: string; value: string }[]>>({});
 const branchesLoadingByRepo = ref<Record<number, boolean>>({});
 /** Triggers shown in the agent form (existing + newly added drafts). */
@@ -192,20 +185,6 @@ onMounted(async () => {
         })
         .catch(() => {
           buildJobs.value = [];
-        }),
-    );
-  }
-  if (hasPermission("resource_repositories:view")) {
-    tasks.push(
-      listRepositories({ page: 1, page_size: 200 })
-        .then((res) => {
-          repoOptions.value = (res.items ?? []).map((r) => ({
-            label: `${r.name} (repo-${r.id})`,
-            value: r.id,
-          }));
-        })
-        .catch(() => {
-          repoOptions.value = [];
         }),
     );
   }
@@ -332,7 +311,7 @@ function buildJobLabel(jobID?: number) {
 }
 
 function triggerSummary(t: TriggerDraft): string {
-  const typeLabel = TRIGGER_TYPE_LABEL[t.type] ?? t.type;
+  const typeLabel = triggerTypeLabel(t.type);
   if (t.type === "cron") {
     return `${typeLabel} · ${t.cron_expression} (${t.cron_timezone})`;
   }
@@ -607,12 +586,10 @@ const remove = bind(async (row: AiAgent) => {
           :item-style="{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }"
         >
           <template #default="{ item }">
-            <u-select
+            <RepoSelect
               v-model="item.repository_id"
-              :options="repoOptions"
-              filterable
-              clearable
               placeholder="选择仓库"
+              style="flex: 1; min-width: 0"
               @change="onRepoChange(item)"
             />
             <u-select

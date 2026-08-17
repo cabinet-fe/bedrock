@@ -11,6 +11,7 @@ import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
+import { clearDictOptionsCache } from "@/lib/dict";
 
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
@@ -48,7 +49,7 @@ function openEdit(row: Dictionary) {
     label: it.label,
     value: it.value,
     sort_order: it.sort_order ?? 0,
-    enabled: it.enabled !== false,
+    enabled: it.enabled,
   }));
   dialogOpen.value = true;
 }
@@ -60,7 +61,7 @@ async function save() {
         label: it.label.trim(),
         value: it.value.trim(),
         sort_order: it.sort_order ?? i,
-        enabled: it.enabled !== false,
+        enabled: it.enabled,
       }))
       .filter((it) => it.label && it.value);
 
@@ -81,6 +82,7 @@ async function save() {
       message.success("已创建");
     }
     dialogOpen.value = false;
+    clearDictOptionsCache();
     await listRef.value?.reload();
   } catch (err) {
     message.error(err instanceof Error ? err.message : "保存失败");
@@ -91,6 +93,7 @@ const remove = bind(async (row: Dictionary) => {
   try {
     await deleteDictionary(row.id);
     message.success("已删除");
+    clearDictOptionsCache();
     await listRef.value?.reload();
   } catch (err) {
     message.error(err instanceof Error ? err.message : "删除失败");

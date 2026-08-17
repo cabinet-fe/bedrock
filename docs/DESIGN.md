@@ -287,7 +287,7 @@ flowchart TB
 
 **脚本模板**：`build_script` / `post_build_script` / ScriptJob `script` 启动前对 `${{ path }}` 做一次性文本替换（非 shell 求值）。构建内置只读：`job.id`、`job.name`、`run.id`、`run.build_number`、`run.branch`、`run.commit`、`workspace`；脚本任务内置：`job.id`、`job.name`、`run.id`、`workspace`。用户变量 `${{ env.KEY }}` 对齐 `env_var_names` + `env_vars`（同名以 Key-Value 为准），进程环境仍注入以兼容 `$KEY`。未知变量 → `failed`；替换值不二次展开。
 
-**制品路径（`artifact_paths`）**：相对仓库根的文件/目录列表（替代单一 `output_dir`；`output_dir` 列保留一版兼容，读时与 `artifact_paths` 合并）。运行时在 clone 根下解析并做边界校验；配置路径缺失 → 构建 `failed`。归档规则：0 路径无制品（有部署目标时拒绝整仓分发，`distribution_summary=all_failed`）；1 文件原样存储（`artifact_kind=file`）；1 目录按 `artifact_format` 打 zip/tar.gz（`archive`）；2+ 路径按 basename 合并后打一包（`bundle`，basename 冲突失败）。分发与 redeploy 均从同一 `deployRoot` 出发（文件/归档先物化到 staging）。
+**制品路径（`artifact_paths`）**：相对仓库根的文件/目录列表。运行时在 clone 根下解析并做边界校验；配置路径缺失 → 构建 `failed`。归档规则：0 路径无制品（有部署目标时拒绝整仓分发，`distribution_summary=all_failed`）；1 文件原样存储（`artifact_kind=file`）；1 目录按 `artifact_format` 打 zip/tar.gz（`archive`）；2+ 路径按 basename 合并后打一包（`bundle`，basename 冲突失败）。分发与 redeploy 均从同一 `deployRoot` 出发（文件/归档先物化到 staging）。
 
 **分发**：rsync 默认 merge（覆盖制品文件，不删远端多余文件）；DeployTarget.`mirror=true` 时加 `--delete` 镜像同步。post-deploy 与 rsync/scp 等 CLI 分发共用系统 `ssh`/`sshpass` 与主机 `~/.ssh` 认证（`auth_type=agent` 仍走 HTTP）。
 

@@ -8,14 +8,7 @@ import { listAgents } from "@/api/ai";
 import type { AgentRun } from "@/api/types";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { formatDateTime, formatDurationMs } from "@/lib/datetime";
-import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
-
-const TRIGGER_TYPE_LABEL: Record<string, string> = {
-  manual: "手动",
-  api: "API",
-  cron: "Cron",
-  build_event: "构建事件",
-};
+import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType, triggerTypeLabel } from "@/lib/tag";
 
 const STATUS_OPTIONS = [
   { label: "queued", value: "queued" },
@@ -135,10 +128,7 @@ watch(
       </template>
       <template #column:trigger_type="{ rowData }">
         <u-tag size="small" :type="tagType((rowData as AgentRun).trigger_type, TRIGGER_TYPE_TAG)">
-          {{
-            TRIGGER_TYPE_LABEL[(rowData as AgentRun).trigger_type] ??
-            (rowData as AgentRun).trigger_type
-          }}
+          {{ triggerTypeLabel((rowData as AgentRun).trigger_type) }}
         </u-tag>
       </template>
       <template #column:status="{ rowData }">

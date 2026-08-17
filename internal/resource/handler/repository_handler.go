@@ -42,7 +42,7 @@ func (h *RepositoryHandler) canUseCredential(c *gin.Context) bool {
 
 func (h *RepositoryHandler) List(c *gin.Context) {
 	q := pkg.ParseListQuery(c)
-	items, total, err := h.svc.List(q, c.Query("keyword"))
+	items, total, err := h.svc.List(q, c.Query("keyword"), c.Query("tag"))
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "查询失败")
 		return

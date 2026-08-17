@@ -172,8 +172,8 @@ func (s *RepositoryService) Get(id uint) (*model.Repository, error) {
 	return repo, nil
 }
 
-func (s *RepositoryService) List(q pkg.ListQuery, keyword string) ([]model.Repository, int64, error) {
-	items, total, err := s.repo.List(q, keyword)
+func (s *RepositoryService) List(q pkg.ListQuery, keyword, tag string) ([]model.Repository, int64, error) {
+	items, total, err := s.repo.List(q, keyword, tag)
 	if err != nil {
 		return nil, 0, err
 	}

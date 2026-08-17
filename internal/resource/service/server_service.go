@@ -185,8 +185,6 @@ func (s *ServerService) Update(id uint, in UpdateServerInput, canUseCredential b
 	if existing.AuthType != "agent" && existing.Host == "" {
 		return nil, errorsNew("主机不能为空")
 	}
-	// Ensure legacy credential_id is not reintroduced via updates.
-	existing.CredentialID = nil
 	if err := s.repo.Update(existing); err != nil {
 		return nil, err
 	}
@@ -337,7 +335,7 @@ func (s *ServerService) testAgent(srv *model.Server) (string, error) {
 
 func normalizeServerAuth(t string) string {
 	switch strings.ToLower(strings.TrimSpace(t)) {
-	case "key", "ssh_key", "ssh_agent", "agent_ssh":
+	case "ssh_key":
 		return "ssh_key"
 	case "agent":
 		return "agent"

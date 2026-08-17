@@ -16,15 +16,16 @@ import {
   retryBuildRun,
 } from "@/api/cicd";
 import { getAccessToken } from "@/api/http";
-import type { BuildRun } from "@/api/types";
+import type { BuildRun, DeployTarget } from "@/api/types";
 import BuildLogViewer, { resolveBuildLogStatus } from "@/components/build-log-viewer";
 import { usePermission } from "@/composables/use-permission";
-import { formatDateTime, formatDurationMs } from "@/lib/datetime";
+import { formatDateTime, formatDurationBetween, formatDurationMs } from "@/lib/datetime";
 import {
   BUILD_DISTRIBUTION_TAG,
   BUILD_STAGE_TAG,
   JOB_STATUS_TAG,
   TRIGGER_TYPE_TAG,
+  jobStatusLabel,
   tagType,
 } from "@/lib/tag";
 import { useTabsStore } from "@/stores/tabs";
@@ -94,6 +95,48 @@ const shortCommit = computed(() => {
   if (!hash) return "—";
   return hash.length > 12 ? hash.slice(0, 12) : hash;
 });
+
+function parseTargetSnapshot(raw?: string): Partial<DeployTarget> {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as Partial<DeployTarget>;
+  } catch {
+    return {};
+  }
+}
+
+const attemptBatches = computed(() => {
+  const items = run.value?.deploy_attempts ?? [];
+  const map = new Map<
+    number,
+    Array<{ attempt: (typeof items)[number]; snapshot: Partial<DeployTarget> }>
+  >();
+  for (const attempt of items) {
+    const batch = map.get(attempt.batch_no) ?? [];
+    batch.push({ attempt, snapshot: parseTargetSnapshot(attempt.target_snapshot_json) });
+    map.set(attempt.batch_no, batch);
+  }
+  return [...map.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([no, batchItems]) => ({
+      no,
+      items: batchItems,
+      success: batchItems.filter((x) => x.attempt.status === "success").length,
+    }));
+});
+
+function attemptDuration(attempt: { started_at?: string; finished_at?: string }): string {
+  return formatDurationBetween(attempt.started_at, attempt.finished_at);
+}
+
+function attemptTargetTitle(
+  attempt: { deploy_target_id?: number | null },
+  snapshot: Partial<DeployTarget>,
+): string {
+  if (snapshot.remote_path) return snapshot.remote_path;
+  if (attempt.deploy_target_id) return `目标 #${attempt.deploy_target_id}`;
+  return "未命名目标";
+}
 
 function stageStepIndex(stage: string): number {
   const idx = PIPELINE_STEPS.findIndex((s) => s.key === stage);
@@ -348,22 +391,72 @@ onMounted(async () => {
         </section>
 
         <section class="section">
-          <h3 class="section__title">部署尝试</h3>
-          <div class="panel" :class="{ 'panel--empty': !run.deploy_attempts?.length }">
+          <div class="section__head">
+            <h3 class="section__title">部署尝试</h3>
+            <span v-if="run.deploy_attempts?.length" class="section__hint">
+              {{ run.deploy_attempts.length }} 条记录
+            </span>
+          </div>
+          <div class="panel deploy-panel" :class="{ 'panel--empty': !run.deploy_attempts?.length }">
             <u-empty v-if="!run.deploy_attempts?.length" text="暂无部署尝试" />
-            <ul v-else class="attempts">
-              <li v-for="a in run.deploy_attempts" :key="a.id" class="attempt">
-                <div class="attempt__main">
-                  <span class="mono">batch {{ a.batch_no }}</span>
-                  <span class="attempt__sep">·</span>
-                  <span>target {{ a.deploy_target_id ?? "—" }}</span>
-                  <u-tag size="small" :type="tagType(a.status, JOB_STATUS_TAG)">{{
-                    a.status
-                  }}</u-tag>
-                </div>
-                <p v-if="a.error_message" class="attempt__error">{{ a.error_message }}</p>
-              </li>
-            </ul>
+            <div v-else class="attempt-batches">
+              <section v-for="batch in attemptBatches" :key="batch.no" class="attempt-batch">
+                <header class="attempt-batch__head">
+                  <span class="attempt-batch__title">
+                    第 {{ batch.no }} 次分发
+                    <span class="attempt-batch__count">{{ batch.items.length }} 个目标</span>
+                  </span>
+                  <span class="attempt-batch__summary">
+                    {{ batch.success }}/{{ batch.items.length }} 成功
+                  </span>
+                </header>
+                <ul class="attempt-list">
+                  <li
+                    v-for="(item, idx) in batch.items"
+                    :key="item.attempt.id"
+                    class="attempt-card"
+                    :class="`attempt-card--${item.attempt.status}`"
+                  >
+                    <span class="attempt-card__index">{{ idx + 1 }}</span>
+                    <div class="attempt-card__body">
+                      <div class="attempt-card__row">
+                        <div class="attempt-card__target">
+                          <u-tag v-if="item.snapshot.method" size="small">{{
+                            item.snapshot.method
+                          }}</u-tag>
+                          <span
+                            class="attempt-card__path mono"
+                            :title="attemptTargetTitle(item.attempt, item.snapshot)"
+                          >
+                            {{ attemptTargetTitle(item.attempt, item.snapshot) }}
+                          </span>
+                        </div>
+                        <u-tag size="small" :type="tagType(item.attempt.status, JOB_STATUS_TAG)">
+                          {{ jobStatusLabel(item.attempt.status) }}
+                        </u-tag>
+                      </div>
+                      <div class="attempt-card__meta">
+                        <span v-if="item.snapshot.server_id"
+                          >服务器 #{{ item.snapshot.server_id }}</span
+                        >
+                        <span v-if="attemptDuration(item.attempt)">
+                          耗时 {{ attemptDuration(item.attempt) }}
+                        </span>
+                        <span v-if="item.attempt.finished_at">
+                          {{ formatDateTime(item.attempt.finished_at) }}
+                        </span>
+                        <span v-else-if="item.attempt.started_at">
+                          开始 {{ formatDateTime(item.attempt.started_at) }}
+                        </span>
+                      </div>
+                      <p v-if="item.attempt.error_message" class="attempt-card__error">
+                        {{ item.attempt.error_message }}
+                      </p>
+                    </div>
+                  </li>
+                </ul>
+              </section>
+            </div>
           </div>
         </section>
       </template>
@@ -439,6 +532,20 @@ onMounted(async () => {
   font-weight: 600;
   line-height: 1.4;
   color: fn.use-var(text-color, title);
+}
+
+.section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.section__hint {
+  font-size: 12px;
+  color: fn.use-var(text-color, assist);
+  white-space: nowrap;
 }
 
 .panel {
@@ -519,37 +626,160 @@ onMounted(async () => {
   overflow-wrap: anywhere;
 }
 
-.attempts {
+.deploy-panel:not(.panel--empty) {
+  padding: fn.use-var(gap, small);
+}
+
+.attempt-batches {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.attempt-batch {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.attempt-batch__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px;
+  min-width: 0;
+}
+
+.attempt-batch__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: fn.use-var(text-color, title);
+  min-width: 0;
+}
+
+.attempt-batch__count {
+  font-size: 12px;
+  font-weight: 400;
+  color: fn.use-var(text-color, assist);
+}
+
+.attempt-batch__summary {
+  font-size: 12px;
+  color: fn.use-var(text-color, assist);
+  white-space: nowrap;
+}
+
+.attempt-list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
-.attempt {
+.attempt-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: fn.use-var(radius, default);
+  background: fn.use-var(bg-color, middle);
+  border: fn.use-var(border, muted);
+  border-left: 3px solid fn.use-var(border-color, default);
+}
+
+.attempt-card--success {
+  border-left-color: fn.use-var(color, success);
+}
+
+.attempt-card--failed {
+  border-left-color: fn.use-var(color, danger);
+}
+
+.attempt-card--running {
+  border-left-color: fn.use-var(color, primary);
+}
+
+.attempt-card--cancelled,
+.attempt-card--interrupted {
+  border-left-color: fn.use-var(color, warning);
+}
+
+.attempt-card--queued,
+.attempt-card--pending {
+  border-left-color: fn.use-var(color, info);
+}
+
+.attempt-card__index {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: fn.use-var(bg-color, top);
+  color: fn.use-var(text-color, assist);
+  font-size: 12px;
+  line-height: 22px;
+  text-align: center;
+}
+
+.attempt-card__body {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
-.attempt__main {
+.attempt-card__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.attempt-card__target {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.attempt-card__path {
+  font-size: 13px;
+  font-weight: 500;
+  color: fn.use-var(text-color, main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attempt-card__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.attempt__sep {
+  gap: 6px 14px;
+  font-size: 12px;
   color: fn.use-var(text-color, assist);
 }
 
-.attempt__error {
+.attempt-card__error {
   margin: 0;
+  padding: 8px 10px;
+  border-radius: fn.use-var(radius, small);
+  background: fn.use-var(bg-color, top);
+  border: fn.use-var(border, muted);
   font-size: 12px;
+  line-height: 1.5;
   color: fn.use-var(color, danger);
   overflow-wrap: anywhere;
 }

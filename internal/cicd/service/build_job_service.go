@@ -59,7 +59,6 @@ type CreateBuildJobInput struct {
 	BuildScript        string              `json:"build_script"`
 	PostBuildScript    string              `json:"post_build_script"`
 	WorkDir            string              `json:"work_dir"`
-	OutputDir          string              `json:"output_dir"` // deprecated: prefer artifact_paths
 	ArtifactPaths      []string            `json:"artifact_paths"`
 	CachePaths         string              `json:"cache_paths"`
 	EnvVarNames        []string            `json:"env_var_names"`
@@ -93,7 +92,6 @@ type UpdateBuildJobInput struct {
 	BuildScript        *string              `json:"build_script"`
 	PostBuildScript    *string              `json:"post_build_script"`
 	WorkDir            *string              `json:"work_dir"`
-	OutputDir          *string              `json:"output_dir"` // deprecated: prefer artifact_paths
 	ArtifactPaths      *[]string            `json:"artifact_paths"`
 	CachePaths         *string              `json:"cache_paths"`
 	EnvVarNames        *[]string            `json:"env_var_names"`
@@ -173,7 +171,7 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 	if err := validateJobCachePaths(job.CachePaths); err != nil {
 		return nil, err
 	}
-	if err := encodeArtifactPaths(job, resolveArtifactPathsInput(in.ArtifactPaths, in.OutputDir)); err != nil {
+	if err := encodeArtifactPaths(job, in.ArtifactPaths); err != nil {
 		return nil, err
 	}
 	if err := encodeEnvNames(job, in.EnvVarNames); err != nil {
@@ -247,13 +245,8 @@ func (s *BuildJobService) Update(id uint, userID uint, dataScope string, in Upda
 			return nil, err
 		}
 	}
-	// Explicit artifact_paths (including empty) wins; do not fall back to output_dir.
 	if in.ArtifactPaths != nil {
-		if err := encodeArtifactPaths(job, resolveArtifactPathsInput(*in.ArtifactPaths, "")); err != nil {
-			return nil, err
-		}
-	} else if in.OutputDir != nil {
-		if err := encodeArtifactPaths(job, resolveArtifactPathsInput(nil, *in.OutputDir)); err != nil {
+		if err := encodeArtifactPaths(job, *in.ArtifactPaths); err != nil {
 			return nil, err
 		}
 	}

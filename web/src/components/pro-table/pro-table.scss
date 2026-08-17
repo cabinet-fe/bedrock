@@ -1,0 +1,130 @@
+@use "pkg:@veltra/styles/functions" as fn;
+
+.pro-table {
+  display: flex;
+  flex-direction: column;
+  gap: fn.use-var(gap, default);
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.pro-table__toolbar {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: fn.use-var(gap, default);
+  padding: 0 0 fn.use-var(gap, small);
+}
+
+.pro-table__implicit-submit {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.pro-table__search-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: fn.use-var(gap, small);
+  min-width: 0;
+}
+
+.pro-table__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: fn.use-var(gap, small);
+  align-items: flex-end;
+  min-width: 0;
+}
+
+.pro-table__query-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: fn.use-var(gap, small);
+}
+
+.pro-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: fn.use-var(gap, small);
+  margin-left: auto;
+}
+
+.pro-table__panel {
+  flex: 1;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: fn.use-var(radius, default);
+  background: fn.use-var(bg-color, top);
+  overflow: hidden;
+}
+
+.pro-table__body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.pro-table__body :deep(.u-table) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100% !important;
+}
+
+.pro-table__footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: fn.use-var(gap, small) 0 0;
+  border-top: fn.use-var(border, muted);
+}
+
+.pro-table__th {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pro-table__th-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pro-table__th.is-sorted .pro-table__th-label {
+  color: fn.use-var(color, primary);
+}
+
+.pro-table__sort-btn {
+  flex-shrink: 0;
+  color: fn.use-var(text-color, assist);
+  opacity: 0.7;
+}
+
+.pro-table__sort-btn.is-active {
+  color: fn.use-var(color, primary);
+  opacity: 1;
+}
+
+.pro-table__th:hover .pro-table__sort-btn {
+  opacity: 1;
+}

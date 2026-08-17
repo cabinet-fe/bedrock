@@ -42,11 +42,11 @@ func TestEncodeDecodeArtifactPaths(t *testing.T) {
 	}
 }
 
-func TestDecodeArtifactPathsFallsBackToOutputDir(t *testing.T) {
+func TestDecodeArtifactPathsIgnoresBareOutputDir(t *testing.T) {
 	t.Parallel()
 	job := &model.BuildJob{OutputDir: "legacy-dist"}
 	decodeArtifactPaths(job)
-	if len(job.ArtifactPaths) != 1 || job.ArtifactPaths[0] != "legacy-dist" {
+	if len(job.ArtifactPaths) != 0 {
 		t.Fatalf("paths=%v", job.ArtifactPaths)
 	}
 }
@@ -59,18 +59,6 @@ func TestValidateArtifactPathsMax(t *testing.T) {
 	}
 	if err := validateArtifactPaths(paths); err == nil {
 		t.Fatal("expected max error")
-	}
-}
-
-func TestResolveArtifactPathsInput(t *testing.T) {
-	t.Parallel()
-	got := resolveArtifactPathsInput([]string{"a"}, "ignored")
-	if len(got) != 1 || got[0] != "a" {
-		t.Fatalf("%v", got)
-	}
-	got = resolveArtifactPathsInput(nil, "out")
-	if len(got) != 1 || got[0] != "out" {
-		t.Fatalf("%v", got)
 	}
 }
 

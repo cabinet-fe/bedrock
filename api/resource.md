@@ -10,7 +10,7 @@
 ### GET /resource/repositories — 列出代码仓库
 
 权限：`resource_repositories:view`
-查询参数：page: integer, page_size: integer, keyword: string
+查询参数：page: integer, page_size: integer, keyword: string, tag: string
 响应 200：data = RepositoryPage
 错误：403
 

@@ -310,7 +310,7 @@ func TestArchiveMarksSuccessAndArtifactDownloadable(t *testing.T) {
 			RepositoryID:   1,
 			Branch:         "main",
 			BuildScript:    "mkdir -p dist && echo hello > dist/app.txt",
-			OutputDir:      "dist",
+			ArtifactPaths:  []string{"dist"},
 			ArtifactFormat: "gzip",
 			MaxArtifacts:   5,
 		},
@@ -448,7 +448,7 @@ func TestPipeline_PostBuildScriptRunsBeforeArchive(t *testing.T) {
 			ID: 10, RepositoryID: 1, Branch: "main",
 			BuildScript:     "mkdir -p target && echo jar > target/app.jar",
 			PostBuildScript: "mkdir -p dist && cp target/app.jar dist/app.jar",
-			OutputDir:       "dist",
+			ArtifactPaths:   []string{"dist"},
 			ArtifactFormat:  "gzip",
 			MaxArtifacts:    5,
 		},
@@ -507,7 +507,7 @@ func TestPipeline_PostBuildFailureFailsRun(t *testing.T) {
 			ID: 10, RepositoryID: 1, Branch: "main",
 			BuildScript:     "true",
 			PostBuildScript: "exit 7",
-			OutputDir:       "dist",
+			ArtifactPaths:   []string{"dist"},
 		},
 	}
 	p := NewPipeline(store, jobStore, &memRepoStore{

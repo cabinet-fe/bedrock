@@ -107,7 +107,7 @@ const canCreateComment = computed(
 );
 const statusOptions = computed(() =>
   requirementStatuses.value
-    .filter((item) => item.enabled !== false)
+    .filter((item) => item.enabled)
     .map((item) => ({ label: item.label, value: item.value })),
 );
 const filterStatusOptions = computed(() => [

@@ -245,7 +245,7 @@ func sortProcesses(items []model.ProcessInfo, sortSpec string) {
 	})
 }
 
-// parseProcessSort accepts ProTable "field@asc|desc", plus legacy aliases cpu/memory.
+// parseProcessSort 解析 ProTable 的 field@asc|desc。
 func parseProcessSort(sortSpec string) (field string, ascending bool) {
 	sortSpec = strings.TrimSpace(sortSpec)
 	if sortSpec == "" {
@@ -258,10 +258,6 @@ func parseProcessSort(sortSpec string) (field string, ascending bool) {
 	field = strings.ToLower(sortSpec[:at])
 	order := strings.ToLower(sortSpec[at+1:])
 	switch field {
-	case "cpu":
-		field = "cpu_percent"
-	case "memory":
-		field = "memory_bytes"
 	case "cpu_percent", "memory_bytes", "name":
 		// ok
 	default:

@@ -19,14 +19,9 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
-// IsSSHKeyAuth reports whether auth_type uses host SSH keys (ssh_key or legacy key).
+// IsSSHKeyAuth reports whether auth_type uses host SSH keys.
 func IsSSHKeyAuth(authType string) bool {
-	switch strings.ToLower(strings.TrimSpace(authType)) {
-	case "key", "ssh_key":
-		return true
-	default:
-		return false
-	}
+	return strings.ToLower(strings.TrimSpace(authType)) == "ssh_key"
 }
 
 // SSHAuthMethods builds auth methods for SSH: PEM private key, password, and/or SSH agent when key auth has no embedded key.

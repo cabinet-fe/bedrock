@@ -140,7 +140,7 @@ export interface DictItem {
   label: string;
   value: string;
   sort_order?: number;
-  enabled?: boolean;
+  enabled: boolean;
 }
 
 export interface OperationLog {
@@ -241,8 +241,6 @@ export interface BuildJob {
   work_dir: string;
   /** 绝对路径：{workspace}/jobs/job-{id}/（只读，由服务端计算） */
   workspace_path?: string;
-  /** @deprecated use artifact_paths; echoed as first path for compat */
-  output_dir?: string;
   /** 相对仓库根的制品路径（文件或目录）；单文件不压缩，多路径打成一个包 */
   artifact_paths?: string[];
   /** JSON 数组字符串，相对仓库根的缓存路径列表 */
@@ -271,13 +269,17 @@ export interface BuildJob {
   updated_at: string;
 }
 
-interface BuildDeployAttempt {
+export interface BuildDeployAttempt {
   id: number;
   build_run_id: number;
   batch_no: number;
   deploy_target_id?: number | null;
+  target_snapshot_json?: string;
   status: string;
+  log_path?: string;
   error_message?: string;
+  started_at?: string;
+  finished_at?: string;
   created_at: string;
 }
 

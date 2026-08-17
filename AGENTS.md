@@ -68,11 +68,11 @@ cd web && vp check    # format + lint + typecheck
 │   ├── ws/                     # WebSocket
 │   └── pkg/                    # 跨域公共库（加密、分页、响应信封等）
 ├── api/                        # HTTP 契约（Markdown，按域拆分）
-├── web/                        # Vue 3 前端（约定见 .agents/fe.md）
+├── web/                        # Vue 3 前端
 │   └── src/
 │       ├── api/                # 按域封装的 HTTP 客户端
 │       ├── assets/             # 静态资源
-│       ├── components/         # 跨页面可复用组件（含 project-select 项目归属选择器）
+│       ├── components/         # 跨页面可复用组件（含 project-select、repo-select）
 │       ├── composables/        # 组合式函数（权限、面包屑等）
 │       ├── content/            # 内置手册等 Markdown 内容
 │       ├── lib/                # 纯工具与第三方薄封装

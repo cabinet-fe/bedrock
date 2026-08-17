@@ -2,11 +2,11 @@
 import { computed, onMounted, ref } from "vue";
 
 import { enqueueBuildRun, getBuildRun, listBuildJobs, listBuildRuns } from "@/api/cicd";
-import { listRepositories } from "@/api/resource";
-import { getDictionaryByCode } from "@/api/system";
 import type { BuildJob, ProductProject } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
+import { loadDictOptions } from "@/lib/dict";
 import { splitCommaTags } from "@/lib/tag";
+import { useRepositoryStore } from "@/stores/repositories";
 
 import { isRunTerminal, useRunPoll } from "../composables/use-run-poll";
 import RunCard from "./run-card.vue";
@@ -17,11 +17,11 @@ const props = defineProps<{ project: ProductProject }>();
 const { hasPermission } = usePermission();
 const canExecute = hasPermission("cicd_build_jobs:execute");
 const canViewHistory = hasPermission("cicd_build_jobs:view");
+const repoStore = useRepositoryStore();
 
 const jobs = ref<BuildJob[]>([]);
 const loading = ref(true);
 const loadError = ref("");
-const repoNameMap = ref(new Map<number, string>());
 const repoTypeLabelMap = ref(new Map<string, string>());
 
 const historyOpen = ref(false);
@@ -33,7 +33,7 @@ const { statusMap, errorMap, isBusy, enqueue, loadRecent } = useRunPoll({
 });
 
 function repoName(id: number): string {
-  return repoNameMap.value.get(id) ?? `#${id}`;
+  return repoStore.nameMap.get(id) ?? `#${id}`;
 }
 
 function tagLabel(value: string): string {
@@ -97,23 +97,12 @@ onMounted(() => {
   void load();
   void loadRecentStatus();
   if (hasPermission("resource_repositories:view")) {
-    void listRepositories({ page: 1, page_size: 100 })
-      .then((res) => {
-        const map = new Map<number, string>();
-        for (const repo of res.items ?? []) map.set(repo.id, repo.name);
-        repoNameMap.value = map;
-      })
-      .catch(() => {
-        /* 仓库名降级为 #id */
-      });
+    void repoStore.load();
   }
-  void getDictionaryByCode("repo_type")
-    .then((dict) => {
+  void loadDictOptions("repo_type")
+    .then((opts) => {
       const map = new Map<string, string>();
-      for (const item of dict.items ?? []) {
-        if (item.enabled === false) continue;
-        map.set(item.value, item.label);
-      }
+      for (const opt of opts) map.set(opt.value, opt.label);
       repoTypeLabelMap.value = map;
     })
     .catch(() => {

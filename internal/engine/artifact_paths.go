@@ -17,7 +17,7 @@ const (
 	artifactKindBundle  = "bundle"
 )
 
-// jobArtifactPaths returns configured relative paths (artifact_paths, else output_dir).
+// jobArtifactPaths returns configured relative paths from artifact_paths / JSON.
 func jobArtifactPaths(job *model.BuildJob) []string {
 	if job == nil {
 		return nil
@@ -31,11 +31,6 @@ func jobArtifactPaths(job *model.BuildJob) []string {
 		p = strings.TrimSpace(p)
 		if p != "" {
 			out = append(out, p)
-		}
-	}
-	if len(out) == 0 {
-		if dir := strings.TrimSpace(job.OutputDir); dir != "" {
-			return []string{dir}
 		}
 	}
 	return out

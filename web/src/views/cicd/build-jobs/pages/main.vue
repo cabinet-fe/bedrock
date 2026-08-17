@@ -18,23 +18,23 @@ import {
   rotateBuildJobWebhookSecret,
   updateBuildJob,
 } from "@/api/cicd";
-import { listRepositories, listRepositoryBranches, listServers } from "@/api/resource";
-import { getDictionaryByCode } from "@/api/system";
+import { listRepositoryBranches, listServers } from "@/api/resource";
 import type {
   AiAgent,
   AiAgentEnvVarInput,
   BuildJob,
   BuildRun,
   DeployTarget,
-  Repository,
   Server,
 } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import ProjectSelect from "@/components/project-select";
+import RepoSelect from "@/components/repo-select";
 import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime, formatDurationMs } from "@/lib/datetime";
+import { loadDictOptions } from "@/lib/dict";
 import {
   BUILD_STAGE_TAG,
   JOB_STATUS_TAG,
@@ -46,6 +46,7 @@ import {
   triggerTypeLabel,
   type TagType,
 } from "@/lib/tag";
+import { useRepositoryStore } from "@/stores/repositories";
 
 function parsePositiveInt(raw: unknown): number | undefined {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -106,7 +107,7 @@ type EnvVarDraft = { key: string; value: string; has_value?: boolean };
 type CachePathDraft = { path: string };
 type ArtifactPathDraft = { path: string };
 
-/** API `cache_paths` 为 JSON 数组字符串；兼容换行分隔 */
+/** API `cache_paths` 为 JSON 数组字符串 */
 function parseCachePaths(raw: string | undefined): string[] {
   if (!raw) return [];
   const trimmed = raw.trim();
@@ -115,12 +116,9 @@ function parseCachePaths(raw: string | undefined): string[] {
     const parsed: unknown = JSON.parse(trimmed);
     if (Array.isArray(parsed)) return parsed.map((s) => String(s).trim()).filter(Boolean);
   } catch {
-    /* newline-separated fallback */
+    /* 非法 JSON 视为无缓存路径 */
   }
-  return trimmed
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return [];
 }
 
 const BUILD_SCRIPT_TYPE_OPTIONS = [
@@ -143,6 +141,7 @@ const SCRIPT_TYPE_LANG: Record<string, CodeEditorLang | undefined> = {
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
 const { busy: rotateBusy, run: runRotate } = useBusy();
+const repoStore = useRepositoryStore();
 const route = useRoute();
 const router = useRouter();
 const listRef = useTemplateRef("list");
@@ -163,7 +162,6 @@ const historyQuery = reactive({
 });
 const editing = ref<BuildJob | null>(null);
 const webhookInfo = reactive({ secret: "", url: "" });
-const repoOptions = ref<{ label: string; value: number }[]>([]);
 const serverOptions = ref<{ label: string; value: number }[]>([]);
 const agentOptions = ref<{ label: string; value: number }[]>([]);
 const branchOptions = ref<{ label: string; value: string }[]>([]);
@@ -223,14 +221,6 @@ const formGroups = [
   { key: "artifact", title: "制品与 Agent" },
   { key: "deploy", title: "部署目标" },
 ];
-
-const repoNameMap = computed(() => {
-  const map = new Map<number, string>();
-  for (const opt of repoOptions.value) {
-    map.set(opt.value, opt.label);
-  }
-  return map;
-});
 
 const columns = defineProTableColumns([
   { key: "name", name: "名称" },
@@ -311,14 +301,7 @@ watch(dialogOpen, (open) => {
 
 onMounted(async () => {
   try {
-    const [repos, servers] = await Promise.all([
-      listRepositories({ page: 1, page_size: 100 }),
-      listServers({ page: 1, page_size: 100 }),
-    ]);
-    repoOptions.value = (repos.items ?? []).map((r: Repository) => ({
-      label: r.name,
-      value: r.id,
-    }));
+    const servers = await listServers({ page: 1, page_size: 100 });
     serverOptions.value = (servers.items ?? []).map((s: Server) => ({
       label: `${s.name} (${s.host})`,
       value: s.id,
@@ -327,10 +310,7 @@ onMounted(async () => {
     /* ignore */
   }
   try {
-    const dict = await getDictionaryByCode("repo_type");
-    repoTypeOptions.value = (dict.items ?? [])
-      .filter((it) => it.enabled !== false)
-      .map((it) => ({ label: it.label, value: it.value }));
+    repoTypeOptions.value = await loadDictOptions("repo_type");
   } catch {
     /* ignore */
   }
@@ -359,7 +339,7 @@ onMounted(async () => {
 });
 
 function repoName(repositoryId: number): string {
-  return repoNameMap.value.get(repositoryId) ?? `#${repositoryId}`;
+  return repoStore.nameMap.get(repositoryId) ?? `#${repositoryId}`;
 }
 
 function openHistory(row: BuildJob) {
@@ -406,14 +386,6 @@ function openCreate(projectID?: number) {
   form.project_id = typeof projectID === "number" ? projectID : undefined;
 }
 
-function parseArtifactPaths(job: BuildJob): string[] {
-  if (job.artifact_paths?.length) {
-    return job.artifact_paths.map((p) => String(p).trim()).filter(Boolean);
-  }
-  const legacy = job.output_dir?.trim();
-  return legacy ? [legacy] : [];
-}
-
 function openEdit(row: BuildJob) {
   editing.value = row;
   o(form).extend(
@@ -437,7 +409,10 @@ function openEdit(row: BuildJob) {
     has_value: e.has_value,
   }));
   form.cache_paths = parseCachePaths(row.cache_paths).map((path) => ({ path }));
-  form.artifact_paths = parseArtifactPaths(row).map((path) => ({ path }));
+  form.artifact_paths = (row.artifact_paths ?? [])
+    .map((path) => String(path).trim())
+    .filter(Boolean)
+    .map((path) => ({ path }));
   form.post_build_script = row.post_build_script ?? "";
   form.agent_ids = row.agent_ids ?? [];
   form.deploy_targets = (row.deploy_targets ?? []).map((t) => ({
@@ -603,13 +578,7 @@ async function rotateWebhookSecret() {
     >
       <template #filters>
         <ProjectSelect v-model="query.project_id" placeholder="全部项目" style="width: 180px" />
-        <u-select
-          v-model="query.repository_id"
-          :options="repoOptions"
-          placeholder="全部仓库"
-          clearable
-          style="width: 180px"
-        />
+        <RepoSelect v-model="query.repository_id" placeholder="全部仓库" style="width: 180px" />
         <u-select
           v-model="query.tag"
           :options="repoTypeOptions"
@@ -633,12 +602,15 @@ async function rotateWebhookSecret() {
       </template>
       <template #column:tags="{ rowData }">
         <span class="tag-cell">
-          <template v-for="parts in [splitCommaTags((rowData as BuildJob).tags)]" :key="0">
-            <u-tag v-for="tag in parts" :key="tag" size="small" type="info">
-              {{ tagLabel(tag) }}
-            </u-tag>
-            <template v-if="!parts.length">—</template>
-          </template>
+          <u-tag
+            v-for="tag in splitCommaTags((rowData as BuildJob).tags)"
+            :key="tag"
+            size="small"
+            type="info"
+          >
+            {{ tagLabel(tag) }}
+          </u-tag>
+          <template v-if="!splitCommaTags((rowData as BuildJob).tags).length">—</template>
         </span>
       </template>
       <template #column:enabled="{ rowData }">
@@ -648,12 +620,15 @@ async function rotateWebhookSecret() {
       </template>
       <template #column:triggers="{ rowData }">
         <span class="tag-cell">
-          <template v-for="parts in [triggerParts(rowData as BuildJob)]" :key="0">
-            <u-tag v-for="part in parts" :key="part.label" size="small" :type="part.type">
-              {{ part.label }}
-            </u-tag>
-            <template v-if="!parts.length">—</template>
-          </template>
+          <u-tag
+            v-for="part in triggerParts(rowData as BuildJob)"
+            :key="part.label"
+            size="small"
+            :type="part.type"
+          >
+            {{ part.label }}
+          </u-tag>
+          <template v-if="!triggerParts(rowData as BuildJob).length">—</template>
         </span>
       </template>
       <template #column:action="{ rowData }">
@@ -706,10 +681,9 @@ async function rotateWebhookSecret() {
       @submit="save"
     >
       <template #group:basic>
-        <u-select
+        <RepoSelect
           label="仓库"
           field="repository_id"
-          :options="repoOptions"
           :disabled="!!editing"
           :rules="{ required: '必填' }"
         />

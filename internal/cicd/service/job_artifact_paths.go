@@ -11,18 +11,6 @@ import (
 
 const maxArtifactPaths = 10
 
-// resolveArtifactPathsInput prefers artifact_paths; if empty and output_dir set, uses single-element.
-func resolveArtifactPathsInput(paths []string, outputDir string) []string {
-	cleaned := cleanArtifactPaths(paths)
-	if len(cleaned) > 0 {
-		return cleaned
-	}
-	if dir := strings.TrimSpace(outputDir); dir != "" {
-		return []string{dir}
-	}
-	return []string{}
-}
-
 func cleanArtifactPaths(paths []string) []string {
 	if paths == nil {
 		return []string{}
@@ -83,17 +71,10 @@ func parseJobCachePaths(raw string) []string {
 		return nil
 	}
 	var paths []string
-	if err := json.Unmarshal([]byte(raw), &paths); err == nil {
-		return cleanArtifactPaths(paths)
+	if err := json.Unmarshal([]byte(raw), &paths); err != nil {
+		return nil
 	}
-	var result []string
-	for line := range strings.SplitSeq(raw, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			result = append(result, line)
-		}
-	}
-	return result
+	return cleanArtifactPaths(paths)
 }
 
 func validateJobCachePaths(raw string) error {
@@ -153,11 +134,6 @@ func decodeArtifactPaths(job *model.BuildJob) {
 		}
 	}
 	paths = cleanArtifactPaths(paths)
-	if len(paths) == 0 {
-		if dir := strings.TrimSpace(job.OutputDir); dir != "" {
-			paths = []string{dir}
-		}
-	}
 	job.ArtifactPaths = paths
 	if len(paths) > 0 {
 		job.OutputDir = paths[0]

@@ -71,7 +71,7 @@ func (r *BuildJobRepository) List(q pkg.ListQuery, repositoryID *uint, keyword, 
 		db = db.Where("name LIKE ? OR description LIKE ?", like, like)
 	}
 	if tag != "" {
-		db = db.Where("tags LIKE ?", "%"+tag+"%")
+		db = db.Where("tags = ? OR tags LIKE ? OR tags LIKE ? OR tags LIKE ?", tag, tag+",%", "%,"+tag, "%,"+tag+",%")
 	}
 	var total int64
 	if err := db.Count(&total).Error; err != nil {

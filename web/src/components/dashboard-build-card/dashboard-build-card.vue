@@ -5,7 +5,7 @@ import { Layers, Queue, Refresh, CircleCheck } from "@veltra/icons/normal";
 
 import type { BuildSummary, DashboardRecentBuildRun } from "@/api/types";
 import { formatDateTime } from "@/lib/datetime";
-import { JOB_STATUS_TAG, tagType } from "@/lib/tag";
+import { JOB_STATUS_TAG, jobStatusLabel, tagType } from "@/lib/tag";
 
 const props = defineProps<{
   data: BuildSummary | null;
@@ -15,20 +15,6 @@ const emit = defineEmits<{
   openRun: [id: number];
   showRunning: [];
 }>();
-
-const STATUS_LABEL: Record<string, string> = {
-  queued: "排队",
-  pending: "等待",
-  running: "运行中",
-  success: "成功",
-  failed: "失败",
-  cancelled: "已取消",
-  interrupted: "中断",
-};
-
-function statusLabel(status: string): string {
-  return STATUS_LABEL[status] ?? status;
-}
 
 function metric(value: number | undefined): string {
   return value == null ? "—" : String(value);
@@ -92,7 +78,7 @@ function openRun(run: DashboardRecentBuildRun) {
             <button type="button" class="recent__row" @click="openRun(run)">
               <span class="recent__num">#{{ run.build_number }}</span>
               <u-tag size="small" :type="tagType(run.status, JOB_STATUS_TAG)">
-                {{ statusLabel(run.status) }}
+                {{ jobStatusLabel(run.status) }}
               </u-tag>
               <span class="recent__branch">{{ run.branch || "默认分支" }}</span>
               <span class="recent__time">{{ formatDateTime(run.created_at) || "—" }}</span>

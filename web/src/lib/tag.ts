@@ -19,7 +19,7 @@ export const JOB_STATUS_TAG: Record<string, TagType> = {
   interrupted: "warning",
 };
 
-export const JOB_STATUS_LABEL: Record<string, string> = {
+const JOB_STATUS_LABEL: Record<string, string> = {
   queued: "排队",
   pending: "等待",
   running: "运行中",
@@ -49,7 +49,7 @@ export const TRIGGER_TYPE_TAG: Record<string, TagType> = {
   docs_generate: "info",
 };
 
-export const TRIGGER_TYPE_LABEL: Record<string, string> = {
+const TRIGGER_TYPE_LABEL: Record<string, string> = {
   manual: "手动",
   api: "API",
   webhook: "Webhook",
@@ -74,7 +74,7 @@ export const BUILD_STAGE_TAG: Record<string, TagType> = {
   idle: "success",
 };
 
-export const BUILD_STAGE_LABEL: Record<string, string> = {
+const BUILD_STAGE_LABEL: Record<string, string> = {
   pending: "等待",
   cloning: "拉取代码",
   building: "构建",
@@ -98,7 +98,7 @@ export const BUILD_DISTRIBUTION_TAG: Record<string, TagType> = {
   cancelled: "warning",
 };
 
-export const BUILD_DISTRIBUTION_LABEL: Record<string, string> = {
+const BUILD_DISTRIBUTION_LABEL: Record<string, string> = {
   none: "无",
   running: "分发中",
   all_success: "全部成功",

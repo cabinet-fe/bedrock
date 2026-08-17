@@ -69,7 +69,7 @@ type BuildJob struct {
 	BuildScript        string       `json:"build_script" gorm:"type:text"`
 	PostBuildScript    string       `json:"post_build_script" gorm:"type:text"`
 	WorkDir            string       `json:"work_dir" gorm:"size:300"`
-	OutputDir          string       `json:"output_dir" gorm:"size:300"` // deprecated compat: first of artifact_paths
+	OutputDir          string       `json:"-" gorm:"size:300"` // 与 artifact_paths[0] 对齐的内部列，API 不暴露
 	ArtifactPathsJSON  string       `json:"-" gorm:"column:artifact_paths_json;type:text"`
 	ArtifactPaths      []string     `json:"artifact_paths" gorm:"-"`
 	CachePaths         string       `json:"cache_paths" gorm:"type:text"`

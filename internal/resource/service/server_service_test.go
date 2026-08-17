@@ -42,7 +42,7 @@ func TestServerAuthNormalizeAndPasswordCipher(t *testing.T) {
 	created, err := svc.Create(1, service.CreateServerInput{
 		Name:     "s1",
 		Host:     "127.0.0.1",
-		AuthType: "key",
+		AuthType: "ssh_key",
 	}, true)
 	if err != nil {
 		t.Fatal(err)
@@ -55,18 +55,6 @@ func TestServerAuthNormalizeAndPasswordCipher(t *testing.T) {
 	}
 	if created.PasswordCipher != "" {
 		t.Fatal("response must not expose password_cipher")
-	}
-
-	agentSSH, err := svc.Create(1, service.CreateServerInput{
-		Name:     "s2",
-		Host:     "10.0.0.1",
-		AuthType: "ssh_agent",
-	}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if agentSSH.AuthType != "ssh_key" {
-		t.Fatalf("ssh_agent normalize: %q", agentSSH.AuthType)
 	}
 
 	pw, err := svc.Create(1, service.CreateServerInput{

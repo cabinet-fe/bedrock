@@ -762,7 +762,7 @@ func TestBuildPipeline_ProjectID_D3ListReadAndWriteForbidden(t *testing.T) {
 	}
 }
 
-func TestBuildJob_UpdateClearsArtifactPathsWithoutOutputDirFallback(t *testing.T) {
+func TestBuildJob_UpdateClearsArtifactPaths(t *testing.T) {
 	_, repoSvc, _, jobSvc, _, _ := setupCICD(t)
 	repo, err := repoSvc.Create(1, resourceservice.CreateRepositoryInput{
 		Name: "r-clear-paths", RepoURL: "https://example.com/clear-paths.git",
@@ -784,7 +784,6 @@ func TestBuildJob_UpdateClearsArtifactPathsWithoutOutputDirFallback(t *testing.T
 	empty := []string{}
 	updated, err := jobSvc.Update(job.ID, 1, "all", service.UpdateBuildJobInput{
 		ArtifactPaths: &empty,
-		OutputDir:     ptr("dist"), // legacy field must not revive cleared paths
 	})
 	if err != nil {
 		t.Fatal(err)

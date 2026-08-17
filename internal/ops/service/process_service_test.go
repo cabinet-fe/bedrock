@@ -28,11 +28,6 @@ func TestSortProcessesProTableSpec(t *testing.T) {
 		t.Fatalf("name@asc order = %+v", names(items))
 	}
 
-	sortProcesses(items, "cpu@desc") // legacy alias
-	if items[0].PID != 2 {
-		t.Fatalf("cpu@desc alias failed: %+v", pids(items))
-	}
-
 	sortProcesses(items, "")
 	if items[0].PID != 1 || items[1].PID != 2 || items[2].PID != 3 {
 		t.Fatalf("empty sort should fall back to PID: %+v", pids(items))

@@ -33,11 +33,14 @@ func (r *RepositoryRepository) FindByID(id uint) (*model.Repository, error) {
 	return &repo, nil
 }
 
-func (r *RepositoryRepository) List(q pkg.ListQuery, keyword string) ([]model.Repository, int64, error) {
+func (r *RepositoryRepository) List(q pkg.ListQuery, keyword, tag string) ([]model.Repository, int64, error) {
 	db := r.db.Model(&model.Repository{})
 	if keyword != "" {
 		like := "%" + keyword + "%"
 		db = db.Where("name LIKE ? OR repo_url LIKE ? OR tags LIKE ?", like, like, like)
+	}
+	if tag != "" {
+		db = db.Where("tags = ? OR tags LIKE ? OR tags LIKE ? OR tags LIKE ?", tag, tag+",%", "%,"+tag, "%,"+tag+",%")
 	}
 	var total int64
 	if err := db.Count(&total).Error; err != nil {

@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="T extends Record<string, any>">
 import { sleep } from "@cat-kit/core";
-import { computed, h, onMounted, onScopeDispose, ref, useSlots, watch } from "vue";
+import { computed, h, onMounted, onScopeDispose, ref, shallowRef, useSlots, watch } from "vue";
 import {
   message,
   UButton,
@@ -8,11 +8,11 @@ import {
   type TableColumnNode,
   vLoading,
 } from "@veltra/desktop";
-import { ArrowDown, ArrowUp, ArrowUpdown } from "@veltra/icons/normal";
+import { ArrowDown, ArrowUp, ArrowUpdown, Refresh, Search } from "@veltra/icons/normal";
 
 import { http } from "@/api/http";
 
-import type { ProTableColumn, ProTableQuery } from "./helper";
+import { restoreQuery, snapshotQuery, type ProTableColumn, type ProTableQuery } from "./helper";
 
 type SortOrder = "asc" | "desc";
 
@@ -69,7 +69,7 @@ const emit = defineEmits<{
 
 const slots = useSlots();
 const showLoading = ref(false);
-const items = ref<T[]>([]);
+const items = shallowRef<T[]>([]);
 const page = ref(1);
 const pageSize = ref(100);
 const total = ref(0);
@@ -78,6 +78,9 @@ const pageSizeOptions = [20, 50, 100];
 
 let loadGen = 0;
 let loadingDelayTimer: ReturnType<typeof setTimeout> | undefined;
+/** 重置时跳过 autoQueryFields watch，避免与 search 重复请求 */
+let suppressAutoQuery = false;
+const initialQuery = snapshotQuery(props.query);
 
 onScopeDispose(() => {
   if (loadingDelayTimer) clearTimeout(loadingDelayTimer);
@@ -264,6 +267,15 @@ function search() {
   return load();
 }
 
+/** 恢复查询条件为初始值并重新请求 */
+function reset() {
+  suppressAutoQuery = true;
+  restoreQuery(props.query, initialQuery);
+  return search().finally(() => {
+    suppressAutoQuery = false;
+  });
+}
+
 /** Re-fetch current page (after create/update/delete). */
 function reload() {
   return load();
@@ -283,7 +295,7 @@ watch(
       .map((key) => `${key}:${JSON.stringify(props.query?.[key] ?? null)}`)
       .join("|"),
   () => {
-    if (!props.autoQueryFields.length) return;
+    if (suppressAutoQuery || !props.autoQueryFields.length) return;
     page.value = 1;
     void load();
   },
@@ -301,22 +313,29 @@ onMounted(() => {
   if (props.immediate) void load();
 });
 
-defineExpose({ search, reload });
+defineExpose({ search, reload, reset });
 </script>
 
 <template>
   <div class="pro-table">
     <form class="pro-table__toolbar" @submit.prevent="search">
+      <!-- UButton 固定 type=button，隐式提交按钮承接输入框回车 -->
+      <button class="pro-table__implicit-submit" type="submit" tabindex="-1" aria-hidden="true">
+        查询
+      </button>
       <div class="pro-table__search-group">
         <div class="pro-table__filters">
-          <slot name="filters" :search="search" :reload="reload" :query="query" />
+          <slot name="filters" :search="search" :reload="reload" :reset="reset" :query="query" />
         </div>
-        <u-button type="primary" class="pro-table__search" :loading="showLoading" @click="search">
-          查询
-        </u-button>
+        <div class="pro-table__query-actions">
+          <u-button type="primary" :icon="Search" :loading="showLoading" @click="search">
+            查询
+          </u-button>
+          <u-button :icon="Refresh" :disabled="showLoading" @click="reset"> 重置 </u-button>
+        </div>
       </div>
       <div class="pro-table__actions">
-        <slot name="toolbar" :search="search" :reload="reload" :query="query" />
+        <slot name="toolbar" :search="search" :reload="reload" :reset="reset" :query="query" />
       </div>
     </form>
 
@@ -357,119 +376,4 @@ defineExpose({ search, reload });
   </div>
 </template>
 
-<style scoped lang="scss">
-@use "pkg:@veltra/styles/functions" as fn;
-
-.pro-table {
-  display: flex;
-  flex-direction: column;
-  gap: fn.use-var(gap, default);
-  height: 100%;
-  flex: 1;
-  min-height: 0;
-}
-
-.pro-table__toolbar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  gap: fn.use-var(gap, default);
-  padding: 0 0 fn.use-var(gap, small);
-}
-
-.pro-table__search-group {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: fn.use-var(gap, small);
-  min-width: 0;
-}
-
-.pro-table__filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: fn.use-var(gap, small);
-  align-items: flex-end;
-  min-width: 0;
-}
-
-.pro-table__search {
-  flex-shrink: 0;
-}
-
-.pro-table__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: fn.use-var(gap, small);
-  margin-left: auto;
-}
-
-.pro-table__panel {
-  flex: 1;
-  min-height: 280px;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  border-radius: fn.use-var(radius, default);
-  background: fn.use-var(bg-color, top);
-  overflow: hidden;
-}
-
-.pro-table__body {
-  flex: 1;
-  min-height: 0;
-  position: relative;
-}
-
-.pro-table__body :deep(.u-table) {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100% !important;
-}
-
-.pro-table__footer {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  padding: fn.use-var(gap, small) 0 0;
-  border-top: fn.use-var(border, muted);
-}
-
-.pro-table__th {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  max-width: 100%;
-  cursor: pointer;
-  user-select: none;
-}
-
-.pro-table__th-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pro-table__th.is-sorted .pro-table__th-label {
-  color: fn.use-var(color, primary);
-}
-
-.pro-table__sort-btn {
-  flex-shrink: 0;
-  color: fn.use-var(text-color, assist);
-  opacity: 0.7;
-}
-
-.pro-table__sort-btn.is-active {
-  color: fn.use-var(color, primary);
-  opacity: 1;
-}
-
-.pro-table__th:hover .pro-table__sort-btn {
-  opacity: 1;
-}
-</style>
+<style scoped lang="scss" src="./pro-table.scss"></style>

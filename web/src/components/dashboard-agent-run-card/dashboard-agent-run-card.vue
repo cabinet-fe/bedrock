@@ -5,7 +5,13 @@ import { Books, Queue, Refresh, CircleCheck } from "@veltra/icons/normal";
 
 import type { AgentRunSummary, DashboardRecentAgentRun } from "@/api/types";
 import { formatDateTime } from "@/lib/datetime";
-import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
+import {
+  JOB_STATUS_TAG,
+  TRIGGER_TYPE_TAG,
+  jobStatusLabel,
+  tagType,
+  triggerTypeLabel,
+} from "@/lib/tag";
 
 const props = defineProps<{
   data: AgentRunSummary | null;
@@ -14,32 +20,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   openRun: [id: number];
 }>();
-
-const STATUS_LABEL: Record<string, string> = {
-  queued: "排队",
-  pending: "等待",
-  running: "运行中",
-  success: "成功",
-  failed: "失败",
-  cancelled: "已取消",
-  interrupted: "中断",
-};
-
-const TRIGGER_TYPE_LABEL: Record<string, string> = {
-  manual: "手动",
-  api: "API",
-  cron: "Cron",
-  build_event: "构建事件",
-  docs_generate: "文档生成",
-};
-
-function statusLabel(status: string): string {
-  return STATUS_LABEL[status] ?? status;
-}
-
-function triggerLabel(triggerType: string): string {
-  return TRIGGER_TYPE_LABEL[triggerType] ?? triggerType;
-}
 
 function metric(value: number | undefined): string {
   return value == null ? "—" : String(value);
@@ -103,10 +83,10 @@ function openRun(run: DashboardRecentAgentRun) {
             <button type="button" class="recent__row" @click="openRun(run)">
               <span class="recent__name">{{ run.agent_name || `#${run.id}` }}</span>
               <u-tag size="small" :type="tagType(run.status, JOB_STATUS_TAG)">
-                {{ statusLabel(run.status) }}
+                {{ jobStatusLabel(run.status) }}
               </u-tag>
               <u-tag size="small" :type="tagType(run.trigger_type, TRIGGER_TYPE_TAG)">
-                {{ triggerLabel(run.trigger_type) }}
+                {{ triggerTypeLabel(run.trigger_type) }}
               </u-tag>
               <span class="recent__time">{{ formatDateTime(run.created_at) || "—" }}</span>
             </button>

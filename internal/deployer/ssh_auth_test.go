@@ -6,7 +6,7 @@ func TestIsSSHKeyAuth(t *testing.T) {
 	t.Parallel()
 	cases := map[string]bool{
 		"ssh_key":  true,
-		"key":      true,
+		"key":      false,
 		"SSH_KEY":  true,
 		"password": false,
 		"agent":    false,
@@ -35,13 +35,5 @@ func TestSSHAuthMethods_sshKeyWithoutPEMUsesAgentOrFails(t *testing.T) {
 	_, err := SSHAuthMethods(ServerInfo{AuthType: "ssh_key", PrivateKey: ""})
 	if err == nil {
 		t.Fatal("expected error when ssh_key has no PEM and no SSH_AUTH_SOCK")
-	}
-}
-
-func TestSSHAuthMethods_legacyKeyAlias(t *testing.T) {
-	t.Setenv("SSH_AUTH_SOCK", "")
-	_, err := SSHAuthMethods(ServerInfo{AuthType: "key", PrivateKey: ""})
-	if err == nil {
-		t.Fatal("legacy key without PEM/agent should fail like ssh_key")
 	}
 }
