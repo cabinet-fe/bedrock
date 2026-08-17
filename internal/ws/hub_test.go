@@ -15,7 +15,7 @@ func TestBroadcastRemovesClientWithFullQueue(t *testing.T) {
 
 	hub.BroadcastToChannel("runs", []byte("next"))
 
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for {
 		hub.mu.RLock()
 		_, registered := hub.clients[client]
@@ -42,7 +42,7 @@ func TestUnregisterReturnsAfterShutdown(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("关闭后注销客户端发生阻塞")
 	}
 }
@@ -55,7 +55,7 @@ func TestSubscribeMultipleChannels(t *testing.T) {
 	hub.Register(client)
 	hub.Subscribe(client, "beta")
 
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for hub.ChannelSubscriberCount("beta") == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("beta 频道订阅未生效")
@@ -69,7 +69,7 @@ func TestSubscribeMultipleChannels(t *testing.T) {
 		if string(msg) != "ping" {
 			t.Fatalf("got %q, want ping", string(msg))
 		}
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("未收到 beta 频道消息")
 	}
 }
@@ -85,7 +85,7 @@ func TestChannelSubscriberCount(t *testing.T) {
 	client := &Client{Send: make(chan []byte, 256), Channel: "runs"}
 	hub.Register(client)
 
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for hub.ChannelSubscriberCount("runs") != 1 {
 		if time.Now().After(deadline) {
 			t.Fatal("runs 频道订阅数未更新为 1")

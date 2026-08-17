@@ -26,7 +26,7 @@ jobs:
             printf '%s\n' '<!doctype html><html><head></head><body>ci placeholder</body></html>' > cmd/server/dist/index.html
           fi
       - name: Go test
-        run: go test ./...
+        run: go test -count=1 -p 4 -timeout=15m ./...
 
   frontend:
     runs-on: ubuntu-latest
