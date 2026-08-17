@@ -10,6 +10,7 @@
         "@cat-kit/fe": "^1.1.8",
         "@cat-kit/http": "^1.1.8",
         "@noble/ciphers": "^2.2.0",
+        "@veltra/ai": "^2.1.0",
         "@veltra/compositions": "1.6.0",
         "@veltra/desktop": "^1.6.0",
         "@veltra/directives": "1.6.0",
@@ -402,6 +403,8 @@
     "@types/web-bluetooth": ["@types/web-bluetooth@0.0.20", "", {}, "sha512-g9gZnnXVq7gM7v3tJCWV/qw7w+KeOlSHAhgF9RytFyifW6AF61hdT2ucrYhPq9hLs5JIryeupHV3qGk95dH9ow=="],
 
     "@upsetjs/venn.js": ["@upsetjs/venn.js@2.0.0", "", { "optionalDependencies": { "d3-selection": "^3.0.0", "d3-transition": "^3.0.1" } }, "sha512-WbBhLrooyePuQ1VZxrJjtLvTc4NVfpOyKx0sKqioq9bX1C1m7Jgykkn8gLrtwumBioXIqam8DLxp88Adbue6Hw=="],
+
+    "@veltra/ai": ["@veltra/ai@2.1.0", "", { "dependencies": { "markstream-vue": "^1.0.9" }, "peerDependencies": { "@veltra/compositions": "^1.6.0", "@veltra/desktop": "^1.6.0", "@veltra/icons": "^1.5.0", "@veltra/styles": "^1.6.0", "@veltra/utils": "^1.6.0", "vue": ">=3.5.41" } }, "sha512-K2DkClanekx5oC7wg9btTCnM7LZPUM3AUs2vFUN0MGSMQRQrt8JKBwHqfl1hvUAbOiNgf1akuXGUeSkQAWHitQ=="],
 
     "@veltra/compositions": ["@veltra/compositions@1.6.0", "", { "dependencies": { "@floating-ui/dom": "^1.8.0", "@formkit/drag-and-drop": "^0.6.1" }, "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@cat-kit/fe": ">=1.1.8", "@veltra/utils": "^1.6.0", "vue": ">=3.5.41" } }, "sha512-LvLAlldWVfCsIE0Nhw0Ff5+3iDw/Q3ZsTOLmwfuiiiDHnpzJN2kiaHmrLPukGIR7z80GDBRIPzOWvp6W1RQq+w=="],
 
