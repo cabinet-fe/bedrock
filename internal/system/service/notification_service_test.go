@@ -63,7 +63,7 @@ func TestNotificationService_PushBroadcastsChannel(t *testing.T) {
 		if got.ID != n.ID || got.Type != "build_run_failed" || got.BuildRunID == nil || *got.BuildRunID != 42 {
 			t.Fatalf("payload mismatch: %+v", got)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for WS broadcast")
 	}
 

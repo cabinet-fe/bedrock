@@ -69,12 +69,16 @@ type DevEnvironmentService struct {
 	repo  *repository.OpsRepository
 	audit AuditWriter
 
-	jobs    chan uint
-	stop    chan struct{}
-	wg      sync.WaitGroup
-	startMu sync.Mutex
-	started bool
+	inlineExec bool
+	jobs       chan uint
+	stop       chan struct{}
+	wg         sync.WaitGroup
+	startMu    sync.Mutex
+	started    bool
 }
+
+// SetInlineExec runs ExecuteJob inside submit instead of the async worker (tests).
+func (s *DevEnvironmentService) SetInlineExec(v bool) { s.inlineExec = v }
 
 func NewDevEnvironmentService(repo *repository.OpsRepository, audit ...AuditWriter) *DevEnvironmentService {
 	service := &DevEnvironmentService{
@@ -321,6 +325,10 @@ func (s *DevEnvironmentService) JobLogs(environmentID, jobID uint) (string, erro
 }
 
 func (s *DevEnvironmentService) submit(id uint) error {
+	if s.inlineExec {
+		s.ExecuteJob(context.Background(), id)
+		return nil
+	}
 	s.startMu.Lock()
 	started := s.started
 	s.startMu.Unlock()
@@ -357,10 +365,10 @@ func (s *DevEnvironmentService) ExecuteJob(ctx context.Context, id uint) {
 	now := time.Now().UTC()
 	job.Status, job.StartedAt = model.JobRunning, &now
 	job.LogText += fmt.Sprintf("%s job started: %s\n", now.Format(time.RFC3339), job.Operation)
+	s.auditJob(job, "dev_env_job_started", "", false)
 	if err := s.repo.UpdateJob(job); err != nil {
 		return
 	}
-	s.auditJob(job, "dev_env_job_started", "", false)
 
 	env, err := s.repo.FindEnvironment(job.EnvironmentID)
 	if err != nil {
@@ -423,14 +431,14 @@ func (s *DevEnvironmentService) succeed(
 	job.Status, job.FinishedAt, job.ErrorMessage = model.JobSuccess, &now, ""
 	job.LogText += fmt.Sprintf("%s job succeeded\n", now.Format(time.RFC3339))
 	job.CommandSnapshot, job.LogText = redact(job.CommandSnapshot), redact(job.LogText)
-	if err := s.repo.UpdateJob(job); err != nil {
-		return
-	}
 	if job.Operation == "switch" && job.RequestedVersion != "" {
 		env.DefaultVersion = job.RequestedVersion
 		_ = s.repo.UpdateEnvironment(env)
 	}
 	s.auditJob(job, "dev_env_job_completed", sourceName, sourceFallback)
+	if err := s.repo.UpdateJob(job); err != nil {
+		return
+	}
 }
 
 func (s *DevEnvironmentService) fail(
@@ -443,10 +451,10 @@ func (s *DevEnvironmentService) fail(
 	job.Status, job.FinishedAt, job.ErrorMessage = model.JobFailed, &now, redact(err.Error())
 	job.LogText += fmt.Sprintf("%s job failed: %s\n", now.Format(time.RFC3339), job.ErrorMessage)
 	job.CommandSnapshot, job.LogText = redact(job.CommandSnapshot), redact(job.LogText)
+	s.auditJob(job, "dev_env_job_completed", sourceName, sourceFallback)
 	if err := s.repo.UpdateJob(job); err != nil {
 		return
 	}
-	s.auditJob(job, "dev_env_job_completed", sourceName, sourceFallback)
 }
 
 func commandScript(item *model.DevEnvironment, operation string) (string, error) {

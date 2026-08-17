@@ -28,8 +28,7 @@ func TestInstallFallsBackToSecondSourceAndKeepsLogs(t *testing.T) {
 	repo := repository.NewOpsRepository(gdb)
 	audit := systemservice.NewAuditService(systemrepository.NewOperationLogRepository(gdb))
 	svc := NewDevEnvironmentService(repo, audit)
-	svc.Start()
-	t.Cleanup(svc.Shutdown)
+	svc.SetInlineExec(true)
 
 	env, err := svc.CreateCustom(DevEnvironmentInput{
 		Name:          "fallback-test",
@@ -49,7 +48,10 @@ func TestInstallFallsBackToSecondSourceAndKeepsLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	finished := awaitJob(t, svc, env.ID, job.ID)
+	finished, err := svc.GetJob(env.ID, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if finished.Status != model.JobSuccess {
 		t.Fatalf("job status = %s, logs:\n%s", finished.Status, finished.LogText)
 	}
@@ -133,8 +135,7 @@ func TestKillSelfAndDangerousProcessAreRejected(t *testing.T) {
 func TestDevEnvironmentLifecycleExecutesEachOperation(t *testing.T) {
 	repo := newOpsRepository(t)
 	svc := NewDevEnvironmentService(repo)
-	svc.Start()
-	t.Cleanup(svc.Shutdown)
+	svc.SetInlineExec(true)
 
 	marker := filepath.Join(t.TempDir(), "dev-env-lifecycle.log")
 	command := func(operation string) string {
@@ -162,7 +163,8 @@ func TestDevEnvironmentLifecycleExecutesEachOperation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("enqueue %s: %v", operation, err)
 		}
-		if finished := awaitJob(t, svc, env.ID, job.ID); finished.Status != model.JobSuccess {
+		finished, err := svc.GetJob(env.ID, job.ID)
+		if err != nil || finished.Status != model.JobSuccess {
 			t.Fatalf("%s status = %s, logs:\n%s", operation, finished.Status, finished.LogText)
 		}
 	}
@@ -187,8 +189,7 @@ func TestDevEnvironmentLifecycleExecutesEachOperation(t *testing.T) {
 func TestSeededGoDevEnvironmentLifecycleExecutesWithStubbedManagers(t *testing.T) {
 	repo := newOpsRepository(t)
 	svc := NewDevEnvironmentService(repo)
-	svc.Start()
-	t.Cleanup(svc.Shutdown)
+	svc.SetInlineExec(true)
 
 	stubDir := t.TempDir()
 	logPath := filepath.Join(stubDir, "dev-env-lifecycle.log")
@@ -226,7 +227,8 @@ printf 'asdf %s\n' "$*" >> "$DEV_ENV_LIFECYCLE_LOG"
 		if err != nil {
 			t.Fatalf("enqueue Go %s: %v", operation, err)
 		}
-		if finished := awaitJob(t, svc, goEnv.ID, job.ID); finished.Status != model.JobSuccess {
+		finished, err := svc.GetJob(goEnv.ID, job.ID)
+		if err != nil || finished.Status != model.JobSuccess {
 			t.Fatalf("Go %s status = %s, logs:\n%s", operation, finished.Status, finished.LogText)
 		}
 	}

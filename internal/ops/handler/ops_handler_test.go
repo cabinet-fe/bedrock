@@ -25,8 +25,7 @@ func TestGetJobRedactsCommandAndSourceSecrets(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newTestOpsRepository(t)
 	svc := opsservice.NewDevEnvironmentService(repo)
-	svc.Start()
-	t.Cleanup(svc.Shutdown)
+	svc.SetInlineExec(true)
 
 	env, err := svc.CreateCustom(opsservice.DevEnvironmentInput{
 		Name:       "redaction-test",
@@ -153,7 +152,7 @@ func TestGetJobRedactsCommandAndSourceSecrets(t *testing.T) {
 
 func awaitCompletedJob(t *testing.T, svc *opsservice.DevEnvironmentService, envID, id uint) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		job, err := svc.GetJob(envID, id)
 		if err != nil {

@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,7 +25,7 @@ func IsSSHKeyAuth(authType string) bool {
 	return strings.ToLower(strings.TrimSpace(authType)) == "ssh_key"
 }
 
-// SSHAuthMethods builds auth methods for SSH: PEM private key, password, and/or SSH agent when key auth has no embedded key.
+// SSHAuthMethods builds auth methods for SSH: PEM private key, password, and/or SSH agent / default ~/.ssh keys when key auth has no embedded key.
 func SSHAuthMethods(server ServerInfo) ([]ssh.AuthMethod, error) {
 	var authMethods []ssh.AuthMethod
 
@@ -42,12 +43,43 @@ func SSHAuthMethods(server ServerInfo) ([]ssh.AuthMethod, error) {
 
 	if IsSSHKeyAuth(server.AuthType) && server.PrivateKey == "" {
 		authMethods = append(authMethods, sshAgentAuthMethods()...)
+		authMethods = append(authMethods, defaultUserKeyAuthMethods()...)
 	}
 
 	if len(authMethods) == 0 {
-		return nil, fmt.Errorf("no auth method available (password, private key, or SSH agent required)")
+		return nil, fmt.Errorf("no auth method available (password, private key, SSH agent, or ~/.ssh default keys required)")
 	}
 	return authMethods, nil
+}
+
+func defaultUserKeyAuthMethods() []ssh.AuthMethod {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	sshDir := filepath.Join(home, ".ssh")
+	keyFiles := []string{
+		"id_ed25519",
+		"id_rsa",
+		"id_ecdsa",
+		"id_dsa",
+	}
+	var signers []ssh.Signer
+	for _, kf := range keyFiles {
+		keyPath := filepath.Join(sshDir, kf)
+		data, err := os.ReadFile(keyPath)
+		if err != nil {
+			continue
+		}
+		signer, err := parsePrivateKey(string(data))
+		if err == nil {
+			signers = append(signers, signer)
+		}
+	}
+	if len(signers) == 0 {
+		return nil
+	}
+	return []ssh.AuthMethod{ssh.PublicKeys(signers...)}
 }
 
 func sshAgentAuthMethods() []ssh.AuthMethod {

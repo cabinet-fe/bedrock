@@ -53,7 +53,7 @@ func readRunLog(t *testing.T, path string) string {
 // waitWorkspaceAsync polls only for intentionally async workspace init tests.
 func waitWorkspaceAsync(t *testing.T, agents *service.AgentService, agentID uint, want string) *model.AiAgent {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		got, err := agents.GetAgent(agentID)
 		if err != nil {

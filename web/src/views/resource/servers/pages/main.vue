@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: "ResourceServers" });
 
-import { reactive, ref, useTemplateRef, watch } from "vue";
+import { computed, reactive, ref, useTemplateRef, watch } from "vue";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
 
@@ -47,6 +47,13 @@ const AUTH_OPTIONS = [
   { label: "Deploy Agent", value: "agent" },
 ];
 
+const AUTH_TIPS: Record<string, string> = {
+  password: "密码表单直填，AES-GCM 加密存于服务器记录",
+  ssh_key:
+    "请在运行 Bedrock 的主机配置私钥（~/.ssh 默认私钥或 ssh-agent），目标机已授权对应公钥；应用内不存储私钥",
+  agent: "经远端 Deploy Agent；需填写 Agent URL，可选绑定 Agent 凭证",
+};
+
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
 const listRef = useTemplateRef("list");
@@ -60,7 +67,7 @@ const form = reactive({
   port: 22,
   os_type: "linux",
   username: "",
-  auth_type: "password",
+  auth_type: "",
   password: "",
   agent_url: "",
   agent_credential_id: undefined as number | undefined,
@@ -68,10 +75,16 @@ const form = reactive({
   tags: "",
 });
 
-const formGroups = [
-  { key: "connection", title: "连接信息" },
-  { key: "auth", title: "认证" },
-];
+const formGroups = computed(() =>
+  form.auth_type
+    ? [
+        { key: "connection", title: "基本信息" },
+        { key: "auth", title: "认证" },
+      ]
+    : [{ key: "connection", title: "基本信息" }],
+);
+
+const showHostFields = computed(() => !!form.auth_type && form.auth_type !== "agent");
 
 const columns = defineProTableColumns([
   { key: "name", name: "名称" },
@@ -110,7 +123,7 @@ function openCreate() {
     port: 22,
     os_type: "linux",
     username: "",
-    auth_type: "password",
+    auth_type: "",
     password: "",
     agent_url: "",
     agent_credential_id: undefined,
@@ -250,13 +263,6 @@ function authLabel(t: string) {
     >
       <template #group:connection>
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
-        <u-input
-          v-if="form.auth_type !== 'agent'"
-          label="主机"
-          field="host"
-          :rules="{ required: '必填' }"
-        />
-        <u-number-input v-if="form.auth_type !== 'agent'" label="端口" field="port" />
         <u-select
           label="OS"
           field="os_type"
@@ -265,22 +271,19 @@ function authLabel(t: string) {
             { label: 'windows', value: 'windows' },
           ]"
         />
-        <u-input label="描述" field="description" />
-      </template>
-      <template #group:auth>
         <u-select
           label="认证方式"
           field="auth_type"
           :options="AUTH_OPTIONS"
-          :tips="
-            form.auth_type === 'ssh_key'
-              ? '请在运行 Bedrock 的主机预先配置私钥（SSH_AUTH_SOCK / ssh-agent），目标机已授权对应公钥；应用内不存储私钥'
-              : form.auth_type === 'agent'
-                ? '经远端 Deploy Agent；需填写 Agent URL，可选绑定 Agent 凭证'
-                : '密码表单直填，AES-GCM 加密存于服务器记录'
-          "
+          :rules="{ required: '必填' }"
+          :tips="AUTH_TIPS[form.auth_type]"
         />
-        <u-input v-if="form.auth_type !== 'agent'" label="用户名" field="username" />
+        <u-input v-if="showHostFields" label="主机" field="host" :rules="{ required: '必填' }" />
+        <u-number-input v-if="showHostFields" label="端口" field="port" />
+        <u-input label="描述" field="description" />
+      </template>
+      <template #group:auth>
+        <u-input v-if="showHostFields" label="用户名" field="username" />
         <u-password-input
           v-if="form.auth_type === 'password'"
           :label="editing ? '密码（留空不改）' : '密码'"
