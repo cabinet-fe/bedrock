@@ -581,6 +581,12 @@ export interface DevEnvironment {
   sources?: DevEnvInstallSource[];
 }
 
+export interface VersionCatalog {
+  items: string[];
+  catalog_url: string;
+  error?: string;
+}
+
 export interface DevEnvInstallSource {
   id: number;
   environment_id: number;

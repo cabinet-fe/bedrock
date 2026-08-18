@@ -27,6 +27,7 @@ func NewCLIHandler(svc *service.CLIService, perm *rbacservice.PermissionService)
 func (h *CLIHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	clis := rg.Group("/resource/clis", authMW)
 	clis.GET("", rbacmw.RequirePermission(h.perm, "ops_dev_environments:view"), h.List)
+	clis.GET("/:key/versions", rbacmw.RequirePermission(h.perm, "ops_dev_environments:view"), h.ListVersions)
 	clis.POST("/:key/detect", rbacmw.RequirePermission(h.perm, "ops_dev_environments:execute"), h.Detect)
 	clis.POST("/:key/check-update", rbacmw.RequirePermission(h.perm, "ops_dev_environments:execute"), h.CheckUpdate)
 	clis.POST("/:key/install", rbacmw.RequirePermission(h.perm, "ops_dev_environments:execute"), h.Install)
@@ -60,6 +61,15 @@ func (h *CLIHandler) Detect(c *gin.Context) {
 
 func (h *CLIHandler) CheckUpdate(c *gin.Context) {
 	result, err := h.svc.CheckUpdate(c.Request.Context(), c.Param("key"))
+	if err != nil {
+		writeCLIError(c, err)
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func (h *CLIHandler) ListVersions(c *gin.Context) {
+	result, err := h.svc.ListVersions(c.Request.Context(), c.Param("key"))
 	if err != nil {
 		writeCLIError(c, err)
 		return

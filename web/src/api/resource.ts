@@ -10,6 +10,7 @@ import type {
   PersonalAccessToken,
   Repository,
   Server,
+  VersionCatalog,
 } from "./types";
 
 export type ListQuery = Record<string, string | number | boolean | undefined | null>;
@@ -166,6 +167,13 @@ export async function checkCLIUpdate(key: string): Promise<CliCheckUpdateResult>
     {},
     { timeout: 60_000 },
   );
+  return body;
+}
+
+export async function listCLIVersions(key: string): Promise<VersionCatalog> {
+  const { body } = await http.get<VersionCatalog>(`/resource/clis/${key}/versions`, {
+    timeout: 60_000,
+  });
   return body;
 }
 

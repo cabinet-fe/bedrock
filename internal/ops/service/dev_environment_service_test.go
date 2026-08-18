@@ -193,12 +193,15 @@ func TestSeededGoDevEnvironmentLifecycleExecutesWithStubbedManagers(t *testing.T
 
 	stubDir := t.TempDir()
 	logPath := filepath.Join(stubDir, "dev-env-lifecycle.log")
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("MISE_DATA_DIR", filepath.Join(fakeHome, ".local", "share", "mise"))
 	writeStubExecutable(t, filepath.Join(stubDir, "go"), `#!/bin/sh
 printf 'go %s\n' "$*" >> "$DEV_ENV_LIFECYCLE_LOG"
 printf 'go version go1.23.4 stub/amd64\n'
 `)
-	writeStubExecutable(t, filepath.Join(stubDir, "asdf"), `#!/bin/sh
-printf 'asdf %s\n' "$*" >> "$DEV_ENV_LIFECYCLE_LOG"
+	writeStubExecutable(t, filepath.Join(stubDir, "mise"), `#!/bin/sh
+printf 'mise %s\n' "$*" >> "$DEV_ENV_LIFECYCLE_LOG"
 `)
 	t.Setenv("DEV_ENV_LIFECYCLE_LOG", logPath)
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -240,11 +243,9 @@ printf 'asdf %s\n' "$*" >> "$DEV_ENV_LIFECYCLE_LOG"
 	logs := string(logContent)
 	for _, want := range []string{
 		"go version",
-		"asdf plugin add golang https://github.com/asdf-community/asdf-golang.git",
-		"asdf install golang 1.23.4",
-		"asdf plugin update golang",
-		"asdf uninstall golang 1.23.4",
-		"asdf set -u golang 1.23.4",
+		"mise install go@1.23.4",
+		"mise use -g go@1.23.4",
+		"mise uninstall go@1.23.4",
 	} {
 		if !strings.Contains(logs, want+"\n") {
 			t.Fatalf("seeded Go lifecycle did not invoke %q:\n%s", want, logs)
@@ -280,12 +281,78 @@ func TestSeededGoDevEnvironmentUsesRealLifecycleScripts(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Go %s script: %v", operation, err)
 		}
-		if !strings.Contains(script, "asdf") || strings.Contains(script, "go{{version}} version") {
-			t.Fatalf("Go %s script is a placeholder: %q", operation, script)
+		if !strings.Contains(script, "mise") || strings.Contains(script, "asdf") ||
+			strings.Contains(script, "fnm") || strings.Contains(script, "sdkman") ||
+			strings.Contains(script, "pyenv") || strings.Contains(script, "go{{version}} version") {
+			t.Fatalf("Go %s script is not mise-managed: %q", operation, script)
 		}
+	}
+	if !strings.Contains(goEnv.VersionsScript, "mise ls-remote go") {
+		t.Fatalf("Go versions script must use mise: %q", goEnv.VersionsScript)
+	}
+	if strings.Contains(goEnv.Description, "asdf") {
+		t.Fatalf("Go description still mentions asdf: %q", goEnv.Description)
 	}
 	if len(goEnv.Sources) == 0 {
 		t.Fatal("seeded Go environment must have per-environment install sources")
+	}
+}
+
+func TestListVersionsParsesScriptAndReturnsCatalog(t *testing.T) {
+	repo := newOpsRepository(t)
+	svc := NewDevEnvironmentService(repo)
+	env, err := svc.CreateCustom(DevEnvironmentInput{
+		Name: "versions-test", Executable: "go",
+		VersionsScript: "printf 'mise WARN skip\\n1.21.0\\n1.22.0\\n1.23.4\\n'",
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.ListVersions(env.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CatalogURL != "https://go.dev/dl/" {
+		t.Fatalf("catalog = %q", got.CatalogURL)
+	}
+	if got.Error != "" {
+		t.Fatalf("unexpected error: %s", got.Error)
+	}
+	if strings.Join(got.Items, ",") != "1.23.4,1.22.0,1.21.0" {
+		t.Fatalf("items = %#v", got.Items)
+	}
+}
+
+func TestSeededBuiltinsUseMiseNotLegacyManagers(t *testing.T) {
+	repo := newOpsRepository(t)
+	items, err := repo.ListEnvironments()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
+	legacy := []string{"asdf", "fnm", "sdkman", "SDKMAN", "pyenv"}
+	for _, item := range items {
+		if item.Kind != model.DevEnvBuiltin {
+			continue
+		}
+		found[item.Name] = true
+		blob := strings.Join([]string{
+			item.Description, item.DetectScript, item.InstallScript, item.UpgradeScript,
+			item.UninstallScript, item.VersionsScript, item.SwitchScript,
+		}, "\n")
+		if !strings.Contains(blob, "mise") {
+			t.Fatalf("%s scripts must use mise", item.Name)
+		}
+		for _, word := range legacy {
+			if strings.Contains(blob, word) {
+				t.Fatalf("%s still mentions %s:\n%s", item.Name, word, blob)
+			}
+		}
+	}
+	for _, name := range []string{"Go", "Node.js", "Java", "Python"} {
+		if !found[name] {
+			t.Fatalf("missing builtin %s", name)
+		}
 	}
 }
 

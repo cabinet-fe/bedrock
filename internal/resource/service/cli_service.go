@@ -128,7 +128,7 @@ func (s *CLIService) CheckUpdate(ctx context.Context, key string) (*CheckUpdateR
 	}
 	pkgName := npmPackageFromTemplate(cli.InstallTemplate)
 	if pkgName == "" {
-		return nil, errors.New("该 CLI 未配置 npm 安装包")
+		return nil, errors.New("该 CLI 未配置 npm 包")
 	}
 	result := &CheckUpdateResult{
 		Package:        pkgName,
@@ -302,61 +302,6 @@ func needsSource(operation, template string) bool {
 	return (operation == "install" || operation == "upgrade") && strings.Contains(template, "{{base_url}}")
 }
 
-var npmPackagePattern = regexp.MustCompile(`npm install -g ([@A-Za-z0-9_./-]+)`)
-
-func npmPackageFromTemplate(template string) string {
-	m := npmPackagePattern.FindStringSubmatch(template)
-	if len(m) < 2 {
-		return ""
-	}
-	return m[1]
-}
-
-func (s *CLIService) queryLatestNPMVersion(ctx context.Context, key, pkgName string) (latest, registry, log string, err error) {
-	sources, listErr := s.repo.ListEnabledSources(key)
-	if listErr != nil {
-		return "", "", "", listErr
-	}
-	var buf strings.Builder
-	try := func(baseURL string) (string, error) {
-		cmd := "command -v npm >/dev/null 2>&1 || { echo 'npm is required'; exit 1; }; npm view " + shellQuote(pkgName) + " version"
-		if baseURL != "" {
-			cmd += " --registry " + shellQuote(baseURL)
-		}
-		out, runErr := executeShell(ctx, cmd)
-		buf.WriteString(out)
-		if runErr != nil {
-			return "", runErr
-		}
-		ver := normalizeCLIVersion(firstNonEmptyLine(out))
-		if ver == "" {
-			return "", errors.New("未能解析最新版本")
-		}
-		return ver, nil
-	}
-	if len(sources) == 0 {
-		ver, runErr := try("")
-		if runErr != nil {
-			return "", "", buf.String(), runErr
-		}
-		return ver, "", buf.String(), nil
-	}
-	var lastErr error
-	for _, source := range sources {
-		buf.WriteString(fmt.Sprintf("trying source %q (priority %d)\n", source.Name, source.Priority))
-		ver, runErr := try(source.BaseURL)
-		if runErr == nil {
-			return ver, source.BaseURL, buf.String(), nil
-		}
-		lastErr = runErr
-		buf.WriteString(fmt.Sprintf("source %q failed: %v\n", source.Name, runErr))
-	}
-	if lastErr == nil {
-		lastErr = errors.New("所有安装源均失败")
-	}
-	return "", "", buf.String(), lastErr
-}
-
 func firstNonEmptyLine(output string) string {
 	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
@@ -461,7 +406,7 @@ func executeShell(ctx context.Context, command string) (string, error) {
 		err := cmd.Run()
 		return buf.String(), err
 	}
-	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
+	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf

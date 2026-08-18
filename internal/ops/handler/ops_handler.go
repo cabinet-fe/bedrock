@@ -37,6 +37,7 @@ func (h *OpsHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc)
 	g.PUT("/dev-environments/:id", rbacmw.RequirePermission(h.perm, "ops_dev_environments:update"), h.UpdateEnvironment)
 	g.DELETE("/dev-environments/:id", rbacmw.RequirePermission(h.perm, "ops_dev_environments:delete"), h.DeleteEnvironment)
 	g.POST("/dev-environments/:id/detect", rbacmw.RequirePermission(h.perm, "ops_dev_environments:execute"), h.DetectEnvironment)
+	g.GET("/dev-environments/:id/versions", rbacmw.RequirePermission(h.perm, "ops_dev_environments:view"), h.ListVersions)
 	g.POST("/dev-environments/:id/install", rbacmw.RequirePermission(h.perm, "ops_dev_environments:execute"), h.EnqueueInstall)
 	g.POST("/dev-environments/:id/upgrade", rbacmw.RequirePermission(h.perm, "ops_dev_environments:execute"), h.EnqueueUpgrade)
 	g.POST("/dev-environments/:id/uninstall", rbacmw.RequirePermission(h.perm, "ops_dev_environments:execute"), h.EnqueueUninstall)
@@ -161,6 +162,19 @@ func (h *OpsHandler) DetectEnvironment(c *gin.Context) {
 		return
 	}
 	result, err := h.devEnvs.Detect(id)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func (h *OpsHandler) ListVersions(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	result, err := h.devEnvs.ListVersions(id)
 	if err != nil {
 		writeServiceError(c, err)
 		return

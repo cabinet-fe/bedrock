@@ -1,7 +1,14 @@
-// 在页面/面板内居中展示 u-empty
+// 在页面/面板内居中展示 u-empty（组件根节点是 inline-block）
 @mixin center($min-height: 200px) {
+  box-sizing: border-box;
   flex: 1;
-  display: grid;
-  place-items: center;
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   min-height: $min-height;
+  text-align: center;
 }

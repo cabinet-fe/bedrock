@@ -13,10 +13,13 @@ import {
   executeCLI,
   listCLIs,
   listCLISources,
+  listCLIVersions,
   updateCLISource,
 } from "@/api/resource";
-import type { CliInstallSource, CliRuntimeDefinition } from "@/api/types";
+import type { CliInstallSource, CliRuntimeDefinition, VersionCatalog } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
+
+import VersionPickDialog from "./version-pick-dialog.vue";
 
 type DetectState = {
   status: "loading" | "detected" | "missing" | "error";
@@ -47,7 +50,7 @@ const sourceForm = reactive({
 });
 
 const versionDialogOpen = ref(false);
-const versionForm = reactive({ version: "" });
+const versionInitial = ref("");
 const pendingVersionOp = ref<{
   item: CliRuntimeDefinition;
   operation: VersionOperation;
@@ -169,7 +172,7 @@ async function runOperation(
 
   if (!version) {
     pendingVersionOp.value = { item, operation };
-    versionForm.version = "";
+    versionInitial.value = "";
     versionDialogOpen.value = true;
     return;
   }
@@ -177,14 +180,17 @@ async function runOperation(
   await executeCliOperation(item, operation, version);
 }
 
-async function submitVersion() {
+async function loadPendingVersions(): Promise<VersionCatalog> {
   const pending = pendingVersionOp.value;
-  if (!pending) return;
-  const { item, operation } = pending;
-  const targetVersion = versionForm.version;
-  versionDialogOpen.value = false;
+  if (!pending) return { items: [], catalog_url: "" };
+  return listCLIVersions(pending.item.key);
+}
+
+function submitVersion(targetVersion: string) {
+  const pending = pendingVersionOp.value;
   pendingVersionOp.value = null;
-  void executeCliOperation(item, operation, targetVersion);
+  if (!pending) return;
+  void executeCliOperation(pending.item, pending.operation, targetVersion);
 }
 
 async function executeCliOperation(
@@ -365,7 +371,7 @@ onMounted(() => {
             </u-action-group>
           </li>
         </ul>
-        <p v-else class="empty">尚未配置安装源，安装时将使用 npm 默认 Registry</p>
+        <p v-else class="empty">尚未配置安装源，安装时使用默认 npm Registry</p>
       </div>
       <template #footer="{ close }">
         <u-button type="primary" @click="close()">关闭</u-button>
@@ -398,23 +404,18 @@ onMounted(() => {
       />
     </FormDialog>
 
-    <FormDialog
+    <VersionPickDialog
       v-model="versionDialogOpen"
       :title="versionDialogTitle"
-      :model="versionForm"
-      confirm-text="确认"
-      label-width="100px"
-      style="width: 480px"
+      :initial-version="versionInitial"
+      :load-versions="loadPendingVersions"
       @submit="submitVersion"
-    >
-      <template #prepend>
-        <p class="form-tip">可留空，将使用安装源默认版本。</p>
-      </template>
-      <u-input label="目标版本" field="version" placeholder="例如 1.0.0" />
-    </FormDialog>
+    />
 
     <u-dialog v-model="failureDialogOpen" :title="failureTitle" style="width: 760px">
-      <pre class="failure-log">{{ failureDetail }}</pre>
+      <u-scroll height="55vh" class="failure-log-scroll">
+        <pre class="failure-log">{{ failureDetail }}</pre>
+      </u-scroll>
       <template #footer="{ close }">
         <u-button type="primary" @click="close()">关闭</u-button>
       </template>
@@ -429,12 +430,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-.form-tip {
-  margin: 0 0 4px;
-  font-size: 13px;
-  color: fn.use-var(text-color, secondary);
-  line-height: 1.5;
+  min-width: 0;
 }
 .risk {
   margin: 0;
@@ -444,11 +440,13 @@ onMounted(() => {
 }
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+  min-width: 0;
 }
 .cli-card {
+  height: 100%;
   min-width: 0;
 }
 .card-head {
@@ -539,14 +537,14 @@ onMounted(() => {
   display: block;
   word-break: break-all;
 }
+.failure-log-scroll {
+  border-radius: fn.use-var(radius, small);
+  background: fn.use-var(bg-color, bottom);
+}
 .failure-log {
-  max-height: 55vh;
   margin: 0;
   padding: 12px;
-  overflow: auto;
-  border-radius: fn.use-var(radius, small);
   color: fn.use-var(text-color, main);
-  background: fn.use-var(bg-color, bottom);
   white-space: pre-wrap;
 }
 </style>

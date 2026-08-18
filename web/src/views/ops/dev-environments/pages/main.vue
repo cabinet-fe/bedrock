@@ -16,35 +16,19 @@ import {
   getDevEnvJobLogs,
   listDevEnvJobs,
   listDevEnvironments,
+  listDevEnvVersions,
   pingDevEnvSource,
   retryDevEnvJob,
   updateDevEnvSource,
   updateDevEnvironment,
 } from "@/api/ops";
-import type { DevEnvInstallSource, DevEnvJob, DevEnvironment } from "@/api/types";
-import defaultIcon from "@/assets/dev-env/default.svg";
-import goIcon from "@/assets/dev-env/go.svg";
-import javaIcon from "@/assets/dev-env/java.svg";
-import nodeIcon from "@/assets/dev-env/nodejs.svg";
-import pythonIcon from "@/assets/dev-env/python.svg";
+import type { DevEnvInstallSource, DevEnvJob, DevEnvironment, VersionCatalog } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import { usePermission } from "@/composables/use-permission";
 
 import AgentCliSection from "../components/agent-cli-section.vue";
-
-type DetectState = {
-  status: "loading" | "detected" | "missing" | "error";
-  version?: string;
-  output?: string;
-};
-
-const ENV_ICONS: Record<string, string> = {
-  go: goIcon,
-  node: nodeIcon,
-  java: javaIcon,
-  python: pythonIcon,
-  python3: pythonIcon,
-};
+import EnvCard, { type DetectState } from "../components/env-card.vue";
+import VersionPickDialog from "../components/version-pick-dialog.vue";
 
 const { hasPermission } = usePermission();
 
@@ -68,7 +52,7 @@ const jobLog = ref("");
 const jobLogTitle = ref("");
 const viewedJob = ref<{ envId: number; jobId: number } | null>(null);
 
-const pendingJobs = new Map<number, number>(); // jobId -> envId
+const pendingJobs = new Map<number, number>();
 let jobPollTimer: ReturnType<typeof setInterval> | undefined;
 
 const envForm = reactive({
@@ -99,11 +83,8 @@ const sourceForm = reactive({
 type VersionOperation = "install" | "upgrade" | "switch";
 
 const versionDialogOpen = ref(false);
-const versionForm = reactive({ version: "" });
-const pendingVersionOp = ref<{
-  item: DevEnvironment;
-  operation: VersionOperation;
-} | null>(null);
+const versionInitial = ref("");
+const pendingVersionOp = ref<{ item: DevEnvironment; operation: VersionOperation } | null>(null);
 
 const scriptsReadOnly = computed(() => scriptsEnv.value?.kind === "builtin");
 const sourcesEnv = computed(
@@ -122,17 +103,6 @@ const versionDialogTitle = computed(() => {
 
 function showError(error: unknown) {
   message.error(error instanceof Error ? error.message : "操作失败");
-}
-
-function envIcon(item: DevEnvironment): string {
-  const exe = item.executable.toLowerCase();
-  if (ENV_ICONS[exe]) return ENV_ICONS[exe];
-  const name = item.name.toLowerCase();
-  if (name.includes("node")) return nodeIcon;
-  if (name.includes("python")) return pythonIcon;
-  if (name.includes("java")) return javaIcon;
-  if (name === "go" || name.includes("golang")) return goIcon;
-  return defaultIcon;
 }
 
 function parseDetectedVersion(output: string): string {
@@ -180,7 +150,7 @@ async function refreshLatestJob(envId: number) {
       trackJob(envId, job.id);
     }
   } catch {
-    // Supplemental; card still renders without a job.
+    // 卡片在没有任务时仍渲染占位
   }
 }
 
@@ -290,18 +260,21 @@ async function runOperation(
   }
 
   pendingVersionOp.value = { item, operation };
-  versionForm.version = item.default_version ?? "";
+  versionInitial.value = item.default_version ?? "";
   versionDialogOpen.value = true;
 }
 
-async function submitVersion() {
+async function loadPendingVersions(): Promise<VersionCatalog> {
   const pending = pendingVersionOp.value;
-  if (!pending) return;
-  const { item, operation } = pending;
-  const version = versionForm.version;
-  versionDialogOpen.value = false;
+  if (!pending) return { items: [], catalog_url: "" };
+  return listDevEnvVersions(pending.item.id);
+}
+
+function submitVersion(version: string) {
+  const pending = pendingVersionOp.value;
   pendingVersionOp.value = null;
-  void enqueueOperation(item, operation, version);
+  if (!pending) return;
+  void enqueueOperation(pending.item, pending.operation, version);
 }
 
 async function enqueueOperation(
@@ -429,7 +402,7 @@ async function pollPendingJobs() {
       }
     }
   } catch {
-    // Transient poll failures should not stop monitoring.
+    // 轮询失败不中断监控
   }
   if (pendingJobs.size === 0) stopJobPolling();
 }
@@ -441,20 +414,6 @@ function stopJobPolling() {
   }
 }
 
-function versionTagType(state?: DetectState) {
-  if (state?.status === "detected") return "success";
-  if (state?.status === "missing") return "warning";
-  if (state?.status === "error") return "danger";
-  return "info";
-}
-
-function versionTagLabel(state?: DetectState) {
-  if (!state || state.status === "loading") return "检测中…";
-  if (state.status === "detected") return state.version || "已安装";
-  if (state.status === "missing") return "未安装";
-  return "检测失败";
-}
-
 onMounted(() => {
   void reload();
 });
@@ -463,91 +422,48 @@ onUnmounted(stopJobPolling);
 
 <template>
   <div class="dev-env-page">
-    <section v-loading="loading" class="page-section">
-      <div class="section-head">
-        <h2 class="section-title">开发语言</h2>
-        <u-button
-          v-if="hasPermission('ops_dev_environments:create')"
-          type="primary"
-          @click="openCreateEnv"
-        >
-          新建自定义环境
-        </u-button>
-      </div>
+    <u-scroll class="dev-env-page__scroll">
+      <section v-loading="loading" class="page-section">
+        <div class="section-head">
+          <h2 class="section-title">开发语言</h2>
+          <u-button
+            v-if="hasPermission('ops_dev_environments:create')"
+            type="primary"
+            @click="openCreateEnv"
+          >
+            新建自定义环境
+          </u-button>
+        </div>
 
-      <div class="cards">
-        <u-card v-for="item in environments" :key="item.id" class="env-card">
-          <u-card-content>
-            <header class="card-head">
-              <div class="title-row">
-                <img
-                  class="lang-icon"
-                  :src="envIcon(item)"
-                  :alt="item.name"
-                  width="28"
-                  height="28"
-                />
-                <h3>{{ item.name }}</h3>
-                <u-tag size="small" :type="versionTagType(detectStates[item.id])">
-                  {{ versionTagLabel(detectStates[item.id]) }}
-                </u-tag>
-              </div>
-              <p class="meta">
-                <span>{{ item.kind === "builtin" ? "内置" : "自定义" }}</span>
-                <span>{{ item.executable }}</span>
-                <span v-if="item.default_version">默认 {{ item.default_version }}</span>
-              </p>
-              <p v-if="item.description" class="desc">{{ item.description }}</p>
-              <div class="actions">
-                <u-action-group :max="5">
-                  <u-action @run="openSourcesManager(item)">设置</u-action>
-                  <u-action @run="runDetect(item)">检测</u-action>
-                  <u-action @run="runOperation(item, 'install')">安装</u-action>
-                  <u-action @run="runOperation(item, 'upgrade')">升级</u-action>
-                  <u-action @run="runOperation(item, 'uninstall')">卸载</u-action>
-                  <u-action @run="runOperation(item, 'switch')">切版本</u-action>
-                  <u-action @run="openScripts(item)">脚本</u-action>
-                  <u-action v-if="item.kind === 'custom'" @run="openEditEnv(item)">编辑</u-action>
-                  <u-action v-if="item.kind === 'custom'" type="danger" @run="removeEnv(item)"
-                    >删除</u-action
-                  >
-                </u-action-group>
-              </div>
-            </header>
+        <div class="cards">
+          <EnvCard
+            v-for="item in environments"
+            :key="item.id"
+            :item
+            :detect="detectStates[item.id]"
+            :job="latestJobs[item.id]"
+            @sources="openSourcesManager(item)"
+            @detect="runDetect(item)"
+            @install="runOperation(item, 'install')"
+            @upgrade="runOperation(item, 'upgrade')"
+            @uninstall="runOperation(item, 'uninstall')"
+            @switch="runOperation(item, 'switch')"
+            @scripts="openScripts(item)"
+            @edit="openEditEnv(item)"
+            @remove="removeEnv(item)"
+            @log="latestJobs[item.id] && showJobLog(item.id, latestJobs[item.id]!)"
+            @retry="latestJobs[item.id] && retryJob(item.id, latestJobs[item.id]!)"
+          />
+        </div>
+      </section>
 
-            <section v-if="latestJobs[item.id]" class="block">
-              <div class="block-head">
-                <h4>最近任务</h4>
-                <div class="actions">
-                  <span class="job-status">{{ latestJobs[item.id]?.status || "暂无任务" }}</span>
-                  <u-action-group :max="2">
-                    <u-action @run="showJobLog(item.id, latestJobs[item.id]!)">日志</u-action>
-                    <u-action
-                      v-if="['failed', 'interrupted'].includes(latestJobs[item.id]?.status || '')"
-                      @run="retryJob(item.id, latestJobs[item.id]!)"
-                      >重试</u-action
-                    >
-                  </u-action-group>
-                </div>
-              </div>
-              <p class="job-summary">
-                {{ latestJobs[item.id]?.operation }}
-                <template v-if="latestJobs[item.id]?.requested_version">
-                  · {{ latestJobs[item.id]?.requested_version }}
-                </template>
-              </p>
-            </section>
-          </u-card-content>
-        </u-card>
-      </div>
-    </section>
-
-    <section class="page-section">
-      <div class="section-head">
-        <h2 class="section-title">智能体 CLI</h2>
-      </div>
-      <AgentCliSection />
-    </section>
+      <section class="page-section">
+        <div class="section-head">
+          <h2 class="section-title">智能体 CLI</h2>
+        </div>
+        <AgentCliSection />
+      </section>
+    </u-scroll>
 
     <FormDialog
       v-model="envDialogOpen"
@@ -666,23 +582,18 @@ onUnmounted(stopJobPolling);
       />
     </FormDialog>
 
-    <FormDialog
+    <VersionPickDialog
       v-model="versionDialogOpen"
       :title="versionDialogTitle"
-      :model="versionForm"
-      confirm-text="确认"
-      label-width="100px"
-      style="width: 480px"
+      :initial-version="versionInitial"
+      :load-versions="loadPendingVersions"
       @submit="submitVersion"
-    >
-      <template #prepend>
-        <p class="form-tip">可留空，将使用环境默认版本。</p>
-      </template>
-      <u-input label="目标版本" field="version" placeholder="例如 1.22.0" />
-    </FormDialog>
+    />
 
     <u-dialog v-model="logViewerOpen" :title="jobLogTitle" style="width: 760px">
-      <pre class="job-log">{{ jobLog || "暂无日志" }}</pre>
+      <u-scroll height="55vh" class="job-log-scroll">
+        <pre class="job-log">{{ jobLog || "暂无日志" }}</pre>
+      </u-scroll>
     </u-dialog>
   </div>
 </template>
@@ -691,14 +602,31 @@ onUnmounted(stopJobPolling);
 @use "pkg:@veltra/styles/functions" as fn;
 
 .dev-env-page {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.dev-env-page__scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+
+  :deep(.u-scroll__content) {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    min-width: 0;
+  }
 }
 .page-section {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 .section-head {
   display: flex;
@@ -714,66 +642,18 @@ onUnmounted(stopJobPolling);
 }
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
   gap: 16px;
-  align-items: start;
-}
-.env-card {
+  align-items: stretch;
   min-width: 0;
 }
-.card-head {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-.title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.lang-icon {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-.card-head h3 {
-  margin: 0;
-  font-size: 16px;
-  line-height: 1.4;
-}
-.actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-.meta,
-.desc,
 .empty,
-.job-summary,
 .source-url,
 .source-meta {
   margin: 4px 0 0;
   color: fn.use-var(text-color, second);
   font-size: 13px;
   line-height: 1.4;
-}
-.meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: fn.use-var(border, muted);
 }
 .block-head {
   display: flex;
@@ -823,16 +703,6 @@ onUnmounted(stopJobPolling);
   display: block;
   word-break: break-all;
 }
-.job-status {
-  font-size: 12px;
-  color: fn.use-var(text-color, main);
-}
-.form-tip {
-  margin: 0 0 4px;
-  font-size: 13px;
-  color: fn.use-var(text-color, secondary);
-  line-height: 1.5;
-}
 .risk-warning {
   margin-bottom: 12px;
   padding: 10px;
@@ -841,14 +711,14 @@ onUnmounted(stopJobPolling);
   background: fn.use-var(color, warning, light, 9);
   line-height: 1.6;
 }
+.job-log-scroll {
+  border-radius: fn.use-var(radius, small);
+  background: fn.use-var(bg-color, bottom);
+}
 .job-log {
-  max-height: 55vh;
   margin: 0;
   padding: 12px;
-  overflow: auto;
-  border-radius: fn.use-var(radius, small);
   color: fn.use-var(text-color, main);
-  background: fn.use-var(bg-color, bottom);
   white-space: pre-wrap;
 }
 </style>

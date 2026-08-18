@@ -132,6 +132,14 @@
 响应 200：data = DevEnvironmentDetectResult
 错误：403
 
+### GET /ops/dev-environments/{id}/versions — 列出可安装版本
+
+权限：`ops_dev_environments:view`
+路径参数：id*: integer
+响应 200：data = DevEnvironmentVersions
+错误：403
+说明：执行该环境的 `versions_script`（内置语言为 `mise ls-remote <tool>`）。脚本失败时仍返回 200，`items` 为空并带 `error`，同时提供 `catalog_url` 供手工查阅。版本列表最新在前，最多 120 条。
+
 ### POST /ops/dev-environments/{id}/install — 安装开发环境（异步）
 
 权限：`ops_dev_environments:execute`
@@ -448,6 +456,14 @@
 | --- | --- | --- | --- |
 | `detected` | `boolean` |  |  |
 | `output` | `string` |  |  |
+
+### DevEnvironmentVersions
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `items` | `string[]` |  | 可安装版本，最新在前 |
+| `catalog_url` | `string` |  | 官方或 mise 版本目录链接 |
+| `error` | `string` |  | 列出失败时的原因；有值时 `items` 可能为空 |
 
 ### DevEnvironmentInput
 

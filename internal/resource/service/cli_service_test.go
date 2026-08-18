@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,6 +98,26 @@ func TestDetectExtractsVersionNotPath(t *testing.T) {
 	}
 	if strings.Contains(result.Version, "/") {
 		t.Fatalf("version looks like path: %q", result.Version)
+	}
+}
+
+func TestDetectFindsPATHBinaryWithoutMise(t *testing.T) {
+	_, cli := setupCLI(t)
+	stubDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stubDir, "codex"), []byte("#!/bin/sh\necho 'codex-cli 3.1.4'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	result, err := cli.Detect("codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Detected {
+		t.Fatalf("expected PATH binary to be detected, got %+v", result)
+	}
+	if result.Version != "3.1.4" {
+		t.Fatalf("version=%q output=%q", result.Version, result.Output)
 	}
 }
 
@@ -218,24 +239,33 @@ func TestExecuteDefaultRegistryWhenNoSources(t *testing.T) {
 	}
 }
 
-func TestCLINpmTemplatesUseRegistryFlag(t *testing.T) {
+func TestCLINPMTemplates(t *testing.T) {
 	_, cli := setupCLI(t)
 	items, err := cli.ListCLIs()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range items {
-		if !strings.Contains(item.InstallTemplate, "npm install -g") {
-			t.Fatalf("%s install should use npm: %s", item.Key, item.InstallTemplate)
+		if strings.Contains(item.DetectCommand, "mise") ||
+			strings.Contains(item.InstallTemplate, "mise") ||
+			strings.Contains(item.UpgradeTemplate, "mise") ||
+			strings.Contains(item.UninstallTemplate, "mise") {
+			t.Fatalf("%s still uses mise: detect=%q install=%q", item.Key, item.DetectCommand, item.InstallTemplate)
 		}
-		if !strings.Contains(item.InstallTemplate, `--registry $base`) {
+		if !strings.Contains(item.DetectCommand, "command -v "+item.BinaryName) {
+			t.Fatalf("%s detect should use PATH binary: %s", item.Key, item.DetectCommand)
+		}
+		if !strings.Contains(item.InstallTemplate, "npm install -g") {
+			t.Fatalf("%s install should use npm -g: %s", item.Key, item.InstallTemplate)
+		}
+		if !strings.Contains(item.UpgradeTemplate, "npm install -g") {
+			t.Fatalf("%s upgrade should use npm -g: %s", item.Key, item.UpgradeTemplate)
+		}
+		if !strings.Contains(item.InstallTemplate, "--registry") {
 			t.Fatalf("%s install should wire --registry: %s", item.Key, item.InstallTemplate)
 		}
-		if !strings.Contains(item.UpgradeTemplate, `--registry $base`) {
-			t.Fatalf("%s upgrade should wire --registry: %s", item.Key, item.UpgradeTemplate)
-		}
 		if !strings.Contains(item.UninstallTemplate, "npm uninstall -g") {
-			t.Fatalf("%s uninstall should use npm: %s", item.Key, item.UninstallTemplate)
+			t.Fatalf("%s uninstall should use npm -g: %s", item.Key, item.UninstallTemplate)
 		}
 	}
 }
@@ -248,7 +278,7 @@ func TestCheckUpdateRequiresNpmPackage(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := cli.CheckUpdate(context.Background(), "codex")
-	if err == nil || !strings.Contains(err.Error(), "npm") {
+	if err == nil || !strings.Contains(err.Error(), "npm 包") {
 		t.Fatalf("expected npm package error, got %v", err)
 	}
 }
@@ -285,6 +315,25 @@ func TestCheckUpdateReportsAvailability(t *testing.T) {
 	}
 	if result.CurrentVersion != "0.0.0" {
 		t.Fatalf("current: %s", result.CurrentVersion)
+	}
+}
+
+func TestListCLIVersionsWithoutPackage(t *testing.T) {
+	gdb, cli := setupCLI(t)
+	if err := gdb.Model(&model.CliRuntimeDefinition{}).
+		Where("key = ?", "codex").
+		Update("install_template", `echo no-npm`).Error; err != nil {
+		t.Fatal(err)
+	}
+	got, err := cli.ListVersions(context.Background(), "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Error == "" || !strings.Contains(got.Error, "npm 包") {
+		t.Fatalf("expected package error, got %+v", got)
+	}
+	if !strings.Contains(got.CatalogURL, "npmjs.com") {
+		t.Fatalf("catalog = %q", got.CatalogURL)
 	}
 }
 

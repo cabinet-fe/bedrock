@@ -121,7 +121,7 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 @use "@/lib/empty-center.scss" as empty;
 
 .run-panel {

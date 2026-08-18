@@ -1,5 +1,11 @@
 import { http } from "./http";
-import type { DevEnvInstallSource, DevEnvJob, DevEnvironment, PageResult } from "./types";
+import type {
+  DevEnvInstallSource,
+  DevEnvJob,
+  DevEnvironment,
+  PageResult,
+  VersionCatalog,
+} from "./types";
 
 type Query = Record<string, string | number | boolean | undefined>;
 
@@ -44,6 +50,13 @@ export async function detectDevEnvironment(
     `/ops/dev-environments/${id}/detect`,
     {},
   );
+  return body;
+}
+
+export async function listDevEnvVersions(id: number): Promise<VersionCatalog> {
+  const { body } = await http.get<VersionCatalog>(`/ops/dev-environments/${id}/versions`, {
+    timeout: 60_000,
+  });
   return body;
 }
 

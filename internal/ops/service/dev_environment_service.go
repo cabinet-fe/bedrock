@@ -498,6 +498,7 @@ func executeCommand(ctx context.Context, command string) (string, error) {
 	} else {
 		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	}
+	pkg.ApplyMisePath(cmd)
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	err := cmd.Run()

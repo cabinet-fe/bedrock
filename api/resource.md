@@ -162,12 +162,19 @@
 路径参数：key*: string
 响应 200：data = CliDetectResult
 
+### GET /resource/clis/{key}/versions — 列出 AI CLI 可安装版本
+
+权限：`ops_dev_environments:view`
+路径参数：key*: string
+响应 200：data = CliVersions
+说明：通过 `npm view <package> versions --json` 查询（按启用安装源传入 `--registry`）。失败时仍返回 200，`items` 为空并带 `error`，同时提供 npm 版本页 `catalog_url`。
+
 ### POST /resource/clis/{key}/check-update — 检查 AI CLI 更新
 
 权限：`ops_dev_environments:execute`
 路径参数：key*: string
 响应 200：data = CliCheckUpdateResult
-说明：通过 `npm view <package> version` 查询最新版本（按启用安装源优先级尝试 `--registry`，无源则用默认 Registry）。与已安装版本比较后返回是否可更新。未安装时 `update_available` 为 false。
+说明：通过 `npm view <package> version` 查询最新版本（按启用安装源传入 `--registry`）。与已安装版本比较后返回是否可更新。未安装时 `update_available` 为 false。
 
 ### POST /resource/clis/{key}/install — 安装 AI CLI
 
@@ -194,7 +201,7 @@
 权限：`ops_dev_environments:view`
 查询参数：cli_key: string
 响应 200
-说明：安装源为可选 npm Registry。安装/升级时将 `base_url` 拼为 `npm --registry`；未配置启用源时使用 npm 默认 Registry。
+说明：安装源为可选 npm Registry。安装/升级时作为 `npm --registry`；未配置启用源时使用默认 Registry。
 
 ### POST /resource/cli-sources — 创建 CLI 安装源
 
@@ -265,12 +272,20 @@ PAT 按 `user_id` 隔离：仅能列出/创建/删除本人令牌。Bearer PAT �
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `current_version` | `string` |  | 已安装版本；未安装为空 |
-| `latest_version` | `string` |  | Registry 上的最新版本 |
+| `latest_version` | `string` |  | npm 查询到的最新版本 |
 | `update_available` | `boolean` |  | `latest_version` 高于 `current_version` 时为 true |
 | `package` | `string` |  | npm 包名 |
 | `registry` | `string` |  | 成功查询所用的 Registry；默认源时为空 |
 | `output` | `string` |  | 查询过程日志 |
 | `error` | `string` |  | 查询失败时的错误信息 |
+
+### CliVersions
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `items` | `string[]` |  | 可安装版本，最新在前 |
+| `catalog_url` | `string` |  | npm 版本列表页 |
+| `error` | `string` |  | 列出失败时的原因；有值时 `items` 可能为空 |
 
 ### CliExecuteResult
 

@@ -1,19 +1,44 @@
 package service
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNpmPackageFromTemplate(t *testing.T) {
-	got := npmPackageFromTemplate(npmCLIInstallLike("@anthropic-ai/claude-code"))
+	got := npmPackageFromTemplate(npmInstallLike("@anthropic-ai/claude-code"))
 	if got != "@anthropic-ai/claude-code" {
 		t.Fatalf("got %q", got)
 	}
 	if npmPackageFromTemplate(`curl -fsSL "$base/install.sh" | sh`) != "" {
 		t.Fatal("expected empty for non-npm template")
 	}
+	if npmPackageFromTemplate(`mise use -g "npm:@openai/codex@$version"`) != "" {
+		t.Fatal("mise npm backend templates must not be parsed")
+	}
+	if npmPackageFromTemplate(`npm install -g leftover`) != "leftover" {
+		t.Fatal("expected leftover package name")
+	}
 }
 
-func npmCLIInstallLike(pkg string) string {
-	return `version="{{version}}"; base="{{base_url}}"; reg=""; [ -n "$base" ] && reg="--registry $base"; npm install -g ` + pkg + `${version:+@$version} $reg`
+func npmInstallLike(pkg string) string {
+	return `npm install -g ` + pkg + `${version:+@$version}`
+}
+
+func TestParseNPMViewVersions(t *testing.T) {
+	got, err := parseNPMViewVersions(`npm warn x
+["1.0.0","1.1.0","2.0.0"]
+`, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, ",") != "2.0.0,1.1.0,1.0.0" {
+		t.Fatalf("got %#v", got)
+	}
+	got, err = parseNPMViewVersions(`"3.4.5"`, 10)
+	if err != nil || len(got) != 1 || got[0] != "3.4.5" {
+		t.Fatalf("single version: %#v %v", got, err)
+	}
 }
 
 func TestIsNewerCLIVersion(t *testing.T) {
