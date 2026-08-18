@@ -1,6 +1,6 @@
 # 运维手册
 
-面向首次部署与日常运维。日常使用见「使用说明」，对外 HTTP 接口见「开放接口」；本页内容与仓库 `docs/ops-handbook.md` 保持一致。
+面向首次部署与日常运维。日常使用见「使用说明」，Deploy Agent 见同页「Deploy Agent」标签，对外 HTTP 接口见「开放接口」。
 
 ---
 
@@ -121,9 +121,7 @@ Release 将 `web/dist` 拷入 `cmd/server/dist` 后 `go build` embed；回滚步
 
 ## 6. Deploy Agent
 
-- 独立二进制，与 Server **同版本**发布：`bedrock-agent-linux-amd64` / `bedrock-agent-linux-arm64` 等。
-- 部署在目标机，不嵌入 Server；构建任务的「部署目标」通过它执行。
-- 升级 / 回退时与 Server 同步更换版本。
+独立二进制 `bedrock-agent`，部署在目标机，与 Server **同版本**发布。安装、配置、平台对接与排障见操作手册左侧 **「Deploy Agent」** 标签页。
 
 ---
 
@@ -137,10 +135,11 @@ Release 将 `web/dist` 拷入 `cmd/server/dist` 后 `go build` embed；回滚步
 
 ## 8. 日常排障
 
-| 现象            | 排查                                                                           |
-| --------------- | ------------------------------------------------------------------------------ |
-| 无法启动        | 检查数据库连通性配置（错误配置会拒绝启动）；查看启动日志中的 migration 错误    |
-| 升级后拒绝启动  | 多为旧 Agent 数据清理失败（见 5.1）；按错误提示修正路径/权限，勿跳过 migration |
-| 接口探活        | `curl -fsS http://host:8080/api/v1/health`                                     |
-| 构建 / 运行日志 | 页面内实时日志（WebSocket）；落盘日志见 `build.log_dir`                        |
-| 登录问题        | 确认种子超管未被改密；`jwt.secret` 变更会使全部令牌失效，需重新登录            |
+| 现象              | 排查                                                                           |
+| ----------------- | ------------------------------------------------------------------------------ |
+| 无法启动          | 检查数据库连通性配置（错误配置会拒绝启动）；查看启动日志中的 migration 错误    |
+| 升级后拒绝启动    | 多为旧 Agent 数据清理失败（见 5.1）；按错误提示修正路径/权限，勿跳过 migration |
+| 接口探活          | `curl -fsS http://host:8080/api/v1/health`                                     |
+| 构建 / 运行日志   | 页面内实时日志（WebSocket）；落盘日志见 `build.log_dir`                        |
+| 登录问题          | 确认种子超管未被改密；`jwt.secret` 变更会使全部令牌失效，需重新登录            |
+| Deploy Agent 问题 | 见「Deploy Agent」手册 §11 常见故障                                            |

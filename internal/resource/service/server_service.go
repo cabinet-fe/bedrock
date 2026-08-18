@@ -306,7 +306,7 @@ func (s *ServerService) testAgent(srv *model.Server) (string, error) {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return "", errorsNew("agent_url 无效")
 	}
-	healthURL := strings.TrimRight(agentURL, "/") + "/health"
+	healthURL := strings.TrimRight(agentURL, "/") + "/healthz"
 	req, err := http.NewRequest(http.MethodGet, healthURL, nil)
 	if err != nil {
 		return "", err

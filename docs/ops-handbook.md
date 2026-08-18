@@ -115,4 +115,4 @@ make smoke-three-db
 
 ## 8. Deploy Agent
 
-独立二进制与 Server **同版本**发布：`bedrock-agent-linux-amd64` / `bedrock-agent-linux-arm64` 等。Agent 部署在目标机，不嵌入 Server。
+独立二进制与 Server **同版本**发布：`bedrock-agent-linux-amd64` / `bedrock-agent-linux-arm64` 等。Agent 部署在目标机，不嵌入 Server。完整操作说明见平台内「操作手册 → Deploy Agent」。

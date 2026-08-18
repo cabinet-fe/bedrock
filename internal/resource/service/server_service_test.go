@@ -2,6 +2,8 @@ package service_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -144,5 +146,61 @@ func TestServerAgentCredentialRequiresUse(t *testing.T) {
 	}
 	if ok.CredentialID != nil {
 		t.Fatal("general credential_id must not appear on API model")
+	}
+}
+
+func TestServerAgentTestConnectionUsesHealthz(t *testing.T) {
+	if err := pkg.InitEncryption(strings.Repeat("ab", 32)); err != nil {
+		t.Fatal(err)
+	}
+	gdb, err := db.Open(&config.DatabaseConfig{
+		Driver: "sqlite",
+		Path:   filepath.Join(t.TempDir(), "server-agent-healthz.sqlite"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migration.Up(context.Background(), gdb, migration.Driver("sqlite")); err != nil {
+		t.Fatal(err)
+	}
+	credSvc := service.NewCredentialService(repository.NewCredentialRepository(gdb))
+	svc := service.NewServerService(repository.NewServerRepository(gdb), credSvc)
+
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer agent-token" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte("ok (linux dev)"))
+	}))
+	t.Cleanup(agent.Close)
+
+	cred, err := credSvc.Create(1, service.CreateCredentialInput{
+		Name: "agent-token", Type: "token", Secret: "agent-token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := svc.Create(1, service.CreateServerInput{
+		Name:              "agent-healthz",
+		AuthType:          "agent",
+		AgentURL:          agent.URL,
+		AgentCredentialID: &cred.ID,
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := svc.TestConnection(created.ID)
+	if err != nil {
+		t.Fatalf("TestConnection: %v", err)
+	}
+	if !strings.Contains(out, "ok") {
+		t.Fatalf("output=%q", out)
 	}
 }

@@ -61,12 +61,10 @@ export function menuGroupsToGroupNav(groups: MenuGroupNode[] | undefined | null)
   if (!groups?.length) return [];
   return groups.map((group) => ({
     title: group.title,
-    children: (group.children ?? []).map(
-      (child): NavItem => ({
-        title: child.title,
-        path: child.path,
-        icon: resolveMenuIcon(child.path, child.icon),
-      }),
-    ),
+    children: (group.children ?? []).map((child): NavItem => ({
+      title: child.title,
+      path: child.path,
+      icon: resolveMenuIcon(child.path, child.icon),
+    })),
   }));
 }
