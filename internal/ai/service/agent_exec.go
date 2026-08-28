@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,9 @@ import (
 )
 
 const agentCLIGraceAfterCancel = 5 * time.Second
+
+// agentLogLineMax 单行日志上限；超长行按截断提示处理，防止撑爆日志文件/WS。
+const agentLogLineMax = 16 << 20
 
 func triggerLabel(v string) string {
 	switch v {
@@ -81,17 +85,23 @@ func isBenignPipeClose(err error) bool {
 	return strings.Contains(msg, "file already closed") || strings.Contains(msg, "use of closed file") || strings.Contains(msg, "closed pipe")
 }
 
-// drainExecStream reads an exec pipe until EOF, appends to buf, and logs complete lines.
+// drainExecStream reads an exec pipe until EOF, appends to buf, and forwards
+// complete lines to logFn as they arrive (real-time, not only after exit).
 func drainExecStream(r io.Reader, buf *strings.Builder, logFn func(string)) {
-	data, err := io.ReadAll(r)
-	if len(data) > 0 {
-		buf.Write(data)
-		for line := range strings.SplitSeq(strings.TrimSuffix(string(data), "\n"), "\n") {
-			logFn(line)
-		}
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), agentLogLineMax)
+	for scanner.Scan() {
+		line := scanner.Text()
+		buf.WriteString(line)
+		buf.WriteByte('\n')
+		logFn(line)
 	}
-	if err != nil && !isBenignPipeClose(err) {
-		logFn("读取输出失败: " + err.Error())
+	if err := scanner.Err(); err != nil && !isBenignPipeClose(err) {
+		if errors.Is(err, bufio.ErrTooLong) {
+			logFn("读取输出失败: 单行超过上限被截断，后续输出可能丢失")
+		} else {
+			logFn("读取输出失败: " + err.Error())
+		}
 	}
 }
 

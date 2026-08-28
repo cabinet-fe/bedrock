@@ -97,6 +97,44 @@ func TestDrainExecStreamIgnoresClosedPipe(t *testing.T) {
 	}
 }
 
+func TestDrainExecStreamForwardsLinesInRealTime(t *testing.T) {
+	r, w := io.Pipe()
+	defer r.Close()
+	var buf strings.Builder
+	got := make(chan string, 2)
+	go drainExecStream(r, &buf, func(s string) { got <- s })
+
+	if _, err := io.WriteString(w, "first line\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case line := <-got:
+		if line != "first line" {
+			t.Fatalf("got %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first line not forwarded before stream end")
+	}
+
+	if _, err := io.WriteString(w, "second line\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case line := <-got:
+		if line != "second line" {
+			t.Fatalf("got %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second line not forwarded")
+	}
+	_ = w.Close()
+
+	joined := buf.String()
+	if !strings.Contains(joined, "first line") || !strings.Contains(joined, "second line") {
+		t.Fatalf("buf=%q", joined)
+	}
+}
+
 func TestIsBenignPipeClose(t *testing.T) {
 	if !isBenignPipeClose(io.EOF) || !isBenignPipeClose(os.ErrClosed) || !isBenignPipeClose(io.ErrClosedPipe) {
 		t.Fatal("EOF/ErrClosed/ErrClosedPipe should be benign")
