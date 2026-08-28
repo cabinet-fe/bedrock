@@ -11,3 +11,4 @@ bedrock-*
 server
 .tmp/
 .agents/cooking/
+.playwright-cli/

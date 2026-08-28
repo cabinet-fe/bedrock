@@ -4,8 +4,21 @@
     { "label": "认证中心", "id": "ic-auth", "service": "ic-auth", "prefix": "/auth" },
     { "label": "UPMS 模块", "id": "ic-upms-biz", "service": "ic-upms-biz", "prefix": "/admin" },
     { "label": "审批中心", "id": "workflow", "service": "workflow", "prefix": "/workflow" },
-    { "label": "通用", "id": "common-resource", "service": "common-resource", "prefix": "/common-resource" },
+    {
+      "label": "通用",
+      "id": "common-resource",
+      "service": "common-resource",
+      "prefix": "/common-resource"
+    },
     { "label": "监控", "id": "monitor", "service": "ic-monitor", "prefix": "/monitor" },
-    { "label": "合同", "id": "ic-contract", "service": "ic-contract", "prefix": "/contract" }
+    { "label": "合同", "id": "ic-contract", "service": "ic-contract", "prefix": "/contract" },
+    {
+      "label": "动态人员库",
+      "id": "personnel-repository",
+      "service": "ic-personnel-repository",
+      "prefix": "/personnel-repository"
+    },
+    { "label": "资产", "id": "ic-property", "service": "ic-property", "prefix": "/property" },
+    { "label": "报表", "id": "ic-bi-platform", "service": "ic-bi-platform", "prefix": "/bi" }
   ]
 }
