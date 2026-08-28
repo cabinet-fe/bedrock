@@ -1,7 +1,6 @@
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import { vLoading } from "@veltra/desktop";
-import { loadTheme } from "@veltra/styles/theme";
 import "@veltra/styles/normalize";
 import "@veltra/styles/transitions";
 import "@veltra/desktop/components/message/style.js";
@@ -11,10 +10,11 @@ import App from "./App.vue";
 import router from "./router";
 import { setOnAuthExpired } from "./api/http";
 import { useAuthStore } from "./stores/auth";
-import { bedrockTheme } from "./theme/bedrock";
+import { initTheme } from "./composables/use-theme";
 
 // loadTheme 会按主题系列写入 html[data-theme=light]，Veltra 据此注入浅色组件 CSS 变量。
-loadTheme(bedrockTheme);
+// 从 localStorage 恢复用户上次选择的主题（默认磐石古风亮色）。
+initTheme();
 
 const app = createApp(App);
 const pinia = createPinia();

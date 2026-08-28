@@ -8,6 +8,7 @@ import AppBreadcrumb from "@/components/app-breadcrumb";
 import AppWorkspaceTabs from "@/components/app-workspace-tabs";
 import BrandLogo from "@/components/brand-logo";
 import NotificationBell from "@/components/notification-bell";
+import ThemeSwitcher from "@/components/theme-switcher";
 import { resolveRouteTitle } from "@/composables/use-breadcrumb";
 import { menuGroupsToGroupNav } from "@/lib/menu-nav";
 import { useAuthStore } from "@/stores/auth";
@@ -81,6 +82,7 @@ function onNavClick(item: NavItem) {
         <div class="app-rail__bar">
           <AppBreadcrumb />
           <div class="app-rail__utils" role="group" aria-label="操作区">
+            <ThemeSwitcher />
             <NotificationBell />
             <span class="app-rail__identity">
               <span class="app-rail__avatar" aria-hidden="true">{{ nameInitial }}</span>
@@ -136,8 +138,18 @@ function onNavClick(item: NavItem) {
   overflow: hidden;
   border: none;
   outline: none;
-  background: fn.use-var(bg-color, bottom);
+  /* 侧栏底色随主题 nav 配置（--u-nav-bg-color），"侧栏=深/浅"切换时整体可复现 */
+  background: var(--u-nav-bg-color);
   box-shadow: 4px 0 24px rgb(0 0 0 / 28%);
+
+  /* 品牌文字随侧栏前景色（--u-nav-*）走，与 group-nav 同源，深/浅侧栏均可读 */
+  :deep(.brand-logo__name) {
+    color: var(--u-nav-second-color);
+  }
+
+  :deep(.brand-logo__sub) {
+    color: var(--u-nav-strong-color);
+  }
 }
 
 .app-sidebar__brand {
@@ -148,10 +160,11 @@ function onNavClick(item: NavItem) {
   min-height: 68px;
   padding: 0 16px;
   border: none;
-  /* 品牌区铺一层极浅的绢面渐变，自上而淡，与导航拉开层次而不成卡片 */
+  /* 品牌区铺一层极浅的绢面渐变，自上而淡，与导航拉开层次而不成卡片；
+     以侧栏前景色淡调出，深浅侧栏下均有层次且不打架 */
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, fn.use-var(bg-color, top) 70%, transparent) 0%,
+    color-mix(in srgb, var(--u-nav-strong-color) 7%, transparent) 0%,
     transparent 100%
   );
 

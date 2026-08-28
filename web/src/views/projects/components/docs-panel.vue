@@ -1,7 +1,25 @@
 <script setup lang="ts">
-import { computed, reactive, ref, shallowRef, watch } from "vue";
-import { message, messageConfirm, type ContextMenuItem, type TreeNode } from "@veltra/desktop";
-import { ArrowLeft, ArrowRight, Books, Delete, FileAdd, Folder, Move } from "@veltra/icons/normal";
+import { computed, nextTick, reactive, ref, shallowRef, useTemplateRef, watch } from "vue";
+import {
+  message,
+  messageConfirm,
+  type ContextMenuItem,
+  type TreeNode,
+  type TreeExposed,
+} from "@veltra/desktop";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Books,
+  Delete,
+  Download,
+  FileAdd,
+  Folder,
+  FolderAdd,
+  Move,
+  Search,
+  Upload,
+} from "@veltra/icons/normal";
 
 import {
   createDevDocNode,
@@ -42,7 +60,12 @@ const isDev = computed(() => props.docKind === "dev");
 const permPrefix = computed(() => (isDev.value ? "project_dev_docs" : "project_docs"));
 
 const tree = ref<ProjectDocNode[]>([]);
+const treeRef = useTemplateRef<TreeExposed>("treeRef");
+/** 当前是否全部展开；点击「展开/收起全部」时切换 */
+const allExpanded = ref(true);
 const selectedID = ref<number>();
+/** 勾选的节点 id，用于批量删除；与右侧预览的单选独立 */
+const checked = ref<number[]>([]);
 const selected = ref<ProjectDocNode | null>(null);
 const content = ref("");
 const docPane = ref("preview");
@@ -55,6 +78,10 @@ const createParentID = ref<number | null>(null);
 const movingNode = ref<ProjectDocNode | null>(null);
 const nodeForm = reactive({ name: "" });
 const moveForm = reactive({ parent_id: undefined as number | undefined, sort_order: 0 });
+const searchKeyword = ref("");
+/** 文档内容缓存：搜索文件内容时按需拉取，命中后不再重复请求 */
+const contentCache = new Map<number, string>();
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
 const menuOpen = ref(false);
 const menuPos = ref({ x: 0, y: 0 });
@@ -108,6 +135,34 @@ function collectNodeIds(node: ProjectDocNode, out: Set<number>) {
   for (const child of node.children ?? []) collectNodeIds(child, out);
 }
 
+function findNode(nodes: ProjectDocNode[], id: number): ProjectDocNode | undefined {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    const found = findNode(n.children ?? [], id);
+    if (found) return found;
+  }
+}
+
+/** 勾选了父节点时去掉其子孙，避免重复删除（删目录会连带子树） */
+function pruneDeleteTargets(ids: number[]): ProjectDocNode[] {
+  const descendantIds = new Set<number>();
+  const nodes: ProjectDocNode[] = [];
+  for (const id of ids) {
+    const node = findNode(tree.value, id);
+    if (!node) continue;
+    nodes.push(node);
+    for (const child of node.children ?? []) collectNodeIds(child, descendantIds);
+  }
+  return nodes.filter((n) => !descendantIds.has(n.id));
+}
+
+function checkedNodes(): ProjectDocNode[] {
+  return checked.value.flatMap((id) => {
+    const node = findNode(tree.value, id);
+    return node ? [node] : [];
+  });
+}
+
 function isMoveTargetDisabled(item: Record<string, any>) {
   return moveBlockedIds.value.has(item.id as number);
 }
@@ -117,10 +172,76 @@ async function loadTree() {
     tree.value = isDev.value
       ? await listDevDocTree(props.project.id)
       : await listDocTree(props.project.id);
+    contentCache.clear();
+    if (allExpanded.value) {
+      void nextTick(() => treeRef.value?.expandAll());
+    }
   } catch (error) {
     message.error(error instanceof Error ? error.message : "文档树加载失败");
   }
 }
+
+function toggleExpandAll() {
+  const t = treeRef.value;
+  if (!t) return;
+  if (allExpanded.value) t.collapseAll();
+  else t.expandAll();
+  allExpanded.value = !allExpanded.value;
+}
+
+function collectAllDocs(nodes: ProjectDocNode[]): ProjectDocNode[] {
+  return nodes.flatMap((n) => [n, ...collectAllDocs(n.children ?? [])]);
+}
+
+async function fetchDocContent(node: ProjectDocNode) {
+  try {
+    const full = isDev.value
+      ? await getDevDocNode(props.project.id, node.id)
+      : await getDocNode(props.project.id, node.id);
+    contentCache.set(node.id, full.content ?? "");
+  } catch {
+    contentCache.set(node.id, "");
+  }
+}
+
+async function runConcurrent<T>(items: T[], limit: number, worker: (item: T) => Promise<void>) {
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (i < items.length) {
+        await worker(items[i++]!);
+      }
+    }),
+  );
+}
+
+async function applySearch() {
+  const t = treeRef.value;
+  if (!t) return;
+  const kw = searchKeyword.value.trim().toLowerCase();
+  if (!kw) {
+    t.filter(() => true);
+    return;
+  }
+  t.filter((node) => node.label.toLowerCase().includes(kw));
+  const missing = collectAllDocs(tree.value).filter(
+    (n) => n.kind === "doc" && !contentCache.has(n.id),
+  );
+  if (missing.length) await runConcurrent(missing, 6, fetchDocContent);
+  t.filter((node) => {
+    const data = node.data as ProjectDocNode;
+    if (node.label.toLowerCase().includes(kw)) return true;
+    if (data.kind !== "doc") return false;
+    return (contentCache.get(data.id) ?? "").toLowerCase().includes(kw);
+  });
+}
+
+watch(searchKeyword, () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    void applySearch();
+  }, 250);
+});
 
 async function selectNode(id?: number) {
   selectedID.value = id;
@@ -187,24 +308,45 @@ async function saveContent() {
   }
 }
 
-async function removeNode(node: { id: number }) {
+async function removeNodes(nodes: { id: number }[]) {
+  const roots = pruneDeleteTargets(nodes.map((n) => n.id));
+  if (!roots.length) return;
+  const removed = new Set<number>();
   try {
-    if (isDev.value) await deleteDevDocNode(props.project.id, node.id);
-    else await deleteDocNode(props.project.id, node.id);
-    if (selectedID.value === node.id) await selectNode();
-    await loadTree();
-    message.success("节点已删除");
+    for (const node of roots) {
+      if (isDev.value) await deleteDevDocNode(props.project.id, node.id);
+      else await deleteDocNode(props.project.id, node.id);
+      collectNodeIds(node, removed);
+    }
+    message.success(roots.length > 1 ? `已删除 ${roots.length} 个节点` : "节点已删除");
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除失败");
   }
+  checked.value = [];
+  if (selectedID.value && removed.has(selectedID.value)) await selectNode();
+  await loadTree();
 }
 
-async function confirmRemoveNode(node: { id: number; name: string }) {
-  const action = await messageConfirm.danger(`删除「${node.name}」？`, {
-    cancelButtonText: "取消",
-  }).onClosed;
-  if (action !== "confirm") return;
-  await removeNode(node);
+async function confirmRemove(nodes: { id: number; name: string }[]) {
+  const roots = pruneDeleteTargets(nodes.map((n) => n.id));
+  if (!roots.length) return;
+  /** 单个文件直接删，目录（连带子树）与批量删除需要确认 */
+  const singleDoc = roots.length === 1 && roots[0].kind === "doc";
+  if (!singleDoc) {
+    const text =
+      roots.length === 1
+        ? `删除目录「${roots[0].name}」？目录下内容将一并删除。`
+        : `删除选中的 ${roots.length} 个节点？目录下内容将一并删除。`;
+    const action = await messageConfirm.danger(text, {
+      cancelButtonText: "取消",
+    }).onClosed;
+    if (action !== "confirm") return;
+  }
+  await removeNodes(roots);
+}
+
+function confirmRemoveChecked() {
+  void confirmRemove(checkedNodes());
 }
 
 function openMove(node: ProjectDocNode) {
@@ -238,13 +380,15 @@ function onNodeContextMenu(e: MouseEvent, node: TreeNode) {
   }
   if (canDelete.value) {
     const target = { id: data.id, name: data.name };
+    const batch =
+      checked.value.includes(data.id) && checked.value.length > 1 ? checkedNodes() : [target];
     items.push({
-      label: "删除",
+      label: batch.length > 1 ? `删除选中项 (${batch.length})` : "删除",
       icon: Delete,
       callback: () => {
         menuOpen.value = false;
         window.setTimeout(() => {
-          void confirmRemoveNode(target);
+          void confirmRemove(batch);
         }, 0);
       },
     });
@@ -319,6 +463,7 @@ watch(
   () => {
     selected.value = null;
     selectedID.value = undefined;
+    checked.value = [];
     void loadTree();
   },
   { immediate: true },
@@ -338,34 +483,90 @@ watch(canUpdate, (ok) => {
     >
       <div class="tree-head">
         <template v-if="!treeCollapsed">
-          <strong>文档树</strong>
           <div class="tree-head__actions">
-            <u-action v-if="canCreate" @run="openCreate('doc', null)">新建文档</u-action>
-            <u-action v-if="canCreate" @run="openCreate('dir')">新建目录</u-action>
-            <u-button plain size="small" aria-label="收窄文档树" @click="treeCollapsed = true">
-              <u-icon :size="14"><ArrowLeft /></u-icon>
+            <u-button
+              v-if="canCreate"
+              plain
+              size="small"
+              aria-label="新建文档"
+              title="新建文档"
+              @click="openCreate('doc', null)"
+            >
+              <u-icon :size="14"><FileAdd /></u-icon>
+            </u-button>
+            <u-button
+              v-if="canCreate"
+              plain
+              size="small"
+              aria-label="新建目录"
+              title="新建目录"
+              @click="openCreate('dir')"
+            >
+              <u-icon :size="14"><FolderAdd /></u-icon>
+            </u-button>
+            <u-button
+              plain
+              size="small"
+              :aria-label="allExpanded ? '收起全部' : '展开全部'"
+              :title="allExpanded ? '收起全部' : '展开全部'"
+              @click="toggleExpandAll"
+            >
+              <u-icon :size="14"><ArrowRight /></u-icon>
+            </u-button>
+            <u-button
+              v-if="canDelete && checked.length"
+              plain
+              type="danger"
+              size="small"
+              aria-label="删除"
+              title="删除"
+              @click="confirmRemoveChecked"
+            >
+              <u-icon :size="14"><Delete /></u-icon>
             </u-button>
           </div>
+          <u-button
+            plain
+            size="small"
+            aria-label="收窄文档树"
+            title="收窄文档树"
+            @click="treeCollapsed = true"
+          >
+            <u-icon :size="14"><ArrowLeft /></u-icon>
+          </u-button>
         </template>
         <u-button v-else plain size="small" aria-label="展开文档树" @click="treeCollapsed = false">
           <u-icon :size="14"><ArrowRight /></u-icon>
         </u-button>
       </div>
       <template v-if="!treeCollapsed">
+        <div class="tree-search">
+          <u-input v-model="searchKeyword" placeholder="搜索文件名或内容" clearable>
+            <template #suffix>
+              <u-icon :size="14"><Search /></u-icon>
+            </template>
+          </u-input>
+        </div>
         <u-tree
-          v-model:selected="selectedID"
+          ref="treeRef"
+          v-model:checked="checked"
           class="doc-tree"
           :data="tree"
           label-key="name"
           value-key="id"
           children-key="children"
-          selectable
-          expand-all
-          @update:selected="selectNode"
+          :checkable="canDelete"
+          check-strictly
+          :check-on-click-node="false"
+          :expand-on-click-node="false"
           @node-contextmenu="onNodeContextMenu"
         >
           <template #default="{ data }">
-            <div class="tree-node" :class="data.kind === 'dir' ? 'is-dir' : 'is-doc'">
+            <div
+              class="tree-node"
+              :class="data.kind === 'dir' ? 'is-dir' : 'is-doc'"
+              @click.stop="selectNode(data.id)"
+            >
               <u-icon class="tree-node__icon" :size="14">
                 <Folder v-if="data.kind === 'dir'" />
                 <Books v-else />
@@ -375,8 +576,16 @@ watch(canUpdate, (ok) => {
           </template>
         </u-tree>
         <div v-if="canCreate" class="uploads">
-          <u-file-picker accept=".md,text/markdown" @pick="uploadMarkdownFile" />
-          <u-file-picker accept=".zip,application/zip" @pick="importZIPFile" />
+          <u-file-picker accept=".md,text/markdown" @pick="uploadMarkdownFile">
+            <u-button plain size="small" aria-label="导入 Markdown" title="导入 Markdown">
+              <u-icon :size="14"><Upload /></u-icon>
+            </u-button>
+          </u-file-picker>
+          <u-file-picker accept=".zip,application/zip" @pick="importZIPFile">
+            <u-button plain size="small" aria-label="导入 ZIP 文档包" title="导入 ZIP 文档包">
+              <u-icon :size="14"><Download /></u-icon>
+            </u-button>
+          </u-file-picker>
         </div>
       </template>
     </aside>
@@ -531,10 +740,15 @@ watch(canUpdate, (ok) => {
 }
 
 .tree-head,
+.tree-search,
 .uploads,
 .doc-footer {
   display: flex;
   align-items: center;
+}
+
+.tree-search {
+  flex-shrink: 0;
 }
 
 .tree-head {

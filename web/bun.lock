@@ -10,12 +10,12 @@
         "@cat-kit/http": "^1.1.8",
         "@noble/ciphers": "^2.4.0",
         "@veltra/ai": "^2.1.6",
-        "@veltra/compositions": "1.7.0",
-        "@veltra/desktop": "^1.7.0",
-        "@veltra/directives": "1.7.0",
+        "@veltra/compositions": "1.7.2",
+        "@veltra/desktop": "^1.7.2",
+        "@veltra/directives": "1.7.2",
         "@veltra/icons": "^1.5.0",
-        "@veltra/styles": "^1.7.0",
-        "@veltra/utils": "1.7.0",
+        "@veltra/styles": "^1.7.2",
+        "@veltra/utils": "1.7.2",
         "@vue-flow/background": "^1.3.2",
         "@vue-flow/controls": "^1.1.3",
         "@vue-flow/core": "^1.48.2",
@@ -399,17 +399,17 @@
 
     "@veltra/ai": ["@veltra/ai@2.1.6", "", { "dependencies": { "markstream-vue": "^2.0.0" }, "peerDependencies": { "@veltra/compositions": "^1.6.4", "@veltra/desktop": "^1.6.4", "@veltra/icons": "^1.5.0", "@veltra/styles": "^1.6.4", "@veltra/utils": "^1.6.4", "vue": ">=3.5.41" } }, "sha512-hRtKwgr9rcnM2WekbWSz08QQ9Jxs9D4ES9fsxcW2C0oW02pNJDG40D7wPaQycjxH6tlnSC+BhJdoPkWszlOEHQ=="],
 
-    "@veltra/compositions": ["@veltra/compositions@1.7.0", "", { "dependencies": { "@floating-ui/dom": "^1.8.0", "@formkit/drag-and-drop": "^0.6.1" }, "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@cat-kit/fe": ">=1.1.8", "@veltra/utils": "^1.7.0", "vue": ">=3.5.41" } }, "sha512-RqccRgHmHpjtYJI3Y4bD38NBmipDgb0pJvt7oF4Pdx8xVG0H95nFly9IMCEX1rrn9EbQR7gUrP4QNSeHQGzVwg=="],
+    "@veltra/compositions": ["@veltra/compositions@1.7.2", "", { "dependencies": { "@floating-ui/dom": "^1.8.0", "@formkit/drag-and-drop": "^0.6.1" }, "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@cat-kit/fe": ">=1.1.8", "@veltra/utils": "^1.7.2", "vue": ">=3.5.41" } }, "sha512-D7wNzXH/oLp63CxJPjtspG7UxAkS9UpH9BloDSwdl89GA7YpMX4CfnGd3r2jzRcze2kJwHaLPh/fVdnxFAn4Qw=="],
 
-    "@veltra/desktop": ["@veltra/desktop@1.7.0", "", { "dependencies": { "@embedpdf/core": "^2.15.0", "@embedpdf/engines": "^2.15.0", "@embedpdf/plugin-document-manager": "^2.15.0", "@embedpdf/plugin-render": "^2.15.0", "@embedpdf/plugin-scroll": "^2.15.0", "@embedpdf/plugin-viewport": "^2.15.0", "@embedpdf/plugin-zoom": "^2.15.0", "@lexical/history": "^0.49.0", "@lexical/html": "^0.49.0", "@lexical/link": "^0.49.0", "@lexical/list": "^0.49.0", "@lexical/rich-text": "^0.49.0", "@lexical/selection": "^0.49.0", "@lexical/utils": "^0.49.0", "docx-preview": "^0.4.0", "lexical": "^0.49.0" }, "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@cat-kit/fe": ">=1.1.8", "@veltra/compositions": "^1.7.0", "@veltra/directives": "^1.7.0", "@veltra/icons": "^1.5.0", "@veltra/sheet-core": "^2.5.1", "@veltra/styles": "^1.7.0", "@veltra/utils": "^1.7.0", "vue": ">=3.5.41" }, "optionalPeers": ["@veltra/sheet-core"] }, "sha512-e+klk2GZZmX7nb0Y7pziroY2yK/ppA1OoL8HO6JM/74MpBCVEOptBecRh70qWT5VIXfQf97tl8uzFItfP0Rmvg=="],
+    "@veltra/desktop": ["@veltra/desktop@1.7.2", "", { "dependencies": { "@embedpdf/core": "^2.15.0", "@embedpdf/engines": "^2.15.0", "@embedpdf/plugin-document-manager": "^2.15.0", "@embedpdf/plugin-render": "^2.15.0", "@embedpdf/plugin-scroll": "^2.15.0", "@embedpdf/plugin-viewport": "^2.15.0", "@embedpdf/plugin-zoom": "^2.15.0", "@lexical/history": "^0.49.0", "@lexical/html": "^0.49.0", "@lexical/link": "^0.49.0", "@lexical/list": "^0.49.0", "@lexical/rich-text": "^0.49.0", "@lexical/selection": "^0.49.0", "@lexical/utils": "^0.49.0", "docx-preview": "^0.4.0", "lexical": "^0.49.0" }, "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@cat-kit/fe": ">=1.1.8", "@veltra/compositions": "^1.7.2", "@veltra/directives": "^1.7.2", "@veltra/icons": "^1.5.0", "@veltra/sheet-core": "^2.5.2", "@veltra/styles": "^1.7.2", "@veltra/utils": "^1.7.2", "vue": ">=3.5.41" }, "optionalPeers": ["@veltra/sheet-core"] }, "sha512-f7G3PJsyBcMnauUB77W8/vjjD24DdrqIB0LSXhwWNCBRaA+/pT7Hax1fq3f40YLIjIk7rLKr9c9WpaoC/0mF4A=="],
 
-    "@veltra/directives": ["@veltra/directives@1.7.0", "", { "peerDependencies": { "@veltra/styles": "^1.7.0", "@veltra/utils": "^1.7.0", "vue": ">=3.5.41" } }, "sha512-oVVvOW71GCOENMVn2HJkh5QHowptxaBNPT9D0+//7zFhdJQ46UYxIP9uGSykem54ehjVi7vpuimRcwPFQz5J1g=="],
+    "@veltra/directives": ["@veltra/directives@1.7.2", "", { "peerDependencies": { "@veltra/styles": "^1.7.2", "@veltra/utils": "^1.7.2", "vue": ">=3.5.41" } }, "sha512-AzA9Fpv5Q95svsgOtQfrRyP8tVEcgU00wZmlFIELVtVEWGmXCx8qudI4xrWoKn0xgcVbwdkUCDRar7SzGaLgcg=="],
 
     "@veltra/icons": ["@veltra/icons@1.5.0", "", { "peerDependencies": { "vue": ">=3.5.41" } }, "sha512-kjJUi1SMtvbQ5n9HRGbybivYfnbcoK/QY5TecW9ZX7w9487FWAfxso9W0Xe6+6W6Ye5aIivqtaxU/uTG/SqQoA=="],
 
-    "@veltra/styles": ["@veltra/styles@1.7.0", "", { "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@veltra/compositions": "^1.7.0", "@veltra/utils": "^1.7.0", "vue": ">=3.5.41" } }, "sha512-J1n6zvXyfBkD+6GccR0mrmjGPCpk0y11EtRXirbqWESJ8zjCpl9yCWgCTctruHT4KA1VTebtAkTT73+1xnKnAg=="],
+    "@veltra/styles": ["@veltra/styles@1.7.2", "", { "peerDependencies": { "@cat-kit/core": ">=1.1.8", "@veltra/compositions": "^1.7.2", "@veltra/utils": "^1.7.2", "vue": ">=3.5.41" } }, "sha512-YtlH4cBmrCayYnGhChJXtTvf18WplZJDhsI6juJiJmjUu5LB2ObvXmUu4UMy2oi1sG1LEeWRehH42Tku+JWp7w=="],
 
-    "@veltra/utils": ["@veltra/utils@1.7.0", "", { "peerDependencies": { "@cat-kit/core": ">=1.1.8", "vue": ">=3.5.41" } }, "sha512-90CkzZsT0G0KwIzuA/pfjhSfv3hI70cDrxSWZODc1+F1BfQb1VnzPEge3adV0QJYPS7ztB43+Vg837j7K+oFkw=="],
+    "@veltra/utils": ["@veltra/utils@1.7.2", "", { "peerDependencies": { "@cat-kit/core": ">=1.1.8", "vue": ">=3.5.41" } }, "sha512-uQqv8/LWugXaOEJ3eeP4VgPWGw8lePqYhVcqICxzh9Ax1R+ug8Cw+WdMDi7WKx2tKkncR5Y66zwjSjgHytO5qg=="],
 
     "@veltra/vite": ["@veltra/vite@4.0.1", "", { "peerDependencies": { "@veltra/ai": "^2.1.6", "@veltra/desktop": "^1.6.5", "@veltra/sheet": "^2.5.0", "unplugin-vue-components": ">=32.0.0" }, "optionalPeers": ["@veltra/ai", "@veltra/sheet"] }, "sha512-2RW793fKAZgcDZf4QZSDfNUjYLBQ1hoWM68sKt1Kd4a16SnLlx1z5WH0Pp3fcESoOrhQ4ugAvO1E31hRF2NPrg=="],
 
