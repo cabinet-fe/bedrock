@@ -1,7 +1,7 @@
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import { vLoading } from "@veltra/desktop";
-import { loadTheme, setTheme } from "@veltra/styles/theme";
+import { loadTheme } from "@veltra/styles/theme";
 import "@veltra/styles/normalize";
 import "@veltra/styles/transitions";
 import "@veltra/desktop/components/message/style.js";
@@ -13,9 +13,7 @@ import { setOnAuthExpired } from "./api/http";
 import { useAuthStore } from "./stores/auth";
 import { bedrockTheme } from "./theme/bedrock";
 
-// setTheme("light") sets html[data-theme=light] so Veltra injects light component CSS vars.
-// loadTheme alone does not flip the attribute.
-setTheme("light");
+// loadTheme 会按主题系列写入 html[data-theme=light]，Veltra 据此注入浅色组件 CSS 变量。
 loadTheme(bedrockTheme);
 
 const app = createApp(App);
