@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# API 契约先行：写接口前先写 api/ 契约文档（node .agents/scripts/api-sync.mjs）。
+set -u
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+if ! node .agents/scripts/api-sync.mjs; then
+  echo
+  echo "✗ 契约先行被阻止：先更新 api/ 契约文档再提交（见 .agents/docs/DEV-STANDARDS.md「接口」）。"
+  echo "  确认无误需要跳过：git commit --no-verify"
+  exit 1
+fi
+exit 0

@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "backend-expert": {
+      "source": "cabinet-fe/prompt-engineering",
+      "sourceType": "github",
+      "skillPath": "skills/roles/backend-expert/SKILL.md",
+      "computedHash": "9526196e53cb22acf4eb571b18bfa8ba37eb0fdaf6bba278989a96f8634cd58f"
+    },
     "cat-kit": {
       "source": "cabinet-fe/cat-kit",
       "ref": "main",
@@ -14,24 +20,36 @@
       "skillPath": "skills/roles/frontend-expert/SKILL.md",
       "computedHash": "6bda388be2b39d912d3277464b0fb91f3303d67a3fcd385366d50c7e236349ff"
     },
+    "gin": {
+      "source": "cabinet-fe/prompt-engineering",
+      "sourceType": "github",
+      "skillPath": "skills/frameworks/gin/SKILL.md",
+      "computedHash": "daf063555b91453808e5625db9fdccfeb2570fa77ca0251c4d447431f8aa0e27"
+    },
     "git-commit": {
       "source": "cabinet-fe/prompt-engineering",
       "sourceType": "github",
       "skillPath": "skills/tools/git-commit/SKILL.md",
-      "computedHash": "0f2b056dac4959e7ce98b943964fc6bf2ecc7a28b538acef2b6af060590d8702"
+      "computedHash": "15db67e52893916d0e7e49634b6f4fb5ee3cf0fddab15d0df76cedcda9b77089"
+    },
+    "go": {
+      "source": "cabinet-fe/prompt-engineering",
+      "sourceType": "github",
+      "skillPath": "skills/langs/go/SKILL.md",
+      "computedHash": "89946c6d0e0ca0c066a8af01cdfc2618784c62d2a1cdeb383b61f1340f8892ba"
     },
     "veltra-ui": {
       "source": "cabinet-fe/ultra-ui",
       "ref": "dev",
       "sourceType": "github",
       "skillPath": "skills/veltra-ui/SKILL.md",
-      "computedHash": "afff1402b067cdd0b913c2eafb05c6ab74a25dd3bd023dd7bb0c253deca6516a"
+      "computedHash": "fcff52dd58368526c9ad5951937502098570c1b40f879e5c7682d8e636112805"
     },
     "vue": {
       "source": "cabinet-fe/prompt-engineering",
       "sourceType": "github",
       "skillPath": "skills/frameworks/vue/SKILL.md",
-      "computedHash": "a7013616f9ca66f61171e8ef2f6fea60f05eb9eafe58c2a27e783d406a40623c"
+      "computedHash": "17ce038d75e0bafdc281c8153211bb6f75c50671327d25be21fe12a4b2210f34"
     }
   }
 }

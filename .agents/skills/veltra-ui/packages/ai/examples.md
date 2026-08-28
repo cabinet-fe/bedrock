@@ -13,6 +13,7 @@
     :model="transport.defaultModel"
     system-prompt="你是业务助手，优先使用工具，不要编造数据。"
     :welcome="['有什么可以帮你？', '给我讲个笑话']"
+    token-usage-detail
     @finish="onFinish"
     @error="onError"
   />
@@ -180,11 +181,7 @@ const tools: ChatTool[] = [
     label: '查天气',
     icon: Sunny,
     description: '查询城市天气',
-    parameters: {
-      type: 'object',
-      properties: { city: { type: 'string' } },
-      required: ['city']
-    },
+    parameters: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] },
     render: WeatherCard,
     autoCollapse: false,
     execute: async ({ city }: { city: string }) => {
@@ -218,9 +215,7 @@ const tools: ChatTool[] = [
     },
     parameters: {
       type: 'object',
-      properties: {
-        page: { type: 'string', enum: ['user-form', 'sales-chart', 'order-list'] }
-      },
+      properties: { page: { type: 'string', enum: ['user-form', 'sales-chart', 'order-list'] } },
       required: ['page']
     },
     execute: async ({ page }: { page: string }) => ({ page, opened: true })
@@ -292,7 +287,7 @@ chatRef.value?.enqueue('插队问题', undefined, beforeId)
 ```vue
 <u-ai-chat :transport="transport">
   <template #welcome>
-    <div>自定义空状态</div>
+    <div>自定义欢迎区</div>
   </template>
 </u-ai-chat>
 ```
@@ -355,6 +350,8 @@ const transport: ChatTransport = async (req, handlers) => {
   handlers.onReasoningDelta?.('思考内容')
   handlers.onTextDelta('回答内容')
   handlers.onToolCall?.({ id: 'call-1', name: 'getWeather', arguments: '{"city":"北京"}' })
+  // 接口有 usage 再回调；不要填 0 充数
+  handlers.onUsage?.({ promptTokens: 12, completionTokens: 8, totalTokens: 20 })
 }
 ```
 
@@ -420,12 +417,7 @@ const emit = ((event: string, ...args: unknown[]) => {
 }) as AiChatEmits
 
 const chat = useChat({
-  props: {
-    transport,
-    tools,
-    models: transport.models,
-    systemPrompt: '你是助手'
-  },
+  props: { transport, tools, models: transport.models, systemPrompt: '你是助手' },
   emit
 })
 

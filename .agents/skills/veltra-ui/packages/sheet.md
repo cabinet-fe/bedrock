@@ -1,39 +1,21 @@
 # @veltra/sheet
 
-电子表格包：基于 `@visactor/vtable`（ListTable）渲染，**数据模型完全自持有，VTable 只做视图层**。单元格读写、合并单元格、公式（含跨表引用）、undo/redo（命令系统）、填充柄、行高、**冻结行列**、**查找/替换**、右键合并菜单、工具栏扩展机制、**单元格样式系统（填充 / 边框 / 字体颜色加粗斜体下划线删除线 / 字号 / 对齐 / 换行，样式池按内容去重）**、**公式栏（名称框 + fx 输入栏）**、**浮动图片（插入 / 两点锚定叠层 / 拖动 / 删除 / xlsx round-trip）**、**导入导出（XLSX / CSV，hucre 引擎）**、`USheet` 组件；**报表设计器 `UReportDesigner` / 查看器 `UReportViewer`**（ADR-0003）；报表纯 TS 内核（`renderReport` / `DataConnector` / `ReportTemplate` 等）与 **`resolveCellRenderer` 按格自定义渲染**（ADR-0004，经 `USheet` / `SheetGrid` 对称 hook）。
+电子表格包：基于 `@visactor/vtable`（ListTable）渲染，**数据模型完全自持有，VTable 只做视图层**。单元格读写、合并单元格、公式（含跨表引用）、undo/redo（命令系统）、填充柄、行高、**冻结行列**、**查找/替换**、右键合并菜单、工具栏扩展机制、**单元格样式系统（填充 / 边框 / 字体颜色加粗斜体下划线删除线 / 字号 / 对齐 / 换行，样式池按内容去重）**、**公式栏（名称框 + fx 输入栏）**、**浮动图片（插入 / 两点锚定叠层 / 拖动 / 删除 / xlsx round-trip）**、**导入导出（XLSX / CSV，hucre 引擎）**、`USheet` 组件；**`resolveCellRenderer` 按格自定义渲染**（ADR-0004，经 `USheet` / `SheetGrid` 对称 hook）。
 
 > 数据模型 / 公式 / IO / SheetGrid 渲染层（core/grid）在 **`@veltra/sheet-core`**（独立发包）；本包**不 re-export** 其符号——core API 一律 `from '@veltra/sheet-core'` 直导（无头场景同样直接用它），见 `packages/sheet-core.md`。
 
 ```ts
-import {
-  USheet,
-  UReportDesigner,
-  UReportViewer,
-  registerTool,
-  createHttpConnector,
-  renderReport
-} from '@veltra/sheet'
-import type {
-  SheetProps,
-  SheetExposed,
-  SheetTool,
-  SheetContext,
-  ReportDesignerProps,
-  ReportViewerProps,
-  DataConnector,
-  ReportTemplate
-} from '@veltra/sheet'
+import { USheet, registerTool } from '@veltra/sheet'
+import type { SheetProps, SheetExposed, SheetTool, SheetContext } from '@veltra/sheet'
 import { Workbook, registerFormulaFunction, listFormulaFunctions } from '@veltra/sheet-core'
 import type { FormulaFunctionMeta, SheetImage, ImageInput } from '@veltra/sheet-core'
 import '@veltra/sheet/components/sheet/style'
-import '@veltra/sheet/components/report/style'
 ```
 
 宿主需安装 peer `@veltra/desktop`（右键菜单）。
 
 ## 分层与入口选择
 
-- **`UReportDesigner` / `UReportViewer`**（报表场景）：设计态编排 + 运行态取数展开；样式 `@veltra/sheet/components/report/style`（自含 USheet 与 Filter Bar 桌面组件样式）。见下文「报表组件与内核」。
 - **`USheet` 组件**（多数场景）：toolbar + formula-bar + grid + 底部 sheet tabs，一个组件即用。
 - **无头 / 自组 UI**：`Workbook`（多 sheet + 共享公式依赖图）→ `Sheet`（统一操作入口）；
   `SheetGrid`（VTable 适配层，自行挂载到容器；`readonly: true` 即只读预览）。
@@ -41,6 +23,10 @@ import '@veltra/sheet/components/report/style'
   一律 `from '@veltra/sheet-core'` 直导（本包不 re-export）。细节（导出分组、IO 保真度、
   readonly 语义、深导入注意）见 `packages/sheet-core.md`。
 - 组件高度由宿主控制（grid 区 `flex:1`），需给 `.u-sheet` 一个高度。
+- **表格化填报（部分单元格可编辑）**：用模型 API `sheet.setRangeReadonly` / `setCellReadonly` /
+  `isCellReadonly` 标记只读格，SheetGrid 自动拦截编辑（双击 / Enter / 回写 / 填充柄）；
+  USheet 需隐藏工具栏 / 公式栏等不经 grid 守卫的写入口，输入区高亮走 `resolveCellStyle` prop。
+  详见 `packages/sheet-core.md`「单元格级只读」。
 - 交互：填充柄（复制 / 数字日期等差 / 公式 `$` 感知位移）、行高拖拽（稀疏存模型、不进 undo）、
   冻结行列（模型持有、不进 undo）、查找/替换（Ctrl/Cmd+F 或工具栏「查找」）、
   右键菜单（body 合并/插入图片；行号/列头插入删除与冻结）、编辑中方向键只移光标。
@@ -79,7 +65,9 @@ import '@veltra/sheet/components/report/style'
 
 ## 多 Sheet 管理（Workbook）
 
-- `workbook.addSheet(name?)` / `removeSheet(name)` / `renameSheet(oldName, newName): boolean` /
+- `workbook.addSheet(name?, options?)`（`options.data` 二维数组从 A1 起生成单元格：原始值 /
+  `{ f }` 公式立即计算、初始数据不进 undo；`options.rows/cols` 初始渲染尺寸，非法值抛错）/
+  `removeSheet(name)` / `renameSheet(oldName, newName): boolean` /
   `activateSheet(name)` / `getSheet(name)` / `getSheets()`；`sheet.name` **只读**（改名唯一入口
   `renameSheet`，直接赋值被类型系统拒绝）。
 - `renameSheet` 校验：trim 后空名拒绝；与现有表重名拒绝（不区分大小写，含自身大小写变体）。
@@ -272,77 +260,13 @@ importCsv(text, sheet) // 写入既有活动表（事务 = 单 undo 单元）
 性能契约：纯函数、同步、O(1) 查找、禁止大对象分配（见 `packages/sheet-core/AGENTS.md`）。
 
 ```ts
-import { CustomLayout, type ResolveCellRenderer } from '@veltra/sheet-core'
+import { CustomLayout, type ResolveCellRenderer } from '@veltra/sheet-core/grid'
 
 const resolveCellRenderer: ResolveCellRenderer = (addr, base) => {
   // 按 addr / base 决定是否自定义；未命中返回 undefined
   return { rootContainer: new CustomLayout.Container({/* ... */}), renderDefault: false }
 }
 ```
-
-## 报表组件与内核（ADR-0003）
-
-### 数据连接器 DataConnector
-
-报表取数经 **`DataConnector`** 接口（`test` / `describe` / `query`），前端包**零数据库驱动**。内置 **`createHttpConnector({ endpoint })`**：`POST {endpoint}/test|describe|query`（无版本段），请求体分别为 `{ connection }` / `{ connection, sql }` / `{ connection, sql, values }`；业务错误一律 `200 + { ok: false, error: { code, message } }` 原样透传，传输层错误折叠为 `{ ok: false, error }`，**连接器不抛异常**。
-
-```ts
-import { createHttpConnector } from '@veltra/sheet'
-import type { DataConnection, DataConnector } from '@veltra/sheet'
-
-const connector = createHttpConnector({ endpoint: '/api/report' })
-// connections 纯序列化对象，仅驻留内存；凭据持久化由宿主负责
-```
-
-### ReportTemplate 与纯函数内核
-
-`ReportTemplate` = `SheetSnapshot` + **`version: number`（当前 `1`，必填）** + 内嵌 `datasets: ReportDatasetDef[]`（connection 为完整连接对象，可 JSON 序列化）。`version` 缺失或高于当前 → 抛可读错误，存量模板须在设计器中重建。
-
-主入口还导出 `renderReport`（模板 + records → Filled Report 快照）、绑定（`createReportBinding` / `presetBindingPatch` / `applyReportPreset` 等）、条件规则、查询参数（`${param}` → `extractParamIds` / `buildParamDefs`）、`fetchTemplateRecords`、`exportFilledReportXlsx`、Filter Bar 值规范化等纯 TS 函数（`src/report/`，框架无关、无 DOM）。
-
-**`ReportBinding`（breaking，ADR-0005）**：
-
-```ts
-type ReportExpand = 'down' | 'right' | 'none'
-type ReportAggregate = 'list' | 'group' | 'sum' | 'avg' | 'count' | 'max' | 'min'
-type ReportPreset = 'groupHeader' | 'detail' | 'subtotal' | 'grandTotal' | 'cross'
-
-interface ReportBinding {
-  dataset: string
-  field: string
-  expand: ReportExpand
-  aggregate: ReportAggregate
-  rowParent?: CellAddress // 行方向从属父格
-  colParent?: CellAddress // 列方向从属父格
-  mergeSpan?: boolean // 扩展实例是否合并；缺省 true
-  sort?: ReportSort
-  conditionalRules?: ConditionalRule[]
-  preset?: ReportPreset // 设计器标签，引擎不读
-}
-
-interface ConditionalRule {
-  operator: ConditionalOperator
-  value: unknown
-  style: CellStylePatch
-  field?: string // 求值字段；缺省取绑定格自身字段
-  scope?: 'cell' | 'row' // 作用范围；缺省 'cell'
-}
-```
-
-已删除：`role` / `leftParent` / `resolveReportRole` / `isExpandingBinding` 等。`select` 聚合更名为 `list`；新增 `max` / `min`。
-
-### UReportViewer（运行态）
-
-- **Props**：`connector`（必填）、`template`（必填，`ReportTemplate`）、`workbook?`、`colWidths?`
-- **Exposed**：`refresh()` — 重新取数并展开渲染；`exportXlsx()` — 导出填充报表 XLSX（取数完成前拒绝）
-- 内部闭环：从模板实际绑定数据集提取查询参数并集 → Filter Bar → `fetchTemplateRecords` → `renderReport` → 只读 USheet 展示（无行列头；网格铺到内容尺寸，无 50×10 下限）；loading 遮罩与业务错误 banner
-
-### UReportDesigner（设计态）
-
-- **Props**：`connector`（必填）、`v-model:connections`、`template?`（载入既有模板继续设计）、`workbook?`
-- **Emits**：`update:connections`、`datasets-change`（数据集变更或数据中枢关闭）
-- **Exposed**：`getTemplate()` — 取回含 `version`、meta 绑定与内嵌数据集定义的 `ReportTemplate`
-- 设计态：数据中枢 drawer、字段面板 HTML5 拖拽绑定（落格推断：同行向左/上方整行扫描行父格、同列向上/左侧整列扫描列父格；小计优先分组头）、预设徽章（`resolveCellRenderer`）、Action Pill（默认条含预设与互补的展开方向或聚合函数、条件样式、删除绑定；展开后父格点选 / `mergeSpan`）、拓扑连线（真实 `rowParent` / `colParent`）、条件规则对话框（句式编辑 `field` / 运算符 / 样式 / `scope`）、预览模式（内嵌 `UReportViewer`）、XLSX 导出
 
 ## 已知限制
 
