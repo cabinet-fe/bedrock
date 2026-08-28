@@ -3,7 +3,7 @@
 仪表盘卡片，以及进程 / 开发环境相关接口。开发环境页同时管理「开发语言」与「智能体 CLI」；CLI 的 HTTP 路径见 [resource.md](resource.md)（权限同为 `ops_dev_environments:*`）。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
-业务语义与权限模型见 [docs/DESIGN.md](../docs/DESIGN.md)。
+业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
 
 ## 仪表盘
 

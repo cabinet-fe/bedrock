@@ -1,12 +1,10 @@
 # 操作手册（2.0 GA）
 
-面向运维与首次部署。产品行为以 [DESIGN.md](./DESIGN.md) 为准；分期 Gate 见 [ROADMAP.md](./ROADMAP.md)。
+面向运维与首次部署。产品行为以 [DESIGN.md](./DESIGN.md) 为准；分期 Gate 见 ROADMAP.md（已随 2.0 GA 归档）。
 
 ---
 
 ## 1. 全新安装（默认 SQLite）
-
-2.0 **只支持全新安装**，**不提供** 1.x → 2.0 数据迁移。
 
 ```bash
 # 1. 取得发布包（示例：Linux amd64）
@@ -73,7 +71,7 @@ make smoke-three-db
 
 ## 4. 2.0 内部升级：旧 Agent 数据清理
 
-本节仅适用于从仍保留旧 Agent 单 Run 输出/归档能力的 **2.0 版本**升级；仍不支持 1.x → 2.0 数据迁移。
+本节仅适用于从仍保留旧 Agent 单 Run 输出/归档能力的 **2.0 版本**升级。
 
 升级前必须：
 

@@ -3,7 +3,7 @@
 Agents、运行记录、Skills。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
-业务语义与权限模型见 [docs/DESIGN.md](../docs/DESIGN.md)。
+业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
 AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）已迁入资源管理域，见 [resource.md](resource.md)。
 
 ## Agents

@@ -112,7 +112,7 @@ func PageSuccess(c *gin.Context, items interface{}, total int64, q ListQuery) {
 	Success(c, NewPageResult(items, total, PageQuery{Page: q.Page, PageSize: q.PageSize}))
 }
 
-// Paginated keeps the 1.x helper signature.
+// Paginated keeps the legacy helper signature.
 func Paginated(c *gin.Context, items interface{}, total int64, page, pageSize int) {
 	PageSuccess(c, items, total, ListQuery{Page: page, PageSize: pageSize})
 }

@@ -872,29 +872,7 @@ flowchart TB
 
 ---
 
-## 16. 现有能力映射（1.x → 2.0）
-
-| 1.x 能力                              | 2.0 处理                                           |
-| ------------------------------------- | -------------------------------------------------- |
-| Project（含 repo_url）                | **拆分**：Repository +（可选关联）ProductProject   |
-| Environment                           | **重构为** BuildJob（+ DeployTarget 列表）         |
-| Build                                 | **演进为** BuildRun                                |
-| Server / Credential                   | **演进**：凭证通用化 + RBAC                        |
-| Pipeline / Scheduler / Cron / Webhook | **概念复用**                                       |
-| Deployer 五种方法 / Deploy Agent      | **复用**                                           |
-| Dashboard 指标                        | **演进为**可配置卡片                               |
-| Process 管理                          | **迁入运维**，仅超管                               |
-| Agent + agent-proxies                 | **拆分**：AiAgent / CliRuntime；去除与网络代理歧义 |
-| 构建内嵌 agent 阶段                   | **演进为**构建事件触发独立 Agent Run（可配置）     |
-| 固定 admin/ops/dev                    | **替换为**超管 + 自定义角色 + 资源                 |
-| Dictionary / AuditLog / User          | **复用演进**                                       |
-| 需求 / 接口文档 / Skills 平台         | **新增**                                           |
-| 开发环境管理                          | **新增**                                           |
-| 多数据库驱动配置                      | **新增**（默认 SQLite）                            |
-
----
-
-## 17. 非功能需求
+## 16. 非功能需求
 
 | 类别   | 要求                                                            |
 | ------ | --------------------------------------------------------------- |
@@ -907,7 +885,7 @@ flowchart TB
 
 ---
 
-## 18. 交付范围
+## 17. 交付范围
 
 - 部署形态沿用；数据库驱动配置（sqlite/postgres/mysql）
 - RBAC：用户、角色、菜单分组、资源（菜单/功能）、操作日志、字典；菜单图标上传；登录下发两层分组菜单与功能 `full_code`
@@ -921,7 +899,7 @@ flowchart TB
 
 ---
 
-## 19. 待确认项（不影响主文档落地）
+## 18. 待确认项（不影响主文档落地）
 
 1. ~~全局「项目管理」权限与项目成员关系。~~ **已固化**：显式 `project_projects:view_all` / `manage_all`（见 DESIGN §4.4）。
 2. 构建事件触发智能体的默认阶段（成功后 / 分发前 / 分发后）及是否允许任务级覆盖。
@@ -931,9 +909,9 @@ flowchart TB
 
 ---
 
-## 20. 模块验收清单（汇总）
+## 19. 模块验收清单（汇总）
 
-行为冲突处以 [DESIGN.md](./DESIGN.md) 为准。P5 GA 勾选见 [roadmap/P5.md](./roadmap/P5.md) §5.2。
+行为冲突处以 [DESIGN.md](./DESIGN.md) 为准。P5 GA 勾选见 roadmap/P5.md（已随 2.0 GA 归档）§5.2。
 
 | 模块 | 关键验收 | DESIGN 对齐要点 |
 | --- | --- | --- |
@@ -947,7 +925,6 @@ flowchart TB
 | Skills | 开放规范 ZIP；公私；覆盖更新；PAT 下载 | 无私有对象 ACL 外的非项目 ACL |
 | 系统 | 用户角色资源字典操作日志 | — |
 
-**升级**：不提供 1.x → 2.0 数据迁移。
 
 ---
 

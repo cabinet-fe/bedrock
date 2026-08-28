@@ -5,7 +5,7 @@
 代码仓库 / 服务器 / 凭证见 [resource.md](resource.md)。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
-业务语义与权限模型见 [docs/DESIGN.md](../docs/DESIGN.md)。
+业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
 
 **项目归属（`project_id`）**：BuildJob / BuildPipeline 可选归属产品项目（可空）。创建/更新传正整数绑定；传 `0` 解除绑定（存为 null）；更新时省略字段则不改。列表查询带 `project_id` 时按归属过滤，并跳过角色 `data_scope` 下的 `created_by`/`is_public` 数据范围限制（仍需本端点 `:view`）；**写/执行规则不变**。不带 `project_id` 时全局列表行为与原先一致。流水线节点引用的 Job/Agent **不强制**与流水线同属一项目。
 

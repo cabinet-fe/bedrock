@@ -29,14 +29,12 @@ make smoke-linux-package  # 产出校验和；Linux amd64 主机可启动冒烟
 - [ ] `make smoke-fresh-install`
 - [ ] `make smoke-api-e2e`
 - [ ] `make smoke-restart-recovery`
-- [ ] `bash scripts/check-ga-guardrails.sh`
-- [ ] P0–P4 Gate 无未关闭落地阻塞项（见 [known-issues.md](./known-issues.md)）
-- [ ] web 切换 Gate 证据见 [roadmap/P5-switch-gate.md](./roadmap/P5-switch-gate.md)
+- [ ] P0–P4 Gate 无未关闭落地阻塞项（原 known-issues.md 已归档删除，限制项见 git 历史）
+- [ ] web 切换 Gate 证据见 roadmap/P5-switch-gate.md（已随 2.0 GA 归档）
 
 ## 文档
 
-- [ ] PRD / DESIGN / ROADMAP / AGENTS 无矛盾
-- [ ] 显著声明：**不提供** 1.x → 2.0 数据迁移
+- [ ] PRD / DESIGN / AGENTS 无矛盾
 - [ ] 风险说明：HTTP + access Web Storage / refresh HttpOnly Cookie（不设 Secure）、同 UID、自定义超管命令
 
 ## 前端 embed 回滚
@@ -54,4 +52,3 @@ Go embed **只认** `cmd/server/dist`，与来源目录无关。
 ## 发布包回退
 
 1. 停止进程 → 换回上一版二进制（校验 checksum）→ 按需还原 data 备份 → 启动 → `/api/v1/health` + 登录。
-2. 不支持把 1.x 库「升级」进 2.0；回退/前进均按全新安装或自备备份策略。

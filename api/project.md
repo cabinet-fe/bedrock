@@ -3,7 +3,7 @@
 项目、成员、需求、评论、附件、文档发布。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
-业务语义与权限模型见 [docs/DESIGN.md](../docs/DESIGN.md)。
+业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
 
 **读可见性**：持有 `project_projects:view`（或对应子域 `:view`）且满足数据范围：角色 `data_scope=all`、超管或 `project_projects:manage_all` 可读全部项目；`data_scope=self`（默认）仅可读本人为成员或创建人的项目。写操作（创建/更新/归档/删除/成员管理及需求/文档写）仍走项目成员 ACL 或 `manage_all`。非成员响应中 `my_role` 可为空（omit），`permissions` 能力位均为 false。`is_public` 字段保留兼容，**不再影响**项目读可见性。
 

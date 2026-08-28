@@ -3,7 +3,7 @@
 登录、刷新、登出、当前用户。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
-业务语义与权限模型见 [docs/DESIGN.md](../docs/DESIGN.md)。
+业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
 个人访问令牌（PAT）的管理接口（`/resource/tokens`）已迁入资源管理域，见 [resource.md](resource.md)；auth 中间件继续消费 Bearer PAT 做鉴权（`Authorization: Bearer br_...`）。
 
 ## 认证
@@ -91,3 +91,4 @@
 过滤规则：菜单 `hidden=false`、enabled、非超管去掉 `super_admin_only`、需具备 `{menuCode}:view`；空分组不返回。
 
 PAT 对象形状（PATCreateResponse、PersonalAccessToken）见 [resource.md](resource.md)。
+

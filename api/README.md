@@ -3,7 +3,7 @@
 Bedrock 的 HTTP 接口约定写在本目录的 Markdown 里，按业务域拆分。
 
 通用约定（响应信封、分页、认证方式）见 [.agents/api.md](../.agents/api.md)。
-领域行为和权限语义见 [docs/DESIGN.md](../docs/DESIGN.md)。
+领域行为和权限语义见 [DESIGN.md](../.agents/docs/DESIGN.md)。
 
 ## 域索引
 

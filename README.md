@@ -4,8 +4,6 @@
 
 项目开发基石平台：在同一套系统上覆盖**宿主机运维**、**CI/CD 交付**、**产品协作**（需求与接口文档）以及 **AI 智能体与开放 Agent Skills**，帮助团队把「写代码 → 构建 → 部署 → 协作 → 智能化」串成闭环。
 
-> 2.0 **仅支持全新安装**，不提供 1.x → 2.0 数据迁移。
-
 ## 功能概览
 
 | 域 | 能力 |
@@ -69,7 +67,7 @@ curl -fsS http://127.0.0.1:8080/api/v1/health
 
 切换到 PostgreSQL / MySQL：改 `database.driver` 及相关连接项后重启即可，**无需重编**。改驱动**不会**搬迁数据，需自行完成迁移。
 
-更完整的安装、备份、回退与 Deploy Agent 说明见 [docs/ops-handbook.md](./docs/ops-handbook.md)。
+更完整的安装、备份、回退与 Deploy Agent 说明见 [.agents/docs/ops-handbook.md](./.agents/docs/ops-handbook.md)。
 
 ## 从源码构建与启动
 
@@ -111,7 +109,6 @@ make checksums
 go test ./...
 cd web && bun install && vp check
 make smoke                 # fresh-install + api-e2e + recovery + 三库 + linux 包
-make ga-guardrails         # 禁止把 1.x 迁移当作支持路径
 ```
 
 ## 配置要点
@@ -133,10 +130,10 @@ make ga-guardrails         # 禁止把 1.x 迁移当作支持路径
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/PRD.md](./docs/PRD.md) | 产品需求真源 |
-| [docs/DESIGN.md](./docs/DESIGN.md) | 技术设计真源 |
-| [docs/ops-handbook.md](./docs/ops-handbook.md) | 安装、备份、升级与回退 |
-| [docs/release-checklist.md](./docs/release-checklist.md) | 发布检查单 |
+| [.agents/docs/PRD.md](./.agents/docs/PRD.md) | 产品需求真源 |
+| [.agents/docs/DESIGN.md](./.agents/docs/DESIGN.md) | 技术设计真源 |
+| [.agents/docs/ops-handbook.md](./.agents/docs/ops-handbook.md) | 安装、备份、升级与回退 |
+| [.agents/docs/release-checklist.md](./.agents/docs/release-checklist.md) | 发布检查单 |
 | [api/README.md](./api/README.md) | HTTP API 契约（按域拆分） |
 | [AGENTS.md](./AGENTS.md) | 仓库协作与常用命令 |
 
@@ -146,4 +143,4 @@ make ga-guardrails         # 禁止把 1.x 迁移当作支持路径
 2. **HTTP 与会话**：生产强烈建议 HTTPS。`access_token` 存 Web Storage；`refresh_token` 为 HttpOnly Cookie（不设 Secure）。
 3. **自定义命令**：仅超级管理员可维护与执行，须最小授权并审计。
 
-详见 [docs/DESIGN.md](./docs/DESIGN.md) 与 [docs/ops-handbook.md](./docs/ops-handbook.md)。
+详见 [.agents/docs/DESIGN.md](./.agents/docs/DESIGN.md) 与 [.agents/docs/ops-handbook.md](./.agents/docs/ops-handbook.md)。

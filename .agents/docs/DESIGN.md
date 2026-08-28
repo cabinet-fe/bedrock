@@ -4,10 +4,10 @@
 | --- | --- |
 | 文档版本 | 2.0.0 |
 | 状态 | 已确认基线 |
-| 输入 | [PRD.md](./PRD.md)、[ROADMAP.md](./ROADMAP.md)、PRD 审查 canvas、`refactor.md`、现有 1.x 代码基线 |
+| 输入 | [PRD.md](./PRD.md)、ROADMAP.md（已随 2.0 GA 归档）、PRD 审查 canvas、`refactor.md`、现有代码基线 |
 | 范围 | 架构、领域模型、鉴权、迁移、API、异步任务、存储、前端、测试与发布；**本文为 2.0 技术真源** |
 
-产品需求语义以 PRD 为准；分期与 Gate 以 ROADMAP 为准；本文闭合 PRD/canvas 中未决的实现选择，并覆盖已接受风险的补偿控制。
+产品需求语义以 PRD 为准；本文闭合 PRD/canvas 中未决的实现选择，并覆盖已接受风险的补偿控制。（分期与 Gate 记录随 2.0 GA 归档）
 
 ---
 
@@ -17,9 +17,8 @@
 
 | # | 主题 | 决策 |
 | --- | --- | --- |
-| D1 | 交付切片 | 分阶段完成全量 2.0 GA：P0→P1→P2→P3→P4→P5（见 ROADMAP） |
+| D1 | 交付切片 | 分阶段完成全量 2.0 GA：P0→P1→P2→P3→P4→P5（分期记录已随 GA 归档） |
 | D2 | 用户角色 | 多角色；权限取**并集**；**不支持**显式 deny |
-| D3 | 1.x 升级 | **仅全新安装**；不提供 1.x 数据迁移 |
 | D4 | 对象 ACL 与项目归属 | **仅产品项目**使用成员 ACL（写侧）；项目域读侧：持有对应 `:view` 即可读全部项目内容。BuildJob / ScriptJob / BuildPipeline 可选 `project_id`（可空）；AiAgent 跨项目共用。CI/CD 全局列表另受角色 `data_scope`；运维/凭证/Skills 等仍为全局 RBAC |
 | D5 | 全局项目权限 | 显式 `project_projects:view_all` / `manage_all`（`view_all` 保留兼容；读侧已由 `:view` 覆盖全员可读）；普通 `:update` 不隐含全局越权；角色 `data_scope=all` 仅影响 CI/CD 等非项目域列表读 |
 | D6 | AI 文档发布 | 同节点双态草稿；人工确认发布；`expected_version` 乐观锁 |
@@ -126,8 +125,7 @@ internal/
 api/                      # HTTP 契约（Markdown，按域拆分）
   README.md / auth.md / system.md / resource.md / cicd.md / ops.md / project.md / ai.md
 web/                      # Vue 3 前端
-docs/
-  PRD.md / DESIGN.md / ROADMAP.md
+.agents/docs/             # 工程底座文档：PROJECT / ARCHITECTURE / DEV-STANDARDS / CODE-MAP / PRD / DESIGN / ops-handbook / release-checklist / dsh-integration-design
 ```
 
 ### 3.2 分层规则
@@ -366,7 +364,7 @@ database:
 - Go 注册表：`migrations.Register(version, up func(ctx, db, driver))`。
 - 启动时事务顺序执行未应用版本；失败拒绝启动。
 - 公共 GORM/SQL 操作 + **少量驱动分支**（如部分索引类型）。
-- **禁止**把业务数据转换塞进日常启动；2.0 无 1.x 迁移任务。
+- **禁止**把业务数据转换塞进日常启动。
 - 合同测试：同一套 repository 用例在 sqlite/postgres/mysql 上跑。
 
 ### 6.3 切换语义
@@ -382,7 +380,7 @@ database:
 
 清理采用可恢复的隔离流程：严格校验目标位于预期根目录内且路径祖先不是软链，将旧路径原子移入同一文件系统的隔离区；数据库 schema 迁移提交后再删除隔离区。任一路径越界、校验、移动或删除失败都拒绝升级，并允许下次启动幂等续做。
 
-该流程绝不删除 `{workspace}/agents/agent-{id}/` 根目录中的其他文件，也不触碰 BuildRun 工作区或制品。这里描述的是 2.0 内部版本升级，不构成 1.x → 2.0 数据迁移支持。
+该流程绝不删除 `{workspace}/agents/agent-{id}/` 根目录中的其他文件，也不触碰 BuildRun 工作区或制品。这里描述的是 2.0 内部版本升级。
 
 ---
 
@@ -575,7 +573,7 @@ web/src/
 - Go embed **只认** `cmd/server/dist`，不关心来源。
 - Release：构建 `web/dist` → 拷贝至 `cmd/server/dist` → `go build` embed。
 - 回滚：替换 `cmd/server/dist` 或检出上一发布 tag 产物后重打包。见 [release-checklist.md](./release-checklist.md)。
-- 切换 Gate 证据：[roadmap/P5-switch-gate.md](./roadmap/P5-switch-gate.md)；Gate 条文见 ROADMAP P5。
+- 切换 Gate 证据：roadmap/P5-switch-gate.md（已随 2.0 GA 归档）；Gate 条文见 ROADMAP P5（已归档）。
 
 ---
 
@@ -609,39 +607,25 @@ web/src/
 2. **全新安装**：空数据目录 + 配置 + 启动（migration + 种子超管）。见 [ops-handbook.md](./ops-handbook.md)。
 3. **备份**：SQLite 可用文件复制/专用备份命令；Postgres/MySQL 使用各自工具——平台可提供「备份指引」，**不假装统一物理备份**。
 4. **前端回滚**：保留上一版 `web` 产物 tag；替换 `cmd/server/dist` 后重打包。见 [release-checklist.md](./release-checklist.md)。
-5. **无** 1.x 升级通道；文档与登录页显著位置声明。
-6. **2.0 内部升级**：若来源版本仍有旧 Agent `runs/` 与归档，升级会按 §6.4 安全清理；操作前必须备份数据库、工作区与制品目录。
-7. **检查单**：[release-checklist.md](./release-checklist.md)；冒烟：`make smoke*`。
+5. **2.0 内部升级**：若来源版本仍有旧 Agent `runs/` 与归档，升级会按 §6.4 安全清理；操作前必须备份数据库、工作区与制品目录。
+6. **检查单**：[release-checklist.md](./release-checklist.md)；冒烟：`make smoke*`。
 
 ---
 
-## 15. 与 1.x 概念映射（无数据迁移）
+## 15. 文档关系
 
-| 1.x | 2.0 |
-| --- | --- |
-| Project | Repository（+ 可选关联 ProductProject） |
-| Environment | BuildJob + DeployTarget[] |
-| Build | BuildRun |
-| BuildDistribution | BuildDeployAttempt（可多轮历史） |
-| 固定 admin/ops/dev | Super Admin + 自定义 Role |
-| 内嵌 pipeline agent | 异步 AgentRun + 构建事件；流水线 agent 节点（同步，见 D35） |
-| AgentProxy | CliRuntime |
-| React web/（已移除） | Vue web/ |
-
----
-
-## 16. 文档关系
+文档位于 `.agents/docs/`（工程底座目录），API 契约位于 `api/`。
 
 | 文档 | 职责 |
 | --- | --- |
 | PRD.md | 产品需求与验收意图 |
-| ROADMAP.md | 分期、依赖、Gate |
 | DESIGN.md | 技术真源（本文） |
-| AGENTS.md | 命令、目录与读写指引；FE/BE 约定见 `.agents/fe.md` / `.agents/be.md` |
 | ops-handbook.md | 安装、多库、备份、风险、回滚 |
 | release-checklist.md | 发版检查与 checksum |
-| known-issues.md | 非阻塞已知问题 |
-| api/*.md | API 真源（按域拆分） |
+| dsh-integration-design.md（仓库根） | DSH 交互会话集成设计稿（待评审） |
+| api/*.md | API 真源（按域拆分）；写接口前先写契约（见 `.agents/docs/DEV-STANDARDS.md`「接口」） |
+
+已归档（随 2.0 GA 清理，见 git 历史）：ROADMAP.md 与 roadmap/（分期、依赖、Gate）、known-issues.md（非阻塞已知问题）。
 
 冲突时：实现与 `api/*.md` / DESIGN 对齐；需求争议回退 PRD，并开变更同步文档。
 

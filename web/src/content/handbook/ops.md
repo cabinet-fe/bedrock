@@ -6,8 +6,6 @@
 
 ## 1. 全新安装（默认 SQLite）
 
-2.0 **只支持全新安装**，不提供 1.x → 2.0 数据迁移。
-
 ```bash
 # 1. 取得发布包（示例：Linux amd64）
 #    bedrock-linux-amd64 + bedrock-agent-linux-amd64（+ .sha256 校验文件）
@@ -92,7 +90,7 @@ make smoke-three-db
 
 ### 5.1 2.0 内部升级：旧 Agent 数据清理
 
-仅适用于从仍保留旧 Agent 单 Run 输出/归档能力的 2.0 版本升级（仍不支持 1.x → 2.0 迁移）。
+仅适用于从仍保留旧 Agent 单 Run 输出/归档能力的 2.0 版本升级。
 
 升级前必须：
 

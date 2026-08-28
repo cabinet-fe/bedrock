@@ -4,8 +4,6 @@
 
 A **project development foundation** platform: host operations, **CI/CD delivery**, **product collaboration** (requirements and API docs), and **AI agents with open Agent Skills**—so teams can close the loop from code → build → deploy → collaborate → automate.
 
-> 2.0 supports **fresh installs only**. There is **no** 1.x → 2.0 data migration.
-
 ## Features
 
 | Domain | Capabilities |
@@ -70,7 +68,7 @@ curl -fsS http://127.0.0.1:8080/api/v1/health
 
 To use PostgreSQL or MySQL, change `database.driver` and connection settings, then restart—**no rebuild required**. Switching drivers does **not** migrate data; move data yourself if needed.
 
-For install, backup, rollback, and Deploy Agent details, see [docs/ops-handbook.md](./docs/ops-handbook.md).
+For install, backup, rollback, and Deploy Agent details, see [.agents/docs/ops-handbook.md](./.agents/docs/ops-handbook.md).
 
 ## Build and run from source
 
@@ -112,7 +110,6 @@ make checksums
 go test ./...
 cd web && bun install && vp check
 make smoke                 # fresh-install + api-e2e + recovery + 3 DB + linux package
-make ga-guardrails         # reject treating 1.x migration as a supported path
 ```
 
 ## Configuration highlights
@@ -134,10 +131,10 @@ Override with `BEDROCK_`-prefixed environment variables (Viper).
 
 | Doc | Purpose |
 | --- | --- |
-| [docs/PRD.md](./docs/PRD.md) | Product requirements (source of truth) |
-| [docs/DESIGN.md](./docs/DESIGN.md) | Technical design (source of truth) |
-| [docs/ops-handbook.md](./docs/ops-handbook.md) | Install, backup, upgrade, rollback |
-| [docs/release-checklist.md](./docs/release-checklist.md) | Release checklist |
+| [.agents/docs/PRD.md](./.agents/docs/PRD.md) | Product requirements (source of truth) |
+| [.agents/docs/DESIGN.md](./.agents/docs/DESIGN.md) | Technical design (source of truth) |
+| [.agents/docs/ops-handbook.md](./.agents/docs/ops-handbook.md) | Install, backup, upgrade, rollback |
+| [.agents/docs/release-checklist.md](./.agents/docs/release-checklist.md) | Release checklist |
 | [api/README.md](./api/README.md) | HTTP API contracts by domain |
 | [AGENTS.md](./AGENTS.md) | Repo collaboration & common commands |
 
@@ -147,4 +144,4 @@ Override with `BEDROCK_`-prefixed environment variables (Viper).
 2. **HTTP & sessions**: Prefer HTTPS in production. `access_token` lives in Web Storage; `refresh_token` is an HttpOnly cookie (Secure is not set).
 3. **Custom commands**: Super-admin only; keep least privilege and audit.
 
-See [docs/DESIGN.md](./docs/DESIGN.md) and [docs/ops-handbook.md](./docs/ops-handbook.md).
+See [.agents/docs/DESIGN.md](./.agents/docs/DESIGN.md) and [.agents/docs/ops-handbook.md](./.agents/docs/ops-handbook.md).

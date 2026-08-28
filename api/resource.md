@@ -3,7 +3,7 @@
 代码仓库、服务器、凭证、AI CLI 运行时、个人访问令牌（与 CI/CD / AI 业务域解耦的共享资源）。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
-业务语义与权限模型见 [docs/DESIGN.md](../docs/DESIGN.md)。
+业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
 
 ## 代码仓库
 

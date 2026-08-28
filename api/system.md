@@ -3,7 +3,7 @@
 用户、角色、RBAC 资源、菜单、字典、操作日志、通知。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
-业务语义与权限模型见 [docs/DESIGN.md](../docs/DESIGN.md)。
+业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
 
 ## 用户
 

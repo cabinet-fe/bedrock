@@ -16,7 +16,7 @@
 | CICD | BuildJob / ScriptJob / BuildPipeline **均无 project_id**；列表靠 `created_by + is_public + data_scope` 过滤 | `internal/cicd/model/models.go:59,173,232`、`internal/cicd/service/build_job_service.go:408` |
 | AI | AiAgent / SkillPackage 无 project_id；仅 AgentRun 有 `project_id`（仅 docs_generate 场景使用） | `internal/ai/model/models.go:71,120` |
 | 权限 | 全局 RBAC 权限码 + 项目域对象级 ACL；cicd/ai 走角色 data_scope | `internal/rbac/`、`internal/project/service/acl.go:72` |
-| PRD | 现行定位「项目管理与 CI/CD 解耦、各自一等公民」，与本需求直接冲突，需修订 | `docs/PRD.md`、`docs/DESIGN.md` D4/D5、§4.4 |
+| PRD | 现行定位「项目管理与 CI/CD 解耦、各自一等公民」，与本需求直接冲突，需修订 | `.agents/docs/PRD.md`、`.agents/docs/DESIGN.md` D4/D5、§4.4 |
 
 ## 关键设计决策
 
