@@ -17,8 +17,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Ban supported 1.x→2.0 data migration paths
-        run: bash scripts/check-ga-guardrails.sh
       - name: Ensure embed dist exists
         run: |
           mkdir -p cmd/server/dist
@@ -135,7 +133,6 @@ jobs:
             echo
             echo "## 重要说明"
             echo
-            echo "- **不提供** 1.x → 2.0 数据迁移；请全新安装或自备备份策略。"
             echo "- 产物前缀为 \`bedrock-*\`（不再使用 \`buildflow-*\`）。"
             echo "- Server 与 Deploy Agent 须使用**同一版本**。"
             echo "- 校验：各平台 \`*.sha256\`，或汇总文件 \`SHA256SUMS\`。"

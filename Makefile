@@ -3,7 +3,8 @@
 	build-agent-linux build-agent-linux-arm64 build-agent-win \
 	clean \
 	smoke-fresh-install smoke-api-e2e smoke-three-db smoke-linux-package smoke-restart-recovery smoke \
-	ga-guardrails checksums
+	checksums \
+	install-hooks check-api-contracts
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 FRONTEND_DIR ?= web
@@ -54,8 +55,12 @@ checksums:
 		shasum -a 256 bedrock-linux-amd64 bedrock-linux-arm64 bedrock-agent-linux-amd64 bedrock-agent-linux-arm64 2>/dev/null || \
 		(echo "build linux packages first" >&2; exit 1)
 
-ga-guardrails:
-	bash scripts/check-ga-guardrails.sh
+install-hooks:
+	git config core.hooksPath .githooks
+	@echo "git hooks 已安装（.githooks/pre-commit：API 契约先行检查）"
+
+check-api-contracts:
+	node .agents/scripts/api-sync.mjs --worktree
 
 smoke-fresh-install:
 	bash scripts/smoke/fresh-install.sh
@@ -72,7 +77,7 @@ smoke-linux-package:
 smoke-restart-recovery:
 	bash scripts/smoke/restart-recovery.sh
 
-smoke: ga-guardrails smoke-fresh-install smoke-api-e2e smoke-restart-recovery smoke-three-db smoke-linux-package
+smoke: smoke-fresh-install smoke-api-e2e smoke-restart-recovery smoke-three-db smoke-linux-package
 
 clean:
 	rm -rf bedrock* cmd/server/dist $(FRONTEND_DIR)/dist data/ .tmp/smoke

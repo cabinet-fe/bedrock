@@ -10,3 +10,4 @@ bedrock
 bedrock-*
 server
 .tmp/
+.agents/cooking/
