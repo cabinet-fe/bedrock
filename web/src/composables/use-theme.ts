@@ -70,9 +70,19 @@ export type RadiusMode = (typeof CURRENT_RADIUS_OPTIONS)[number];
 export const CURRENT_NAV_VARIANT_OPTIONS = ["follow", "dark", "light"] as const;
 export type NavVariantMode = (typeof CURRENT_NAV_VARIANT_OPTIONS)[number];
 
-export const currentThemeID = ref(readStored(THEME_STORAGE_KEY, THEME_OPTIONS.map((o) => o.id), DEFAULT_THEME_ID));
-export const currentSize = ref<ComponentSize>(readStored(SIZE_STORAGE_KEY, CURRENT_SIZE_OPTIONS, "default"));
-export const currentRadiusMode = ref<RadiusMode>(readStored(RADIUS_STORAGE_KEY, CURRENT_RADIUS_OPTIONS, "default"));
+export const currentThemeID = ref(
+  readStored(
+    THEME_STORAGE_KEY,
+    THEME_OPTIONS.map((o) => o.id),
+    DEFAULT_THEME_ID,
+  ),
+);
+export const currentSize = ref<ComponentSize>(
+  readStored(SIZE_STORAGE_KEY, CURRENT_SIZE_OPTIONS, "default"),
+);
+export const currentRadiusMode = ref<RadiusMode>(
+  readStored(RADIUS_STORAGE_KEY, CURRENT_RADIUS_OPTIONS, "default"),
+);
 export const currentNavVariant = ref<NavVariantMode>(
   readStored(NAV_VARIANT_STORAGE_KEY, CURRENT_NAV_VARIANT_OPTIONS, "follow"),
 );
@@ -93,7 +103,9 @@ export function buildEffectiveTheme(): UITheme {
     // 强制侧栏变体：展开整套变体 token 覆盖预设侧栏个性（如樱花深酒红底），
     // 保证前景 / 底色 + 侧栏底（layout 用 --u-nav-bg-color）三处配套。
     const nav: Record<string, string> = { variant: currentNavVariant.value };
-    for (const [name, value] of Object.entries(navSidebarTokens(base.series, currentNavVariant.value))) {
+    for (const [name, value] of Object.entries(
+      navSidebarTokens(base.series, currentNavVariant.value),
+    )) {
       nav[name.replace(/^--u-nav-/, "")] = value;
     }
     base = base.new({ nav });
