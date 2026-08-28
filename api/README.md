@@ -17,6 +17,7 @@ Bedrock 的 HTTP 接口约定写在本目录的 Markdown 里，按业务域拆�
 | [ops.md](ops.md) | 仪表盘卡片与运维（进程、开发环境） |
 | [project.md](project.md) | 项目（成员、需求、评论、附件、文档发布） |
 | [ai.md](ai.md) | Agents、运行记录、Skills |
+| [dsh.md](dsh.md) | DSH 交互会话（REST / WebSocket） |
 
 ## 怎么改契约
 

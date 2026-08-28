@@ -20,6 +20,7 @@ bedrock
 │   ├── ops/                    # 运维：进程、开发环境等
 │   ├── project/                # 项目、需求、文档
 │   ├── ai/                     # AI Agent / Skill / Run
+│   ├── dsh/                    # DSH 交互会话（JSON-RPC / SSE 客户端）
 │   ├── dashboard/              # 仪表盘聚合数据
 │   ├── storage/                # 制品与文件存储
 │   ├── ws/                     # WebSocket
@@ -70,6 +71,7 @@ bedrock
 | ops | `internal/ops` | 进程管理、开发环境 | ops handler |
 | project | `internal/project` | 项目、需求、文档 | `project/handler.RegisterRoutes` |
 | ai | `internal/ai` | AI Agent / Skill / Run | `ai/handler.RegisterRoutes` |
+| dsh | `internal/dsh` | DSH 交互会话：进程内 JSON-RPC / SSE 客户端 | `dsh/service` |
 | dashboard | `internal/dashboard` | 仪表盘聚合数据 | `dashboard/handler.RegisterRoutes` |
 | storage | `internal/storage` | 制品与文件存储 | storage 包 |
 | ws | `internal/ws` | WebSocket 通道 | ws 包 |

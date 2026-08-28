@@ -37,6 +37,7 @@ const DOMAIN_DOCS = {
   dashboard: ['api/ops.md'],
   project: ['api/project.md'],
   ai: ['api/ai.md'],
+  dsh: ['api/dsh.md'],
 };
 
 // 特殊文件 → 必须同步的文档（响应信封）。

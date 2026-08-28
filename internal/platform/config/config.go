@@ -61,6 +61,23 @@ type AdminConfig struct {
 	DisplayName string `mapstructure:"display_name"`
 }
 
+// DshConfig is the DSH subprocess settings. Listen address is not configurable.
+type DshConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	Bin            string `mapstructure:"bin"`
+	Home           string `mapstructure:"home"`
+	WorkspaceRoot  string `mapstructure:"workspace_root"`
+	Port           int    `mapstructure:"port"`
+	StartupTimeout string `mapstructure:"startup_timeout"`
+	HealthInterval string `mapstructure:"health_interval"`
+	AutoRestart    bool   `mapstructure:"auto_restart"`
+	ApprovalMode   string `mapstructure:"approval_mode"`
+	PendingTTL     string `mapstructure:"pending_ttl"`
+	SessionIdleTTL string `mapstructure:"session_idle_ttl"`
+	LogDir         string `mapstructure:"log_dir"`
+	MaxSessions    int    `mapstructure:"max_sessions"`
+}
+
 type Config struct {
 	Server     ServerConfig     `mapstructure:"server"`
 	Database   DatabaseConfig   `mapstructure:"database"`
@@ -69,6 +86,7 @@ type Config struct {
 	Storage    StorageConfig    `mapstructure:"storage"`
 	Encryption EncryptionConfig `mapstructure:"encryption"`
 	Admin      AdminConfig      `mapstructure:"admin"`
+	Dsh        DshConfig        `mapstructure:"dsh"`
 }
 
 // C is the process-wide config after Load (nil until Load succeeds).
@@ -102,6 +120,16 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("storage.root", "./data/storage")
 	v.SetDefault("storage.attachment_max_bytes", 20*1024*1024)
 	v.SetDefault("storage.doc_import_max_bytes", 100*1024*1024)
+	v.SetDefault("dsh.enabled", false)
+	v.SetDefault("dsh.bin", "dsh")
+	v.SetDefault("dsh.port", 17800)
+	v.SetDefault("dsh.startup_timeout", "60s")
+	v.SetDefault("dsh.health_interval", "10s")
+	v.SetDefault("dsh.auto_restart", true)
+	v.SetDefault("dsh.approval_mode", "manual")
+	v.SetDefault("dsh.pending_ttl", "10m")
+	v.SetDefault("dsh.session_idle_ttl", "72h")
+	v.SetDefault("dsh.max_sessions", 64)
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
@@ -135,6 +163,8 @@ func Load(configPath string) (*Config, error) {
 	cfg.Build.LogDir = resolvePath(configDir, cfg.Build.LogDir)
 	cfg.Build.CacheDir = resolvePath(configDir, cfg.Build.CacheDir)
 	cfg.Storage.Root = resolvePath(configDir, cfg.Storage.Root)
+	cfg.Dsh.Home = resolvePath(configDir, cfg.Dsh.Home)
+	cfg.Dsh.WorkspaceRoot = resolvePath(configDir, cfg.Dsh.WorkspaceRoot)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -195,6 +225,19 @@ func (c *Config) Validate() error {
 	}
 	if c.Storage.DocImportMaxBytes <= 0 {
 		return fmt.Errorf("storage.doc_import_max_bytes must be greater than zero")
+	}
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{"dsh.startup_timeout", c.Dsh.StartupTimeout},
+		{"dsh.health_interval", c.Dsh.HealthInterval},
+		{"dsh.pending_ttl", c.Dsh.PendingTTL},
+		{"dsh.session_idle_ttl", c.Dsh.SessionIdleTTL},
+	} {
+		if _, err := time.ParseDuration(item.value); err != nil {
+			return fmt.Errorf("invalid %s: %w", item.name, err)
+		}
 	}
 	return nil
 }

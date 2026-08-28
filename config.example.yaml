@@ -45,3 +45,19 @@ admin:
   username: "admin"
   password: "change-me-on-first-login"
   display_name: "管理员"
+
+# DSH interactive sessions. Listen address is always 127.0.0.1 (not configurable).
+dsh:
+  enabled: true # false = module off; omit this section to keep enabled=false
+  bin: "dsh" # executable name or absolute path
+  home: "./data/dsh" # DSH_HOME (session persistence / plugins / presets)
+  workspace_root: "./data/dsh-workspaces" # session cwd root (per-user isolation)
+  port: 17800 # listen on 127.0.0.1 only; keep clear of other services
+  startup_timeout: "60s" # ready-probe timeout
+  health_interval: "10s" # runtime probe interval
+  auto_restart: true
+  approval_mode: "manual" # manual | auto
+  pending_ttl: "10m" # approval / question pending timeout
+  session_idle_ttl: "72h" # idle archive
+  log_dir: "" # empty inherits build.log_dir
+  max_sessions: 64
