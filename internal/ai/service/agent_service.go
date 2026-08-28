@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -712,17 +710,12 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 			s.hub.BroadcastToChannel(fmt.Sprintf("ai-run:%d", run.ID), []byte(line))
 		}
 	}
-	writeLog(resourcemodel.RiskNoticeSameUID)
-	writeLog(fmt.Sprintf("agent=%s cli=%s trigger=%s", agent.Name, agent.CliKey, run.TriggerType))
-	writeLog("context: persistent agent workspace (skills + repo checkouts)")
-
 	timeout := time.Duration(agent.TimeoutSec) * time.Second
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
 	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
+	// Workspace sync (git pull of bound repos) must not consume the CLI timeout.
 	digests, repoDirs, err := s.SyncAgentWorkspace(agent, run.TriggeredBy, true)
 	if err != nil {
 		s.failRun(run, err)
@@ -731,10 +724,6 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	if len(digests) > 0 {
 		b, _ := json.Marshal(digests)
 		run.SkillDigestJSON = string(b)
-		writeLog("injected skills: " + run.SkillDigestJSON)
-	}
-	if len(repoDirs) > 0 {
-		writeLog("bound repo dirs: " + strings.Join(repoDirs, " "))
 	}
 
 	absRoot, _ := filepath.Abs(agentRoot)
@@ -753,10 +742,6 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		s.failRun(run, err)
 		return
 	}
-	writeLog("workdir=" + absRoot)
-	writeLog("BEDROCK_AGENT_OUTPUT=" + absOutput)
-	writeLog("BEDROCK_AGENT_ENV_FILE=" + envFile)
-	writeLog("请将需交付的文件写入 $BEDROCK_AGENT_OUTPUT（固定产出目录，跨 Run 复用）")
 
 	var binary string
 	if s.cliRunner != nil {
@@ -768,22 +753,19 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	} else {
 		resolved, lookErr := ResolveBinary(cli)
 		if lookErr != nil {
-			writeLog("CLI binary not found: " + lookErr.Error())
+			writeLog("未找到 CLI: " + lookErr.Error())
 			s.failRun(run, fmt.Errorf("CLI %s 未安装或不可用: %w", agent.CliKey, lookErr))
 			return
 		}
 		binary = resolved
 	}
-	writeLog("binary=" + binary)
+
+	writeRunIntro(writeLog, agent, run, absRoot, absOutput, binary, len(digests), len(repoDirs), timeout)
 
 	args := strings.Fields(cli.DefaultArgs)
 	args = appendFullPermissionArgs(agent.CliKey, args)
-	writeLog("cli full-permission flags enabled for workspace access (scope via prompt)")
-	if agent.StreamOutput {
-		writeLog("cli stream-output: human-readable (CLI default)")
-	} else {
+	if !agent.StreamOutput {
 		args = appendNonStreamingOutputArgs(agent.CliKey, args)
-		writeLog("cli stream-output disabled: summary mode where supported")
 	}
 	hint := agentWorkspaceScopeHint()
 	if run.TriggerType == model.TriggerDocsGen {
@@ -799,6 +781,9 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	maps.Copy(runtimeExtra, agentEnv)
 	cmdEnv := append(removeEnv(BuildRuntimeEnv(cli, "", runtimeExtra), "BEDROCK_AGENT_OUTPUT"), "BEDROCK_AGENT_OUTPUT="+absOutput)
 
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	var outputText string
 	if s.cliRunner != nil {
 		outputText, err = s.cliRunner(runCtx, CLIRunRequest{
@@ -810,30 +795,12 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 			}
 		}
 	} else {
-		cmd := exec.CommandContext(runCtx, binary, args...)
-		cmd.Dir = agentRoot
-		cmd.Env = cmdEnv
-		stdout, _ := cmd.StdoutPipe()
-		stderr, _ := cmd.StderrPipe()
-		if err := cmd.Start(); err != nil {
-			s.failRun(run, err)
-			return
-		}
-		// 分通道采集后再合并，避免并发写同一 Builder；边读边打日志供 UI 流式展示。
-		// 使用 io.ReadAll 而非 Scanner，避免 Linux CI 上短生命周期子进程 stdout 偶发丢失末行。
-		var stdoutBuf, stderrBuf strings.Builder
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() { defer wg.Done(); drainExecStream(stdout, &stdoutBuf, writeLog) }()
-		go func() { defer wg.Done(); drainExecStream(stderr, &stderrBuf, writeLog) }()
-		err = cmd.Wait()
-		wg.Wait()
-		outputText = stdoutBuf.String() + stderrBuf.String()
+		outputText, err = runAgentCLI(runCtx, binary, args, agentRoot, cmdEnv, writeLog)
 	}
 
 	latest, _ := s.repo.FindRun(run.ID)
 	if latest != nil && latest.Status == model.JobCancelled {
-		writeLog("run cancelled")
+		writeLog("执行已取消")
 		s.notifyTerminal(run, model.JobCancelled)
 		return
 	}
@@ -846,8 +813,8 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	run.OutputText = outputText
 	if err != nil {
 		run.Status = model.JobFailed
-		run.ErrorMessage = err.Error()
-		writeLog("failed: " + err.Error())
+		run.ErrorMessage = formatCLIFailure(err, runCtx)
+		writeLog(run.ErrorMessage)
 		_ = s.repo.UpdateRun(run)
 		s.notifyTerminal(run, model.JobFailed)
 		return
@@ -855,9 +822,9 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 
 	run.Status = model.JobSuccess
 	run.ErrorMessage = ""
-	writeLog("success")
+	writeLog("执行成功")
 	if err := s.archiveRunOutput(run, agent, absOutput, writeLog); err != nil {
-		writeLog("artifact archive failed: " + err.Error())
+		writeLog("制品归档失败: " + err.Error())
 		if s.logger != nil {
 			s.logger.Warn("agent run artifact archive failed",
 				zap.Uint("run_id", run.ID), zap.Uint("agent_id", agent.ID), zap.Error(err))
@@ -871,9 +838,9 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 			content = "# Generated Draft\n\n(empty CLI output)\n"
 		}
 		if err := s.docs.WriteDraftFromAgentRun(*run.ProjectID, *run.DocNodeID, run.ID, content, run.TriggeredBy); err != nil {
-			writeLog("docs draft write failed: " + err.Error())
+			writeLog("文档草稿写入失败: " + err.Error())
 		} else {
-			writeLog("docs content written")
+			writeLog("文档内容已写入")
 		}
 	}
 	s.notifyTerminal(run, model.JobSuccess)
@@ -887,7 +854,7 @@ func (s *AgentService) archiveRunOutput(run *model.AgentRun, agent *model.AiAgen
 		return err
 	}
 	if !hasFiles {
-		writeLog("output empty; skip artifact")
+		writeLog("产出目录为空，跳过制品归档")
 		return nil
 	}
 	dir := filepath.Join(s.artifactDir, fmt.Sprintf("agent-%d", agent.ID))
@@ -901,7 +868,7 @@ func (s *AgentService) archiveRunOutput(run *model.AgentRun, agent *model.AiAgen
 	}
 	run.ArtifactPath = artifactPath
 	run.ArtifactKind = "archive"
-	writeLog("artifact=" + artifactPath)
+	writeLog("制品已归档: " + artifactPath)
 	return nil
 }
 
@@ -1098,18 +1065,4 @@ func removeEnv(env []string, key string) []string {
 		}
 	}
 	return filtered
-}
-
-// drainExecStream reads an exec pipe until EOF, appends to buf, and logs complete lines.
-func drainExecStream(r io.Reader, buf *strings.Builder, logFn func(string)) {
-	data, err := io.ReadAll(r)
-	if len(data) > 0 {
-		buf.Write(data)
-		for line := range strings.SplitSeq(strings.TrimSuffix(string(data), "\n"), "\n") {
-			logFn(line)
-		}
-	}
-	if err != nil && err != io.EOF {
-		logFn("stream read error: " + err.Error())
-	}
 }

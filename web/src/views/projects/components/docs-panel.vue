@@ -148,10 +148,6 @@ function openCreate(kind: "dir" | "doc", parentID?: number | null) {
   nodeDialogOpen.value = true;
 }
 
-function openCreateDoc(parentID: number) {
-  openCreate("doc", parentID);
-}
-
 function selectedDirectoryID() {
   if (!selected.value) return null;
   return selected.value.kind === "dir" ? selected.value.id : (selected.value.parent_id ?? null);
@@ -191,7 +187,7 @@ async function saveContent() {
   }
 }
 
-async function removeNode(node: ProjectDocNode) {
+async function removeNode(node: { id: number }) {
   try {
     if (isDev.value) await deleteDevDocNode(props.project.id, node.id);
     else await deleteDocNode(props.project.id, node.id);
@@ -203,7 +199,7 @@ async function removeNode(node: ProjectDocNode) {
   }
 }
 
-async function confirmRemoveNode(node: ProjectDocNode) {
+async function confirmRemoveNode(node: { id: number; name: string }) {
   const action = await messageConfirm.danger(`删除「${node.name}」？`, {
     cancelButtonText: "取消",
   }).onClosed;
@@ -226,25 +222,46 @@ function openMenu(e: MouseEvent, items: ContextMenuItem[]) {
 
 function onNodeContextMenu(e: MouseEvent, node: TreeNode) {
   e.preventDefault();
+  e.stopPropagation();
   const data = node.data as ProjectDocNode;
   const items: ContextMenuItem[] = [];
-  if (data.kind === "dir" && canCreate.value) {
-    items.push({ label: "新建文档", icon: FileAdd, callback: () => openCreateDoc(data.id) });
+  if (canCreate.value) {
+    const parentID = data.kind === "dir" ? data.id : (data.parent_id ?? null);
+    items.push({
+      label: data.kind === "dir" ? "新建文档" : "新建同级文档",
+      icon: FileAdd,
+      callback: () => openCreate("doc", parentID),
+    });
   }
   if (canUpdate.value) {
     items.push({ label: "移动", icon: Move, callback: () => openMove(data) });
   }
   if (canDelete.value) {
+    const target = { id: data.id, name: data.name };
     items.push({
       label: "删除",
       icon: Delete,
       callback: () => {
-        void confirmRemoveNode(data);
+        menuOpen.value = false;
+        window.setTimeout(() => {
+          void confirmRemoveNode(target);
+        }, 0);
       },
     });
   }
   if (!items.length) return;
   openMenu(e, items);
+}
+
+function onTreeBlankContextMenu(e: MouseEvent) {
+  const el = e.target as HTMLElement | null;
+  if (el?.closest(".tree-node, .u-tree-node")) return;
+  if (!canCreate.value) return;
+  e.preventDefault();
+  openMenu(e, [
+    { label: "新建文档", icon: FileAdd, callback: () => openCreate("doc", null) },
+    { label: "新建目录", icon: Folder, callback: () => openCreate("dir", null) },
+  ]);
 }
 
 async function move() {
@@ -314,11 +331,16 @@ watch(canUpdate, (ok) => {
 
 <template>
   <section class="docs" :class="{ 'is-tree-collapsed': treeCollapsed }">
-    <aside class="tree-panel" :class="{ 'is-collapsed': treeCollapsed }">
+    <aside
+      class="tree-panel"
+      :class="{ 'is-collapsed': treeCollapsed }"
+      @contextmenu="onTreeBlankContextMenu"
+    >
       <div class="tree-head">
         <template v-if="!treeCollapsed">
           <strong>文档树</strong>
           <div class="tree-head__actions">
+            <u-action v-if="canCreate" @run="openCreate('doc', null)">新建文档</u-action>
             <u-action v-if="canCreate" @run="openCreate('dir')">新建目录</u-action>
             <u-button plain size="small" aria-label="收窄文档树" @click="treeCollapsed = true">
               <u-icon :size="14"><ArrowLeft /></u-icon>
