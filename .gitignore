@@ -7,7 +7,7 @@ web/.env.local
 cmd/server/dist/
 web/dist/
 bedrock
-bedrock-*
+/bedrock-*
 server
 .tmp/
 .agents/cooking/
