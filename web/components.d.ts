@@ -67,6 +67,7 @@ declare module 'vue' {
     URadioGroup: typeof import('@veltra/desktop')['URadioGroup']
     UScroll: typeof import('@veltra/desktop')['UScroll']
     USelect: typeof import('@veltra/desktop')['USelect']
+    USteps: typeof import('@veltra/desktop')['USteps']
     USwitch: typeof import('@veltra/desktop')['USwitch']
     UTable: typeof import('@veltra/desktop')['UTable']
     UTabs: typeof import('@veltra/desktop')['UTabs']
