@@ -150,6 +150,11 @@ func (r *AIRepository) UpdateRunFields(id uint, fields map[string]any) error {
 	return r.db.Model(&model.AgentRun{}).Where("id = ?", id).Updates(fields).Error
 }
 
+func (r *AIRepository) UpdateRunFieldsIfStatus(id uint, statuses []string, fields map[string]any) (int64, error) {
+	res := r.db.Model(&model.AgentRun{}).Where("id = ? AND status IN ?", id, statuses).Updates(fields)
+	return res.RowsAffected, res.Error
+}
+
 func (r *AIRepository) FindRun(id uint) (*model.AgentRun, error) {
 	var run model.AgentRun
 	if err := r.db.Preload("Agent").First(&run, id).Error; err != nil {

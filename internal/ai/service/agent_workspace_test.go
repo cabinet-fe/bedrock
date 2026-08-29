@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -647,4 +648,55 @@ func TestAgentRunNonStreamOutputCLIArgs(t *testing.T) {
 	if !hasArg {
 		t.Fatalf("reasonix non-stream should pass -p; got:\n%s", strings.Join(last.Args, "\n"))
 	}
+}
+
+func TestCancelRunAbortsWorkspaceSync(t *testing.T) {
+	agents, _, _, _, _ := setupAgentWorkspace(t)
+	repoID := uint(21)
+	agents.SetRepoCheckoutDeps(&stubRepoFinder{
+		repos: map[uint]*resourcemodel.Repository{
+			repoID: {ID: repoID, Name: "r", RepoURL: "https://example.com/r.git", AuthType: "none"},
+		},
+	}, nil)
+	agent, err := agents.CreateAgent(1, service.AgentInput{
+		Name: "cancel-sync", CliKey: "claude_code",
+		RepoBindings: []model.RepoBinding{{RepositoryID: repoID, Branch: "main"}},
+		TimeoutSec:   30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent = requireWorkspaceReady(t, agents, agent.ID)
+
+	agents.SetInlineExec(false)
+	var calls atomic.Int32
+	started := make(chan struct{})
+	agents.SetGitCheckout(func(ctx context.Context, workDir, repoURL, authType, username, password, branch string, logFn func(string)) error {
+		if calls.Add(1) == 1 {
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		return stubGitCheckout(ctx, workDir, repoURL, authType, username, password, branch, logFn)
+	})
+
+	hung, err := agents.ManualRun(agent.ID, 1, "hang")
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first run never entered git checkout")
+	}
+
+	queued, err := agents.ManualRun(agent.ID, 1, "next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := agents.CancelRun(hung.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitRunStatus(t, agents, hung.ID, model.JobCancelled)
+	waitRunStatus(t, agents, queued.ID, model.JobSuccess)
 }

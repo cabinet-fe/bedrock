@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -410,5 +411,226 @@ func TestAgentRunRecovery_QueuedAndInterrupted(t *testing.T) {
 		// ok — re-submit may advance or fail without a real CLI binary
 	default:
 		t.Fatalf("unexpected queued recovery status %s", gotQueued.Status)
+	}
+}
+
+func TestCancelRunReleasesWorkerQueue(t *testing.T) {
+	_, agents, _, _ := setupAI(t)
+	agents.SetInlineExec(false)
+
+	var calls atomic.Int32
+	started := make(chan struct{})
+	agents.SetCLIRunner(func(ctx context.Context, _ service.CLIRunRequest) (string, error) {
+		if calls.Add(1) == 1 {
+			close(started)
+			<-ctx.Done()
+			return "", ctx.Err()
+		}
+		return "ok\n", nil
+	})
+
+	agent, err := agents.CreateAgent(1, service.AgentInput{
+		Name: "cancel-queue", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent = requireWorkspaceReady(t, agents, agent.ID)
+
+	hung, err := agents.ManualRun(agent.ID, 1, "hang")
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first run never entered CLI")
+	}
+
+	queued, err := agents.ManualRun(agent.ID, 1, "next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queued.Status != model.JobQueued {
+		t.Fatalf("second run status=%s want queued", queued.Status)
+	}
+
+	if err := agents.CancelRun(hung.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitRunStatus(t, agents, hung.ID, model.JobCancelled)
+	waitRunStatus(t, agents, queued.ID, model.JobSuccess)
+}
+
+func TestCancelQueuedRunWhileWorkerBusy(t *testing.T) {
+	_, agents, _, _ := setupAI(t)
+	agents.SetInlineExec(false)
+
+	started := make(chan struct{})
+	agents.SetCLIRunner(func(ctx context.Context, _ service.CLIRunRequest) (string, error) {
+		close(started)
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+
+	agent, err := agents.CreateAgent(1, service.AgentInput{
+		Name: "cancel-queued", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent = requireWorkspaceReady(t, agents, agent.ID)
+
+	hung, err := agents.ManualRun(agent.ID, 1, "hang")
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first run never entered CLI")
+	}
+
+	queued, err := agents.ManualRun(agent.ID, 1, "queued")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := agents.CancelRun(queued.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitRunStatus(t, agents, queued.ID, model.JobCancelled)
+
+	if err := agents.CancelRun(hung.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitRunStatus(t, agents, hung.ID, model.JobCancelled)
+}
+
+func TestCancelDuringSuccessfulCLIKeepsCancelled(t *testing.T) {
+	_, agents, _, _ := setupAI(t)
+	agents.SetInlineExec(false)
+
+	started := make(chan struct{})
+	agents.SetCLIRunner(func(ctx context.Context, _ service.CLIRunRequest) (string, error) {
+		close(started)
+		select {
+		case <-ctx.Done():
+		case <-time.After(80 * time.Millisecond):
+		}
+		return "ok\n", nil
+	})
+
+	agent, err := agents.CreateAgent(1, service.AgentInput{
+		Name: "cancel-success", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent = requireWorkspaceReady(t, agents, agent.ID)
+
+	run, err := agents.ManualRun(agent.ID, 1, "job")
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("run never entered CLI")
+	}
+	if err := agents.CancelRun(run.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitRunStatus(t, agents, run.ID, model.JobCancelled)
+}
+
+func TestShutdownDoesNotStartQueuedRun(t *testing.T) {
+	_, agents, _, _ := setupAI(t)
+	agents.SetInlineExec(false)
+
+	var calls atomic.Int32
+	started := make(chan struct{})
+	agents.SetCLIRunner(func(ctx context.Context, _ service.CLIRunRequest) (string, error) {
+		n := calls.Add(1)
+		if n == 1 {
+			close(started)
+			<-ctx.Done()
+			return "", ctx.Err()
+		}
+		return "should-not-run\n", nil
+	})
+
+	agent, err := agents.CreateAgent(1, service.AgentInput{
+		Name: "shutdown-queue", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent = requireWorkspaceReady(t, agents, agent.ID)
+
+	if _, err := agents.ManualRun(agent.ID, 1, "hang"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first run never entered CLI")
+	}
+	queued, err := agents.ManualRun(agent.ID, 1, "queued")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		agents.Shutdown()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Shutdown blocked on queued run")
+	}
+
+	got, err := agents.GetRun(queued.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != model.JobQueued {
+		t.Fatalf("queued run status=%s want queued", got.Status)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("CLI calls=%d want 1", calls.Load())
+	}
+}
+
+func TestUpdateRunFieldsIfStatusSkipsCancelled(t *testing.T) {
+	gdb, agents, _, _ := setupAI(t)
+	repo := repository.NewAIRepository(gdb)
+	agent, err := agents.CreateAgent(1, service.AgentInput{
+		Name: "status-cas", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &model.AgentRun{AgentID: agent.ID, Status: model.JobCancelled, TriggerType: model.TriggerManual}
+	if err := repo.CreateRun(run); err != nil {
+		t.Fatal(err)
+	}
+	n, err := repo.UpdateRunFieldsIfStatus(run.ID,
+		[]string{model.JobQueued, model.JobRunning, model.JobPending},
+		map[string]any{"status": model.JobSuccess},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("rows=%d want 0", n)
+	}
+	got, err := repo.FindRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != model.JobCancelled {
+		t.Fatalf("status=%s want cancelled", got.Status)
 	}
 }

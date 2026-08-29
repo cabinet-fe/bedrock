@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -193,6 +194,26 @@ func requireRunStatus(t *testing.T, agents *service.AgentService, runID uint, wa
 		t.Fatalf("run status=%s want=%s err=%s log=%s", got.Status, want, got.ErrorMessage, readRunLog(t, got.LogPath))
 	}
 	return got
+}
+
+func waitRunStatus(t *testing.T, agents *service.AgentService, runID uint, want string) *model.AgentRun {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	var last *model.AgentRun
+	for time.Now().Before(deadline) {
+		got, err := agents.GetRun(runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		last = got
+		if got.Status == want {
+			return got
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("run %d status=%s want=%s err=%s log=%s",
+		runID, last.Status, want, last.ErrorMessage, readRunLog(t, last.LogPath))
+	return last
 }
 
 func envValue(env []string, key string) string {

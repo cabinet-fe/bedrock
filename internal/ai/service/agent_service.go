@@ -90,6 +90,12 @@ type AgentService struct {
 	wsInitMu  sync.Mutex
 	wsInitGen map[uint]uint64
 	wsInitWg  sync.WaitGroup
+
+	cancelMu sync.Mutex
+	cancels  map[uint]context.CancelFunc
+
+	execCtx    context.Context
+	execCancel context.CancelFunc
 }
 
 // SetTerminalNotifier wires DESIGN §12 in-app notifications for agent terminal states.
@@ -123,6 +129,11 @@ func (s locSchedule) Next(t time.Time) time.Time {
 
 var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 
+var (
+	claimableRunStatuses = []string{model.JobQueued, model.JobPending}
+	liveRunStatuses      = []string{model.JobQueued, model.JobRunning, model.JobPending}
+)
+
 func NewAgentService(
 	repo *repository.AIRepository,
 	cli CLILookup,
@@ -138,6 +149,7 @@ func NewAgentService(
 		runs: make(chan uint, 128), stop: make(chan struct{}),
 		cronIDs:   make(map[uint]cron.EntryID),
 		wsInitGen: make(map[uint]uint64),
+		cancels:   make(map[uint]context.CancelFunc),
 	}
 	if len(audit) > 0 {
 		svc.audit = audit[0]
@@ -154,6 +166,7 @@ func (s *AgentService) Start() {
 		return
 	}
 	s.started = true
+	s.execCtx, s.execCancel = context.WithCancel(context.Background())
 	s.cron = cron.New(cron.WithLocation(time.UTC), cron.WithParser(cronParser))
 	s.wg.Add(1)
 	go s.worker()
@@ -172,6 +185,10 @@ func (s *AgentService) Shutdown() {
 		s.cron.Stop()
 	}
 	close(s.stop)
+	if s.execCancel != nil {
+		s.execCancel()
+	}
+	s.abortAllRuns()
 	s.startMu.Unlock()
 	s.wg.Wait()
 	s.wsInitWg.Wait()
@@ -618,9 +635,82 @@ func (s *AgentService) CancelRun(id uint) error {
 	if run.Status != model.JobQueued && run.Status != model.JobRunning && run.Status != model.JobPending {
 		return errors.New("仅 queued/running 可取消")
 	}
-	return s.repo.UpdateRunFields(id, map[string]any{
-		"status": model.JobCancelled, "finished_at": time.Now().UTC(),
+	n, err := s.repo.UpdateRunFieldsIfStatus(id, liveRunStatuses,
+		map[string]any{"status": model.JobCancelled, "finished_at": time.Now().UTC()},
+	)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("仅 queued/running 可取消")
+	}
+	s.abortRun(id)
+	return nil
+}
+
+func (s *AgentService) trackCancel(id uint, cancel context.CancelFunc) {
+	s.cancelMu.Lock()
+	s.cancels[id] = cancel
+	s.cancelMu.Unlock()
+}
+
+func (s *AgentService) untrackCancel(id uint) {
+	s.cancelMu.Lock()
+	delete(s.cancels, id)
+	s.cancelMu.Unlock()
+}
+
+func (s *AgentService) abortRun(id uint) {
+	s.cancelMu.Lock()
+	cancel := s.cancels[id]
+	s.cancelMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (s *AgentService) abortAllRuns() {
+	s.cancelMu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(s.cancels))
+	for _, cancel := range s.cancels {
+		cancels = append(cancels, cancel)
+	}
+	s.cancelMu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
+func (s *AgentService) finishIfCancelled(run *model.AgentRun, writeLog func(string)) bool {
+	latest, err := s.repo.FindRun(run.ID)
+	if err != nil || latest.Status != model.JobCancelled {
+		return false
+	}
+	if writeLog != nil {
+		writeLog("执行已取消")
+	}
+	s.notifyTerminal(run, model.JobCancelled)
+	return true
+}
+
+func (s *AgentService) persistTerminal(run *model.AgentRun) bool {
+	n, err := s.repo.UpdateRunFieldsIfStatus(run.ID, liveRunStatuses, map[string]any{
+		"status":            run.Status,
+		"finished_at":       run.FinishedAt,
+		"duration_ms":       run.DurationMs,
+		"output_text":       run.OutputText,
+		"error_message":     run.ErrorMessage,
+		"artifact_path":     run.ArtifactPath,
+		"artifact_kind":     run.ArtifactKind,
+		"skill_digest_json": run.SkillDigestJSON,
 	})
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("agent run terminal persist failed", zap.Uint("run_id", run.ID), zap.Error(err))
+		}
+		return false
+	}
+	return n > 0
 }
 
 func (s *AgentService) submit(id uint) error {
@@ -651,7 +741,12 @@ func (s *AgentService) worker() {
 		case <-s.stop:
 			return
 		case id := <-s.runs:
-			s.ExecuteRun(context.Background(), id)
+			select {
+			case <-s.stop:
+				return
+			default:
+			}
+			s.ExecuteRun(s.execCtx, id)
 		}
 	}
 }
@@ -669,6 +764,17 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		}
 		return
 	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	s.trackCancel(id, cancel)
+	defer func() {
+		s.untrackCancel(id)
+		cancel()
+	}()
+	if runCtx.Err() != nil {
+		return
+	}
+
 	agent, err := s.repo.FindAgent(run.AgentID)
 	if err != nil {
 		s.failRun(run, err)
@@ -693,7 +799,22 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	run.LogPath = filepath.Join(logDir, fmt.Sprintf("run-%d.log", run.ID))
 	agentRoot := s.agentRoot(agent.ID)
 	run.WorkDir = agentRoot
-	_ = s.repo.UpdateRun(run)
+	n, err := s.repo.UpdateRunFieldsIfStatus(run.ID, claimableRunStatuses,
+		map[string]any{
+			"status":     model.JobRunning,
+			"started_at": now,
+			"log_path":   run.LogPath,
+			"work_dir":   agentRoot,
+		},
+	)
+	if err != nil {
+		s.failRun(run, err)
+		return
+	}
+	if n == 0 {
+		s.finishIfCancelled(run, nil)
+		return
+	}
 
 	logFile, err := os.OpenFile(run.LogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
@@ -716,8 +837,12 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	}
 
 	// Workspace sync (git pull of bound repos) must not consume the CLI timeout.
-	digests, repoDirs, err := s.SyncAgentWorkspace(agent, run.TriggeredBy, true)
+	writeLog("正在同步工作区")
+	digests, repoDirs, err := s.SyncAgentWorkspace(runCtx, agent, run.TriggeredBy, true)
 	if err != nil {
+		if s.finishIfCancelled(run, writeLog) {
+			return
+		}
 		s.failRun(run, err)
 		return
 	}
@@ -781,12 +906,12 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	maps.Copy(runtimeExtra, agentEnv)
 	cmdEnv := append(removeEnv(BuildRuntimeEnv(cli, "", runtimeExtra), "BEDROCK_AGENT_OUTPUT"), "BEDROCK_AGENT_OUTPUT="+absOutput)
 
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	cliCtx, timeoutCancel := context.WithTimeout(runCtx, timeout)
+	defer timeoutCancel()
 
 	var outputText string
 	if s.cliRunner != nil {
-		outputText, err = s.cliRunner(runCtx, CLIRunRequest{
+		outputText, err = s.cliRunner(cliCtx, CLIRunRequest{
 			Binary: binary, Args: args, Dir: agentRoot, Env: cmdEnv,
 		})
 		if outputText != "" {
@@ -795,13 +920,10 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 			}
 		}
 	} else {
-		outputText, err = runAgentCLI(runCtx, binary, args, agentRoot, cmdEnv, writeLog)
+		outputText, err = runAgentCLI(cliCtx, binary, args, agentRoot, cmdEnv, writeLog)
 	}
 
-	latest, _ := s.repo.FindRun(run.ID)
-	if latest != nil && latest.Status == model.JobCancelled {
-		writeLog("执行已取消")
-		s.notifyTerminal(run, model.JobCancelled)
+	if s.finishIfCancelled(run, writeLog) {
 		return
 	}
 
@@ -813,9 +935,12 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	run.OutputText = outputText
 	if err != nil {
 		run.Status = model.JobFailed
-		run.ErrorMessage = formatCLIFailure(err, runCtx)
+		run.ErrorMessage = formatCLIFailure(err, cliCtx)
 		writeLog(run.ErrorMessage)
-		_ = s.repo.UpdateRun(run)
+		if !s.persistTerminal(run) {
+			s.finishIfCancelled(run, writeLog)
+			return
+		}
 		s.notifyTerminal(run, model.JobFailed)
 		return
 	}
@@ -830,7 +955,10 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 				zap.Uint("run_id", run.ID), zap.Uint("agent_id", agent.ID), zap.Error(err))
 		}
 	}
-	_ = s.repo.UpdateRun(run)
+	if !s.persistTerminal(run) {
+		s.finishIfCancelled(run, writeLog)
+		return
+	}
 
 	if run.TriggerType == model.TriggerDocsGen && s.docs != nil && run.ProjectID != nil && run.DocNodeID != nil {
 		content := strings.TrimSpace(run.OutputText)
@@ -880,6 +1008,9 @@ func (s *AgentService) removeAgentArtifacts(agentID uint) {
 }
 
 func (s *AgentService) failRun(run *model.AgentRun, err error) {
+	if s.finishIfCancelled(run, nil) {
+		return
+	}
 	finished := time.Now().UTC()
 	run.Status = model.JobFailed
 	run.FinishedAt = &finished
@@ -887,7 +1018,10 @@ func (s *AgentService) failRun(run *model.AgentRun, err error) {
 	if run.StartedAt != nil {
 		run.DurationMs = finished.Sub(*run.StartedAt).Milliseconds()
 	}
-	_ = s.repo.UpdateRun(run)
+	if !s.persistTerminal(run) {
+		s.finishIfCancelled(run, nil)
+		return
+	}
 	if run.LogPath != "" {
 		f, openErr := os.OpenFile(run.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if openErr == nil {

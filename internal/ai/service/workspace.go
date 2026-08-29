@@ -71,7 +71,7 @@ func (s *AgentService) initAgentWorkspace(agentID, userID uint, gen uint64) {
 		s.finishWorkspaceInit(agentID, gen, err)
 		return
 	}
-	_, _, err = s.SyncAgentWorkspace(agent, userID, true)
+	_, _, err = s.SyncAgentWorkspace(context.Background(), agent, userID, true)
 	s.finishWorkspaceInit(agentID, gen, err)
 }
 
@@ -141,7 +141,10 @@ func sanitizeBranchForDir(branch string) string {
 // SyncAgentWorkspace ensures the persistent agent directory layout:
 // skills under .agents/skills, repo-{id}-{branch} checkouts for bindings, SYSTEM_PROMPT.md.
 // repoDirs are absolute paths of successfully synced repository checkouts (for run logs).
-func (s *AgentService) SyncAgentWorkspace(agent *model.AiAgent, userID uint, isSuperAdmin bool) (digests map[uint]string, repoDirs []string, err error) {
+func (s *AgentService) SyncAgentWorkspace(ctx context.Context, agent *model.AiAgent, userID uint, isSuperAdmin bool) (digests map[uint]string, repoDirs []string, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	if agent == nil {
 		return nil, nil, fmt.Errorf("agent is nil")
 	}
@@ -164,8 +167,11 @@ func (s *AgentService) SyncAgentWorkspace(agent *model.AiAgent, userID uint, isS
 			return nil, nil, err
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 
-	repoDirs, err = s.syncRepoCheckouts(root, agent.RepoBindings)
+	repoDirs, err = s.syncRepoCheckouts(ctx, root, agent.RepoBindings)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -183,7 +189,7 @@ func (s *AgentService) SyncAgentWorkspace(agent *model.AiAgent, userID uint, isS
 	return digests, repoDirs, nil
 }
 
-func (s *AgentService) syncRepoCheckouts(agentRoot string, bindings []model.RepoBinding) ([]string, error) {
+func (s *AgentService) syncRepoCheckouts(ctx context.Context, agentRoot string, bindings []model.RepoBinding) ([]string, error) {
 	wanted := map[string]bool{}
 	for _, b := range bindings {
 		wanted[repoDirName(b.RepositoryID, b.Branch)] = true
@@ -218,6 +224,9 @@ func (s *AgentService) syncRepoCheckouts(agentRoot string, bindings []model.Repo
 
 	var synced []string
 	for _, b := range bindings {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		repo, err := s.repos.FindByID(b.RepositoryID)
 		if err != nil {
 			return nil, fmt.Errorf("仓库 %d 不存在: %w", b.RepositoryID, err)
@@ -232,7 +241,7 @@ func (s *AgentService) syncRepoCheckouts(agentRoot string, bindings []model.Repo
 				s.logger.Info("agent git", zap.Uint("repository_id", b.RepositoryID), zap.String("line", line))
 			}
 		}
-		if err := checkout(context.Background(), dest, repo.RepoURL, authType, username, password, b.Branch, logFn); err != nil {
+		if err := checkout(ctx, dest, repo.RepoURL, authType, username, password, b.Branch, logFn); err != nil {
 			return nil, fmt.Errorf("同步仓库 %d (%s) 失败: %w", b.RepositoryID, b.Branch, err)
 		}
 		absDest, err := filepath.Abs(dest)
