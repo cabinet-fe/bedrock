@@ -44,15 +44,32 @@ function resolveProjectName(repoRoot, projectOpt) {
 }
 
 /**
+ * 工作区根：显式 `--workspace` → `$BEDROCK_AGENT_WORKDIR` → cwd。
+ * @param {string|null|undefined} workspaceOpt
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+function resolveWorkspace(workspaceOpt, env = process.env) {
+  if (workspaceOpt != null && String(workspaceOpt).trim()) {
+    return path.resolve(String(workspaceOpt).trim());
+  }
+  const fromEnv = env.BEDROCK_AGENT_WORKDIR && String(env.BEDROCK_AGENT_WORKDIR).trim();
+  if (fromEnv) return path.resolve(fromEnv);
+  return process.cwd();
+}
+
+/**
  * 解析输出根目录。
- * - 绝对路径：原样 resolve
- * - 相对路径 / 默认值：相对 `opts.workspace`（若提供）或 `process.cwd()`
+ * 优先级：显式 `--out` → `$BEDROCK_AGENT_OUTPUT` → 发现已有 `.sync.json` → DEFAULT_OUT
  * @param {string|null|undefined} outOpt
- * @param {{ discover?: boolean, project?: string|null, workspace?: string|null }} [opts]
- *   discover=true（默认）且未显式传 out 时：若工作区已有 `output/` / `api-docs/` 等
- *   下的 `.sync.json`，优先复用，避免默认落到空的 `api-docs` 而误判全量。
+ * @param {{
+ *   discover?: boolean,
+ *   project?: string|null,
+ *   workspace?: string|null,
+ *   env?: NodeJS.ProcessEnv,
+ * }} [opts]
  */
 function resolveOutRoot(outOpt, opts = {}) {
+  const env = opts.env || process.env;
   const explicit = outOpt != null && String(outOpt).trim() ? String(outOpt).trim() : null;
   const workspace = opts.workspace ? path.resolve(opts.workspace) : null;
   const cwd = process.cwd();
@@ -67,6 +84,16 @@ function resolveOutRoot(outOpt, opts = {}) {
     }
     return fromCwd;
   }
+
+  const fromEnv =
+    env.BEDROCK_AGENT_OUTPUT && String(env.BEDROCK_AGENT_OUTPUT).trim()
+      ? String(env.BEDROCK_AGENT_OUTPUT).trim()
+      : null;
+  if (fromEnv) {
+    if (path.isAbsolute(fromEnv)) return path.resolve(fromEnv);
+    return path.resolve(base, fromEnv);
+  }
+
   const discover = opts.discover !== false;
   if (discover) {
     for (const root of [workspace, cwd].filter(Boolean)) {
@@ -204,6 +231,7 @@ export {
   CONVENTIONS_FILE,
   readPomArtifactId,
   resolveProjectName,
+  resolveWorkspace,
   resolveOutRoot,
   discoverExistingOutRoot,
   listSyncedProjects,

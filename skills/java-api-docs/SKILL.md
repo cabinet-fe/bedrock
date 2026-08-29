@@ -1,324 +1,104 @@
 ---
 name: java-api-docs
 description: >-
-  用 Node 脚本扫描 Java Spring Controller 的接口与 DTO，并结合
-  <out>/<project>/.sync.json 中绑定的 git 提交号，按 Controller 生成或增量更新
-  面向 AI 的 API Markdown。适用于分析 Java/Spring REST API、从后端源码生成
-  API 文档，或依据 Controller 编写前端调用。默认产出到工作区 api-docs（若已有
-  output/ 下的 .sync.json 则自动复用），支持多仓库分项目输出；对外 path 由手维
-  网关 JSON 前缀与 Controller 映射拼接。
+  用 Node 脚本扫描 Java Spring Controller 与 DTO，按 Controller 生成或增量更新
+  面向 AI 的 API Markdown。用户点名模块/接口时立刻跑 prepare.mjs --force，禁止先探索仓库。
+  适用于分析 Java/Spring REST API、从后端源码生成 API 文档，或依据 Controller 编写前端调用。
 ---
 
 # Java API 文档
 
-扫描 Spring Web MVC Controller → 写出便于 AI 前端代码生成的 Markdown。
+扫描 Spring Controller → `<out>/<project>/<kebab>.md`。脚本列 path / 字段 / 变更；说明和示例必须读源码用人话写。
 
-脚本只负责**省 token**（列接口路径与文档文件名、查网关前缀、列字段、查变更），**不能替代**读关键源码与用人话写说明。接口说明、业务语义、请求/响应示例，必须结合 Controller / Service / DTO 的真实意图用中文写清楚。
+技能根 = 本文件所在目录。脚本 = `技能根/scripts/`。工作区 = `$BEDROCK_AGENT_WORKDIR` 或 cwd。产出 = `$BEDROCK_AGENT_OUTPUT` 或脚本自动发现（常见 `output/`）。
 
-## 硬性门禁（先读再跑；违反即错误）
+## 第一动作（现在就跑，禁止先逛）
 
-1. **先查变更，再谈生成。** 多仓/多项目：先跑 `sync_status.mjs`；单项目：先跑 `changed_since.mjs`。
-2. **看 `action` 字段，不要只看 mode：**
-   - `action: "noop"`（或 `upToDate: true` / `allUpToDate: true`）→ **立即结束该项目（或整个任务）**。禁止 `list_endpoints` / `resolve_types` / 写 md / `stamp`。**`noop` 仅当：无相关 git 变更，且 `.sync.json` 的 `docs[]` 本地文件全部存在。** 若返回 `missingDocs` / `reason: "missing_local_docs"` / `ok_with_missing`，即使无 Java 变更也是 `update_docs`，必须重生缺失 md。
-   - `action: "wrong_repo"` → 用 `suggestedRepoRoot` 重跑 `changed_since`，**禁止**因此全量重生成。
-   - `action: "update_docs"` → 只更新返回的 `docFiles` / `files`（含因本地缺失并入的 `missingDocs`）。
-   - `action: "full_scan"` → 才允许全量。
-3. **产出根必须稳定。** 未传 `--out` 时脚本会自动发现已有的 `output/` / `api-docs/`（含 `.sync.json`）。若工作区已有文档，**必须**继续用同一目录，禁止另起一个空的 `api-docs` 导致「找不到 sync → 假全量」。
-4. **多仓工作区按项目选对 `repoRoot`。** `stamp` 会写入 `repoRel`；`sync_status` / `changed_since` 会校验。用错仓会出现 `wrong_repo`，不是全量信号。
-5. **path 字符级照抄脚本，禁止「规范化」。** 不得按英语习惯、`@Tag`、类名把 path 段改成单数/复数（如 `/users` → `/user`）。写完后必须跑 `verify_docs.mjs`；未通过禁止 `stamp` / `push`。
-6. **多模块单体仓的 `--repo-root` 必须指到具体模块**（含该模块 `application.yml` 的目录），或显式传 `--service` / `--project`。禁止把整仓根当唯一线索却不传 project（脚本遇多个 `spring.application.name` 会拒绝静默取第一个）。
-7. **对象必须展开字段。** 禁止「返回 `UserInfo` / `XxxDTO`」却无字段表；写对象请求/响应前必须 `resolve_types`；同名 DTO 可集中到本文 `## 数据模型`，接口处锚点引用。
-8. **`_shared` 禁止摊平。** 继承 `BaseDTO` 的保存/修改请求体必须有嵌套字段 `_shared`（object / `BaseShared`）。禁止把 `moduleCode`/`action`/`orgCode`/`taskUser`/`attachments` 写到请求体顶层冒充已含 `_shared`；请求示例 JSON 必须含 `"_shared": { ... }`。
+读完本段**立刻执行**下面那条命令。禁止：Glob/Grep 找 Java、列目录熟悉结构、读 ARCHITECTURE/CODE-MAP、读 template/example/writing.md、用对话复述门禁。
 
-## 必须遵守
+用户点名了模块 / 项目 / Controller，或说「重新生成 / 重生 / 再生成」：
 
-- 运行时：Node ≥ 24，ESM `scripts/*.mjs`，**不安装 npm 包**（只用 Node 内置模块 + `git`；推送脚本另用全局 `fetch`）
-- **双 srcRoot（多模块单体仓）**：
-  - `list_endpoints` / `verify_docs` / `changed_since` 的 Controller 扫描：`<module>-biz/.../src/main/java`
-  - `resolve_types` 的 DTO/Entity 解析：`<module>-api/.../src/main/java`（或项目约定中的 api 模块）
-  - 禁止把 biz 的 srcRoot 传给 `resolve_types`，也禁止用 api 根扫 Controller
-- **禁止整包读入 `list_endpoints` JSON**（全量可达数百 KB）。增量必须用 `--files` 或 `changed_since` 的 `docFiles` / `files` 分批；全量时按 `controllers[]` **逐个**处理，每次只保留当前 Controller 的 endpoints 子集
-- **`--files` 须传相对 srcRoot 的路径**（如 `com/.../FooController.java`），不能只传文件名
-- 产出根默认：工作区 `api-docs/`；若已存在 `output/`（或其它候选）下的同步记录则自动复用（可用 `--out` 覆盖）；相对路径相对 `process.cwd()`；配合 `--workspace` 时脚本会把 `--out` 解析到真实产出根
-- 单仓与多仓同一布局：`<out>/<project>/`（多仓靠 project 子目录区分）
-- **一 Controller 一文件**：`<out>/<project>/<kebab>.md`（见「输出目录」）
-- 约定页：运行技能时生成**唯一**的 `<out>/_conventions.md`；接口文档用 `../_conventions.md` 引用
-- 规范输入：只读本技能 [references/project-conventions.md](references/project-conventions.md)；**不要**把 `_conventions.md` 当输入
-- 网关前缀：只读 [references/ic-gateway-dev.json](references/ic-gateway-dev.json)，由 `list_endpoints` 按 `service`/`id` 查找并注入；**禁止手算**
-- 同步记录：每个项目一份 `<out>/<project>/.sync.json`（`baseCommit` + `docs[]` + `repoRel`）；**不要**写进 Markdown 正文
-- 表格类型：`string` / `number` / `boolean` / `object` / `T[]` / `Record<string, T>`；说明列可保留 Java 类型名
-- 响应信封（如 `R`）只在模块头写一次；各接口表格只描述 `data` 里的内容
-- 不得臆造业务字段；未解析类型标 `needs_source`，并只打开那一个文件（或查项目约定）
-- 文档写成功后务必执行 `stamp_commit.mjs`（带上本次 `--docs`）
-- **推送默认增量**：`push_docs` 先 export 比对远程，只推新建或内容有变化的 md；禁止无故 `--all` 刷全量
-- **全程中文**（接口说明、鉴权摘要、字段说明、示例旁注）
+```bash
+node <技能根>/scripts/prepare.mjs --project <用户说的名字> --force
+```
 
-## 脚本 vs 理解
+只说「更新 / 同步文档」、没点名：
 
-| 脚本能做的 | 必须由 Agent 做人的 |
-|------------|---------------------|
-| `sync_status`：多项目 `action` 汇总、`allUpToDate` | 对 noop 项目直接跳过 |
-| `list_endpoints`：METHOD、完整 path、servicePath、参数、鉴权、按 Controller 分组与 `docFile` | 接口说明、业务语义、鉴权可读摘要、示例 JSON |
-| `resolve_types`：字段树（含与字段名不同的 JavaBean get/set/is）、继承、`required`/`requiredSource`、`needs_source` | 按规则填「必填」列；解释字段含义；`requiredSource=default` 时读业务源码判断；访问器属性见 `fromAccessor` |
-| `changed_since` / `stamp_commit`：变更范围、`docFiles`、同步提交号、`repoRel` | 判断改哪些 `<kebab>.md`；核对文档与源码意图 |
-| `verify_docs`：MD 中 `METHOD path` 与脚本集合比对 | `ok:false` 时按 diff 改 MD，禁止靠感觉改 path |
-| `ensure_conventions`：生成唯一 `_conventions.md` | 保持 `project-conventions.md` 为规范源 |
-| `push_docs`：默认只推相对远程有变化（含新建）的 md；`--all` 才全量 | 确认 `--slug`、PAT scope 与项目 ACL |
+```bash
+node <技能根>/scripts/prepare.mjs
+```
 
-**脚本边界**：列接口路径、文档文件名、类型字段、变更范围、校验已写 path；网关前缀来自手维 JSON 查找。**不再**解析 Spring Gateway YAML，也不解释 StripPrefix / RewritePath 等网关细节。
+看 JSON 的 `action` / `agentHint`（不要猜）：
 
-**禁止**：把脚本 JSON 原样堆进 Markdown；**禁止**把全量 `list_endpoints` 输出整包读入对话；禁止只抄注解源码当「文档」；禁止手算网关前缀；禁止在 `action=noop` 时继续生成；禁止跳过 `verify_docs` 直接 stamp；禁止无故 `--all` 把未改文档再推一遍。
+| action | 立刻做什么 |
+| --- | --- |
+| `noop` / `allUpToDate` | 结束，一句话汇报。禁止 `list_endpoints` / 写 md / stamp |
+| `wrong_repo` | 用 `suggestedRepoRoot` 再跑 prepare，禁止因此全量 |
+| `need_project` / `not_found` | 把 `candidates` 列给用户，停止 |
+| `update_docs` | 只处理返回的 `docFiles` / `listFiles` |
+| `full_scan` | 全量 `list_endpoints`（不带 `--files`） |
+
+`prepare` 已给出 `bizSrcRoot` / `apiSrcRoot` / `next.list_endpoints`。照抄。不要自己找路径。`--force` 仅当用户点名重生；未点名禁止 `--force` 全仓。
+
+## 接着干活
+
+1. 若 `conventionsMissing`：先跑 `next.ensure_conventions`。
+2. 照 `next.list_endpoints` 跑。禁止把全量 JSON 整包读进对话；按 `controllers[]` **逐个**处理。
+3. 对要写的对象类型：照 `next.resolve_types` 把 `<TypeA,TypeB>` 换成实际类型。必须用 **apiSrcRoot**，禁止把 biz 传给 `resolve_types`。
+4. **现在才读** [references/writing.md](references/writing.md)、[references/project-conventions.md](references/project-conventions.md)，对照 [references/template.md](references/template.md) 写 md。每个 Controller 一个文件；path **字符级**抄脚本；对象必须落字段表。
+5. 照 `next.verify_docs` 跑；`ok: false` 按 diff 改 MD 后重跑，禁止 stamp。
+6. 照 `next.stamp` 跑（带本次 `--docs`）。
+7. 可选推送：`node <技能根>/scripts/push_docs.mjs --slug <项目标识>`（默认增量；禁止无故 `--all`）。
 
 打开源码范围：脚本列出的 Controller / DTO，以及为理解行为所必需的少量 Service。
 
-## 文档写作规范
+## 硬规则（干活时核对，不是开工前研究）
 
-### 禁止
+- 双 srcRoot：Controller 扫 `*-biz/.../src/main/java`；DTO 解析 `*-api/.../src/main/java`。`prepare` 已拆好。
+- `--files` 须相对 srcRoot（如 `com/.../FooController.java`），用 prepare 的 `listFiles`。
+- path 禁止改单复数；以 `list_endpoints` 的 `path` 为准。
+- 对象必须 `resolve_types` 后落表。BaseDTO 请求体嵌套 `_shared`，禁止摊平。
+- 产出根必须稳定：不要另起空的 `api-docs` 导致假全量。
+- 多模块 `--repo-root` 用 prepare 给的 `moduleRoot`，不要把整仓根当唯一线索。
+- 未跑 `verify_docs` 禁止 stamp；`action=noop` 禁止继续生成。
 
-- **只点名类型、不展开字段**：禁止「返回 `UserInfo` 对象」「`body` 为 `XxxDTO`」这类空话却不写字段表。读者必须能在**同一文档**里看到每个对象字段（名 / 类型 / 说明）
-- 斜体占位字段名（描述性伪字段）：如 `_(继承 BaseDTO)_`、`_(见约定)_` 等——不得用斜体占位代替真实字段或省略展开
-- 把 `@PreAuthorize(...)` / SpEL 原文塞进文档
-- 把 `_extends_*`、`needs_source` 当表格「字段名」粘贴
-- 臆造网关 Path 前缀（必须以 `list_endpoints` 的 `gateway` / `path` 为准）
-- **改写 path 段的单复数或拼写**（即使 `@Tag(description="user")`、示例旧文、或英语习惯暗示单数）：必须以脚本 `path` 字符级一致；写完用 `verify_docs` 门禁
-
-**例外（必须用）**：整段请求体 / 信封 `data` 不是对象（标量、数组等）时，表格字段名分别写作 `` `_(body)_` ``、`` `_(data)_` ``（**必须带反引号**，否则 Markdown 会把 `_…_` 吃成斜体，预览里下划线消失），类型写实际类型（如 `boolean`、`string[]`）。这是约定字段名，不是禁止的斜体占位。
-
-### 鉴权
-
-写成可读摘要，例如：`需要登录；权限 {moduleCode}:create`。脚本提供 `authSummary`（可贴改）与原始 `auth`（仅供核对，勿贴正文）。
-
-类级 `@SecurityRequirement(name = HttpHeaders.AUTHORIZATION)` 等 OpenAPI 安全声明会被识别为「需要登录」（无具体权限码时）；与 `@HasPermission` / `@PreAuthorize` 并存时合并摘要，**勿**把 OpenAPI 原文堆进文档。
-
-### 类型与表格
-
-- **每个对象必须有字段表**：请求体 / 响应 `data` / 嵌套对象（如 `records[]` 单条）均须先 `resolve_types`，再写成 Markdown 表。Java 类型名可写在说明或小节标题里，**不能代替**字段表
-- **同一 DTO 多处复用**：可在文末（或「通用说明」后）设 `## 数据模型`，把 `UserInfo` 等定义**写全一次**；各接口响应处写「见 [UserInfo](#userinfo)」并仍可用一行类型提示——但定义本身必须在本文内可点开，禁止只留裸类型名
-- 字段名：真实 JSON 名；整段 body/data 为标量/数组等非对象时，字段名用 `` `_(body)_` `` / `` `_(data)_` ``（表格单元格内必须带反引号，避免 `_…_` 被渲染成斜体）
-- 类型：`string` / `number` / `boolean` / `object` / `T[]` / `Record<string, T>`
-- 继承：合并父类字段（`resolve_types` 会对 `BaseDTO` / `BaseBusinessEntity` / `BaseEntity` / `BaseShared` 注入约定字段）；勿写 `_(继承 …)_`
-- **`_shared`（嵌套，非顶层散字段）**：`BaseDTO` 子类请求体必须有字段名 `` `_shared` ``（类型 `object`），其子字段为 `moduleCode` / `action` / `orgCode` / `taskUser` / `attachments`。**禁止摊平**；保存类示例必须含 `"_shared": { ... }`。表格里字段名建议一律反引号包裹（含 `_shared`），避免下划线被预览吃掉
-- `Map<String, Object>` → `Record<string, object>`，并说明 key/value
-- `R<T>`：模块头写信封；接口响应表只写 `data` 内容
-- 分页：按约定展开；无源码时写「见 [API 约定](../_conventions.md) · 分页」
-- `needs_source`：只打开那一个源文件补字段；仍解析不出则标注「未解析」并列出已知字段，禁止用一句话搪塞
-
-### 必填列（请求侧）
-
-路径参数 / 查询参数 / 请求体字段表必须有「必填」列（写 `是` / `否`）。**响应体与数据模型表不写必填列**（响应字段无「必填」语义）。
-
-判定来源（按优先级，禁止凭感觉一律写「否」）：
-
-1. **路径 / 查询参数**：跟 `list_endpoints` 每条 param 的 `required`（Spring `@PathVariable` / `@RequestParam` 的 `required=`；缺省为必填）。
-2. **请求体字段**：跟 `resolve_types` 字段的 `required` + `requiredSource`：
-   - `validation`：有 `@NotNull` / `@NotBlank` / `@NotEmpty` → `是`；`@Nullable` → `否`
-   - `schema`：`@Schema(required=true)` 或 `requiredMode=REQUIRED` → `是`；`required=false` / `NOT_REQUIRED` → `否`
-   - `platform`：公共基类约定（如 `_shared.moduleCode`/`action`/`orgCode` 为 `是`；审计字段多为 `否`）
-   - `default`：**脚本无注解信号**——不得直接抄成全员「否」。必须结合 Controller/Service 校验、创建 vs 更新语义、示例与注释判断；创建接口的主键业务字段、更新接口的 ID 等常为必填。仍无法判断时写 `否`，并在说明标注「源码无校验注解」。
-3. **整段 body 非对象**（`` `_(body)_` ``）：必填写 `是`（有 `@RequestBody` 即须传体）。
-
-### Path（网关 + 服务）
-
-文档代码块里的 path **必须**用 `list_endpoints` 返回的 `path`（字符级一致）：
-
-- `servicePath`：Controller/方法映射（服务内）
-- `path`：`gatewayPrefix + servicePath`（对外完整路径）
-- `gateway.matched === false`：用 `servicePath`，并在模块头或接口旁写「⚠ 网关前缀未匹配」+ 简述 `gateway.warning`；**不要**自行猜测 `/admin`、`/common-resource` 等
-- 写完跑 `verify_docs.mjs`：`ok: false` 时按 `missingInDocs` / `extraInDocs` 改 MD，禁止 stamp
-
-### 示例
-
-成功示例须与响应表一致（信封 + `data`）；值要像真实业务。
-
-完整章节结构见 [references/template.md](references/template.md)；成品示例见 [references/example.md](references/example.md)。
-
-## 输出目录
-
-### `--out`（产出根）
-
-- **默认**：工作区根下 `api-docs`；若已存在 `output/` / `api-docs/` / `docs/` 下的 `<project>/.sync.json`，未传 `--out` 时**自动复用**已有目录（避免误开空目录导致假全量）
-- 可覆盖：`--out /abs/path` 或 `--out other-dir`
-
-### 布局（按 Controller 拆分）
+## 输出
 
 ```text
-api-docs/
-  _conventions.md                 # 唯一约定页（ensure_conventions 生成）
-  <project>/
-    .sync.json                    # baseCommit + docs[]
-    file.md                       # FileController
-    sys-user.md                   # SysUserController
-    table-info.md                 # TableInfoController
-```
-
-**文件名规则**：去掉类名末尾 `Controller`，再转 kebab-case：
-
-| 类名 | 文件 |
-|------|------|
-| `FileController` | `file.md` |
-| `SysUserController` | `sys-user.md` |
-| `OAuth2ClientController` | `oauth2-client.md` |
-| `DynModuleListConfigController` | `dyn-module-list-config.md` |
-
-**`<project>` 优先级**：`--project` → 根 `pom.xml` 的 `<artifactId>`（跳过 parent）→ 仓库目录名。
-
-### 示例
-
-```text
-api-docs/
+<out>/
   _conventions.md
-  ic-common-resource/
-    .sync.json
-    common.md
-    table-info.md
-  ic-upms-biz/
-    .sync.json
-    sys-user.md
-    file.md
+  <project>/
+    .sync.json          # baseCommit + docs[] + repoRel
+    sys-user.md         # SysUserController
 ```
 
-旧布局若仍有单一的 `<project>.md`：全量重生成时拆成多个 `<kebab>.md`，并删除旧单文件；`changed_since` 会提示 `legacySingleDoc`。
-
-## 网关前缀（`ic-gateway-dev.json`）
-
-配置文件：[references/ic-gateway-dev.json](references/ic-gateway-dev.json)（手维；增补路由时直接改 JSON，不再维护 Spring Gateway YAML 副本）。
-
-### 如何使用
-
-1. `list_endpoints` 用 `JSON.parse` 读配置，按 `routes[].service` / `routes[].id` 匹配服务名。
-2. 匹配候选（脚本自动收集，**按此顺序**试配）：`--service` → `--project` → `srcRoot` 的 `spring.application.name` → `repoRoot` 的同名字段（仅当不歧义）。多模块单体仓若 `repoRoot` 下扫到多个不同 name，**不会**静默取第一个——请 `--repo-root` 指到具体模块，或传 `--service` / `--project`。
-3. **完整 path** = `join(prefix, servicePath)`，其中 `prefix` 来自命中路由的 `prefix` 字段。
-
-### 找不到前缀时
-
-- `gateway.matched = false`，`gateway.warning` 说明原因
-- 接口 `path` 回退为 `servicePath`
-- 文档必须标明「⚠ 网关前缀未匹配」，**禁止**静默拼一个看起来像的前缀
-- 可把新路由补进 `references/ic-gateway-dev.json` 后再跑脚本
-
-可覆盖网关文件：`list_endpoints … --gateway-json /path/to.json`（或 `--gateway`）。
+文件名：去掉类名末尾 `Controller` 再 kebab-case。`<project>`：`--project` → pom `artifactId` → 目录名。一 Controller 一文件。
 
 ## 脚本
 
-路径相对本技能根目录。从**工作区根**执行，以便发现已有 `output/` / `api-docs/`。
+从工作区根执行。路径相对技能根。入口只有 `prepare.mjs`；其余由它的 `next` 给出。
 
 ```bash
-node scripts/ensure_conventions.mjs [--out <dir>] [--dry-run]
-node scripts/sync_status.mjs [--out <dir>] [--workspace <dir>]
-node scripts/list_endpoints.mjs <srcRoot> [--files a.java,b.java] [--project name] [--service name] [--repo-root dir] [--gateway-json path]
-node scripts/resolve_types.mjs <srcRoot> TypeA,TypeB
-node scripts/changed_since.mjs <repoRoot> [baseCommit] [--out <dir>] [--project <name>] [--workspace <dir>]
-node scripts/verify_docs.mjs <srcRoot> [--out <dir>] [--project <name>] [--service name] [--repo-root dir] [--docs a.md,b.md] [--files a.java,b.java]
-node scripts/stamp_commit.mjs <repoRoot> [--out <dir>] [--project <name>] [--workspace <dir>] [--docs a.md,b.md] [--gateway-prefix /x] [--gateway-service name] [--dry-run]
-node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--docs a.md,b.md] [--all] [--env-file <path>] [--dry-run]
+node scripts/prepare.mjs [--project <名>] [--force] [--docs a.md] [--out <dir>] [--workspace <dir>]
+node scripts/ensure_conventions.mjs [--out <dir>]
+node scripts/list_endpoints.mjs <bizSrcRoot> [--files a.java] [--project name] [--repo-root dir]
+node scripts/resolve_types.mjs <apiSrcRoot> TypeA,TypeB
+node scripts/verify_docs.mjs <bizSrcRoot> --project name --repo-root <moduleRoot> [--docs a.md]
+node scripts/stamp_commit.mjs <repoRoot> --project name --docs a.md,b.md
+node scripts/push_docs.mjs --slug <项目标识> [--docs a.md] [--all]
 ```
 
-| 脚本 | 标准输出 |
-|------|----------|
-| `ensure_conventions.mjs` | 写入（或 `--dry-run` 预览）`<out>/_conventions.md` |
-| `sync_status.mjs` | 多项目汇总：`allUpToDate`、`summary.noop|update_docs|full_scan`、每项 `action` |
-| `list_endpoints.mjs` | 接口 JSON：`path`/`servicePath`/`docFile`、`controllers[]`、`gateway` |
-| `resolve_types.mjs` | 字段树（字段 + 异名 get/set/is）；未解析 → `needs_source`；父类无源码 → `extendsUnresolved` |
-| `changed_since.mjs` | `{ action, mode, upToDate, files[], controllers[], docFiles[], missingDocs?, agentHint, … }` |
-| `verify_docs.mjs` | `{ ok, missingInDocs[], extraInDocs[], missingDocs[], unresolvedTypes[], … }`；失败退出码 1 |
-| `stamp_commit.mjs` | 已写入（或预览）的 `.sync.json`（含 `repoRel`） |
-| `push_docs.mjs` | `{ pushed[], skipped[], failed[], incremental, summary }`；失败非 0 退出 |
+`sync_status.mjs` / `changed_since.mjs` 由 prepare 内部调用，不要开工先跑它们。
 
-| 参数 | 脚本 | 含义 |
-|------|------|------|
-| `--out <dir>` | `ensure_conventions` / `sync_status` / `changed_since` / `stamp_commit` / `push_docs` | 产出根；省略时自动发现已有 sync，否则默认 `api-docs` |
-| `--project <name>` | `changed_since` / `stamp_commit` / `list_endpoints` | 项目子目录名；并参与网关匹配 |
-| `--workspace <dir>` | `sync_status` / `changed_since` / `stamp_commit` | 工作区根（默认 cwd）；用于 `repoRel` 与邻仓探测 |
-| `--service` / `--gateway-json` / `--repo-root` | `list_endpoints` | 服务名、网关 JSON、读 application.yml 的仓根 |
-| `--docs a.md,b.md` | `stamp_commit` / `verify_docs` / `push_docs` | stamp/verify：项目内文件名；push：相对 `--out` 或 basename |
-| `--files a,b` | `list_endpoints` / `verify_docs` | 只扫这些文件 |
-| `[baseCommit]` | `changed_since` | 覆盖 `.sync.json` 中的上次提交 |
-| `--slug <id>` | `push_docs` | Bedrock 产品项目标识（路径参数；可为数字 ID 或 slug） |
-| `--all` | `push_docs` | 跳过远程比对，推送候选全部（无变化也覆盖） |
-| `--env-file <path>` | `push_docs` | 显式 `.env`；否则按 `$BEDROCK_AGENT_ENV_FILE` → `$BEDROCK_AGENT_WORKDIR/.env` → `./.env` |
-
-### 推送到产品项目（`push_docs`）
-
-默认**只推更新**：先 `GET /projects/{slug}/docs/export`，本地内容与远程相同则列入 `skipped`，只 POST 新建或内容有变化的文件。`--all` 才跳过比对、覆盖候选全部。禁止在无变化时用 `--all` 刷全量。
-
-路径镜像（跳过隐藏目录；**不推** `.sync.json`）：
-
-- `ic-upms-biz/sys-user.md` → `api_dir=ic-upms-biz` + `api_doc_name=sys-user.md`
-- `_conventions.md` → `api_dir=`（根）+ `api_doc_name=_conventions.md`
-
-可选 `--docs ic-upms-biz/sys-user.md,_conventions.md`（或 basename）限制候选，再与远程比对。
-
-**必需环境变量**（智能体管理里配置，平台写入工作区 `.env`；勿写进技能目录）：
-
-| 变量 | 说明 |
-|------|------|
-| `PAT` | 访问令牌；`docs:write`（推送）+ `docs:read`（默认 export 比对）。仅 `--all` 时可只有 write |
-| `BEDROCK_HOST` | 服务根地址，**无尾斜杠**（请求 `{host}/api/v1/projects/{slug}/docs/push`） |
-
-PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已存在的 `process.env`（便于本机调试）。
-
-## 工作流
-
-1. **读规范** — 只读 [references/project-conventions.md](references/project-conventions.md)。若几乎为空，用本文「文档写作规范」占位（信封 `code`/`msg`/`data`、成功码 `0`），并提醒用户补全该文件。
-2. **确认产出根** — 若工作区已有文档目录（常见 `output/`），后续命令统一 `--out` 该目录（或不传，让脚本自动发现）。
-3. **生成约定页** — `ensure_conventions.mjs`（写出唯一 `<out>/_conventions.md`）。若仅增量且约定页已存在，可跳过。
-4. **查变更（门禁）**
-   - **多仓 / 「更新所有文档」**：`sync_status.mjs [--out …]`
-     - `allUpToDate: true` → **整任务结束**
-     - 否则只处理 `summary` 里非 `noop` 的项目
-   - **单项目**：`changed_since.mjs <repoRoot> --project …`
-     - `action: "noop"` → **结束该项目**（无相关 git 变更 **且** `docs[]` 本地齐全）
-     - `action: "wrong_repo"` → 换 `suggestedRepoRoot` 重跑
-     - `action: "update_docs"` → `list_endpoints … --files …`，只改 `docFiles`（含 `missingDocs` 时须重生缺失本地 md）
-     - `action: "full_scan"` → 全量 `list_endpoints`（不带 `--files`）
-5. **解析类型** — 仅对要写的接口：`resolve_types.mjs <api-srcRoot> TypeA,TypeB`（api 模块 srcRoot，见「双 srcRoot」）。**写 md 前必须已拿到字段树**；未跑 `resolve_types` 不得写对象响应/请求体。
-6. **写文档** — 每个 Controller 写到 `<out>/<project>/<docFile>`（如 `sys-user.md`），模块头链接 `../_conventions.md`；path **字符级**用脚本的完整 `path`（禁止改单复数）。对象字段必须落表（或落 `## 数据模型` 再锚点引用），禁止「返回 `Xxx`」空话。
-7. **校验 path** — `verify_docs.mjs <srcRoot> --project … --repo-root <模块目录> [--docs …]`；`ok: false` → 按 `missingInDocs` / `extraInDocs` 改 MD 后重跑，**禁止** stamp。
-8. **更新同步记录** — `stamp_commit.mjs … --docs common.md,table-info.md`（可加 `--gateway-prefix` / `--gateway-service`）；可用 `--dry-run` 核对。会写入 `repoRel`。
-9. **核对** — `METHOD path` 唯一且已通过 `verify_docs`；每个对象请求/响应都能看到字段表（无「只提类型名」）；无描述性斜体占位（`_(继承 …)_` 等）；非对象 body/data 已用 `_(body)_`/`_(data)_`；鉴权为人话；表格与源码一致；约定页存在且被引用；`.sync.json` 为当前 HEAD 且 `docs` 齐全；网关未匹配处已标注。
-10. **推送到产品项目文档**（可选）— `push_docs.mjs --slug <项目标识> [--out …] [--docs …] [--dry-run]`。默认只推相对远程有变化的 md（`skipped` 为未变）；全量覆盖才 `--all`。需工作区 `.env`（或 `--env-file`）含 `PAT`、`BEDROCK_HOST`；确认 `docs:read`+`docs:write` / ACL。
-
-### `.sync.json`
-
-```json
-{
-  "baseCommit": "<完整 sha>",
-  "updatedAt": "yyyy-MM-dd",
-  "project": "ic-common-resource",
-  "docs": ["common.md", "table-info.md"],
-  "layout": "per-controller",
-  "repoRel": "repo-2",
-  "gatewayPrefix": "/common-resource",
-  "gatewayService": "common-resource",
-  "module": "ic-common-resource"
-}
-```
-
-- `docs`：该项目已维护的控制器文档文件名（增量时合并更新）
-- `repoRel`：相对工作区的 git 仓库路径（`stamp` 写入；多仓时供 `sync_status` / `changed_since` 选对仓）
-- `gatewayPrefix` / `gatewayService`：可选，便于下次核对
-- 旧字段 `docFile` 仅兼容；新流程以 `docs` + `layout: "per-controller"` 为准
-
-需全量扫描：该项目无 `.sync.json`、`baseCommit` 在**正确**仓库中不存在、非 git 仓库、仍为旧单文件布局，或用户明确要求全量。  
-**注意**：`baseCommit` 在「另一个」仓里存在时返回 `wrong_repo`，不是全量。
+推送默认只推相对远程有变化的 md。需工作区 `.env` 的 `PAT`、`BEDROCK_HOST`。`--env-file` → `$BEDROCK_AGENT_ENV_FILE` → `$BEDROCK_AGENT_WORKDIR/.env` → `./.env`。
 
 ## 检查清单
 
 ```
-- [ ] 已读 references/project-conventions.md（未把 _conventions.md 当输入）
-- [ ] 已确认 --out（与已有文档目录一致；或让脚本自动发现）
-- [ ] 多仓已跑 sync_status；单仓已跑 changed_since；已按 action 分支（noop 已跳过）
-- [ ] 未在 action=noop / allUpToDate 时继续 list_endpoints 或写 md
-- [ ] 本地 docs[] 有缺失（missingDocs / reason=missing_local_docs）时未跳过，已按 docFiles 重生
-- [ ] 需要写入时已跑 list_endpoints；核对 gateway.matched；已 resolve_types 并读过源码
-- [ ] 每个 Controller 一个 <kebab>.md；path 字符级来自脚本；未匹配已标注；未改单复数
-- [ ] 已跑 verify_docs 且 ok:true（失败已按 missing/extra/unresolvedTypes 修正）
-- [ ] 说明与示例是中文人话；无描述性斜体占位；非对象 body/data 用 `` `_(body)_` ``/`` `_(data)_` ``（带反引号）；鉴权为可读摘要
-- [ ] 每个对象请求/响应已展开字段表（或本文 `## 数据模型` 锚点）；无「返回 `Xxx` 对象」却无定义
-- [ ] 请求侧「必填」已按 list_endpoints / resolve_types 规则填写；未出现「无注解就全员否」；响应表无必填列
-- [ ] BaseDTO 保存/修改请求体含嵌套 `_shared`（未摊平）；示例 JSON 含 `"_shared"`
-- [ ] Markdown 在 <out>/<project>/，模块头链接 ../_conventions.md
-- [ ] 已 stamp（含 --docs）当前提交到该项目 .sync.json（含 repoRel）
-- [ ] METHOD+path 唯一；无臆造字段 / 无臆造网关前缀
-- [ ] 若需入库：已 push_docs（默认增量；未无故 --all）；failed 为空；skipped 为未变化文件
+- [ ] 第一动作是 prepare.mjs；未先逛工作区
+- [ ] 已按 action 分支（noop 已跳过；点名重生用了 --force）
+- [ ] 已跑 list_endpoints / resolve_types；path 字符级来自脚本
+- [ ] 写 md 时才读 writing.md；每个对象有字段表；_shared 未摊平
+- [ ] verify_docs ok:true 后才 stamp
+- [ ] 若需入库：push_docs 默认增量；未无故 --all
 ```
