@@ -50,6 +50,7 @@ description: >-
 - 响应信封（如 `R`）只在模块头写一次；各接口表格只描述 `data` 里的内容
 - 不得臆造业务字段；未解析类型标 `needs_source`，并只打开那一个文件（或查项目约定）
 - 文档写成功后务必执行 `stamp_commit.mjs`（带上本次 `--docs`）
+- **推送默认增量**：`push_docs` 先 export 比对远程，只推新建或内容有变化的 md；禁止无故 `--all` 刷全量
 - **全程中文**（接口说明、鉴权摘要、字段说明、示例旁注）
 
 ## 脚本 vs 理解
@@ -62,11 +63,11 @@ description: >-
 | `changed_since` / `stamp_commit`：变更范围、`docFiles`、同步提交号、`repoRel` | 判断改哪些 `<kebab>.md`；核对文档与源码意图 |
 | `verify_docs`：MD 中 `METHOD path` 与脚本集合比对 | `ok:false` 时按 diff 改 MD，禁止靠感觉改 path |
 | `ensure_conventions`：生成唯一 `_conventions.md` | 保持 `project-conventions.md` 为规范源 |
-| `push_docs`：镜像推送 `<out>/**/*.md` 到产品项目文档 | 确认 `--slug`、PAT scope 与项目 ACL |
+| `push_docs`：默认只推相对远程有变化（含新建）的 md；`--all` 才全量 | 确认 `--slug`、PAT scope 与项目 ACL |
 
 **脚本边界**：列接口路径、文档文件名、类型字段、变更范围、校验已写 path；网关前缀来自手维 JSON 查找。**不再**解析 Spring Gateway YAML，也不解释 StripPrefix / RewritePath 等网关细节。
 
-**禁止**：把脚本 JSON 原样堆进 Markdown；**禁止**把全量 `list_endpoints` 输出整包读入对话；禁止只抄注解源码当「文档」；禁止手算网关前缀；禁止在 `action=noop` 时继续生成；禁止跳过 `verify_docs` 直接 stamp。
+**禁止**：把脚本 JSON 原样堆进 Markdown；**禁止**把全量 `list_endpoints` 输出整包读入对话；禁止只抄注解源码当「文档」；禁止手算网关前缀；禁止在 `action=noop` 时继续生成；禁止跳过 `verify_docs` 直接 stamp；禁止无故 `--all` 把未改文档再推一遍。
 
 打开源码范围：脚本列出的 Controller / DTO，以及为理解行为所必需的少量 Service。
 
@@ -209,7 +210,7 @@ node scripts/resolve_types.mjs <srcRoot> TypeA,TypeB
 node scripts/changed_since.mjs <repoRoot> [baseCommit] [--out <dir>] [--project <name>] [--workspace <dir>]
 node scripts/verify_docs.mjs <srcRoot> [--out <dir>] [--project <name>] [--service name] [--repo-root dir] [--docs a.md,b.md] [--files a.java,b.java]
 node scripts/stamp_commit.mjs <repoRoot> [--out <dir>] [--project <name>] [--workspace <dir>] [--docs a.md,b.md] [--gateway-prefix /x] [--gateway-service name] [--dry-run]
-node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--env-file <path>] [--dry-run]
+node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--docs a.md,b.md] [--all] [--env-file <path>] [--dry-run]
 ```
 
 | 脚本 | 标准输出 |
@@ -221,7 +222,7 @@ node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--env-file <path
 | `changed_since.mjs` | `{ action, mode, upToDate, files[], controllers[], docFiles[], missingDocs?, agentHint, … }` |
 | `verify_docs.mjs` | `{ ok, missingInDocs[], extraInDocs[], missingDocs[], unresolvedTypes[], … }`；失败退出码 1 |
 | `stamp_commit.mjs` | 已写入（或预览）的 `.sync.json`（含 `repoRel`） |
-| `push_docs.mjs` | `{ pushed[], failed[], dryRun, summary }`；失败非 0 退出 |
+| `push_docs.mjs` | `{ pushed[], skipped[], failed[], incremental, summary }`；失败非 0 退出 |
 
 | 参数 | 脚本 | 含义 |
 |------|------|------|
@@ -229,24 +230,29 @@ node scripts/push_docs.mjs --slug <项目标识> [--out <dir>] [--env-file <path
 | `--project <name>` | `changed_since` / `stamp_commit` / `list_endpoints` | 项目子目录名；并参与网关匹配 |
 | `--workspace <dir>` | `sync_status` / `changed_since` / `stamp_commit` | 工作区根（默认 cwd）；用于 `repoRel` 与邻仓探测 |
 | `--service` / `--gateway-json` / `--repo-root` | `list_endpoints` | 服务名、网关 JSON、读 application.yml 的仓根 |
-| `--docs a.md,b.md` | `stamp_commit` / `verify_docs` | 写入 `.sync.json` 的 `docs` 列表；或只校验这些文档 |
+| `--docs a.md,b.md` | `stamp_commit` / `verify_docs` / `push_docs` | stamp/verify：项目内文件名；push：相对 `--out` 或 basename |
 | `--files a,b` | `list_endpoints` / `verify_docs` | 只扫这些文件 |
 | `[baseCommit]` | `changed_since` | 覆盖 `.sync.json` 中的上次提交 |
 | `--slug <id>` | `push_docs` | Bedrock 产品项目标识（路径参数；可为数字 ID 或 slug） |
+| `--all` | `push_docs` | 跳过远程比对，推送候选全部（无变化也覆盖） |
 | `--env-file <path>` | `push_docs` | 显式 `.env`；否则按 `$BEDROCK_AGENT_ENV_FILE` → `$BEDROCK_AGENT_WORKDIR/.env` → `./.env` |
 
 ### 推送到产品项目（`push_docs`）
 
-把 `<out>` 下全部 `.md`（跳过隐藏目录；**不推** `.sync.json`）按相对路径镜像到开放 API：
+默认**只推更新**：先 `GET /projects/{slug}/docs/export`，本地内容与远程相同则列入 `skipped`，只 POST 新建或内容有变化的文件。`--all` 才跳过比对、覆盖候选全部。禁止在无变化时用 `--all` 刷全量。
+
+路径镜像（跳过隐藏目录；**不推** `.sync.json`）：
 
 - `ic-upms-biz/sys-user.md` → `api_dir=ic-upms-biz` + `api_doc_name=sys-user.md`
 - `_conventions.md` → `api_dir=`（根）+ `api_doc_name=_conventions.md`
+
+可选 `--docs ic-upms-biz/sys-user.md,_conventions.md`（或 basename）限制候选，再与远程比对。
 
 **必需环境变量**（智能体管理里配置，平台写入工作区 `.env`；勿写进技能目录）：
 
 | 变量 | 说明 |
 |------|------|
-| `PAT` | 访问令牌；至少 `docs:write` |
+| `PAT` | 访问令牌；`docs:write`（推送）+ `docs:read`（默认 export 比对）。仅 `--all` 时可只有 write |
 | `BEDROCK_HOST` | 服务根地址，**无尾斜杠**（请求 `{host}/api/v1/projects/{slug}/docs/push`） |
 
 PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已存在的 `process.env`（便于本机调试）。
@@ -270,7 +276,7 @@ PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已�
 7. **校验 path** — `verify_docs.mjs <srcRoot> --project … --repo-root <模块目录> [--docs …]`；`ok: false` → 按 `missingInDocs` / `extraInDocs` 改 MD 后重跑，**禁止** stamp。
 8. **更新同步记录** — `stamp_commit.mjs … --docs common.md,table-info.md`（可加 `--gateway-prefix` / `--gateway-service`）；可用 `--dry-run` 核对。会写入 `repoRel`。
 9. **核对** — `METHOD path` 唯一且已通过 `verify_docs`；每个对象请求/响应都能看到字段表（无「只提类型名」）；无描述性斜体占位（`_(继承 …)_` 等）；非对象 body/data 已用 `_(body)_`/`_(data)_`；鉴权为人话；表格与源码一致；约定页存在且被引用；`.sync.json` 为当前 HEAD 且 `docs` 齐全；网关未匹配处已标注。
-10. **推送到产品项目文档**（可选）— `push_docs.mjs --slug <项目标识> [--out …] [--dry-run]`。需工作区 `.env`（或 `--env-file`）含 `PAT`、`BEDROCK_HOST`；确认 scope / ACL。
+10. **推送到产品项目文档**（可选）— `push_docs.mjs --slug <项目标识> [--out …] [--docs …] [--dry-run]`。默认只推相对远程有变化的 md（`skipped` 为未变）；全量覆盖才 `--all`。需工作区 `.env`（或 `--env-file`）含 `PAT`、`BEDROCK_HOST`；确认 `docs:read`+`docs:write` / ACL。
 
 ### `.sync.json`
 
@@ -314,5 +320,5 @@ PAT 还须满足目标项目的**成员 ACL**。文件中的键**不覆盖**已�
 - [ ] Markdown 在 <out>/<project>/，模块头链接 ../_conventions.md
 - [ ] 已 stamp（含 --docs）当前提交到该项目 .sync.json（含 repoRel）
 - [ ] METHOD+path 唯一；无臆造字段 / 无臆造网关前缀
-- [ ] 若需入库：已 push_docs（--slug；PAT/BEDROCK_HOST）；failed 为空
+- [ ] 若需入库：已 push_docs（默认增量；未无故 --all）；failed 为空；skipped 为未变化文件
 ```

@@ -21,27 +21,10 @@ function apiURL(host, apiPath) {
 }
 
 /**
- * POST JSON，Bearer token。
- * @param {string} url
- * @param {{ token: string, body: unknown, fetchImpl?: typeof fetch }} opts
+ * @param {Response} res
  * @returns {Promise<{ ok: boolean, status: number, data: unknown, text: string }>}
  */
-async function postJSON(url, opts) {
-  const token = String(opts.token || '').trim();
-  if (!token) throw new Error('PAT 不能为空');
-  const fetchImpl = opts.fetchImpl || globalThis.fetch;
-  if (typeof fetchImpl !== 'function') {
-    throw new Error('当前 Node 无 fetch；请使用 Node ≥ 18');
-  }
-  const res = await fetchImpl(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(opts.body ?? {}),
-  });
+async function readResponseJSON(res) {
   const text = await res.text();
   let data = null;
   if (text) {
@@ -52,6 +35,60 @@ async function postJSON(url, opts) {
     }
   }
   return { ok: res.ok, status: res.status, data, text };
+}
+
+function requireFetch(fetchImpl) {
+  const impl = fetchImpl || globalThis.fetch;
+  if (typeof impl !== 'function') {
+    throw new Error('当前 Node 无 fetch；请使用 Node ≥ 18');
+  }
+  return impl;
+}
+
+function requirePAT(token) {
+  const t = String(token || '').trim();
+  if (!t) throw new Error('PAT 不能为空');
+  return t;
+}
+
+/**
+ * POST JSON，Bearer token。
+ * @param {string} url
+ * @param {{ token: string, body: unknown, fetchImpl?: typeof fetch }} opts
+ * @returns {Promise<{ ok: boolean, status: number, data: unknown, text: string }>}
+ */
+async function postJSON(url, opts) {
+  const token = requirePAT(opts.token);
+  const fetchImpl = requireFetch(opts.fetchImpl);
+  const res = await fetchImpl(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(opts.body ?? {}),
+  });
+  return readResponseJSON(res);
+}
+
+/**
+ * GET JSON，Bearer token。
+ * @param {string} url
+ * @param {{ token: string, fetchImpl?: typeof fetch }} opts
+ * @returns {Promise<{ ok: boolean, status: number, data: unknown, text: string }>}
+ */
+async function getJSON(url, opts) {
+  const token = requirePAT(opts.token);
+  const fetchImpl = requireFetch(opts.fetchImpl);
+  const res = await fetchImpl(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  });
+  return readResponseJSON(res);
 }
 
 /**
@@ -73,4 +110,4 @@ function errorMessage(res) {
   return `HTTP ${res.status}`;
 }
 
-export { normalizeHost, apiURL, postJSON, errorMessage };
+export { normalizeHost, apiURL, postJSON, getJSON, errorMessage };
