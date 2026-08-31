@@ -13,13 +13,13 @@
 - 使用：`Authorization: Bearer br_...`，与登录 JWT 分流校验；PAT 以属主用户身份生效。
 - scope 白名单（创建时多选）：`skills:read`、`agents:run`、`docs:read`、`docs:write`、`dev_docs:read`、`dev_docs:write`、`builds:run`、`pipelines:run`、`scripts:run`。每个 scope 映射固定的开放端点（见「3. 开放接口一览」），scope 不足返回 `403 token scope insufficient`。
 - 有效期三选一：`expires_in_days`（仅 `30|90|180|365`）、`expires_at`（UTC 绝对时间，须晚于当前，与 `expires_in_days` 互斥）、都不传 = 永不过期。
-- 吊销：删除令牌即吊销；元数据中的 `last_used_at` 记录最近使用时间。
+- 吊销：删除令牌，或更新时设 `revoked`；元数据中的 `last_used_at` 记录最近使用时间。属主可更新名称、scope、过期与吊销，不轮换明文。
 - 历史仅哈希、无密文的令牌无法再复制，需删除后重建。
 - **不替代 HTTPS/TLS**：生产环境务必经 HTTPS 调用，否则令牌可能被窃听。
 
 ## 2. 获取 PAT
 
-页面：资源管理 → 访问令牌 → 创建 / 列表复制。
+页面：资源管理 → 访问令牌 → 创建 / 编辑 / 列表复制。
 
 也可通过 API 管理（登录 JWT 鉴权，适合自动化）：
 
@@ -27,8 +27,9 @@
 | ------ | ------------------------------ | ------------------------ | ------------------------------------------------------ |
 | GET    | `/resource/tokens`             | `resource_tokens:view`   | 列出本人令牌（分页元数据，含 `copyable`）              |
 | POST   | `/resource/tokens`             | `resource_tokens:create` | 创建，201；`data.token` 明文，`data.metadata` 为元数据 |
+| PUT    | `/resource/tokens/{id}`        | `resource_tokens:update` | 更新名称/scope/过期/吊销；不轮换明文；仅属主           |
 | GET    | `/resource/tokens/{id}/reveal` | `resource_tokens:view`   | 返回 AES-GCM 密文；客户端解密后复制；无密文时 422      |
-| DELETE | `/resource/tokens/{id}`        | `resource_tokens:delete` | 删除（吊销）                                           |
+| DELETE | `/resource/tokens/{id}`        | `resource_tokens:delete` | 删除                                                   |
 
 ```bash
 # 登录换取 JWT（脚本调试可用明文 password；Web 端只发 password_cipher）
