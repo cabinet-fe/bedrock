@@ -249,3 +249,102 @@ func TestPATExecuteScopes(t *testing.T) {
 		t.Fatal("agents:run must not be implied")
 	}
 }
+
+func TestPATUpdateMetadataKeepsSecret(t *testing.T) {
+	pats := setupPAT(t)
+	created, err := pats.Create(1, service.CreatePATInput{
+		Name: "old", Scopes: []string{model.ScopeSkillsRead},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := created.Metadata.TokenHash
+	prefix := created.Metadata.TokenPrefix
+	revoked := true
+	if _, err := pats.Update(1, created.Metadata.ID, service.UpdatePATInput{
+		CreatePATInput: service.CreatePATInput{
+			Name: "new-name", Scopes: []string{model.ScopeBuildsRun, model.ScopeScriptsRun},
+		},
+		Revoked: &revoked,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := pats.ValidateBearer(created.Token); err == nil {
+		t.Fatal("revoked PAT must not authenticate")
+	}
+	off := false
+	updated, err := pats.Update(1, created.Metadata.ID, service.UpdatePATInput{
+		CreatePATInput: service.CreatePATInput{
+			Name: "new-name", Scopes: []string{model.ScopeBuildsRun, model.ScopeScriptsRun},
+		},
+		Revoked: &off,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Name != "new-name" {
+		t.Fatalf("name=%q", updated.Name)
+	}
+	if updated.TokenHash != hash || updated.TokenPrefix != prefix {
+		t.Fatal("update must not rotate hash or prefix")
+	}
+	if updated.TokenCipher != "" {
+		t.Fatal("update response must not expose token_cipher")
+	}
+	if updated.RevokedAt != nil {
+		t.Fatal("unrevoke must clear revoked_at")
+	}
+	uid, scopes, err := pats.ValidateBearer(created.Token)
+	if err != nil || uid != 1 {
+		t.Fatalf("original secret must still work: %v uid=%d", err, uid)
+	}
+	if err := pats.RequireScope(scopes, model.ScopeBuildsRun); err != nil {
+		t.Fatal(err)
+	}
+	if err := pats.RequireScope(scopes, model.ScopeSkillsRead); err == nil {
+		t.Fatal("replaced scopes must drop skills:read")
+	}
+	revealed, err := pats.Reveal(1, created.Metadata.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := pkg.Decrypt(revealed.TokenCipher)
+	if err != nil || got != created.Token {
+		t.Fatalf("secret changed: %v %q", err, got)
+	}
+}
+
+func TestPATUpdateRejects(t *testing.T) {
+	pats := setupPAT(t)
+	created, err := pats.Create(1, service.CreatePATInput{
+		Name: "t", Scopes: []string{model.ScopeSkillsRead},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := service.UpdatePATInput{CreatePATInput: service.CreatePATInput{
+		Name: "x", Scopes: []string{model.ScopeSkillsRead},
+	}}
+	if _, err := pats.Update(2, created.Metadata.ID, in); !errors.Is(err, service.ErrPATInvalid) {
+		t.Fatalf("other user: %v", err)
+	}
+	if _, err := pats.Update(1, created.Metadata.ID+999, in); err == nil {
+		t.Fatal("missing id must fail")
+	}
+	bad := in
+	bad.Scopes = []string{"not-a-scope"}
+	if _, err := pats.Update(1, created.Metadata.ID, bad); !errors.Is(err, service.ErrPATBadScope) {
+		t.Fatalf("bad scope: %v", err)
+	}
+	empty := in
+	empty.Name = "  "
+	if _, err := pats.Update(1, created.Metadata.ID, empty); err == nil {
+		t.Fatal("empty name must fail")
+	}
+	past := time.Now().UTC().Add(-24 * time.Hour)
+	stale := in
+	stale.ExpiresAt = &past
+	if _, err := pats.Update(1, created.Metadata.ID, stale); err == nil {
+		t.Fatal("past expires_at must fail")
+	}
+}

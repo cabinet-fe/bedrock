@@ -240,6 +240,20 @@ export async function createToken(input: {
   return body;
 }
 
+export async function updateToken(
+  id: number,
+  input: {
+    name: string;
+    scopes: string[];
+    expires_at?: string;
+    expires_in_days?: number;
+    revoked?: boolean;
+  },
+): Promise<PersonalAccessToken> {
+  const { body } = await http.put<PersonalAccessToken>(`/resource/tokens/${id}`, input);
+  return body;
+}
+
 export async function revealToken(id: number): Promise<string> {
   const { body } = await http.get<{ token_cipher: string }>(`/resource/tokens/${id}/reveal`);
   return decryptAESGCM(body.token_cipher);

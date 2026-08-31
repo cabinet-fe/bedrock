@@ -153,7 +153,7 @@ web/                      # Vue 3 前端
 - **User**：可禁用；绑定 **多个 Role**；权限 = 各角色权限码并集。
 - **Super Admin**：`users.is_super_admin` 为鉴权真源；内置角色 `code=super_admin`（`type=builtin`）与唯一超管用户 1:1 同步；不可删、不可改权限、不可通过用户角色绑定 API 赋给他人。
 - **自定义 Role**：`type=custom`；绑定功能 `full_code` 集合。
-- **PAT**：属于 User；scope ⊆ {`skills:read`,`agents:run`,`docs:read`,`docs:write`,`dev_docs:read`,`dev_docs:write`,`builds:run`,`pipelines:run`,`scripts:run`}；明文前缀 `br_`+hex；存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 `GET .../reveal` 返回密文，前端解密）；列表仅元数据 + `copyable`；历史无密文不可复制。
+- **PAT**：属于 User；scope ⊆ {`skills:read`,`agents:run`,`docs:read`,`docs:write`,`dev_docs:read`,`dev_docs:write`,`builds:run`,`pipelines:run`,`scripts:run`}；明文前缀 `br_`+hex；存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 `GET .../reveal` 返回密文，前端解密）；列表仅元数据 + `copyable`；历史无密文不可复制。属主可更新名称、scope、过期与吊销（`revoked_at`），**不轮换**明文/哈希/密文。
 
 ### 4.2 权限码
 

@@ -6,7 +6,7 @@ import { clipboard } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
 import { computed, reactive, ref, useTemplateRef } from "vue";
 
-import { createToken, deleteToken, revealToken } from "@/api/resource";
+import { createToken, deleteToken, revealToken, updateToken } from "@/api/resource";
 import type { PersonalAccessToken } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
@@ -19,6 +19,7 @@ const { busyKey, bind } = useBusyKey();
 const table = useTemplateRef("table");
 const dialogOpen = ref(false);
 const plaintext = ref("");
+const editingId = ref<number>();
 
 type ExpireMode = "days" | "date" | "never";
 
@@ -49,6 +50,7 @@ const form = reactive({
   expireMode: "days" as ExpireMode,
   expireDays: 30,
   expires_at: "",
+  enabled: true,
 });
 
 const formGroups = [
@@ -57,7 +59,11 @@ const formGroups = [
 ];
 
 const created = computed(() => Boolean(plaintext.value));
-const confirmText = computed(() => (created.value ? "完成" : "创建"));
+const dialogTitle = computed(() => (editingId.value ? "编辑 PAT" : "创建 PAT"));
+const confirmText = computed(() => {
+  if (created.value) return "完成";
+  return editingId.value ? "保存" : "创建";
+});
 
 type TokenStatus = "valid" | "expired" | "revoked";
 
@@ -99,7 +105,7 @@ const columns = defineProTableColumns([
     align: "center",
     render: ({ val }) => formatDateTime(val),
   },
-  { key: "action", name: "操作", width: 160, align: "center", fixed: "right" },
+  { key: "action", name: "操作", width: 200, align: "center", fixed: "right" },
 ]);
 
 function tokenStatus(row: PersonalAccessToken): TokenStatus {
@@ -114,27 +120,50 @@ function disabledExpiresAt(d: Dater) {
 
 function openCreate() {
   plaintext.value = "";
-  form.name = "";
-  form.scopeSkills = true;
-  form.scopeAgents = false;
-  form.scopeDocsRead = false;
-  form.scopeDocsWrite = false;
-  form.scopeDevDocsRead = false;
-  form.scopeDevDocsWrite = false;
-  form.scopeBuilds = false;
-  form.scopePipelines = false;
-  form.scopeScripts = false;
-  form.expireMode = "days";
-  form.expireDays = 30;
-  form.expires_at = "";
+  editingId.value = undefined;
+  Object.assign(form, {
+    name: "",
+    scopeSkills: true,
+    scopeAgents: false,
+    scopeDocsRead: false,
+    scopeDocsWrite: false,
+    scopeDevDocsRead: false,
+    scopeDevDocsWrite: false,
+    scopeBuilds: false,
+    scopePipelines: false,
+    scopeScripts: false,
+    expireMode: "days",
+    expireDays: 30,
+    expires_at: "",
+    enabled: true,
+  });
   dialogOpen.value = true;
 }
 
-async function save() {
-  if (created.value) {
-    dialogOpen.value = false;
-    return;
-  }
+function openEdit(row: PersonalAccessToken) {
+  plaintext.value = "";
+  editingId.value = row.id;
+  const scopes = new Set(row.scopes || []);
+  Object.assign(form, {
+    name: row.name,
+    scopeSkills: scopes.has("skills:read"),
+    scopeAgents: scopes.has("agents:run"),
+    scopeDocsRead: scopes.has("docs:read"),
+    scopeDocsWrite: scopes.has("docs:write"),
+    scopeDevDocsRead: scopes.has("dev_docs:read"),
+    scopeDevDocsWrite: scopes.has("dev_docs:write"),
+    scopeBuilds: scopes.has("builds:run"),
+    scopePipelines: scopes.has("pipelines:run"),
+    scopeScripts: scopes.has("scripts:run"),
+    expireMode: row.expires_at ? "date" : "never",
+    expireDays: 30,
+    expires_at: row.expires_at ? date(row.expires_at).format("YYYY-MM-DD") : "",
+    enabled: !row.revoked_at,
+  });
+  dialogOpen.value = true;
+}
+
+function collectScopes(): string[] {
   const scopes: string[] = [];
   if (form.scopeSkills) scopes.push("skills:read");
   if (form.scopeAgents) scopes.push("agents:run");
@@ -145,6 +174,15 @@ async function save() {
   if (form.scopeBuilds) scopes.push("builds:run");
   if (form.scopePipelines) scopes.push("pipelines:run");
   if (form.scopeScripts) scopes.push("scripts:run");
+  return scopes;
+}
+
+async function save() {
+  if (created.value) {
+    dialogOpen.value = false;
+    return;
+  }
+  const scopes = collectScopes();
   if (!scopes.length) {
     message.error("至少选择一个 scope");
     return;
@@ -159,6 +197,7 @@ async function save() {
       scopes: string[];
       expires_at?: string;
       expires_in_days?: number;
+      revoked?: boolean;
     } = {
       name: form.name,
       scopes,
@@ -167,6 +206,14 @@ async function save() {
       payload.expires_in_days = form.expireDays;
     } else if (form.expireMode === "date") {
       payload.expires_at = date(form.expires_at).endOf("day").raw.toISOString();
+    }
+    if (editingId.value) {
+      payload.revoked = !form.enabled;
+      await updateToken(editingId.value, payload);
+      message.success("已保存");
+      table.value?.reload();
+      dialogOpen.value = false;
+      return;
     }
     const result = await createToken(payload);
     plaintext.value = result.token;
@@ -178,7 +225,7 @@ async function save() {
       message.success("令牌已创建，请复制明文");
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "创建失败");
+    message.error(error instanceof Error ? error.message : "保存失败");
   }
 }
 
@@ -215,6 +262,11 @@ const remove = bind(async (row: PersonalAccessToken) => {
     message.error(error instanceof Error ? error.message : "删除失败");
   }
 });
+
+function onDialogClosed() {
+  plaintext.value = "";
+  editingId.value = undefined;
+}
 </script>
 
 <template>
@@ -247,12 +299,18 @@ const remove = bind(async (row: PersonalAccessToken) => {
         </u-tag>
       </template>
       <template #column:action="{ rowData }">
-        <u-action-group :max="2" :loading="busyKey === (rowData as PersonalAccessToken).id">
+        <u-action-group :max="3" :loading="busyKey === (rowData as PersonalAccessToken).id">
           <u-action
             v-if="hasPermission('resource_tokens:view')"
             @run="copyRow(rowData as PersonalAccessToken)"
           >
             复制
+          </u-action>
+          <u-action
+            v-if="hasPermission('resource_tokens:update')"
+            @run="openEdit(rowData as PersonalAccessToken)"
+          >
+            编辑
           </u-action>
           <u-action
             v-if="hasPermission('resource_tokens:delete')"
@@ -268,20 +326,27 @@ const remove = bind(async (row: PersonalAccessToken) => {
 
     <FormDialog
       v-model="dialogOpen"
-      title="创建 PAT"
+      :title="dialogTitle"
       :model="form"
       :groups="created ? undefined : formGroups"
       :confirm-text="confirmText"
       label-width="90px"
       style="width: 520px"
       @submit="save"
-      @closed="plaintext = ''"
+      @closed="onDialogClosed"
     >
       <template v-if="!created" #prepend>
-        <p class="create-tip">创建后可随时在列表中复制明文；请妥善保管令牌。</p>
+        <p class="create-tip">
+          {{
+            editingId
+              ? "明文令牌不可修改或轮换；改名称、权限或过期后原令牌仍有效。"
+              : "创建后可随时在列表中复制明文；请妥善保管令牌。"
+          }}
+        </p>
       </template>
       <template v-if="!created" #group:basic>
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
+        <u-switch v-if="editingId" label="启用" field="enabled" />
         <u-form-item
           label="Scope"
           tips="skills:read 读技能；agents:run 触发 Agent；docs:* 接口文档；dev_docs:* 开发文档；builds:run 构建执行；pipelines:run 流水线执行；scripts:run 脚本执行"

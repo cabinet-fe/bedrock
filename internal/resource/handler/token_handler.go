@@ -14,7 +14,7 @@ import (
 	"bedrock/internal/resource/service"
 )
 
-// TokenHandler exposes personal access tokens (user_id-scoped: list/create/reveal/delete self only).
+// TokenHandler exposes personal access tokens (user_id-scoped: list/create/update/reveal/delete self only).
 type TokenHandler struct {
 	svc  *service.PATService
 	perm *rbacservice.PermissionService
@@ -28,6 +28,7 @@ func (h *TokenHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFun
 	g := rg.Group("/resource/tokens", authMW)
 	g.GET("", rbacmw.RequirePermission(h.perm, "resource_tokens:view"), h.List)
 	g.POST("", rbacmw.RequirePermission(h.perm, "resource_tokens:create"), h.Create)
+	g.PUT("/:id", rbacmw.RequirePermission(h.perm, "resource_tokens:update"), h.Update)
 	g.GET("/:id/reveal", rbacmw.RequirePermission(h.perm, "resource_tokens:view"), h.Reveal)
 	g.DELETE("/:id", rbacmw.RequirePermission(h.perm, "resource_tokens:delete"), h.Delete)
 }
@@ -54,6 +55,25 @@ func (h *TokenHandler) Create(c *gin.Context) {
 		return
 	}
 	pkg.Created(c, result)
+}
+
+func (h *TokenHandler) Update(c *gin.Context) {
+	id, err := parseID(c)
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "无效 ID")
+		return
+	}
+	var input service.UpdatePATInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "无效请求")
+		return
+	}
+	item, err := h.svc.Update(authmiddleware.GetUserID(c), id, input)
+	if err != nil {
+		writeTokenError(c, err)
+		return
+	}
+	pkg.Success(c, item)
 }
 
 func (h *TokenHandler) Reveal(c *gin.Context) {

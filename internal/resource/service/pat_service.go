@@ -46,6 +46,11 @@ type CreatePATInput struct {
 	ExpiresInDays *int       `json:"expires_in_days"`
 }
 
+type UpdatePATInput struct {
+	CreatePATInput
+	Revoked *bool `json:"revoked"`
+}
+
 type CreatePATResult struct {
 	Token    string                    `json:"token"`
 	Metadata model.PersonalAccessToken `json:"metadata"`
@@ -56,6 +61,10 @@ type RevealPATResult struct {
 }
 
 func resolvePATExpiresAt(in CreatePATInput) (*time.Time, error) {
+	return resolvePATExpiresAtKeeping(in, nil)
+}
+
+func resolvePATExpiresAtKeeping(in CreatePATInput, current *time.Time) (*time.Time, error) {
 	if in.ExpiresAt != nil && in.ExpiresInDays != nil {
 		return nil, errors.New("expires_at 与 expires_in_days 不可同时传")
 	}
@@ -67,12 +76,21 @@ func resolvePATExpiresAt(in CreatePATInput) (*time.Time, error) {
 		return new(time.Now().UTC().Add(time.Duration(days) * 24 * time.Hour)), nil
 	}
 	if in.ExpiresAt != nil {
+		if current != nil && sameUTCDay(*in.ExpiresAt, *current) {
+			return current, nil
+		}
 		if !in.ExpiresAt.After(time.Now().UTC()) {
 			return nil, errors.New("expires_at 必须晚于当前时间")
 		}
 		return in.ExpiresAt, nil
 	}
 	return nil, nil
+}
+
+func sameUTCDay(a, b time.Time) bool {
+	ay, am, ad := a.UTC().Date()
+	by, bm, bd := b.UTC().Date()
+	return ay == by && am == bm && ad == bd
 }
 
 func (s *PATService) Create(userID uint, in CreatePATInput) (*CreatePATResult, error) {
@@ -168,6 +186,57 @@ func (s *PATService) Delete(userID uint, id uint) error {
 			fmt.Sprintf("name=%s", token.Name), "")
 	}
 	return nil
+}
+
+func (s *PATService) Update(userID uint, id uint, in UpdatePATInput) (*model.PersonalAccessToken, error) {
+	token, err := s.repo.Find(id)
+	if err != nil {
+		return nil, err
+	}
+	if token.UserID != userID {
+		return nil, ErrPATInvalid
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		return nil, errors.New("名称不能为空")
+	}
+	scopes, err := normalizeScopes(in.Scopes)
+	if err != nil {
+		return nil, err
+	}
+	expiresAt, err := resolvePATExpiresAtKeeping(in.CreatePATInput, token.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	scopesJSON, err := json.Marshal(scopes)
+	if err != nil {
+		return nil, err
+	}
+	token.Name = name
+	token.Scopes = scopes
+	token.ScopesJSON = string(scopesJSON)
+	token.ExpiresAt = expiresAt
+	if in.Revoked != nil {
+		if *in.Revoked {
+			if token.RevokedAt == nil {
+				now := time.Now().UTC()
+				token.RevokedAt = &now
+			}
+		} else {
+			token.RevokedAt = nil
+		}
+	}
+	if err := s.repo.Update(token); err != nil {
+		return nil, err
+	}
+	if s.audit != nil {
+		_ = s.audit.Write(userID, "", "pat_update", "personal_access_token", fmt.Sprintf("%d", id),
+			fmt.Sprintf("name=%s scopes=%v revoked=%v", name, scopes, token.RevokedAt != nil), "")
+	}
+	decodeScopes(token)
+	token.Copyable = token.TokenCipher != ""
+	token.TokenCipher = ""
+	return token, nil
 }
 
 // ValidateBearer returns userID and scopes for a valid PAT; otherwise ErrPATInvalid.

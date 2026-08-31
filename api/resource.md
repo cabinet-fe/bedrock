@@ -225,7 +225,7 @@
 
 ## 个人访问令牌（PAT）
 
-PAT 按 `user_id` 隔离：仅能列出/创建/删除本人令牌。Bearer PAT 的鉴权消费方式见 [auth.md](auth.md)。
+PAT 按 `user_id` 隔离：仅能列出/创建/更新/删除本人令牌。Bearer PAT 的鉴权消费方式见 [auth.md](auth.md)。
 
 ### GET /resource/tokens — 列出个人访问令牌（元数据）
 
@@ -240,6 +240,14 @@ PAT 按 `user_id` 隔离：仅能列出/创建/删除本人令牌。Bearer PAT �
 请求：{ name*, scopes*, expires_at?, expires_in_days? }
 响应 201：data = PATCreateResponse
 说明：创建响应含明文 `token`；服务端同时存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 reveal 返回密文，由客户端解密复制）。明文前缀为 `br_`+hex（不兼容旧 `br_pat_`）。scopes 限于 `skills:read`、`agents:run`、`docs:read`、`docs:write`、`dev_docs:read`、`dev_docs:write`、`builds:run`、`pipelines:run`、`scripts:run`。过期三选一：都不传 = 永不过期；`expires_in_days` 仅允许 `30` / `90` / `180` / `365`（服务端换算为 UTC 绝对时间写入 `expires_at`）；`expires_at` 为自定义绝对时间且必须晚于当前 UTC。`expires_at` 与 `expires_in_days` 不可同时传。不能替代 HTTPS/TLS。
+
+### PUT /resource/tokens/{id} — 更新个人访问令牌
+
+权限：`resource_tokens:update`（仅属主）
+路径参数：id*: integer
+请求：{ name*, scopes*, expires_at?, expires_in_days?, revoked? }
+响应 200：data = PersonalAccessToken
+说明：更新名称、scope、过期与吊销状态；不轮换明文/哈希/密文（响应不含 `token`）。过期规则同创建：`expires_in_days` 与 `expires_at` 不可同时传；都不传 = 永不过期；`expires_in_days` 仅允许 `30` / `90` / `180` / `365`。新设 `expires_at` 必须晚于当前 UTC；若与库中已有过期日为同一 UTC 日则保留原值（便于改名称/scope 时不强迫已过期令牌改期）。`revoked=true` 写入 `revoked_at`（已吊销则保留原时间）；`revoked=false` 清空吊销；省略则不改吊销状态。非属主按无效处理。id 不变，已发放明文仍有效（除非吊销或过期）。
 
 ### GET /resource/tokens/{id}/reveal — 获取个人访问令牌密文
 
