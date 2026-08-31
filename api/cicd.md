@@ -62,7 +62,7 @@
 路径参数：id*: integer
 请求：{ branch, trigger_type }
 响应 202：data = BuildRun
-说明：触发时只需 `cicd_build_jobs:execute`；不要求凭证 `:use`（执行时使用已绑定凭证快照）。
+说明：JWT 需 `cicd_build_jobs:execute`；PAT 需 scope `builds:run`。触发时不要求凭证 `:use`（执行时使用已绑定凭证快照）。写/执行仍受角色 `data_scope` 约束。
 
 ## 构建运行
 
@@ -187,6 +187,7 @@
 路径参数：id*: integer
 请求：{ trigger_type }
 响应 202：data = PipelineRun
+说明：JWT 需 `cicd_pipelines:execute`；PAT 需 scope `pipelines:run`。写/执行仍受角色 `data_scope` 约束。
 
 ## 流水线运行
 

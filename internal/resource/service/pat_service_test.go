@@ -220,3 +220,32 @@ func TestPATUserScopedDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPATExecuteScopes(t *testing.T) {
+	pats := setupPAT(t)
+	if _, err := pats.Create(1, service.CreatePATInput{
+		Name: "bad", Scopes: []string{"builds:execute"},
+	}); err == nil {
+		t.Fatal("unknown execute scope must be rejected")
+	}
+	created, err := pats.Create(1, service.CreatePATInput{
+		Name: "exec", Scopes: []string{
+			model.ScopeBuildsRun, model.ScopePipelinesRun, model.ScopeScriptsRun,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, scopes, err := pats.ValidateBearer(created.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sc := range []string{model.ScopeBuildsRun, model.ScopePipelinesRun, model.ScopeScriptsRun} {
+		if err := pats.RequireScope(scopes, sc); err != nil {
+			t.Fatalf("scope %s: %v", sc, err)
+		}
+	}
+	if err := pats.RequireScope(scopes, model.ScopeAgentsRun); err == nil {
+		t.Fatal("agents:run must not be implied")
+	}
+}

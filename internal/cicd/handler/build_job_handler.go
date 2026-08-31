@@ -11,6 +11,7 @@ import (
 	"bedrock/internal/pkg"
 	rbacmw "bedrock/internal/rbac/middleware"
 	rbacservice "bedrock/internal/rbac/service"
+	resourcemodel "bedrock/internal/resource/model"
 )
 
 type BuildJobHandler struct {
@@ -32,8 +33,8 @@ func (h *BuildJobHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handler
 	g.DELETE("/:id", rbacmw.RequirePermission(h.perm, "cicd_build_jobs:delete"), h.Delete)
 	g.GET("/:id/webhook-secret", rbacmw.RequirePermission(h.perm, "cicd_build_jobs:view"), h.GetWebhookSecret)
 	g.POST("/:id/webhook-secret/rotate", rbacmw.RequirePermission(h.perm, "cicd_build_jobs:update"), h.RotateWebhookSecret)
-	// Execute: only cicd_build_jobs:execute required (not credentials:use) — DESIGN §4.5 / Wave 4 engine.
-	g.POST("/:id/runs", rbacmw.RequirePermission(h.perm, "cicd_build_jobs:execute"), h.EnqueueRun)
+	// Execute: JWT cicd_build_jobs:execute, or PAT builds:run (not credentials:use) — DESIGN §4.5 / D17.
+	g.POST("/:id/runs", rbacmw.RequirePermissionOrPATScope(h.perm, "cicd_build_jobs:execute", resourcemodel.ScopeBuildsRun), h.EnqueueRun)
 }
 
 func (h *BuildJobHandler) dataScope(c *gin.Context) (uint, string, bool) {

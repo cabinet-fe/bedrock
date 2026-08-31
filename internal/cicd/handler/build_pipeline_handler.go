@@ -11,6 +11,7 @@ import (
 	"bedrock/internal/pkg"
 	rbacmw "bedrock/internal/rbac/middleware"
 	rbacservice "bedrock/internal/rbac/service"
+	resourcemodel "bedrock/internal/resource/model"
 )
 
 type BuildPipelineHandler struct {
@@ -36,7 +37,7 @@ func (h *BuildPipelineHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Ha
 	g.DELETE("/:id", rbacmw.RequirePermission(h.perm, "cicd_pipelines:delete"), h.Delete)
 	g.GET("/:id/webhook-secret", rbacmw.RequirePermission(h.perm, "cicd_pipelines:view"), h.GetWebhookSecret)
 	g.POST("/:id/webhook-secret/rotate", rbacmw.RequirePermission(h.perm, "cicd_pipelines:update"), h.RotateWebhookSecret)
-	g.POST("/:id/runs", rbacmw.RequirePermission(h.perm, "cicd_pipelines:execute"), h.EnqueueRun)
+	g.POST("/:id/runs", rbacmw.RequirePermissionOrPATScope(h.perm, "cicd_pipelines:execute", resourcemodel.ScopePipelinesRun), h.EnqueueRun)
 }
 
 func (h *BuildPipelineHandler) dataScope(c *gin.Context) (uint, string, bool) {

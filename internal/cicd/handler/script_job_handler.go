@@ -11,6 +11,7 @@ import (
 	"bedrock/internal/pkg"
 	rbacmw "bedrock/internal/rbac/middleware"
 	rbacservice "bedrock/internal/rbac/service"
+	resourcemodel "bedrock/internal/resource/model"
 )
 
 type ScriptJobHandler struct {
@@ -32,7 +33,7 @@ func (h *ScriptJobHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handle
 	g.DELETE("/:id", rbacmw.RequirePermission(h.perm, "cicd_script_jobs:delete"), h.Delete)
 	g.GET("/:id/webhook-secret", rbacmw.RequirePermission(h.perm, "cicd_script_jobs:view"), h.GetWebhookSecret)
 	g.POST("/:id/webhook-secret/rotate", rbacmw.RequirePermission(h.perm, "cicd_script_jobs:update"), h.RotateWebhookSecret)
-	g.POST("/:id/runs", rbacmw.RequirePermission(h.perm, "cicd_script_jobs:execute"), h.EnqueueRun)
+	g.POST("/:id/runs", rbacmw.RequirePermissionOrPATScope(h.perm, "cicd_script_jobs:execute", resourcemodel.ScopeScriptsRun), h.EnqueueRun)
 }
 
 func (h *ScriptJobHandler) dataScope(c *gin.Context) (uint, string, bool) {

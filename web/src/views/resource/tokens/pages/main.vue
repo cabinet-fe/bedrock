@@ -43,6 +43,9 @@ const form = reactive({
   scopeDocsWrite: false,
   scopeDevDocsRead: false,
   scopeDevDocsWrite: false,
+  scopeBuilds: false,
+  scopePipelines: false,
+  scopeScripts: false,
   expireMode: "days" as ExpireMode,
   expireDays: 30,
   expires_at: "",
@@ -118,6 +121,9 @@ function openCreate() {
   form.scopeDocsWrite = false;
   form.scopeDevDocsRead = false;
   form.scopeDevDocsWrite = false;
+  form.scopeBuilds = false;
+  form.scopePipelines = false;
+  form.scopeScripts = false;
   form.expireMode = "days";
   form.expireDays = 30;
   form.expires_at = "";
@@ -136,6 +142,9 @@ async function save() {
   if (form.scopeDocsWrite) scopes.push("docs:write");
   if (form.scopeDevDocsRead) scopes.push("dev_docs:read");
   if (form.scopeDevDocsWrite) scopes.push("dev_docs:write");
+  if (form.scopeBuilds) scopes.push("builds:run");
+  if (form.scopePipelines) scopes.push("pipelines:run");
+  if (form.scopeScripts) scopes.push("scripts:run");
   if (!scopes.length) {
     message.error("至少选择一个 scope");
     return;
@@ -275,7 +284,7 @@ const remove = bind(async (row: PersonalAccessToken) => {
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
         <u-form-item
           label="Scope"
-          tips="skills:read 读技能；agents:run 触发 Agent；docs:* 接口文档；dev_docs:* 开发文档"
+          tips="skills:read 读技能；agents:run 触发 Agent；docs:* 接口文档；dev_docs:* 开发文档；builds:run 构建执行；pipelines:run 流水线执行；scripts:run 脚本执行"
         >
           <div class="scope-row">
             <u-checkbox v-model="form.scopeSkills">skills:read</u-checkbox>
@@ -284,6 +293,9 @@ const remove = bind(async (row: PersonalAccessToken) => {
             <u-checkbox v-model="form.scopeDocsWrite">docs:write</u-checkbox>
             <u-checkbox v-model="form.scopeDevDocsRead">dev_docs:read</u-checkbox>
             <u-checkbox v-model="form.scopeDevDocsWrite">dev_docs:write</u-checkbox>
+            <u-checkbox v-model="form.scopeBuilds">builds:run 构建执行</u-checkbox>
+            <u-checkbox v-model="form.scopePipelines">pipelines:run 流水线执行</u-checkbox>
+            <u-checkbox v-model="form.scopeScripts">scripts:run 脚本执行</u-checkbox>
           </div>
         </u-form-item>
       </template>

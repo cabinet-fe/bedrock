@@ -10,6 +10,9 @@ const (
 	ScopeDocsWrite    = "docs:write"
 	ScopeDevDocsRead  = "dev_docs:read"
 	ScopeDevDocsWrite = "dev_docs:write"
+	ScopeBuildsRun    = "builds:run"
+	ScopePipelinesRun = "pipelines:run"
+	ScopeScriptsRun   = "scripts:run"
 )
 
 // PersonalAccessToken stores SHA-256 hash for auth plus AES-GCM ciphertext for owner reveal.

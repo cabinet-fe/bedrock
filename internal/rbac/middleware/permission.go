@@ -31,3 +31,18 @@ func RequirePermission(perm *service.PermissionService, required string) gin.Han
 		c.Next()
 	}
 }
+
+// RequirePermissionOrPATScope accepts JWT with the RBAC permission, or PAT with patScope.
+func RequirePermissionOrPATScope(perm *service.PermissionService, required, patScope string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if authmiddleware.IsPAT(c) {
+			if err := authmiddleware.RequirePATScope(c, patScope); err != nil {
+				pkg.Error(c, http.StatusForbidden, "token scope insufficient")
+				return
+			}
+			c.Next()
+			return
+		}
+		RequirePermission(perm, required)(c)
+	}
+}

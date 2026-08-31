@@ -58,6 +58,7 @@
 权限：`cicd_script_jobs:execute`
 路径参数：id*: integer
 响应 202：data = ScriptRun
+说明：JWT 需 `cicd_script_jobs:execute`；PAT 需 scope `scripts:run`。写/执行仍受角色 `data_scope` 约束。
 
 ## 脚本运行
 

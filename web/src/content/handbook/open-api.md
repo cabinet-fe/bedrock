@@ -11,7 +11,7 @@
 
 - 形态：`br_` 前缀 + hex；服务端存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 reveal 取密文，前端用与登录相同密钥解密后复制）；明文不落日志。
 - 使用：`Authorization: Bearer br_...`，与登录 JWT 分流校验；PAT 以属主用户身份生效。
-- scope 白名单（创建时多选）：`skills:read`、`agents:run`、`docs:read`、`docs:write`、`dev_docs:read`、`dev_docs:write`。每个 scope 映射固定的开放端点（见「3. 开放接口一览」），scope 不足返回 `403 token scope insufficient`。
+- scope 白名单（创建时多选）：`skills:read`、`agents:run`、`docs:read`、`docs:write`、`dev_docs:read`、`dev_docs:write`、`builds:run`、`pipelines:run`、`scripts:run`。每个 scope 映射固定的开放端点（见「3. 开放接口一览」），scope 不足返回 `403 token scope insufficient`。
 - 有效期三选一：`expires_in_days`（仅 `30|90|180|365`）、`expires_at`（UTC 绝对时间，须晚于当前，与 `expires_in_days` 互斥）、都不传 = 永不过期。
 - 吊销：删除令牌即吊销；元数据中的 `last_used_at` 记录最近使用时间。
 - 历史仅哈希、无密文的令牌无法再复制，需删除后重建。
@@ -55,6 +55,9 @@ curl -fsS "$HOST/api/v1/resource/tokens/1/reveal" \
 | scope            | 方法 | 路径                             | 说明                                                   |
 | ---------------- | ---- | -------------------------------- | ------------------------------------------------------ |
 | `agents:run`     | POST | `/ai/agents/{id}/api-runs`       | 触发 Agent 运行（202 异步）                            |
+| `builds:run`     | POST | `/build-jobs/{id}/runs`          | 入队构建运行（202 异步）                               |
+| `pipelines:run`  | POST | `/build-pipelines/{id}/runs`     | 入队流水线运行（202 异步）                             |
+| `scripts:run`    | POST | `/script-jobs/{id}/runs`         | 入队脚本运行（202 异步）                               |
 | `skills:read`    | GET  | `/skills/{id}/package`           | 下载技能包（二进制 ZIP）                               |
 | `docs:write`     | POST | `/projects/{id}/docs/push`       | 按路径 upsert 接口文档；`{id}` 可为数字 ID 或项目 slug |
 | `docs:read`      | GET  | `/projects/{id}/docs/pull`       | 按路径读取单篇接口文档；`{id}` 可为数字 ID 或项目 slug |
@@ -63,7 +66,7 @@ curl -fsS "$HOST/api/v1/resource/tokens/1/reveal" \
 | `dev_docs:read`  | GET  | `/projects/{id}/dev-docs/pull`   | 按路径读取单篇开发文档；`{id}` 可为数字 ID 或项目 slug |
 | `dev_docs:read`  | GET  | `/projects/{id}/dev-docs/export` | 按目录导出开发文档列表（全量同步）；`{id}` 同 push     |
 
-以上接口也接受登录 JWT（此时校验 RBAC 权限而非 scope）：`api-runs` 需 `ai_agents:execute`，`package` 需 `ai_skills:download`，接口文档 `push` 需 `project_docs:create`，`pull` / `export` 需 `project_docs:view`；开发文档对应 `project_dev_docs:*`；项目文档接口另要求项目 ACL。
+以上接口也接受登录 JWT（此时校验 RBAC 权限而非 scope）：`api-runs` 需 `ai_agents:execute`，构建入队需 `cicd_build_jobs:execute`，流水线入队需 `cicd_pipelines:execute`，脚本入队需 `cicd_script_jobs:execute`，`package` 需 `ai_skills:download`，接口文档 `push` 需 `project_docs:create`，`pull` / `export` 需 `project_docs:view`；开发文档对应 `project_dev_docs:*`；项目文档接口另要求项目 ACL。CI/CD 写/执行仍受角色 `data_scope` 约束。
 
 ## 4. 通用约定
 
@@ -203,6 +206,37 @@ curl -fsS "$HOST/api/v1/projects/my-product/dev-docs/pull?doc_dir=guides&doc_nam
 
 ```bash
 curl -fsS "$HOST/api/v1/projects/my-product/dev-docs/export?doc_dir=guides" \
+  -H "Authorization: Bearer br_..."
+```
+
+### 5.9 入队构建运行 — scope `builds:run`
+
+`POST /build-jobs/{id}/runs` — 可选请求体 `{ "branch": "...", "trigger_type": "manual" }`。JWT 需 `cicd_build_jobs:execute`。
+
+```bash
+curl -fsS -X POST "$HOST/api/v1/build-jobs/1/runs" \
+  -H "Authorization: Bearer br_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"branch":"main"}'
+```
+
+### 5.10 入队流水线运行 — scope `pipelines:run`
+
+`POST /build-pipelines/{id}/runs` — 可选请求体 `{ "trigger_type": "manual" }`。JWT 需 `cicd_pipelines:execute`。
+
+```bash
+curl -fsS -X POST "$HOST/api/v1/build-pipelines/1/runs" \
+  -H "Authorization: Bearer br_..." \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+### 5.11 入队脚本运行 — scope `scripts:run`
+
+`POST /script-jobs/{id}/runs` — 请求体可省略。JWT 需 `cicd_script_jobs:execute`。
+
+```bash
+curl -fsS -X POST "$HOST/api/v1/script-jobs/1/runs" \
   -H "Authorization: Bearer br_..."
 ```
 
