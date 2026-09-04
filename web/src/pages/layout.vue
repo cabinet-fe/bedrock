@@ -106,9 +106,7 @@ function onNavClick(item: NavItem) {
       <main class="app-main">
         <router-view v-slot="{ Component, route: viewRoute }">
           <Transition name="fade" mode="out-in">
-            <keep-alive :include="tabsStore.cachedNames">
-              <component :is="Component" :key="viewRoute.path" class="app-page" />
-            </keep-alive>
+            <component :is="Component" :key="viewRoute.path" class="app-page" />
           </Transition>
         </router-view>
       </main>

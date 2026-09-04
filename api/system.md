@@ -245,6 +245,13 @@
 响应 200：data = OperationLogPage
 错误：403
 
+### DELETE /operation-logs — 清空操作日志
+
+权限：`system_operation_logs:clear`
+响应 200
+错误：403
+
+
 ## 通知
 
 ### GET /notifications — 列出当前用户通知

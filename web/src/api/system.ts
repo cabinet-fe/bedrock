@@ -176,3 +176,7 @@ export function notificationWsUrl(token: string): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}/ws/notifications?token=${encodeURIComponent(token)}`;
 }
+
+export async function clearOperationLogs(): Promise<void> {
+  await http.delete("/operation-logs");
+}

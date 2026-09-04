@@ -32,3 +32,7 @@ func (s *AuditService) Write(userID uint, username, action, resourceType, resour
 func (s *AuditService) List(f repository.OperationLogFilters) ([]model.OperationLog, int64, error) {
 	return s.logs.List(f)
 }
+
+func (s *AuditService) Clear() error {
+	return s.logs.DeleteAll()
+}

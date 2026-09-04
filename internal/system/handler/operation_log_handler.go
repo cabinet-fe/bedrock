@@ -25,6 +25,15 @@ func NewOperationLogHandler(audit *service.AuditService, perm *rbacservice.Permi
 func (h *OperationLogHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	g := rg.Group("/operation-logs", authMW)
 	g.GET("", rbacmw.RequirePermission(h.perm, "system_operation_logs:view"), h.List)
+	g.DELETE("", rbacmw.RequirePermission(h.perm, "system_operation_logs:clear"), h.Clear)
+}
+
+func (h *OperationLogHandler) Clear(c *gin.Context) {
+	if err := h.audit.Clear(); err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "清空操作日志失败")
+		return
+	}
+	pkg.Success(c, nil)
 }
 
 func (h *OperationLogHandler) List(c *gin.Context) {

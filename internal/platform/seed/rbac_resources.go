@@ -125,7 +125,7 @@ func EnsureRBACResources(db *gorm.DB) error {
 				{Code: "system_roles", Title: "角色", Route: "/system/roles", SortKey: 20, Actions: standardCRUD},
 				{Code: "system_resources", Title: "权限资源", Route: "/system/resources", SortKey: 30, Actions: standardCRUD},
 				{Code: "system_dictionaries", Title: "字典", Route: "/system/dictionaries", SortKey: 40, Actions: standardCRUD},
-				{Code: "system_operation_logs", Title: "操作日志", Route: "/system/operation-logs", SortKey: 50, Actions: []string{"view"}},
+				{Code: "system_operation_logs", Title: "操作日志", Route: "/system/operation-logs", SortKey: 50, Actions: []string{"view", "clear"}},
 			},
 		},
 	}
@@ -261,7 +261,7 @@ func actionTitle(code string) string {
 	titles := map[string]string{
 		"view": "查看", "create": "创建", "update": "更新", "delete": "删除",
 		"execute": "执行", "use": "使用", "view_all": "查看全部", "manage_all": "管理全部",
-		"download": "下载",
+		"download": "下载", "clear": "清空",
 	}
 	if t, ok := titles[code]; ok {
 		return t

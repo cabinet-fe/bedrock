@@ -58,3 +58,7 @@ func (r *OperationLogRepository) List(f OperationLogFilters) ([]model.OperationL
 	err := q.Offset(f.Offset()).Limit(f.PageSize).Order(order).Find(&items).Error
 	return items, total, err
 }
+
+func (r *OperationLogRepository) DeleteAll() error {
+	return r.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.OperationLog{}).Error
+}

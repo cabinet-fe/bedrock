@@ -71,3 +71,53 @@ export function menuGroupsToGroupNav(groups: MenuGroupNode[] | undefined | null)
     })),
   }));
 }
+
+/**
+ * 匹配路由对应的菜单图标：
+ * 1. 优先在当前菜单树中通过最长前缀匹配（让详情页如 /project/projects/1 与其入口 /project/projects 图标保持一致）；
+ * 2. 降级匹配内置默认菜单图标映射表 MENU_DEFAULT_ICONS（同样支持最长前缀匹配）；
+ * 3. 根路径回退 House，其它回退 List。
+ */
+export function resolveRouteIcon(path: string, menus?: MenuGroupNode[] | null): Component | string {
+  if (menus?.length) {
+    let bestChild: { path: string; icon?: string } | null = null;
+    let bestLen = -1;
+
+    for (const group of menus) {
+      for (const child of group.children ?? []) {
+        const route = child.path;
+        if (!route) continue;
+        if (path === route || path.startsWith(`${route}/`)) {
+          if (route.length > bestLen) {
+            bestChild = child;
+            bestLen = route.length;
+          }
+        }
+      }
+    }
+
+    if (bestChild) {
+      return resolveMenuIcon(bestChild.path, bestChild.icon);
+    }
+  }
+
+  // fallback to MENU_DEFAULT_ICONS
+  if (MENU_DEFAULT_ICONS[path]) {
+    return MENU_DEFAULT_ICONS[path]!;
+  }
+
+  let bestPrefix = "";
+  for (const p of Object.keys(MENU_DEFAULT_ICONS)) {
+    if (p !== "/" && (path === p || path.startsWith(`${p}/`))) {
+      if (p.length > bestPrefix.length) {
+        bestPrefix = p;
+      }
+    }
+  }
+  if (bestPrefix && MENU_DEFAULT_ICONS[bestPrefix]) {
+    return MENU_DEFAULT_ICONS[bestPrefix]!;
+  }
+
+  if (path === "/" || path === "") return House;
+  return List;
+}

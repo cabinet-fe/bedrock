@@ -90,8 +90,6 @@ export const useTabsStore = defineStore("tabs", () => {
   const tabs = ref<WorkspaceTab[]>(cached?.tabs ?? [{ ...HOME_TAB }]);
   const activeKey = ref(cached?.activeKey ?? HOME_TAB.key);
 
-  const cachedNames = computed(() => [...new Set(tabs.value.map((t) => t.name))]);
-
   const tabItems = computed(() =>
     tabs.value.map((t) => ({
       key: t.key,
@@ -224,7 +222,6 @@ export const useTabsStore = defineStore("tabs", () => {
   return {
     tabs,
     activeKey,
-    cachedNames,
     tabItems,
     findByKey,
     open,

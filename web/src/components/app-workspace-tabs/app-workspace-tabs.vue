@@ -3,10 +3,17 @@ import type { ContextmenuItem, TabItem } from "@veltra/desktop";
 import { useRouter } from "vue-router";
 import { ref, shallowRef } from "vue";
 
+import { resolveRouteIcon } from "@/lib/menu-nav";
+import { useAuthStore } from "@/stores/auth";
 import { useTabsStore } from "@/stores/tabs";
 
+const auth = useAuthStore();
 const tabsStore = useTabsStore();
 const router = useRouter();
+
+function getTabIcon(tabKey: string) {
+  return resolveRouteIcon(tabKey, auth.menus);
+}
 
 const menuVisible = ref(false);
 const menuPos = shallowRef({ x: 0, y: 0 });
@@ -106,7 +113,15 @@ function onContextMenu(e: MouseEvent) {
       block
       @update:model-value="activate"
       @close="handleClose"
-    />
+    >
+      <template #default="{ item }">
+        <u-icon v-if="typeof getTabIcon(item.key) !== 'string'" :size="14" class="tab-item__icon">
+          <component :is="getTabIcon(item.key)" />
+        </u-icon>
+        <img v-else :src="getTabIcon(item.key) as string" class="tab-item__icon-img" alt="" />
+        <span class="u-tabs-bar__item-label">{{ item.name ?? item.key }}</span>
+      </template>
+    </u-tabs-horizontal>
 
     <u-contextmenu
       v-if="menuVisible"
@@ -129,5 +144,19 @@ function onContextMenu(e: MouseEvent) {
   :deep(.u-tabs-horizontal) {
     --u-tabs-header-bg: transparent;
   }
+}
+
+.tab-item__icon {
+  margin-right: 6px;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.tab-item__icon-img {
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 </style>
