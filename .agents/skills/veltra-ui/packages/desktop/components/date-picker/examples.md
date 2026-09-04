@@ -20,8 +20,8 @@ const year = shallowRef('')
 ## 禁用日期
 
 ```vue
-<script setup>
-import { date, type Dater } from '@cat-kit/core'
+<script setup lang="ts">
+import type { Dater } from '@cat-kit/core'
 import { shallowRef } from 'vue'
 
 const d = shallowRef('')
@@ -56,6 +56,13 @@ const timestampRef = ref(Date.now())
 ## 自定义格式
 
 ```vue
+<script setup>
+import { shallowRef } from 'vue'
+
+const date = shallowRef('')
+const month = shallowRef('')
+</script>
+
 <template>
   <u-date-picker v-model="date" format="yyyy年MM月dd日" />
   <u-date-picker v-model="month" type="month" format="yyyy/MM" />
@@ -78,5 +85,25 @@ const formData = reactive({ birthday: '', joinDate: '' })
     <u-date-picker label="生日" field="birthday" />
     <u-date-picker label="入职日期" field="joinDate" />
   </u-form>
+</template>
+```
+
+## 指定 dataType 与 change 事件
+
+```vue
+<script setup lang="ts">
+import { shallowRef } from 'vue'
+
+const dateVal = shallowRef<Date>()
+const timestampVal = shallowRef<number>()
+
+function handleChange(d?: Date) {
+  console.log('选中的 Date 对象:', d)
+}
+</script>
+
+<template>
+  <u-date-picker v-model="dateVal" data-type="date" @change="handleChange" />
+  <u-date-picker v-model="timestampVal" data-type="timestamp" @change="handleChange" />
 </template>
 ```

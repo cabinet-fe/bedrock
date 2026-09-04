@@ -12,3 +12,4 @@ server
 .tmp/
 .agents/cooking/
 .playwright-cli/
+.claude/
