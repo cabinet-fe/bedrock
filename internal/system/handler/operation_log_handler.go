@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	authmiddleware "bedrock/internal/auth/middleware"
 	"bedrock/internal/pkg"
 	rbacmw "bedrock/internal/rbac/middleware"
 	rbacservice "bedrock/internal/rbac/service"
@@ -25,7 +26,29 @@ func NewOperationLogHandler(audit *service.AuditService, perm *rbacservice.Permi
 func (h *OperationLogHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	g := rg.Group("/operation-logs", authMW)
 	g.GET("", rbacmw.RequirePermission(h.perm, "system_operation_logs:view"), h.List)
-	g.DELETE("", rbacmw.RequirePermission(h.perm, "system_operation_logs:clear"), h.Clear)
+	g.DELETE("", h.requireClearPermission(), h.Clear)
+}
+
+func (h *OperationLogHandler) requireClearPermission() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := authmiddleware.GetUserID(c)
+		if userID == 0 {
+			pkg.Error(c, http.StatusUnauthorized, "未登录")
+			return
+		}
+		isSuper := authmiddleware.IsSuperAdmin(c)
+		if isSuper {
+			c.Next()
+			return
+		}
+		errClear := h.perm.CheckAccess(userID, false, "system_operation_logs:clear")
+		errDelete := h.perm.CheckAccess(userID, false, "system_operation_logs:delete")
+		if errClear != nil && errDelete != nil {
+			pkg.Error(c, http.StatusForbidden, "没有权限: system_operation_logs:clear")
+			return
+		}
+		c.Next()
+	}
 }
 
 func (h *OperationLogHandler) Clear(c *gin.Context) {

@@ -4,6 +4,7 @@ import { vLoading } from "@veltra/desktop";
 import "@veltra/styles/normalize";
 import "@veltra/styles/transitions";
 import "@veltra/desktop/components/message/style.js";
+import "@veltra/desktop/components/message-confirm/style.js";
 import "@veltra/desktop/components/loading/style.js";
 
 import App from "./App.vue";

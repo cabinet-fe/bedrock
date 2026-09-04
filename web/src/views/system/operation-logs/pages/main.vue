@@ -2,7 +2,7 @@
 defineOptions({ name: "SystemOperationLogs" });
 
 import { reactive, ref } from "vue";
-import { message, messageConfirm } from "@veltra/desktop";
+import { message } from "@veltra/desktop";
 import { Delete } from "@veltra/icons/normal";
 
 import { clearOperationLogs } from "@/api/system";
@@ -14,6 +14,8 @@ import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
 const clearing = ref(false);
+const confirmOpen = ref(false);
+let tableReload: (() => Promise<void>) | null = null;
 
 const query = reactive({
   action: "",
@@ -28,18 +30,20 @@ const ACTION_TAG: Record<string, TagType> = {
   DELETE: "danger",
 };
 
-async function handleClear(reload: () => Promise<void>) {
-  const action = await messageConfirm.danger("确认清空所有操作日志？此操作不可恢复。", {
-    title: "清空确认",
-    cancelButtonText: "取消",
-  }).onClosed;
-  if (action !== "confirm") return;
+function openClearDialog(reload: () => Promise<void>) {
+  tableReload = reload;
+  confirmOpen.value = true;
+}
 
+async function handleClearConfirm() {
   clearing.value = true;
   try {
     await clearOperationLogs();
     message.success("操作日志已清空");
-    await reload();
+    confirmOpen.value = false;
+    if (tableReload) {
+      await tableReload();
+    }
   } catch (err) {
     message.error(err instanceof Error ? err.message : "清空失败");
   } finally {
@@ -74,11 +78,13 @@ const columns = defineProTableColumns([
       </template>
       <template #toolbar="{ reload }">
         <u-button
-          v-if="auth.hasPermission('system_operation_logs:clear')"
+          v-if="
+            auth.hasPermission('system_operation_logs:clear') ||
+            auth.hasPermission('system_operation_logs:delete')
+          "
           type="danger"
           :icon="Delete"
-          :loading="clearing"
-          @click="handleClear(reload)"
+          @click.prevent="openClearDialog(reload)"
         >
           清空日志
         </u-button>
@@ -89,5 +95,22 @@ const columns = defineProTableColumns([
         </u-tag>
       </template>
     </ProTable>
+
+    <u-dialog v-model="confirmOpen" title="清空确认" style="width: 420px">
+      <div class="confirm-dialog-content">确认清空所有操作日志？此操作不可恢复。</div>
+      <template #footer="{ close }">
+        <u-button text :disabled="clearing" @click="close">取消</u-button>
+        <u-button type="danger" :loading="clearing" @click="handleClearConfirm">
+          确认清空
+        </u-button>
+      </template>
+    </u-dialog>
   </div>
 </template>
+
+<style scoped lang="scss">
+.confirm-dialog-content {
+  padding: 12px 0 16px;
+  font-size: 14px;
+}
+</style>

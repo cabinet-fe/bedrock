@@ -247,9 +247,10 @@
 
 ### DELETE /operation-logs — 清空操作日志
 
-权限：`system_operation_logs:clear`
+权限：`system_operation_logs:clear` 或 `system_operation_logs:delete`
 响应 200
 错误：403
+
 
 
 ## 通知
