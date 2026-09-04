@@ -56,7 +56,6 @@
 
 ## 明确禁止
 
-- 归档 CONTEXT 条目 / cooking `spec.md` 缺少可被 `spec-files.mjs parse` 通过的「影响文件」章节
-- 一次加载整个 `CONTEXT/`；按变更路径用 `spec-files.mjs query` 扫描归档条目定位相关上下文
+- cooking `spec.md` 缺少可被 `spec-files.mjs parse` 通过的「影响文件」章节
 - 跨层调用，或在 handler 中直接操作 DB
 - 用 GORM AutoMigrate 替代版本化 migration
