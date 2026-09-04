@@ -29,6 +29,7 @@ declare module 'vue' {
     FormDialog: typeof import('./src/components/form-dialog/form-dialog.vue')['default']
     MarkdownScrollPane: typeof import('./src/components/markdown-viewer/markdown-scroll-pane.vue')['default']
     MarkdownViewer: typeof import('./src/components/markdown-viewer/markdown-viewer.vue')['default']
+    MenuSearch: typeof import('./src/components/menu-search/menu-search.vue')['default']
     NotificationBell: typeof import('./src/components/notification-bell/notification-bell.vue')['default']
     ProjectSelect: typeof import('./src/components/project-select/project-select.vue')['default']
     ProTable: typeof import('./src/components/pro-table/pro-table.vue')['default']

@@ -41,6 +41,9 @@ const MENU_DEFAULT_ICONS: Record<string, Component> = {
   "/cicd/pipelines": Share,
   "/cicd/pipeline-runs": History,
   "/project/projects": Folder,
+  "/project/requirements": Checklist,
+  "/project/docs": Books,
+  "/project/dev-docs": Books,
   "/ai/agents": Agent,
   "/ai/runs": History,
   "/ai/skills": Skill,
@@ -51,7 +54,7 @@ const MENU_DEFAULT_ICONS: Record<string, Component> = {
   "/system/operation-logs": Checklist,
 };
 
-function resolveMenuIcon(path: string, icon?: string): NonNullable<NavItem["icon"]> {
+export function resolveMenuIcon(path: string, icon?: string): NonNullable<NavItem["icon"]> {
   if (icon) return icon;
   return (MENU_DEFAULT_ICONS[path] ?? List) as NonNullable<NavItem["icon"]>;
 }

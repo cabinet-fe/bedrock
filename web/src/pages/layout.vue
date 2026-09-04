@@ -7,6 +7,7 @@ import { Logout } from "@veltra/icons/normal";
 import AppBreadcrumb from "@/components/app-breadcrumb";
 import AppWorkspaceTabs from "@/components/app-workspace-tabs";
 import BrandLogo from "@/components/brand-logo";
+import MenuSearch from "@/components/menu-search";
 import NotificationBell from "@/components/notification-bell";
 import ThemeSwitcher from "@/components/theme-switcher";
 import { resolveRouteTitle } from "@/composables/use-breadcrumb";
@@ -82,6 +83,7 @@ function onNavClick(item: NavItem) {
         <div class="app-rail__bar">
           <AppBreadcrumb />
           <div class="app-rail__utils" role="group" aria-label="操作区">
+            <MenuSearch />
             <ThemeSwitcher />
             <NotificationBell />
             <span class="app-rail__identity">
