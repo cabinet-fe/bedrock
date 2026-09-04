@@ -132,40 +132,61 @@ function calculateScore(item: SearchMenuItem, query: string): number {
   return 0;
 }
 
-/** Filtered and ranked items based on search query */
-const filteredItems = computed<SearchMenuItem[]>(() => {
+/** Grouped results for visual rendering */
+const groupedResults = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   if (!q) {
-    return allMenuItems.value;
+    const groups: { title: string; items: SearchMenuItem[] }[] = [];
+    const map = new Map<string, SearchMenuItem[]>();
+
+    for (const item of allMenuItems.value) {
+      let list = map.get(item.groupTitle);
+      if (!list) {
+        list = [];
+        map.set(item.groupTitle, list);
+        groups.push({ title: item.groupTitle, items: list });
+      }
+      list.push(item);
+    }
+    return groups;
   }
 
-  return allMenuItems.value
+  const scored = allMenuItems.value
     .map((item) => ({ item, score: calculateScore(item, q) }))
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map((entry) => entry.item);
+    .filter((entry) => entry.score > 0);
+
+  const groupMap = new Map<
+    string,
+    { maxScore: number; items: { item: SearchMenuItem; score: number }[] }
+  >();
+
+  for (const entry of scored) {
+    let group = groupMap.get(entry.item.groupTitle);
+    if (!group) {
+      group = { maxScore: entry.score, items: [] };
+      groupMap.set(entry.item.groupTitle, group);
+    } else if (entry.score > group.maxScore) {
+      group.maxScore = entry.score;
+    }
+    group.items.push(entry);
+  }
+
+  return Array.from(groupMap.entries())
+    .map(([title, data]) => ({
+      title,
+      maxScore: data.maxScore,
+      items: data.items.sort((a, b) => b.score - a.score).map((e) => e.item),
+    }))
+    .sort((a, b) => b.maxScore - a.maxScore);
 });
 
-/** Grouped view of filtered items */
-const groupedResults = computed(() => {
-  const groups: { title: string; items: SearchMenuItem[] }[] = [];
-  const map = new Map<string, SearchMenuItem[]>();
-
-  for (const item of filteredItems.value) {
-    let list = map.get(item.groupTitle);
-    if (!list) {
-      list = [];
-      map.set(item.groupTitle, list);
-      groups.push({ title: item.groupTitle, items: list });
-    }
-    list.push(item);
-  }
-
-  return groups;
+/** Flattened items in the exact visual display order (top-to-bottom) */
+const visibleItems = computed<SearchMenuItem[]>(() => {
+  return groupedResults.value.flatMap((g) => g.items);
 });
 
 const activeItem = computed<SearchMenuItem | undefined>(
-  () => filteredItems.value[activeIndex.value],
+  () => visibleItems.value[activeIndex.value],
 );
 
 // Reset active index when query changes
@@ -213,14 +234,14 @@ function handleSelect(item: SearchMenuItem) {
 }
 
 function onArrowDown() {
-  const count = filteredItems.value.length;
+  const count = visibleItems.value.length;
   if (count === 0) return;
   activeIndex.value = (activeIndex.value + 1) % count;
   scrollToActive();
 }
 
 function onArrowUp() {
-  const count = filteredItems.value.length;
+  const count = visibleItems.value.length;
   if (count === 0) return;
   activeIndex.value = (activeIndex.value - 1 + count) % count;
   scrollToActive();
@@ -234,7 +255,7 @@ function onEnterKey() {
 }
 
 function setActiveIndexByItem(item: SearchMenuItem) {
-  const idx = filteredItems.value.findIndex((it) => it.id === item.id);
+  const idx = visibleItems.value.findIndex((it) => it.id === item.id);
   if (idx !== -1) {
     activeIndex.value = idx;
   }
@@ -364,7 +385,7 @@ function highlightParts(text: string, query: string): { text: string; highlight:
           <!-- Search Results List -->
           <div ref="listContainerRef" class="docsearch-body">
             <!-- Empty State -->
-            <div v-if="filteredItems.length === 0" class="docsearch-empty">
+            <div v-if="visibleItems.length === 0" class="docsearch-empty">
               <div class="docsearch-empty__icon">
                 <u-icon :size="24">
                   <Search />
@@ -456,7 +477,7 @@ function highlightParts(text: string, query: string): { text: string; highlight:
                 <span>关闭</span>
               </span>
             </div>
-            <div class="docsearch-footer__count">{{ filteredItems.length }} 个菜单</div>
+            <div class="docsearch-footer__count">{{ visibleItems.length }} 个菜单</div>
           </footer>
         </div>
       </div>
