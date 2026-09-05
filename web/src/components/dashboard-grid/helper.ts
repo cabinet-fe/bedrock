@@ -42,19 +42,39 @@ export const DASHBOARD_GRID_COLUMNS = 12;
 const DASHBOARD_MIN_W = 2;
 const DASHBOARD_MIN_H = 2;
 
-const DEFAULT_CARD_GEOMETRY: Record<
+export const DEFAULT_CARD_GEOMETRY: Record<
   DashboardCardID,
   Pick<DashboardCardLayout, "x" | "y" | "w" | "h">
 > = {
-  build_summary: { x: 0, y: 0, w: 6, h: 4 },
-  agent_run_summary: { x: 6, y: 0, w: 6, h: 4 },
-  system_info: { x: 0, y: 4, w: 6, h: 3 },
-  system_status: { x: 6, y: 4, w: 6, h: 3 },
-  script_run_summary: { x: 0, y: 7, w: 6, h: 4 },
-  pipeline_run_summary: { x: 6, y: 7, w: 6, h: 4 },
-  cicd_task_overview: { x: 0, y: 11, w: 6, h: 3 },
-  my_projects: { x: 6, y: 11, w: 6, h: 3 },
+  build_summary: { x: 0, y: 0, w: 6, h: 2 },
+  pipeline_run_summary: { x: 6, y: 0, w: 6, h: 2 },
+  agent_run_summary: { x: 0, y: 2, w: 6, h: 2 },
+  script_run_summary: { x: 6, y: 2, w: 6, h: 2 },
+  cicd_task_overview: { x: 0, y: 4, w: 6, h: 2 },
+  my_projects: { x: 6, y: 4, w: 6, h: 2 },
+  system_info: { x: 0, y: 6, w: 6, h: 3 },
+  system_status: { x: 6, y: 6, w: 6, h: 3 },
 };
+
+/** Reset all cards to their default compact geometry */
+export function resetCardGeometry(cards: DashboardCardLayout[]): DashboardCardLayout[] {
+  return cards.map((card, index) => {
+    const fallback = DEFAULT_CARD_GEOMETRY[card.id] ?? {
+      x: 0,
+      y: index * DASHBOARD_MIN_H,
+      w: 6,
+      h: 2,
+    };
+    return {
+      ...card,
+      x: fallback.x,
+      y: fallback.y,
+      w: fallback.w,
+      h: fallback.h,
+      order: fallback.y * DASHBOARD_GRID_COLUMNS + fallback.x,
+    };
+  });
+}
 
 /** Fill missing geometry from defaults (legacy layouts / incomplete API payloads). */
 export function ensureCardGeometry(cards: DashboardCardLayout[]): DashboardCardLayout[] {
@@ -63,7 +83,7 @@ export function ensureCardGeometry(cards: DashboardCardLayout[]): DashboardCardL
       x: 0,
       y: index * DASHBOARD_MIN_H,
       w: 6,
-      h: 4,
+      h: 2,
     };
     const x = Number.isFinite(card.x) ? card.x : fallback.x;
     const y = Number.isFinite(card.y) ? card.y : fallback.y;

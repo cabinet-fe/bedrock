@@ -181,10 +181,10 @@ func TestLayoutUpgradesLegacyJSONWithoutGeometry(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]model.CardLayout{
-		CardBuildSummary:    {ID: CardBuildSummary, Visible: true, Order: 0, X: 0, Y: 0, W: 6, H: 4},
-		CardAgentRunSummary: {ID: CardAgentRunSummary, Visible: true, Order: 6, X: 6, Y: 0, W: 6, H: 4},
-		CardSystemInfo:      {ID: CardSystemInfo, Visible: false, Order: 48, X: 0, Y: 4, W: 6, H: 3},
-		CardSystemStatus:    {ID: CardSystemStatus, Visible: true, Order: 54, X: 6, Y: 4, W: 6, H: 3},
+		CardBuildSummary:    {ID: CardBuildSummary, Visible: true, Order: 0, X: 0, Y: 0, W: 6, H: 2},
+		CardAgentRunSummary: {ID: CardAgentRunSummary, Visible: true, Order: 24, X: 0, Y: 2, W: 6, H: 2},
+		CardSystemInfo:      {ID: CardSystemInfo, Visible: false, Order: 72, X: 0, Y: 6, W: 6, H: 3},
+		CardSystemStatus:    {ID: CardSystemStatus, Visible: true, Order: 78, X: 6, Y: 6, W: 6, H: 3},
 	}
 	if len(layout.Cards) != len(want) {
 		t.Fatalf("got %d cards, want %d: %#v", len(layout.Cards), len(want), layout.Cards)
@@ -239,10 +239,10 @@ func TestDefaultLayoutIncludesGeometry(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []model.CardLayout{
-		{ID: CardBuildSummary, Visible: true, Order: 0, X: 0, Y: 0, W: 6, H: 4},
-		{ID: CardAgentRunSummary, Visible: true, Order: 6, X: 6, Y: 0, W: 6, H: 4},
-		{ID: CardSystemInfo, Visible: true, Order: 48, X: 0, Y: 4, W: 6, H: 3},
-		{ID: CardSystemStatus, Visible: true, Order: 54, X: 6, Y: 4, W: 6, H: 3},
+		{ID: CardBuildSummary, Visible: true, Order: 0, X: 0, Y: 0, W: 6, H: 2},
+		{ID: CardAgentRunSummary, Visible: true, Order: 24, X: 0, Y: 2, W: 6, H: 2},
+		{ID: CardSystemInfo, Visible: true, Order: 72, X: 0, Y: 6, W: 6, H: 3},
+		{ID: CardSystemStatus, Visible: true, Order: 78, X: 6, Y: 6, W: 6, H: 3},
 	}
 	if len(layout.Cards) != len(want) {
 		t.Fatalf("got %d cards, want %d: %#v", len(layout.Cards), len(want), layout.Cards)

@@ -50,6 +50,7 @@ func (r *DashboardRepository) ListRecentRuns(limit int) ([]model.RecentRun, erro
 	var rows []model.RecentRun
 	err := r.db.Table("build_runs").
 		Select("id, build_job_id, build_number, status, branch, created_at").
+		Where("status IN ?", []string{"running", "queued"}).
 		Order("id DESC").Limit(limit).Scan(&rows).Error
 	return rows, err
 }
@@ -82,6 +83,7 @@ func (r *DashboardRepository) ListRecentAgentRuns(limit int) ([]model.RecentAgen
 	err := r.db.Table("agent_runs").
 		Select("agent_runs.id, agent_runs.agent_id, ai_agents.name AS agent_name, agent_runs.trigger_type, agent_runs.status, agent_runs.created_at").
 		Joins("LEFT JOIN ai_agents ON ai_agents.id = agent_runs.agent_id").
+		Where("agent_runs.status IN ?", []string{"running", "queued", "pending"}).
 		Order("agent_runs.id DESC").Limit(limit).Scan(&rows).Error
 	return rows, err
 }
@@ -108,6 +110,7 @@ func (r *DashboardRepository) ListRecentScriptRuns(limit int) ([]model.RecentScr
 	err := r.db.Table("script_runs").
 		Select("script_runs.id, script_runs.script_job_id, script_jobs.name AS job_name, script_runs.run_number, script_runs.status, script_runs.created_at").
 		Joins("LEFT JOIN script_jobs ON script_jobs.id = script_runs.script_job_id").
+		Where("script_runs.status IN ?", []string{"running", "queued"}).
 		Order("script_runs.id DESC").Limit(limit).Scan(&rows).Error
 	return rows, err
 }
@@ -134,6 +137,7 @@ func (r *DashboardRepository) ListRecentPipelineRuns(limit int) ([]model.RecentP
 	err := r.db.Table("pipeline_runs").
 		Select("pipeline_runs.id, pipeline_runs.build_pipeline_id, build_pipelines.name AS pipeline_name, pipeline_runs.run_number, pipeline_runs.status, pipeline_runs.created_at").
 		Joins("LEFT JOIN build_pipelines ON build_pipelines.id = pipeline_runs.build_pipeline_id").
+		Where("pipeline_runs.status IN ?", []string{"running", "queued"}).
 		Order("pipeline_runs.id DESC").Limit(limit).Scan(&rows).Error
 	return rows, err
 }

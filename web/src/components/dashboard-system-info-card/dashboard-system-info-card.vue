@@ -36,52 +36,53 @@ const uptime = computed(() => {
     <u-card-header class="tile__header">
       <div class="tile__title-row">
         <span class="tile__icon" aria-hidden="true">
-          <u-icon :size="18" color="primary"><Server /></u-icon>
+          <u-icon :size="16" color="primary"><Server /></u-icon>
         </span>
         <div class="tile__titles">
           <h3 class="tile__title">系统信息</h3>
-          <p class="tile__subtitle">只读主机与运行时快照</p>
         </div>
       </div>
     </u-card-header>
 
     <u-card-content class="tile__body">
       <div class="hero">
-        <p class="hero__label">版本</p>
-        <p class="hero__version">{{ data?.version || "—" }}</p>
-        <p class="hero__host">
-          <u-icon :size="14"><Internet /></u-icon>
+        <div class="hero__left">
+          <span class="hero__label">系统版本</span>
+          <span class="hero__version">{{ data?.version || "—" }}</span>
+        </div>
+        <div class="hero__host">
+          <u-icon :size="13"><Internet /></u-icon>
           <span>{{ data?.hostname || "—" }}</span>
-        </p>
+        </div>
       </div>
 
       <div class="facts">
         <div class="fact">
-          <span class="fact__icon" aria-hidden="true">
-            <u-icon :size="14"><Server /></u-icon>
+          <span class="fact__label">
+            <u-icon :size="12"><Server /></u-icon>
+            平台
           </span>
-          <span class="fact__label">平台</span>
           <span class="fact__value">{{ platform }}</span>
         </div>
         <div class="fact">
-          <span class="fact__icon" aria-hidden="true">
-            <u-icon :size="14"><Variable /></u-icon>
+          <span class="fact__label">
+            <u-icon :size="12"><Variable /></u-icon>
+            运行时
           </span>
-          <span class="fact__label">运行时</span>
           <span class="fact__value">{{ data?.runtime || "—" }}</span>
         </div>
         <div class="fact">
-          <span class="fact__icon" aria-hidden="true">
-            <u-icon :size="14"><Time /></u-icon>
+          <span class="fact__label">
+            <u-icon :size="12"><Time /></u-icon>
+            已运行
           </span>
-          <span class="fact__label">已运行</span>
           <span class="fact__value">{{ uptime }}</span>
         </div>
         <div class="fact">
-          <span class="fact__icon" aria-hidden="true">
-            <u-icon :size="14"><Time /></u-icon>
+          <span class="fact__label">
+            <u-icon :size="12"><Time /></u-icon>
+            启动时间
           </span>
-          <span class="fact__label">启动时间</span>
           <span class="fact__value">{{ formatDateTime(data?.start_time) || "—" }}</span>
         </div>
       </div>
@@ -101,23 +102,23 @@ const uptime = computed(() => {
 }
 
 .tile__header {
-  padding-bottom: 0;
+  padding: 10px 14px 0;
 }
 
 .tile__title-row {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
 }
 
 .tile__icon {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 26px;
+  height: 26px;
   border-radius: fn.use-var(radius, default);
-  background: color-mix(in srgb, fn.use-var(color, primary) 22%, transparent);
+  background: color-mix(in srgb, fn.use-var(color, primary) 18%, transparent);
 }
 
 .tile__titles {
@@ -127,95 +128,96 @@ const uptime = computed(() => {
 .tile__title {
   margin: 0;
   color: fn.use-var(text-color, title);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.02em;
-}
-
-.tile__subtitle {
-  margin: 4px 0 0;
-  color: fn.use-var(text-color, assist);
-  font-size: 12px;
 }
 
 .tile__body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 10px;
+  padding: 8px 14px 12px;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
 }
 
 .hero {
-  padding: 18px 16px;
-  border-radius: fn.use-var(radius, large);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: fn.use-var(radius, default);
   background: linear-gradient(
     145deg,
-    color-mix(in srgb, fn.use-var(color, primary) 18%, transparent),
+    color-mix(in srgb, fn.use-var(color, primary) 16%, transparent),
     color-mix(in srgb, fn.use-var(bg-color, bottom) 80%, transparent) 55%
   );
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 60%, transparent);
+}
+
+.hero__left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .hero__label {
-  margin: 0;
   color: fn.use-var(text-color, assist);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .hero__version {
-  margin: 8px 0 0;
   color: fn.use-var(text-color, title);
-  font-size: clamp(28px, 3.4vw, 40px);
+  font-size: 18px;
   font-weight: 650;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-  overflow-wrap: anywhere;
+  letter-spacing: -0.02em;
 }
 
 .hero__host {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin: 12px 0 0;
+  gap: 4px;
   color: fn.use-var(text-color, second);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .fact {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
   min-width: 0;
-  padding: 14px 12px;
-  border-radius: fn.use-var(radius, default);
-  background: color-mix(in srgb, fn.use-var(bg-color, bottom) 70%, transparent);
-}
-
-.fact__icon {
-  color: fn.use-var(text-color, assist);
+  padding: 8px 10px;
+  border-radius: fn.use-var(radius, small);
+  background: color-mix(in srgb, fn.use-var(bg-color, bottom) 60%, transparent);
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 50%, transparent);
 }
 
 .fact__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: fn.use-var(text-color, second);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.04em;
 }
 
 .fact__value {
   color: fn.use-var(text-color, title);
-  font-size: 14px;
-  font-weight: 550;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

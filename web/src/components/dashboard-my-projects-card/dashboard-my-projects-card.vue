@@ -38,31 +38,46 @@ function openProject(project: MyProject) {
     <u-card-header class="tile__header">
       <div class="tile__title-row">
         <span class="tile__icon" aria-hidden="true">
-          <u-icon :size="18" color="primary"><Folder /></u-icon>
+          <u-icon :size="16" color="primary"><Folder /></u-icon>
         </span>
         <div class="tile__titles">
           <h3 class="tile__title">我的项目</h3>
-          <p class="tile__subtitle">最近参与的产品项目</p>
         </div>
+        <span class="tile__count">{{ data?.length || 0 }} 个项目</span>
       </div>
     </u-card-header>
 
     <u-card-content class="tile__body">
-      <ul v-if="data?.length" class="list">
-        <li v-for="project in data" :key="project.id">
-          <button type="button" class="list__row" @click="openProject(project)">
-            <span class="list__name">{{ project.name }}</span>
-            <u-tag size="small" :type="project.status === 'archived' ? 'warning' : 'success'">
-              {{ project.status === "archived" ? "已归档" : "活跃" }}
-            </u-tag>
-            <u-tag v-if="project.my_role" size="small" :type="ROLE_TAG[project.my_role]">
+      <div v-if="data?.length" class="project-grid">
+        <button
+          v-for="project in data"
+          :key="project.id"
+          type="button"
+          class="project-card"
+          @click="openProject(project)"
+        >
+          <div class="project-card__header">
+            <span class="project-card__name" :title="project.name">{{ project.name }}</span>
+            <span
+              class="project-card__dot"
+              :class="{ 'project-card__dot--archived': project.status === 'archived' }"
+              :title="project.status === 'archived' ? '已归档' : '活跃'"
+            />
+          </div>
+          <div class="project-card__meta">
+            <u-tag
+              v-if="project.my_role"
+              size="small"
+              :type="ROLE_TAG[project.my_role]"
+              class="project-card__role"
+            >
               {{ ROLE_LABEL[project.my_role] }}
             </u-tag>
-            <span class="list__slug">{{ project.slug }}</span>
-          </button>
-        </li>
-      </ul>
-      <p v-else class="list__empty">暂无项目</p>
+            <span class="project-card__slug" :title="project.slug">{{ project.slug }}</span>
+          </div>
+        </button>
+      </div>
+      <div v-else class="tile__empty">暂无项目</div>
     </u-card-content>
   </u-card>
 </template>
@@ -80,103 +95,138 @@ function openProject(project: MyProject) {
 }
 
 .tile__header {
-  padding-bottom: 0;
+  padding: 10px 14px 0;
 }
 
 .tile__title-row {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
 }
 
 .tile__icon {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 26px;
+  height: 26px;
   border-radius: fn.use-var(radius, default);
-  background: color-mix(in srgb, fn.use-var(color, primary) 22%, transparent);
+  background: color-mix(in srgb, fn.use-var(color, primary) 18%, transparent);
 }
 
 .tile__titles {
+  flex: 1;
   min-width: 0;
 }
 
 .tile__title {
   margin: 0;
   color: fn.use-var(text-color, title);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
-.tile__subtitle {
-  margin: 4px 0 0;
+.tile__count {
   color: fn.use-var(text-color, assist);
-  font-size: 12px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .tile__body {
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  padding: 8px 14px 10px;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
 }
 
-.list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+  gap: 8px;
+}
+
+.project-card {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-.list__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 0;
-  border-radius: fn.use-var(radius, default);
-  background: transparent;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 70%, transparent);
+  border-radius: fn.use-var(radius, small);
+  background: color-mix(in srgb, fn.use-var(bg-color, bottom) 60%, transparent);
   color: inherit;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.12s ease;
 
   &:hover {
     background: fn.use-var(bg-color, hover);
+    border-color: color-mix(in srgb, fn.use-var(color, primary) 45%, transparent);
+    transform: translateY(-1px);
   }
 }
 
-.list__name {
-  min-width: 0;
+.project-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.project-card__name {
+  color: fn.use-var(text-color, title);
+  font-size: 12px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: fn.use-var(text-color, title);
-  font-weight: 600;
 }
 
-.list__slug {
+.project-card__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: fn.use-var(color, success);
+
+  &--archived {
+    background: fn.use-var(color, warning);
+  }
+}
+
+.project-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   min-width: 0;
+}
+
+.project-card__role {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.project-card__slug {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: fn.use-var(text-color, assist);
-  font-size: 12px;
+  font-size: 10px;
   text-align: right;
 }
 
-.list__empty {
-  margin: 0;
-  padding: 16px 4px;
+.tile__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
   color: fn.use-var(text-color, assist);
-  font-size: 13px;
+  font-size: 12px;
 }
 </style>

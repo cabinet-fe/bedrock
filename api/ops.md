@@ -298,7 +298,7 @@
 
 12 列网格几何（GridStack）。`order` 由服务端按 `y * 12 + x` 归一；旧数据缺 `x/y/w/h` 时按卡片默认几何补全。
 
-默认几何：`build_summary` `(0,0) 6×4`，`agent_run_summary` `(6,0) 6×4`，`system_info` `(0,4) 6×3`，`system_status` `(6,4) 6×3`，`script_run_summary` `(0,7) 6×4`，`pipeline_run_summary` `(6,7) 6×4`，`cicd_task_overview` `(0,11) 6×3`，`my_projects` `(6,11) 6×3`。
+默认几何：`build_summary` `(0,0) 6×2`，`pipeline_run_summary` `(6,0) 6×2`，`agent_run_summary` `(0,2) 6×2`，`script_run_summary` `(6,2) 6×2`，`cicd_task_overview` `(0,4) 6×2`，`my_projects` `(6,4) 6×2`，`system_info` `(0,6) 6×3`，`system_status` `(6,6) 6×3`。
 
 校验：`w`/`h` 最小 2，`w` 最大 12；未知或无权限 `id` 拒绝。
 

@@ -56,11 +56,10 @@ function onClick(event: "openBuildJobs" | "openScriptJobs" | "openPipelines") {
     <u-card-header class="tile__header">
       <div class="tile__title-row">
         <span class="tile__icon" aria-hidden="true">
-          <u-icon :size="18" color="primary"><Layers /></u-icon>
+          <u-icon :size="16" color="primary"><Layers /></u-icon>
         </span>
         <div class="tile__titles">
           <h3 class="tile__title">任务概览</h3>
-          <p class="tile__subtitle">CI/CD 任务总量一览</p>
         </div>
       </div>
     </u-card-header>
@@ -76,10 +75,12 @@ function onClick(event: "openBuildJobs" | "openScriptJobs" | "openPipelines") {
           :disabled="!isVisible(item.key)"
           @click="onClick(item.event)"
         >
-          <span class="stat__icon" aria-hidden="true">
-            <u-icon :size="16"><component :is="item.icon" /></u-icon>
-          </span>
-          <span class="stat__label">{{ item.label }}</span>
+          <div class="stat__header">
+            <span class="stat__icon" aria-hidden="true">
+              <u-icon :size="14"><component :is="item.icon" /></u-icon>
+            </span>
+            <span class="stat__label">{{ item.label }}</span>
+          </div>
           <strong class="stat__value">{{ count(item.key) }}</strong>
         </button>
       </div>
@@ -100,23 +101,23 @@ function onClick(event: "openBuildJobs" | "openScriptJobs" | "openPipelines") {
 }
 
 .tile__header {
-  padding-bottom: 0;
+  padding: 10px 14px 0;
 }
 
 .tile__title-row {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
 }
 
 .tile__icon {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 26px;
+  height: 26px;
   border-radius: fn.use-var(radius, default);
-  background: color-mix(in srgb, fn.use-var(color, primary) 22%, transparent);
+  background: color-mix(in srgb, fn.use-var(color, primary) 18%, transparent);
 }
 
 .tile__titles {
@@ -126,47 +127,46 @@ function onClick(event: "openBuildJobs" | "openScriptJobs" | "openPipelines") {
 .tile__title {
   margin: 0;
   color: fn.use-var(text-color, title);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.02em;
-}
-
-.tile__subtitle {
-  margin: 4px 0 0;
-  color: fn.use-var(text-color, assist);
-  font-size: 12px;
 }
 
 .tile__body {
   flex: 1;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  padding: 8px 14px 10px;
   min-height: 0;
-  overflow: auto;
 }
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 6px;
   min-width: 0;
-  padding: 16px 14px;
-  border: 0;
-  border-radius: fn.use-var(radius, default);
-  background: color-mix(in srgb, fn.use-var(bg-color, bottom) 70%, transparent);
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 60%, transparent);
+  border-radius: fn.use-var(radius, small);
+  background: color-mix(in srgb, fn.use-var(bg-color, bottom) 60%, transparent);
   color: inherit;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 
   &:hover:not(:disabled) {
     background: fn.use-var(bg-color, hover);
+    border-color: color-mix(in srgb, fn.use-var(color, primary) 40%, transparent);
   }
 
   &--disabled {
@@ -175,19 +175,28 @@ function onClick(event: "openBuildJobs" | "openScriptJobs" | "openPipelines") {
   }
 }
 
+.stat__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .stat__icon {
   color: fn.use-var(text-color, assist);
 }
 
 .stat__label {
   color: fn.use-var(text-color, second);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stat__value {
   color: fn.use-var(text-color, title);
-  font-size: clamp(28px, 8cqw, 40px);
+  font-size: 20px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;

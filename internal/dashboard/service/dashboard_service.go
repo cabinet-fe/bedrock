@@ -42,14 +42,14 @@ var ErrUnauthorizedCard = errors.New("仪表盘包含无权限卡片")
 // defaultCardGeometry is the 12-column layout used for new users and legacy
 // cards that omit x/y/w/h.
 var defaultCardGeometry = map[string]struct{ X, Y, W, H int }{
-	CardBuildSummary:       {0, 0, 6, 4},
-	CardAgentRunSummary:    {6, 0, 6, 4},
-	CardSystemInfo:         {0, 4, 6, 3},
-	CardSystemStatus:       {6, 4, 6, 3},
-	CardScriptRunSummary:   {0, 7, 6, 4},
-	CardPipelineRunSummary: {6, 7, 6, 4},
-	CardCICDTaskOverview:   {0, 11, 6, 3},
-	CardMyProjects:         {6, 11, 6, 3},
+	CardBuildSummary:       {0, 0, 6, 2},
+	CardPipelineRunSummary: {6, 0, 6, 2},
+	CardAgentRunSummary:    {0, 2, 6, 2},
+	CardScriptRunSummary:   {6, 2, 6, 2},
+	CardCICDTaskOverview:   {0, 4, 6, 2},
+	CardMyProjects:         {6, 4, 6, 2},
+	CardSystemInfo:         {0, 6, 6, 3},
+	CardSystemStatus:       {6, 6, 6, 3},
 }
 
 type DashboardService struct {
@@ -388,8 +388,8 @@ func hasPermission(codes []string, required string) bool {
 
 func defaultLayout(allowed map[string]struct{}) []model.CardLayout {
 	all := []string{
-		CardBuildSummary, CardAgentRunSummary, CardSystemInfo, CardSystemStatus,
-		CardScriptRunSummary, CardPipelineRunSummary, CardCICDTaskOverview, CardMyProjects,
+		CardBuildSummary, CardPipelineRunSummary, CardAgentRunSummary, CardScriptRunSummary,
+		CardCICDTaskOverview, CardMyProjects, CardSystemInfo, CardSystemStatus,
 	}
 	cards := make([]model.CardLayout, 0, len(all))
 	for _, id := range all {

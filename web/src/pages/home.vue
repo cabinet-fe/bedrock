@@ -30,7 +30,7 @@ import type {
   SystemStatus,
   TaskOverview,
 } from "@/api/types";
-import DashboardGrid, { ensureCardGeometry } from "@/components/dashboard-grid";
+import DashboardGrid, { ensureCardGeometry, resetCardGeometry } from "@/components/dashboard-grid";
 import DashboardRunningDialog, {
   type RunningDialogKind,
 } from "@/components/dashboard-running-dialog";
@@ -214,6 +214,11 @@ function cancelEdit() {
   editing.value = false;
 }
 
+function resetToDefault() {
+  layout.value = resetCardGeometry(layout.value);
+  message.info("已重置为默认紧凑布局（点击保存后生效）");
+}
+
 async function saveEdit() {
   saving.value = true;
   try {
@@ -319,6 +324,7 @@ void loadDashboard();
   <div class="dashboard">
     <div class="dashboard__toolbar">
       <template v-if="editing">
+        <u-button text @click="resetToDefault">恢复默认</u-button>
         <u-button text @click="cancelEdit">取消</u-button>
         <u-button type="primary" :loading="saving" @click="saveEdit">保存</u-button>
       </template>

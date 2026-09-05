@@ -3,9 +3,9 @@ defineOptions({ name: "DashboardSystemStatusCard" });
 
 import { computed } from "vue";
 import type { ColorType } from "@veltra/utils";
-import { Monitor, Folder } from "@veltra/icons/normal";
+import { Folder, Monitor } from "@veltra/icons/normal";
 
-import type { DirectoryUsage, SystemStatus } from "@/api/types";
+import type { SystemStatus } from "@/api/types";
 import { formatDateTime } from "@/lib/datetime";
 
 const props = defineProps<{
@@ -17,6 +17,13 @@ const HEALTH_META: Record<string, { label: string; type: ColorType }> = {
   degraded: { label: "降级", type: "warning" },
 };
 
+const DIR_LABELS: Record<string, string> = {
+  workspaces: "工作空间",
+  artifacts: "构建制品",
+  logs: "运行日志",
+  caches: "构建缓存",
+};
+
 const healthMeta = computed(() => {
   const key = props.data?.health ?? "";
   return HEALTH_META[key] ?? { label: key || "—", type: "info" as ColorType };
@@ -25,6 +32,11 @@ const healthMeta = computed(() => {
 const cpuPercent = computed(() => props.data?.cpu_usage_percent ?? 0);
 const memPercent = computed(() => props.data?.memory_usage_percent ?? 0);
 const diskPercent = computed(() => props.data?.disk_usage_percent ?? 0);
+
+const totalDirsBytes = computed(() => {
+  if (!props.data?.directories) return 0;
+  return props.data.directories.reduce((acc, dir) => acc + (dir.used_bytes || 0), 0);
+});
 
 function loadType(percentage: number): ColorType {
   if (percentage >= 90) return "danger";
@@ -40,13 +52,18 @@ function formatBytes(value: number | undefined): string {
   return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
 }
 
-function directorySizeLabel(dir: DirectoryUsage): string {
-  return formatBytes(dir.used_bytes);
+function cleanDataDirName(fullPath: string): string {
+  const match = fullPath.match(/[/\\]data[/\\]([^/\\]+)$/);
+  if (match) return match[1];
+  const relMatch = fullPath.match(/(?:^|[/\\])data[/\\]([^/\\]+)$/);
+  if (relMatch) return relMatch[1];
+  const dataIdx = fullPath.lastIndexOf("data/");
+  if (dataIdx !== -1) return fullPath.slice(dataIdx + 5);
+  return fullPath.split(/[/\\]/).filter(Boolean).pop() || fullPath;
 }
 
-function shortPath(path: string): string {
-  if (path.length <= 28) return path;
-  return `…${path.slice(-26)}`;
+function getDirLabel(name: string): string {
+  return DIR_LABELS[name] || "数据目录";
 }
 </script>
 
@@ -55,15 +72,15 @@ function shortPath(path: string): string {
     <u-card-header class="tile__header">
       <div class="tile__title-row">
         <span class="tile__icon" aria-hidden="true">
-          <u-icon :size="18" color="primary"><Monitor /></u-icon>
+          <u-icon :size="16" color="primary"><Monitor /></u-icon>
         </span>
         <div class="tile__titles">
           <h3 class="tile__title">系统状态</h3>
-          <p class="tile__subtitle">
+          <span class="tile__subtitle">
             {{
               data?.collected_at ? `采集于 ${formatDateTime(data.collected_at)}` : "实时资源占用"
             }}
-          </p>
+          </span>
         </div>
         <u-tag class="tile__health" size="small" :type="healthMeta.type">
           {{ healthMeta.label }}
@@ -74,7 +91,7 @@ function shortPath(path: string): string {
     <u-card-content class="tile__body">
       <div class="gauges">
         <div class="gauge">
-          <u-progress circle :size="100" :percentage="cpuPercent" :type="loadType">
+          <u-progress circle :size="80" :percentage="cpuPercent" :type="loadType">
             <template #default="{ percentage }">
               <span class="gauge__pct">{{ percentage.toFixed(0) }}%</span>
             </template>
@@ -82,7 +99,7 @@ function shortPath(path: string): string {
           <span class="gauge__label">CPU</span>
         </div>
         <div class="gauge">
-          <u-progress circle :size="100" :percentage="memPercent" :type="loadType">
+          <u-progress circle :size="80" :percentage="memPercent" :type="loadType">
             <template #default="{ percentage }">
               <span class="gauge__pct">{{ percentage.toFixed(0) }}%</span>
             </template>
@@ -93,7 +110,7 @@ function shortPath(path: string): string {
           </span>
         </div>
         <div class="gauge">
-          <u-progress circle :size="100" :percentage="diskPercent" :type="loadType">
+          <u-progress circle :size="80" :percentage="diskPercent" :type="loadType">
             <template #default="{ percentage }">
               <span class="gauge__pct">{{ percentage.toFixed(0) }}%</span>
             </template>
@@ -105,18 +122,24 @@ function shortPath(path: string): string {
         </div>
       </div>
 
-      <div class="dirs">
-        <div class="dirs__head">
-          <u-icon :size="14"><Folder /></u-icon>
-          <span>目录占用</span>
+      <div class="dir-container">
+        <div class="dir-container__head">
+          <div class="dir-container__head-left">
+            <u-icon :size="14"><Folder /></u-icon>
+            <span class="dir-container__title">数据目录占用 (data/)</span>
+          </div>
+          <span class="dir-container__total">总计: {{ formatBytes(totalDirsBytes) }}</span>
         </div>
-        <ul v-if="data?.directories?.length" class="dirs__list">
-          <li v-for="dir in data.directories" :key="dir.path" class="dir">
-            <span class="dir__path" :title="dir.path">{{ shortPath(dir.path) }}</span>
-            <span class="dir__size">{{ directorySizeLabel(dir) }}</span>
-          </li>
-        </ul>
-        <p v-else class="dirs__empty">暂无目录采样</p>
+        <div v-if="data?.directories?.length" class="dir-grid">
+          <div v-for="dir in data.directories" :key="dir.path" class="dir-block" :title="dir.path">
+            <div class="dir-block__header">
+              <span class="dir-block__name">{{ cleanDataDirName(dir.path) }}</span>
+              <span class="dir-block__label">{{ getDirLabel(cleanDataDirName(dir.path)) }}</span>
+            </div>
+            <div class="dir-block__size">{{ formatBytes(dir.used_bytes) }}</div>
+          </div>
+        </div>
+        <p v-else class="dir-container__empty">暂无目录采样</p>
       </div>
     </u-card-content>
   </u-card>
@@ -134,77 +157,79 @@ function shortPath(path: string): string {
 }
 
 .tile__header {
-  padding-bottom: 0;
+  padding: 10px 14px 0;
 }
 
 .tile__title-row {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
 }
 
 .tile__icon {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 26px;
+  height: 26px;
   border-radius: fn.use-var(radius, default);
-  background: color-mix(in srgb, fn.use-var(color, primary) 22%, transparent);
+  background: color-mix(in srgb, fn.use-var(color, primary) 18%, transparent);
 }
 
 .tile__titles {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .tile__title {
   margin: 0;
   color: fn.use-var(text-color, title);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
 .tile__subtitle {
-  margin: 4px 0 0;
   color: fn.use-var(text-color, assist);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .tile__health {
   flex-shrink: 0;
-  margin-top: 4px;
 }
 
 .tile__body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 12px;
+  padding: 8px 14px 12px;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
 }
 
 .gauges {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-around;
-  gap: 12px;
-  padding: 8px 0 4px;
+  gap: 10px;
+  padding: 2px 0 4px;
 }
 
 .gauge {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
 }
 
 .gauge__pct {
   color: fn.use-var(text-color, title);
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
@@ -212,9 +237,9 @@ function shortPath(path: string): string {
 
 .gauge__label {
   color: fn.use-var(text-color, second);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
 }
 
 .gauge__hint {
@@ -224,60 +249,107 @@ function shortPath(path: string): string {
   text-align: center;
 }
 
-.dirs {
+.dir-container {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: fn.use-var(radius, default);
+  background: color-mix(in srgb, fn.use-var(bg-color, bottom) 60%, transparent);
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 70%, transparent);
 }
 
-.dirs__head {
+.dir-container__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dir-container__head-left {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: fn.use-var(text-color, second);
+}
+
+.dir-container__title {
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.dirs__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.dir-container__total {
+  color: fn.use-var(text-color, assist);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dir-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dir-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
+  padding: 7px 8px;
+  border-radius: fn.use-var(radius, small);
+  background: color-mix(in srgb, fn.use-var(bg-color, top) 60%, transparent);
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 40%, transparent);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+
+  &:hover {
+    background: fn.use-var(bg-color, hover);
+    border-color: color-mix(in srgb, fn.use-var(color, primary) 40%, transparent);
+  }
 }
 
-.dir {
+.dir-block__header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 4px;
+  min-width: 0;
 }
 
-.dir__path {
-  min-width: 0;
+.dir-block__name {
+  color: fn.use-var(text-color, title);
+  font-size: 12px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: fn.use-var(text-color, title);
-  font-size: 13px;
-  font-weight: 550;
 }
 
-.dir__size {
+.dir-block__label {
+  color: fn.use-var(text-color, assist);
+  font-size: 10px;
   flex-shrink: 0;
+}
+
+.dir-block__size {
   color: fn.use-var(text-color, second);
   font-size: 13px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
 }
 
-.dirs__empty {
+.dir-container__empty {
   margin: 0;
+  padding: 8px 0;
   color: fn.use-var(text-color, assist);
-  font-size: 13px;
+  font-size: 12px;
+  text-align: center;
+}
+
+@container (max-width: 440px) {
+  .dir-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

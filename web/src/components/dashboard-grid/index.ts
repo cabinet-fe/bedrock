@@ -1,2 +1,2 @@
 export { default } from "./dashboard-grid.vue";
-export { ensureCardGeometry } from "./helper";
+export { ensureCardGeometry, resetCardGeometry } from "./helper";
