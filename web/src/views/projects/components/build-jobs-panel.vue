@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 
+import { Folder, GitBranch, Link, Terminal, Time } from "@veltra/icons/normal";
+
 import { enqueueBuildRun, getBuildRun, listBuildJobs, listBuildRuns } from "@/api/cicd";
 import type { BuildJob, ProductProject } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
+import { formatDateTime } from "@/lib/datetime";
 import { loadDictOptions } from "@/lib/dict";
-import { splitCommaTags } from "@/lib/tag";
+import { repoTagType, splitCommaTags } from "@/lib/tag";
 import { useRepositoryStore } from "@/stores/repositories";
 
 import { isRunTerminal, useRunPoll } from "../composables/use-run-poll";
@@ -32,8 +35,47 @@ const { statusMap, errorMap, isBusy, enqueue, loadRecent } = useRunPoll({
   isTerminal: isRunTerminal,
 });
 
-function repoName(id: number): string {
-  return repoStore.nameMap.get(id) ?? `#${id}`;
+function parseRepoSlug(url?: string): string {
+  if (!url) return "";
+  const cleaned = url.replace(/\.git$/i, "").replace(/\/+$/, "");
+  const parts = cleaned.split(/[/:]/);
+  return parts[parts.length - 1] || "";
+}
+
+function resolveJobTags(job: BuildJob): string[] {
+  const direct = splitCommaTags(job.tags);
+  if (direct.length) return direct;
+
+  const repo = repoStore.repoMap.get(job.repository_id);
+  if (repo) {
+    const repoTags = splitCommaTags(repo.tags);
+    if (repoTags.length) return repoTags;
+
+    const trimmed = repo.name?.trim() ?? "";
+    const lower = trimmed.toLowerCase();
+    if (["前端", "后端", "全栈", "frontend", "backend", "fullstack"].includes(lower)) {
+      return [trimmed];
+    }
+  }
+
+  return [];
+}
+
+function repoDisplayName(job: BuildJob): string {
+  const repo = repoStore.repoMap.get(job.repository_id);
+  const fallback = repoStore.nameMap.get(job.repository_id) ?? `#${job.repository_id}`;
+  if (!repo) return fallback;
+
+  const trimmed = repo.name?.trim() ?? "";
+  const lower = trimmed.toLowerCase();
+  if (
+    ["前端", "后端", "全栈", "frontend", "backend", "fullstack"].includes(lower) &&
+    repo.repo_url
+  ) {
+    const slug = parseRepoSlug(repo.repo_url);
+    if (slug) return slug;
+  }
+  return trimmed || fallback;
 }
 
 function tagLabel(value: string): string {
@@ -45,7 +87,7 @@ function canRun(job: BuildJob) {
 }
 
 function disabledTip(job: BuildJob) {
-  if (!job.enabled) return "任务已停用";
+  if (!job.enabled) return "已停用";
   if (!job.trigger_manual) return "未启用手动触发";
   return "";
 }
@@ -53,16 +95,6 @@ function disabledTip(job: BuildJob) {
 function openHistory(job: BuildJob) {
   historyJob.value = job;
   historyOpen.value = true;
-}
-
-function buildMetaParts(job: BuildJob): string[] {
-  const parts = [
-    ...splitCommaTags(job.tags).map(tagLabel),
-    repoName(job.repository_id),
-    job.branch,
-  ];
-  if (!job.enabled) parts.push("已停用");
-  return parts;
 }
 
 async function load() {
@@ -121,6 +153,7 @@ onMounted(() => {
         v-for="job in jobs"
         :key="job.id"
         :name="job.name"
+        :description="job.description"
         :status="statusMap.get(job.id)"
         :error="errorMap.get(job.id)"
         :runnable="canRun(job)"
@@ -131,16 +164,57 @@ onMounted(() => {
         @history="openHistory(job)"
         @run="enqueue(job.id, () => enqueueBuildRun(job.id, { trigger_type: 'manual' }))"
       >
-        <template v-for="(part, index) in buildMetaParts(job)" :key="`${job.id}-${index}`">
-          <span v-if="index > 0" class="run-card__sep" aria-hidden="true">·</span>
-          <span
-            :class="[
-              part === job.branch && 'run-card__mono',
-              part === '已停用' && 'run-card__warn',
-            ]"
+        <template #tags>
+          <u-tag
+            v-for="tag in resolveJobTags(job)"
+            :key="tag"
+            size="small"
+            :type="repoTagType(tag)"
           >
-            {{ part }}
-          </span>
+            {{ tagLabel(tag) }}
+          </u-tag>
+        </template>
+
+        <span class="run-card__meta-item" :title="'代码仓库: ' + repoDisplayName(job)">
+          <u-icon :size="13"><Folder /></u-icon>
+          <span>{{ repoDisplayName(job) }}</span>
+        </span>
+        <span class="run-card__meta-item run-card__mono" :title="'构建分支: ' + job.branch">
+          <u-icon :size="13"><GitBranch /></u-icon>
+          <span>{{ job.branch }}</span>
+        </span>
+        <span
+          v-if="job.work_dir"
+          class="run-card__meta-item run-card__mono"
+          :title="'工作目录: ' + job.work_dir"
+        >
+          <u-icon :size="13"><Folder /></u-icon>
+          <span>{{ job.work_dir }}</span>
+        </span>
+        <span
+          v-if="job.build_script_type && job.build_script_type !== 'bash'"
+          class="run-card__meta-item"
+          :title="'脚本类型: ' + job.build_script_type"
+        >
+          <u-icon :size="13"><Terminal /></u-icon>
+          <span>{{ job.build_script_type }}</span>
+        </span>
+        <span
+          v-if="job.trigger_cron && job.cron_expression"
+          class="run-card__meta-item run-card__mono"
+          :title="'定时构建: ' + job.cron_expression"
+        >
+          <u-icon :size="13"><Time /></u-icon>
+          <span>{{ job.cron_expression }}</span>
+        </span>
+        <span v-if="job.trigger_webhook" class="run-card__meta-item" title="支持 Webhook 自动触发">
+          <u-icon :size="13"><Link /></u-icon>
+          <span>Webhook</span>
+        </span>
+
+        <template #footer>
+          <span>更新于 {{ formatDateTime(job.updated_at) || "—" }}</span>
+          <span v-if="job.shallow_clone" class="run-card__footer-item">浅克隆</span>
         </template>
       </RunCard>
     </div>

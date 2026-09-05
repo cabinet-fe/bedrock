@@ -18,6 +18,12 @@ export const useRepositoryStore = defineStore("repositories", () => {
     return map;
   });
 
+  const repoMap = computed(() => {
+    const map = new Map<number, Repository>();
+    for (const repo of items.value) map.set(repo.id, repo);
+    return map;
+  });
+
   async function fetchAll(): Promise<Repository[]> {
     const all: Repository[] = [];
     let page = 1;
@@ -55,5 +61,5 @@ export const useRepositoryStore = defineStore("repositories", () => {
     return load(true);
   }
 
-  return { items, nameMap, load, refresh };
+  return { items, nameMap, repoMap, load, refresh };
 });

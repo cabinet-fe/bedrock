@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 
+import { Folder, Link, Time } from "@veltra/icons/normal";
+
 import { enqueueScriptRun, getScriptRun, listScriptJobs, listScriptRuns } from "@/api/cicd";
 import type { ProductProject, ScriptJob } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
+import { formatDateTime } from "@/lib/datetime";
 
 const SCRIPT_TYPE_LABEL: Record<string, string> = {
   bash: "Bash / sh",
@@ -45,7 +48,7 @@ function canRun(job: ScriptJob) {
 }
 
 function disabledTip(job: ScriptJob) {
-  if (!job.enabled) return "任务已停用";
+  if (!job.enabled) return "已停用";
   if (!job.trigger_manual) return "未启用手动触发";
   return "";
 }
@@ -53,12 +56,6 @@ function disabledTip(job: ScriptJob) {
 function openHistory(job: ScriptJob) {
   historyJob.value = job;
   historyOpen.value = true;
-}
-
-function scriptMetaParts(job: ScriptJob): string[] {
-  const parts = [scriptTypeLabel(job.script_type)];
-  if (!job.enabled) parts.push("已停用");
-  return parts;
 }
 
 async function load() {
@@ -105,6 +102,7 @@ onMounted(() => {
         v-for="job in jobs"
         :key="job.id"
         :name="job.name"
+        :description="job.description"
         :status="statusMap.get(job.id)"
         :error="errorMap.get(job.id)"
         :runnable="canRun(job)"
@@ -115,9 +113,35 @@ onMounted(() => {
         @history="openHistory(job)"
         @run="enqueue(job.id, () => enqueueScriptRun(job.id))"
       >
-        <template v-for="(part, index) in scriptMetaParts(job)" :key="`${job.id}-${index}`">
-          <span v-if="index > 0" class="run-card__sep" aria-hidden="true">·</span>
-          <span :class="part === '已停用' && 'run-card__warn'">{{ part }}</span>
+        <template #tags>
+          <u-tag size="small" type="primary">
+            {{ scriptTypeLabel(job.script_type) }}
+          </u-tag>
+        </template>
+
+        <span
+          v-if="job.work_dir"
+          class="run-card__meta-item run-card__mono"
+          :title="'工作目录: ' + job.work_dir"
+        >
+          <u-icon :size="13"><Folder /></u-icon>
+          <span>{{ job.work_dir }}</span>
+        </span>
+        <span
+          v-if="job.trigger_cron && job.cron_expression"
+          class="run-card__meta-item run-card__mono"
+          :title="'定时执行: ' + job.cron_expression"
+        >
+          <u-icon :size="13"><Time /></u-icon>
+          <span>{{ job.cron_expression }}</span>
+        </span>
+        <span v-if="job.trigger_webhook" class="run-card__meta-item" title="支持 Webhook 自动触发">
+          <u-icon :size="13"><Link /></u-icon>
+          <span>Webhook</span>
+        </span>
+
+        <template #footer>
+          <span>更新于 {{ formatDateTime(job.updated_at) || "—" }}</span>
         </template>
       </RunCard>
     </div>
