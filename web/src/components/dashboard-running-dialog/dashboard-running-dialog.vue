@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, useTemplateRef, watch } from "vue";
-import { useRouter } from "vue-router";
 
+import type { RouteTarget } from "@/components/dashboard-route-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import type { BuildRun, PipelineRun, ScriptRun } from "@/api/types";
 import { formatDateTime, formatDurationBetween, formatDurationMs } from "@/lib/datetime";
@@ -87,13 +87,28 @@ const TITLE: Record<RunningDialogKind, string> = {
   pipeline: "运行中的流水线",
 };
 
+const DETAIL_ROUTE: Record<RunningDialogKind, string> = {
+  build: "cicd-build-run-detail",
+  script: "cicd-script-run-detail",
+  pipeline: "cicd-pipeline-run-detail",
+};
+
+const DETAIL_TITLE: Record<RunningDialogKind, string> = {
+  build: "构建详情",
+  script: "脚本详情",
+  pipeline: "流水线运行详情",
+};
+
 const props = defineProps<{
   kind: RunningDialogKind;
 }>();
 
 const open = defineModel<boolean>({ default: false });
 
-const router = useRouter();
+const emit = defineEmits<{
+  openDetail: [title: string, route: RouteTarget];
+}>();
+
 const tableRef = useTemplateRef("table");
 
 const query = reactive({
@@ -116,15 +131,10 @@ const columns = computed(() => {
 
 function openDetail(row: BuildRun | ScriptRun | PipelineRun) {
   open.value = false;
-  if (props.kind === "build") {
-    void router.push({ name: "cicd-build-run-detail", params: { id: String(row.id) } });
-    return;
-  }
-  if (props.kind === "script") {
-    void router.push({ name: "cicd-script-run-detail", params: { id: String(row.id) } });
-    return;
-  }
-  void router.push({ name: "cicd-pipeline-run-detail", params: { id: String(row.id) } });
+  emit("openDetail", DETAIL_TITLE[props.kind], {
+    name: DETAIL_ROUTE[props.kind],
+    params: { id: String(row.id) },
+  });
 }
 
 watch(open, async (visible) => {

@@ -357,7 +357,18 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
+  // Keep iframe embed mode across in-dialog navigations so inner pages
+  // do not render the app shell or create workspace tabs.
+  if (from.query._embed === "1" && to.query._embed !== "1" && to.name !== "login") {
+    return {
+      path: to.path,
+      query: { ...to.query, _embed: "1" },
+      hash: to.hash,
+      replace: true,
+    };
+  }
+
   const isPublic = to.meta.public === true;
   const hasToken = !!getAccessToken();
 

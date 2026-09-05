@@ -4,7 +4,6 @@ defineOptions({ name: "HomePage" });
 import { computed, ref } from "vue";
 import { message } from "@veltra/desktop";
 import { Edit, Setting } from "@veltra/icons/normal";
-import { useRouter } from "vue-router";
 
 import {
   getAgentRunSummary,
@@ -34,9 +33,9 @@ import DashboardGrid, { ensureCardGeometry, resetCardGeometry } from "@/componen
 import DashboardRunningDialog, {
   type RunningDialogKind,
 } from "@/components/dashboard-running-dialog";
+import DashboardRouteDialog, { type RouteTarget } from "@/components/dashboard-route-dialog";
 import { useDashboardWs, type DashboardRunType } from "@/composables/use-dashboard-ws";
 
-const router = useRouter();
 const layout = ref<DashboardCardLayout[]>([]);
 const editSnapshot = ref<DashboardCardLayout[]>([]);
 const manageDraft = ref<DashboardCardLayout[]>([]);
@@ -54,6 +53,9 @@ const systemInfo = ref<SystemInfo | null>(null);
 const systemStatus = ref<SystemStatus | null>(null);
 const runningDialogOpen = ref(false);
 const runningDialogKind = ref<RunningDialogKind>("build");
+const routeDialogOpen = ref(false);
+const routeDialogTitle = ref("");
+const routeDialogTarget = ref<RouteTarget | null>(null);
 
 const visibleCards = computed(() => layout.value.filter((card) => card.visible));
 
@@ -275,44 +277,53 @@ function onGridChange(cards: DashboardCardLayout[]) {
   layout.value = ensureCardGeometry(cards);
 }
 
+function openRouteDialog(title: string, target: RouteTarget) {
+  routeDialogTitle.value = title;
+  routeDialogTarget.value = target;
+  routeDialogOpen.value = true;
+}
+
 function openBuildRun(id: number) {
-  void router.push({ name: "cicd-build-run-detail", params: { id: String(id) } });
+  openRouteDialog("构建详情", { name: "cicd-build-run-detail", params: { id: String(id) } });
 }
 
 function openAgentRun(id: number) {
-  void router.push({ name: "ai-run-detail", params: { id: String(id) } });
+  openRouteDialog("智能体运行详情", { name: "ai-run-detail", params: { id: String(id) } });
 }
 
 function openScriptRun(id: number) {
-  void router.push({ name: "cicd-script-run-detail", params: { id: String(id) } });
+  openRouteDialog("脚本详情", { name: "cicd-script-run-detail", params: { id: String(id) } });
 }
 
 function openPipelineRun(id: number) {
-  void router.push({ name: "cicd-pipeline-run-detail", params: { id: String(id) } });
+  openRouteDialog("流水线运行详情", {
+    name: "cicd-pipeline-run-detail",
+    params: { id: String(id) },
+  });
 }
 
 function openProject(id: number) {
-  void router.push({ name: "project-detail", params: { id: String(id) } });
+  openRouteDialog("项目详情", { name: "project-detail", params: { id: String(id) } });
 }
 
 function openProjects() {
-  void router.push({ name: "projects" });
+  openRouteDialog("项目列表", { name: "projects" });
 }
 
 function openBuildJobs() {
-  void router.push({ name: "cicd-build-jobs" });
+  openRouteDialog("构建任务", { name: "cicd-build-jobs" });
 }
 
 function openScriptJobs() {
-  void router.push({ name: "cicd-script-jobs" });
+  openRouteDialog("脚本任务", { name: "cicd-script-jobs" });
 }
 
 function openPipelines() {
-  void router.push({ name: "cicd-pipelines" });
+  openRouteDialog("构建流水线", { name: "cicd-pipelines" });
 }
 
 function openAgentJobs() {
-  void router.push({ name: "ai-agents" });
+  openRouteDialog("智能体", { name: "ai-agents" });
 }
 
 function showRunning(kind: RunningDialogKind) {
@@ -362,7 +373,17 @@ void loadDashboard();
       </template>
     </u-dialog>
 
-    <DashboardRunningDialog v-model="runningDialogOpen" :kind="runningDialogKind" />
+    <DashboardRunningDialog
+      v-model="runningDialogOpen"
+      :kind="runningDialogKind"
+      @open-detail="openRouteDialog"
+    />
+
+    <DashboardRouteDialog
+      v-model="routeDialogOpen"
+      :target="routeDialogTarget"
+      :title="routeDialogTitle"
+    />
 
     <div v-if="loading" v-loading="true" class="dashboard__loading" />
     <u-scroll v-else class="dashboard__content">

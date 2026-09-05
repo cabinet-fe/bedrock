@@ -22,6 +22,10 @@ type TabsCache = {
 
 const TABS_KEY = storageKey<TabsCache>("workspace_tabs");
 
+function isEmbedWindow(): boolean {
+  return new URLSearchParams(window.location.search).get("_embed") === "1";
+}
+
 const HOME_TAB: WorkspaceTab = {
   key: "/",
   fullPath: "/",
@@ -62,6 +66,7 @@ function loadCache(): TabsCache | null {
 }
 
 function persist(tabs: WorkspaceTab[], activeKey: string) {
+  if (isEmbedWindow()) return;
   storage.session.set(TABS_KEY, { tabs, activeKey });
 }
 
@@ -187,6 +192,7 @@ export const useTabsStore = defineStore("tabs", () => {
     title: string,
   ) {
     if (route.path === "/login") return;
+    if (isEmbedWindow()) return;
     const existing = findByKey(route.path);
     if (existing) {
       // Preserve custom titles set via updateTitle; only refresh navigation fields.
@@ -216,7 +222,7 @@ export const useTabsStore = defineStore("tabs", () => {
   function reset() {
     tabs.value = [{ ...HOME_TAB }];
     activeKey.value = HOME_TAB.key;
-    clearCache();
+    if (!isEmbedWindow()) clearCache();
   }
 
   return {

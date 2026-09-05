@@ -20,6 +20,7 @@ declare module 'vue' {
     DashboardGrid: typeof import('./src/components/dashboard-grid/dashboard-grid.vue')['default']
     DashboardMyProjectsCard: typeof import('./src/components/dashboard-my-projects-card/dashboard-my-projects-card.vue')['default']
     DashboardPipelineRunCard: typeof import('./src/components/dashboard-pipeline-run-card/dashboard-pipeline-run-card.vue')['default']
+    DashboardRouteDialog: typeof import('./src/components/dashboard-route-dialog/dashboard-route-dialog.vue')['default']
     DashboardRunningDialog: typeof import('./src/components/dashboard-running-dialog/dashboard-running-dialog.vue')['default']
     DashboardScriptRunCard: typeof import('./src/components/dashboard-script-run-card/dashboard-script-run-card.vue')['default']
     DashboardSystemInfoCard: typeof import('./src/components/dashboard-system-info-card/dashboard-system-info-card.vue')['default']

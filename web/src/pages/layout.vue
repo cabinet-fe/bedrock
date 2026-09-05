@@ -20,6 +20,9 @@ const tabsStore = useTabsStore();
 const router = useRouter();
 const route = useRoute();
 
+/** Embed mode: strip shell UI for iframe embedding (dashboard dialogs). */
+const embed = computed(() => route.query._embed === "1");
+
 const displayName = computed(() => auth.user?.display_name || auth.user?.username || "");
 const nameInitial = computed(() => {
   const name = displayName.value.trim();
@@ -32,6 +35,7 @@ const currentPath = computed(() => route.path);
 watch(
   () => [route.fullPath, auth.menus] as const,
   () => {
+    if (embed.value) return;
     tabsStore.syncFromRoute(route, resolveRouteTitle(route, auth.menus));
   },
   { immediate: true },
@@ -64,7 +68,14 @@ function onNavClick(item: NavItem) {
 </script>
 
 <template>
-  <div class="app-shell">
+  <!-- Embed mode: bare page content for iframe embedding -->
+  <main v-if="embed" class="app-embed">
+    <router-view v-slot="{ Component, route: viewRoute }">
+      <component :is="Component" :key="viewRoute.path" class="app-page" />
+    </router-view>
+  </main>
+
+  <div v-else class="app-shell">
     <aside class="app-sidebar">
       <div class="app-sidebar__brand">
         <BrandLogo />
@@ -116,6 +127,13 @@ function onNavClick(item: NavItem) {
 
 <style scoped lang="scss">
 @use "pkg:@veltra/styles/functions" as fn;
+
+.app-embed {
+  height: 100%;
+  overflow: hidden;
+  background: fn.use-var(bg-color, bottom);
+  color: fn.use-var(text-color, main);
+}
 
 .app-shell {
   height: 100%;
