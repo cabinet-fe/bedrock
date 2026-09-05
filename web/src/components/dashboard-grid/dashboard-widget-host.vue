@@ -36,23 +36,27 @@ const cardId = id as DashboardCardID;
         :data="ctx.buildSummary"
         @open-run="ctx.openBuildRun"
         @show-running="ctx.showRunning('build')"
+        @open-jobs="ctx.openBuildJobs"
       />
       <DashboardAgentRunCard
         v-else-if="cardId === 'agent_run_summary'"
         :data="ctx.agentRunSummary"
         @open-run="ctx.openAgentRun"
+        @open-jobs="ctx.openAgentJobs"
       />
       <DashboardScriptRunCard
         v-else-if="cardId === 'script_run_summary'"
         :data="ctx.scriptRunSummary"
         @open-run="ctx.openScriptRun"
         @show-running="ctx.showRunning('script')"
+        @open-jobs="ctx.openScriptJobs"
       />
       <DashboardPipelineRunCard
         v-else-if="cardId === 'pipeline_run_summary'"
         :data="ctx.pipelineRunSummary"
         @open-run="ctx.openPipelineRun"
         @show-running="ctx.showRunning('pipeline')"
+        @open-jobs="ctx.openPipelines"
       />
       <DashboardTaskOverviewCard
         v-else-if="cardId === 'cicd_task_overview'"
@@ -65,6 +69,7 @@ const cardId = id as DashboardCardID;
         v-else-if="cardId === 'my_projects'"
         :data="ctx.myProjects"
         @open-project="ctx.openProject"
+        @open-projects="ctx.openProjects"
       />
       <DashboardSystemInfoCard v-else-if="cardId === 'system_info'" :data="ctx.systemInfo" />
       <DashboardSystemStatusCard v-else-if="cardId === 'system_status'" :data="ctx.systemStatus" />

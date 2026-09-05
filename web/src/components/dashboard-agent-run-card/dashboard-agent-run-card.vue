@@ -1,8 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: "DashboardAgentRunCard" });
 
-import { computed } from "vue";
-import { Books, CircleCheck, Queue, Refresh } from "@veltra/icons/normal";
+import { ArrowRight, Books, CircleCheck, Queue, Refresh } from "@veltra/icons/normal";
 
 import type { AgentRunSummary, DashboardRecentAgentRun } from "@/api/types";
 import { formatDateTime } from "@/lib/datetime";
@@ -20,14 +19,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   openRun: [id: number];
+  openJobs: [];
 }>();
-
-const activeRuns = computed(() => {
-  if (!props.data?.recent) return [];
-  return props.data.recent.filter(
-    (run) => run.status === "running" || run.status === "queued" || run.status === "pending",
-  );
-});
 
 function metric(value: number | undefined): string {
   return value == null ? "—" : String(value);
@@ -57,6 +50,10 @@ function openRun(run: DashboardRecentAgentRun) {
           <span class="tile__pulse-dot" />
           <span>{{ data.running }} 运行中</span>
         </div>
+        <button type="button" class="tile__link-btn" title="查看智能体" @click="emit('openJobs')">
+          <span>管理智能体</span>
+          <u-icon :size="12"><ArrowRight /></u-icon>
+        </button>
       </div>
     </u-card-header>
 
@@ -87,11 +84,13 @@ function openRun(run: DashboardRecentAgentRun) {
 
       <div class="tile__tasks">
         <div class="tile__tasks-head">
-          <span class="tile__tasks-title">活跃任务</span>
-          <span class="tile__tasks-count">{{ activeRuns.length }} 项</span>
+          <span class="tile__tasks-title">当前活跃运行</span>
+          <span v-if="data?.recent?.length" class="tile__tasks-count"
+            >{{ data.recent.length }} 项</span
+          >
         </div>
-        <ul v-if="activeRuns.length" class="task-list">
-          <li v-for="run in activeRuns" :key="run.id">
+        <ul v-if="data?.recent?.length" class="task-list">
+          <li v-for="run in data.recent" :key="run.id">
             <button type="button" class="task-row" @click="openRun(run)">
               <span class="task-row__name" :title="run.agent_name || `#${run.id}`">
                 {{ run.agent_name || `#${run.id}` }}
@@ -106,9 +105,16 @@ function openRun(run: DashboardRecentAgentRun) {
             </button>
           </li>
         </ul>
-        <div v-else class="tile__idle">
-          <u-icon :size="14" color="success"><CircleCheck /></u-icon>
-          <span>当前无运行中或排队任务</span>
+        <div v-else class="tile__idle-state">
+          <div class="tile__idle-badge">
+            <span class="tile__idle-dot" />
+            <span>执行队列空闲 · 暂无活跃运行</span>
+          </div>
+          <p class="tile__idle-tip">任务触发后将在此实时展示执行进度与状态</p>
+          <button type="button" class="tile__idle-action" @click="emit('openJobs')">
+            <span>前往智能体中心</span>
+            <u-icon :size="12"><ArrowRight /></u-icon>
+          </button>
         </div>
       </div>
     </u-card-content>
@@ -170,6 +176,27 @@ function openRun(run: DashboardRecentAgentRun) {
   color: fn.use-var(color, primary);
   font-size: 11px;
   font-weight: 600;
+}
+
+.tile__link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: fn.use-var(radius, small);
+  background: transparent;
+  color: fn.use-var(text-color, assist);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+
+  &:hover {
+    color: fn.use-var(color, primary);
+    background: color-mix(in srgb, fn.use-var(color, primary) 10%, transparent);
+  }
 }
 
 .tile__pulse-dot {
@@ -275,10 +302,9 @@ function openRun(run: DashboardRecentAgentRun) {
 }
 
 .tile__tasks-title {
-  color: fn.use-var(text-color, second);
-  font-size: 11px;
+  color: fn.use-var(text-color, title);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
 }
 
 .tile__tasks-count {
@@ -336,14 +362,60 @@ function openRun(run: DashboardRecentAgentRun) {
   white-space: nowrap;
 }
 
-.tile__idle {
+.tile__idle-state {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
+  padding: 8px 4px;
+}
+
+.tile__idle-badge {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  font-size: 11px;
   color: fn.use-var(text-color, second);
-  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: fn.use-var(radius, small);
+  background: color-mix(in srgb, fn.use-var(bg-color, bottom) 70%, transparent);
+}
+
+.tile__idle-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: fn.use-var(color, success);
+  box-shadow: 0 0 6px fn.use-var(color, success);
+}
+
+.tile__idle-tip {
+  margin: 0;
+  color: fn.use-var(text-color, assist);
+  font-size: 11px;
+  text-align: center;
+}
+
+.tile__idle-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 60%, transparent);
+  border-radius: fn.use-var(radius, small);
+  background: color-mix(in srgb, fn.use-var(bg-color, top) 80%, transparent);
+  color: fn.use-var(color, primary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, fn.use-var(color, primary) 10%, transparent);
+    border-color: color-mix(in srgb, fn.use-var(color, primary) 40%, transparent);
+  }
 }
 
 @container (max-width: 360px) {

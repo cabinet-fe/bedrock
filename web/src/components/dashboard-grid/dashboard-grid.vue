@@ -52,9 +52,11 @@ const emit = defineEmits<{
   openScriptRun: [id: number];
   openPipelineRun: [id: number];
   openProject: [id: number];
+  openProjects: [];
   openBuildJobs: [];
   openScriptJobs: [];
   openPipelines: [];
+  openAgentJobs: [];
   showRunning: [kind: "build" | "script" | "pipeline"];
 }>();
 
@@ -107,9 +109,11 @@ const hostCtx = reactive<DashboardWidgetHostContext>({
   openScriptRun: (id: number) => emit("openScriptRun", id),
   openPipelineRun: (id: number) => emit("openPipelineRun", id),
   openProject: (id: number) => emit("openProject", id),
+  openProjects: () => emit("openProjects"),
   openBuildJobs: () => emit("openBuildJobs"),
   openScriptJobs: () => emit("openScriptJobs"),
   openPipelines: () => emit("openPipelines"),
+  openAgentJobs: () => emit("openAgentJobs"),
   showRunning: (kind) => emit("showRunning", kind),
 });
 provide(DASHBOARD_WIDGET_CTX, hostCtx);

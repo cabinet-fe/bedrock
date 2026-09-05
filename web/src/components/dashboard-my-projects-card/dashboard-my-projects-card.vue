@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: "DashboardMyProjectsCard" });
 
-import { Folder } from "@veltra/icons/normal";
+import { ArrowRight, CirclePlus, Folder } from "@veltra/icons/normal";
 
 import type { MyProject, ProjectRole } from "@/api/types";
 import { type TagType } from "@/lib/tag";
@@ -12,6 +12,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   openProject: [id: number];
+  openProjects: [];
 }>();
 
 const ROLE_TAG: Record<ProjectRole, TagType> = {
@@ -44,6 +45,15 @@ function openProject(project: MyProject) {
           <h3 class="tile__title">我的项目</h3>
         </div>
         <span class="tile__count">{{ data?.length || 0 }} 个项目</span>
+        <button
+          type="button"
+          class="tile__link-btn"
+          title="查看全部项目"
+          @click="emit('openProjects')"
+        >
+          <span>全部项目</span>
+          <u-icon :size="12"><ArrowRight /></u-icon>
+        </button>
       </div>
     </u-card-header>
 
@@ -76,8 +86,23 @@ function openProject(project: MyProject) {
             <span class="project-card__slug" :title="project.slug">{{ project.slug }}</span>
           </div>
         </button>
+        <button
+          v-if="data.length < 4"
+          type="button"
+          class="project-card project-card--add"
+          @click="emit('openProjects')"
+        >
+          <u-icon :size="16"><CirclePlus /></u-icon>
+          <span>新建/管理项目</span>
+        </button>
       </div>
-      <div v-else class="tile__empty">暂无项目</div>
+      <div v-else class="tile__empty">
+        <p>暂无关联项目</p>
+        <button type="button" class="tile__empty-btn" @click="emit('openProjects')">
+          <u-icon :size="14"><CirclePlus /></u-icon>
+          <span>前往项目中心</span>
+        </button>
+      </div>
     </u-card-content>
   </u-card>
 </template>
@@ -133,6 +158,27 @@ function openProject(project: MyProject) {
   font-variant-numeric: tabular-nums;
 }
 
+.tile__link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: fn.use-var(radius, small);
+  background: transparent;
+  color: fn.use-var(text-color, assist);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+
+  &:hover {
+    color: fn.use-var(color, primary);
+    background: color-mix(in srgb, fn.use-var(color, primary) 10%, transparent);
+  }
+}
+
 .tile__body {
   flex: 1;
   padding: 8px 14px 10px;
@@ -142,7 +188,7 @@ function openProject(project: MyProject) {
 
 .project-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
 }
 
@@ -167,6 +213,23 @@ function openProject(project: MyProject) {
     background: fn.use-var(bg-color, hover);
     border-color: color-mix(in srgb, fn.use-var(color, primary) 45%, transparent);
     transform: translateY(-1px);
+  }
+
+  &--add {
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-style: dashed;
+    border-color: color-mix(in srgb, fn.use-var(border, muted) 90%, transparent);
+    color: fn.use-var(text-color, assist);
+    font-size: 11px;
+    min-height: 52px;
+
+    &:hover {
+      color: fn.use-var(color, primary);
+      border-color: color-mix(in srgb, fn.use-var(color, primary) 50%, transparent);
+      background: color-mix(in srgb, fn.use-var(color, primary) 6%, transparent);
+    }
   }
 }
 
@@ -223,10 +286,36 @@ function openProject(project: MyProject) {
 
 .tile__empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   height: 100%;
   color: fn.use-var(text-color, assist);
   font-size: 12px;
+  margin: 0;
+
+  p {
+    margin: 0;
+  }
+}
+
+.tile__empty-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 80%, transparent);
+  border-radius: fn.use-var(radius, small);
+  background: color-mix(in srgb, fn.use-var(bg-color, top) 70%, transparent);
+  color: fn.use-var(color, primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: fn.use-var(bg-color, hover);
+    border-color: color-mix(in srgb, fn.use-var(color, primary) 45%, transparent);
+  }
 }
 </style>

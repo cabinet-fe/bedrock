@@ -2,7 +2,9 @@
 defineOptions({ name: "DashboardSystemInfoCard" });
 
 import { computed } from "vue";
-import { Server, Time, Internet, Variable } from "@veltra/icons/normal";
+import { clipboard } from "@cat-kit/fe";
+import { message } from "@veltra/desktop";
+import { Copy, Internet, Server, Time, Variable } from "@veltra/icons/normal";
 
 import type { SystemInfo } from "@/api/types";
 import { formatDateTime } from "@/lib/datetime";
@@ -29,6 +31,16 @@ const uptime = computed(() => {
   if (totalHours > 0) return `${totalHours} 小时 ${mins} 分`;
   return `${mins} 分钟`;
 });
+
+async function copyHostname() {
+  if (!props.data?.hostname) return;
+  try {
+    await clipboard.copy(props.data.hostname);
+    message.success("已复制主机名");
+  } catch {
+    message.info(props.data.hostname);
+  }
+}
 </script>
 
 <template>
@@ -50,17 +62,24 @@ const uptime = computed(() => {
           <span class="hero__label">系统版本</span>
           <span class="hero__version">{{ data?.version || "—" }}</span>
         </div>
-        <div class="hero__host">
+        <button
+          v-if="data?.hostname"
+          type="button"
+          class="hero__host"
+          title="点击复制主机名"
+          @click="copyHostname"
+        >
           <u-icon :size="13"><Internet /></u-icon>
-          <span>{{ data?.hostname || "—" }}</span>
-        </div>
+          <span>{{ data.hostname }}</span>
+          <u-icon :size="11" class="hero__copy-icon"><Copy /></u-icon>
+        </button>
       </div>
 
       <div class="facts">
         <div class="fact">
           <span class="fact__label">
             <u-icon :size="12"><Server /></u-icon>
-            平台
+            平台系统
           </span>
           <span class="fact__value">{{ platform }}</span>
         </div>
@@ -85,6 +104,11 @@ const uptime = computed(() => {
           </span>
           <span class="fact__value">{{ formatDateTime(data?.start_time) || "—" }}</span>
         </div>
+      </div>
+
+      <div class="env-badge">
+        <span class="env-badge__dot" />
+        <span class="env-badge__label">Bedrock Core Engine · 平台服务运行良好</span>
       </div>
     </u-card-content>
   </u-card>
@@ -181,9 +205,25 @@ const uptime = computed(() => {
 .hero__host {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 60%, transparent);
+  border-radius: fn.use-var(radius, small);
+  background: color-mix(in srgb, fn.use-var(bg-color, top) 60%, transparent);
   color: fn.use-var(text-color, second);
-  font-size: 12px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: fn.use-var(color, primary);
+    border-color: color-mix(in srgb, fn.use-var(color, primary) 45%, transparent);
+    background: fn.use-var(bg-color, hover);
+  }
+}
+
+.hero__copy-icon {
+  color: fn.use-var(text-color, assist);
 }
 
 .facts {
@@ -201,6 +241,11 @@ const uptime = computed(() => {
   border-radius: fn.use-var(radius, small);
   background: color-mix(in srgb, fn.use-var(bg-color, bottom) 60%, transparent);
   border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 50%, transparent);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, fn.use-var(color, primary) 35%, transparent);
+  }
 }
 
 .fact__label {
@@ -219,5 +264,28 @@ const uptime = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.env-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: fn.use-var(radius, small);
+  background: color-mix(in srgb, fn.use-var(bg-color, bottom) 40%, transparent);
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 40%, transparent);
+}
+
+.env-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: fn.use-var(color, success);
+  box-shadow: 0 0 6px fn.use-var(color, success);
+}
+
+.env-badge__label {
+  color: fn.use-var(text-color, assist);
+  font-size: 11px;
 }
 </style>

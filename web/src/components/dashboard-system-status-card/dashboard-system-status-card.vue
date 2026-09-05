@@ -65,6 +65,11 @@ function cleanDataDirName(fullPath: string): string {
 function getDirLabel(name: string): string {
   return DIR_LABELS[name] || "数据目录";
 }
+
+function dirPercent(usedBytes: number | undefined): number {
+  if (!usedBytes || !totalDirsBytes.value) return 0;
+  return Math.min(100, Math.round((usedBytes * 100) / totalDirsBytes.value));
+}
 </script>
 
 <template>
@@ -97,6 +102,9 @@ function getDirLabel(name: string): string {
             </template>
           </u-progress>
           <span class="gauge__label">CPU</span>
+          <span class="gauge__hint">
+            {{ cpuPercent >= 80 ? "高负载" : cpuPercent >= 50 ? "中等负载" : "运行良好" }}
+          </span>
         </div>
         <div class="gauge">
           <u-progress circle :size="80" :percentage="memPercent" :type="loadType">
@@ -136,7 +144,18 @@ function getDirLabel(name: string): string {
               <span class="dir-block__name">{{ cleanDataDirName(dir.path) }}</span>
               <span class="dir-block__label">{{ getDirLabel(cleanDataDirName(dir.path)) }}</span>
             </div>
-            <div class="dir-block__size">{{ formatBytes(dir.used_bytes) }}</div>
+            <div class="dir-block__size-row">
+              <span class="dir-block__size">{{ formatBytes(dir.used_bytes) }}</span>
+              <span v-if="totalDirsBytes > 0" class="dir-block__pct"
+                >{{ dirPercent(dir.used_bytes) }}%</span
+              >
+            </div>
+            <div class="dir-block__bar">
+              <div
+                class="dir-block__bar-fill"
+                :style="{ width: `${dirPercent(dir.used_bytes)}%` }"
+              />
+            </div>
           </div>
         </div>
         <p v-else class="dir-container__empty">暂无目录采样</p>
@@ -332,11 +351,40 @@ function getDirLabel(name: string): string {
   flex-shrink: 0;
 }
 
+.dir-block__size-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+}
+
 .dir-block__size {
   color: fn.use-var(text-color, second);
   font-size: 13px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
+}
+
+.dir-block__pct {
+  color: fn.use-var(text-color, assist);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dir-block__bar {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, fn.use-var(border, muted) 60%, transparent);
+  overflow: hidden;
+  margin-top: 1px;
+}
+
+.dir-block__bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: fn.use-var(color, primary);
+  transition: width 0.3s ease;
 }
 
 .dir-container__empty {

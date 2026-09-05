@@ -295,6 +295,10 @@ function openProject(id: number) {
   void router.push({ name: "project-detail", params: { id: String(id) } });
 }
 
+function openProjects() {
+  void router.push({ name: "projects" });
+}
+
 function openBuildJobs() {
   void router.push({ name: "cicd-build-jobs" });
 }
@@ -305,6 +309,10 @@ function openScriptJobs() {
 
 function openPipelines() {
   void router.push({ name: "cicd-pipelines" });
+}
+
+function openAgentJobs() {
+  void router.push({ name: "ai-agents" });
 }
 
 function showRunning(kind: RunningDialogKind) {
@@ -376,9 +384,11 @@ void loadDashboard();
         @open-script-run="openScriptRun"
         @open-pipeline-run="openPipelineRun"
         @open-project="openProject"
+        @open-projects="openProjects"
         @open-build-jobs="openBuildJobs"
         @open-script-jobs="openScriptJobs"
         @open-pipelines="openPipelines"
+        @open-agent-jobs="openAgentJobs"
         @show-running="showRunning"
       />
       <div v-else class="dashboard__empty">

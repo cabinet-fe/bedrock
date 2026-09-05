@@ -29,9 +29,11 @@ export interface DashboardWidgetHostContext {
   openScriptRun: (id: number) => void;
   openPipelineRun: (id: number) => void;
   openProject: (id: number) => void;
+  openProjects: () => void;
   openBuildJobs: () => void;
   openScriptJobs: () => void;
   openPipelines: () => void;
+  openAgentJobs: () => void;
   showRunning: (kind: "build" | "script" | "pipeline") => void;
 }
 

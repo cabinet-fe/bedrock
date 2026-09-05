@@ -77,11 +77,12 @@ function onClick(event: "openBuildJobs" | "openScriptJobs" | "openPipelines") {
         >
           <div class="stat__header">
             <span class="stat__icon" aria-hidden="true">
-              <u-icon :size="14"><component :is="item.icon" /></u-icon>
+              <u-icon :size="16"><component :is="item.icon" /></u-icon>
             </span>
             <span class="stat__label">{{ item.label }}</span>
           </div>
           <strong class="stat__value">{{ count(item.key) }}</strong>
+          <span class="stat__hint">管理配置 →</span>
         </button>
       </div>
     </u-card-content>
@@ -136,37 +137,43 @@ function onClick(event: "openBuildJobs" | "openScriptJobs" | "openPipelines") {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 8px 14px 10px;
+  padding: 8px 14px 12px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .stats {
+  flex: 1;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  min-height: 0;
 }
 
 .stat {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  padding: 10px 12px;
+  height: 100%;
+  padding: 12px 14px;
   border: 1px solid color-mix(in srgb, fn.use-var(border, muted) 60%, transparent);
   border-radius: fn.use-var(radius, small);
   background: color-mix(in srgb, fn.use-var(bg-color, bottom) 60%, transparent);
   color: inherit;
   cursor: pointer;
   text-align: left;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
+  transition: all 0.15s ease;
 
   &:hover:not(:disabled) {
     background: fn.use-var(bg-color, hover);
     border-color: color-mix(in srgb, fn.use-var(color, primary) 40%, transparent);
+    transform: translateY(-1px);
+
+    .stat__hint {
+      color: fn.use-var(color, primary);
+    }
   }
 
   &--disabled {
@@ -182,12 +189,19 @@ function onClick(event: "openBuildJobs" | "openScriptJobs" | "openPipelines") {
 }
 
 .stat__icon {
-  color: fn.use-var(text-color, assist);
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: color-mix(in srgb, fn.use-var(color, primary) 12%, transparent);
+  color: fn.use-var(color, primary);
 }
 
 .stat__label {
   color: fn.use-var(text-color, second);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   letter-spacing: 0.04em;
   white-space: nowrap;
   overflow: hidden;
@@ -196,10 +210,16 @@ function onClick(event: "openBuildJobs" | "openScriptJobs" | "openPipelines") {
 
 .stat__value {
   color: fn.use-var(text-color, title);
-  font-size: 20px;
+  font-size: 26px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
   letter-spacing: -0.02em;
+}
+
+.stat__hint {
+  color: fn.use-var(text-color, assist);
+  font-size: 11px;
+  transition: color 0.15s ease;
 }
 </style>
