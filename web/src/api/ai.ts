@@ -7,6 +7,10 @@ import type {
   AiModelInput,
   AiProvider,
   AiProviderInput,
+  ChatSession,
+  ChatSessionInput,
+  ChatSessionMessage,
+  ChatSessionMessageInput,
   PageResult,
   SkillFileContent,
   SkillFileNode,
@@ -241,4 +245,46 @@ export async function updateModel(
 
 export async function deleteModel(providerID: number, modelID: number): Promise<void> {
   await http.delete(`/ai/providers/${providerID}/models/${modelID}`);
+}
+
+export async function listChatSessions(query?: Query): Promise<PageResult<ChatSession>> {
+  const { body } = await http.get<PageResult<ChatSession>>("/ai/chat/sessions", {
+    query: compactQuery(query),
+  });
+  return body;
+}
+
+export async function createChatSession(input: ChatSessionInput): Promise<ChatSession> {
+  const { body } = await http.post<ChatSession>("/ai/chat/sessions", input);
+  return body;
+}
+
+export async function updateChatSession(id: number, input: ChatSessionInput): Promise<ChatSession> {
+  const { body } = await http.put<ChatSession>(`/ai/chat/sessions/${id}`, input);
+  return body;
+}
+
+export async function deleteChatSession(id: number): Promise<void> {
+  await http.delete(`/ai/chat/sessions/${id}`);
+}
+
+export async function listChatMessages(sessionId: number): Promise<ChatSessionMessage[]> {
+  const { body } = await http.get<ChatSessionMessage[]>(`/ai/chat/sessions/${sessionId}/messages`);
+  return body;
+}
+
+export async function createChatMessage(
+  sessionId: number,
+  input: ChatSessionMessageInput,
+): Promise<ChatSessionMessage> {
+  const { body } = await http.post<ChatSessionMessage>(
+    `/ai/chat/sessions/${sessionId}/messages`,
+    input,
+  );
+  return body;
+}
+
+export async function listAvailableModels(): Promise<AiModel[]> {
+  const { body } = await http.get<AiModel[]>("/ai/chat/models");
+  return body;
 }

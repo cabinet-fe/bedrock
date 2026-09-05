@@ -920,3 +920,34 @@ export interface AiModelInput {
   default_params?: Record<string, unknown>;
   notes?: string;
 }
+
+export interface ChatSession {
+  id: number;
+  user_id: number;
+  title: string;
+  model_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatSessionInput {
+  title?: string;
+  model_id?: string;
+}
+
+export interface ChatSessionMessage {
+  id: number;
+  session_id: number;
+  user_id: number;
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  reasoning_content?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatSessionMessageInput {
+  role: "user" | "assistant" | "system";
+  content: string;
+  reasoning_content?: string;
+}

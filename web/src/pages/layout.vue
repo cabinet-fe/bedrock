@@ -2,8 +2,9 @@
 import { computed, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { NavItem } from "@veltra/desktop";
-import { Logout } from "@veltra/icons/normal";
+import { AiChat, Logout } from "@veltra/icons/normal";
 
+import AiChatWorkspace from "@/components/ai-chat/ai-chat-workspace.vue";
 import AppBreadcrumb from "@/components/app-breadcrumb";
 import AppWorkspaceTabs from "@/components/app-workspace-tabs";
 import BrandLogo from "@/components/brand-logo";
@@ -12,11 +13,13 @@ import NotificationBell from "@/components/notification-bell";
 import ThemeSwitcher from "@/components/theme-switcher";
 import { resolveRouteTitle } from "@/composables/use-breadcrumb";
 import { menuGroupsToGroupNav } from "@/lib/menu-nav";
+import { useAiChatStore } from "@/stores/ai-chat";
 import { useAuthStore } from "@/stores/auth";
 import { useTabsStore } from "@/stores/tabs";
 
 const auth = useAuthStore();
 const tabsStore = useTabsStore();
+const aiChat = useAiChatStore();
 const router = useRouter();
 const route = useRoute();
 
@@ -76,7 +79,7 @@ function onNavClick(item: NavItem) {
   </main>
 
   <div v-else class="app-shell">
-    <aside class="app-sidebar">
+    <aside v-if="!aiChat.aiModeActive" class="app-sidebar">
       <div class="app-sidebar__brand">
         <BrandLogo />
       </div>
@@ -92,11 +95,28 @@ function onNavClick(item: NavItem) {
       <!-- Thin continuous rail: crumb + quiet utilities on one height; tabs as whisper ledge -->
       <header class="app-rail">
         <div class="app-rail__bar">
-          <AppBreadcrumb />
+          <AppBreadcrumb v-if="!aiChat.aiModeActive" />
+          <div v-else class="app-rail__ai-title">
+            <u-icon :size="16" class="ai-icon">
+              <AiChat />
+            </u-icon>
+            <span>全局 AI 对话模式</span>
+          </div>
           <div class="app-rail__utils" role="group" aria-label="操作区">
-            <MenuSearch />
+            <u-button
+              :type="aiChat.aiModeActive ? 'primary' : 'text'"
+              class="app-rail__ai-btn"
+              title="切换全局 AI 模式"
+              @click="aiChat.toggleAiMode()"
+            >
+              <u-icon :size="14">
+                <AiChat />
+              </u-icon>
+              {{ aiChat.aiModeActive ? "退出 AI 模式" : "AI 模式" }}
+            </u-button>
+            <MenuSearch v-if="!aiChat.aiModeActive" />
             <ThemeSwitcher />
-            <NotificationBell />
+            <NotificationBell v-if="!aiChat.aiModeActive" />
             <span class="app-rail__identity">
               <span class="app-rail__avatar" aria-hidden="true">{{ nameInitial }}</span>
               <span class="user-name">{{ displayName }}</span>
@@ -109,13 +129,14 @@ function onNavClick(item: NavItem) {
             </u-button>
           </div>
         </div>
-        <div class="app-rail__tabs">
+        <div v-if="!aiChat.aiModeActive" class="app-rail__tabs">
           <AppWorkspaceTabs />
         </div>
       </header>
 
-      <main class="app-main">
-        <router-view v-slot="{ Component, route: viewRoute }">
+      <main class="app-main" :class="{ 'is-ai-mode': aiChat.aiModeActive }">
+        <AiChatWorkspace v-if="aiChat.aiModeActive" @exit="aiChat.toggleAiMode(false)" />
+        <router-view v-else v-slot="{ Component, route: viewRoute }">
           <Transition name="fade" mode="out-in">
             <component :is="Component" :key="viewRoute.path" class="app-page" />
           </Transition>
@@ -291,6 +312,23 @@ function onNavClick(item: NavItem) {
   gap: 4px;
 }
 
+.app-rail__ai-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: fn.use-var(text-color, title);
+
+  .ai-icon {
+    color: fn.use-var(color, primary);
+  }
+}
+
+.app-rail__ai-btn {
+  gap: 4px;
+}
+
 .app-rail__tabs {
   min-width: 0;
   padding: 0 var(--rail-pad-x) 0;
@@ -301,6 +339,11 @@ function onNavClick(item: NavItem) {
      导致页面底部被 overflow:hidden 裁掉一截 */
   flex: 1;
   min-height: 0;
+
+  &.is-ai-mode {
+    display: flex;
+    overflow: hidden;
+  }
 }
 
 .app-page {

@@ -11,6 +11,8 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AiChatSidebar: typeof import('./src/components/ai-chat/ai-chat-sidebar.vue')['default']
+    AiChatWorkspace: typeof import('./src/components/ai-chat/ai-chat-workspace.vue')['default']
     AppBreadcrumb: typeof import('./src/components/app-breadcrumb/app-breadcrumb.vue')['default']
     AppWorkspaceTabs: typeof import('./src/components/app-workspace-tabs/app-workspace-tabs.vue')['default']
     BrandLogo: typeof import('./src/components/brand-logo/brand-logo.vue')['default']
@@ -66,6 +68,7 @@ declare module 'vue' {
     UNumberInput: typeof import('@veltra/desktop')['UNumberInput']
     UPaginator: typeof import('@veltra/desktop')['UPaginator']
     UPasswordInput: typeof import('@veltra/desktop')['UPasswordInput']
+    UPopConfirm: typeof import('@veltra/desktop')['UPopConfirm']
     UProgress: typeof import('@veltra/desktop')['UProgress']
     URadioGroup: typeof import('@veltra/desktop')['URadioGroup']
     UScroll: typeof import('@veltra/desktop')['UScroll']
