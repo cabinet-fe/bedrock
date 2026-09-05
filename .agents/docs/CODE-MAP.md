@@ -44,7 +44,7 @@ bedrock
 │           ├── cicd/           # 构建任务 / 脚本任务 / 运行 / 流水线
 │           ├── ops/            # 进程、开发环境
 │           ├── projects/       # 项目、需求、文档
-│           ├── ai/             # Agent / Skill / Run
+│           ├── ai/             # Agent / Skill / Run / 服务商与模型
 │           └── help/           # 帮助手册
 ├── .agents/                     # 工程底座：docs 文档（.agents/docs/）、scripts 脚本、cooking
 ├── .githooks/                   # git 钩子（pre-commit：API 契约先行检查，make install-hooks 安装）

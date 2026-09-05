@@ -869,3 +869,54 @@ export interface PersonalAccessToken {
   last_used_at?: string | null;
   created_at: string;
 }
+
+export interface ReasoningEffortOption {
+  value: string;
+  label: string;
+}
+
+export interface AiProvider {
+  id: number;
+  name: string;
+  api_url: string;
+  has_api_key: boolean;
+  enabled: boolean;
+  notes: string;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+  models?: AiModel[];
+}
+
+export interface AiProviderInput {
+  name: string;
+  api_url: string;
+  api_key?: string;
+  enabled?: boolean;
+  notes?: string;
+}
+
+export interface AiModel {
+  id: number;
+  provider_id: number;
+  name: string;
+  model_id: string;
+  enabled: boolean;
+  sort_order: number;
+  reasoning_efforts?: ReasoningEffortOption[];
+  default_params?: Record<string, unknown>;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+  provider?: AiProvider;
+}
+
+export interface AiModelInput {
+  name: string;
+  model_id: string;
+  enabled?: boolean;
+  sort_order?: number;
+  reasoning_efforts?: ReasoningEffortOption[];
+  default_params?: Record<string, unknown>;
+  notes?: string;
+}

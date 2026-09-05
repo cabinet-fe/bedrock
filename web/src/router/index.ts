@@ -352,6 +352,16 @@ const router = createRouter({
             keepAliveName: "AiSkillDetail",
           },
         },
+        {
+          path: "ai/providers",
+          name: "ai-providers",
+          component: () => import("@/views/ai/providers/pages/main.vue"),
+          meta: {
+            permission: "ai_providers:view",
+            title: "服务商",
+            keepAliveName: "AiProviders",
+          },
+        },
       ],
     },
   ],

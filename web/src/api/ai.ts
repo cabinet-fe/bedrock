@@ -3,6 +3,10 @@ import type {
   AgentRun,
   AgentTrigger,
   AiAgent,
+  AiModel,
+  AiModelInput,
+  AiProvider,
+  AiProviderInput,
   PageResult,
   SkillFileContent,
   SkillFileNode,
@@ -173,4 +177,68 @@ export async function renameSkillEntry(
     to_path: toPath,
   });
   return body;
+}
+
+export async function listProviders(query?: Query): Promise<PageResult<AiProvider>> {
+  const { body } = await http.get<PageResult<AiProvider>>("/ai/providers", {
+    query: compactQuery(query),
+  });
+  return body;
+}
+
+export async function getProvider(id: number): Promise<AiProvider> {
+  const { body } = await http.get<AiProvider>(`/ai/providers/${id}`);
+  return body;
+}
+
+export async function createProvider(
+  input: AiProviderInput | Record<string, unknown>,
+): Promise<AiProvider> {
+  const { body } = await http.post<AiProvider>("/ai/providers", input);
+  return body;
+}
+
+export async function updateProvider(
+  id: number,
+  input: AiProviderInput | Record<string, unknown>,
+): Promise<AiProvider> {
+  const { body } = await http.put<AiProvider>(`/ai/providers/${id}`, input);
+  return body;
+}
+
+export async function deleteProvider(id: number): Promise<void> {
+  await http.delete(`/ai/providers/${id}`);
+}
+
+export async function listModels(providerID: number, query?: Query): Promise<PageResult<AiModel>> {
+  const { body } = await http.get<PageResult<AiModel>>(`/ai/providers/${providerID}/models`, {
+    query: compactQuery(query),
+  });
+  return body;
+}
+
+export async function getModel(providerID: number, modelID: number): Promise<AiModel> {
+  const { body } = await http.get<AiModel>(`/ai/providers/${providerID}/models/${modelID}`);
+  return body;
+}
+
+export async function createModel(
+  providerID: number,
+  input: AiModelInput | Record<string, unknown>,
+): Promise<AiModel> {
+  const { body } = await http.post<AiModel>(`/ai/providers/${providerID}/models`, input);
+  return body;
+}
+
+export async function updateModel(
+  providerID: number,
+  modelID: number,
+  input: AiModelInput | Record<string, unknown>,
+): Promise<AiModel> {
+  const { body } = await http.put<AiModel>(`/ai/providers/${providerID}/models/${modelID}`, input);
+  return body;
+}
+
+export async function deleteModel(providerID: number, modelID: number): Promise<void> {
+  await http.delete(`/ai/providers/${providerID}/models/${modelID}`);
 }
