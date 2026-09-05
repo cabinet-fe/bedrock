@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import type { ScrollExposed } from "@veltra/desktop";
 import { Clear, Enter, Search } from "@veltra/icons/normal";
 
 import { highlightParts } from "./helper";
@@ -13,6 +14,7 @@ const router = useRouter();
 const route = useRoute();
 
 const inputRef = ref<HTMLInputElement | null>(null);
+const scrollRef = ref<ScrollExposed | null>(null);
 const listContainerRef = ref<HTMLElement | null>(null);
 
 const {
@@ -58,9 +60,16 @@ watch(open, (isOpen) => {
   if (isOpen) {
     resetSearch();
     void nextTick(() => {
+      scrollRef.value?.scrollTo({ y: 0 });
       inputRef.value?.focus();
     });
   }
+});
+
+watch(searchQuery, () => {
+  void nextTick(() => {
+    scrollRef.value?.scrollTo({ y: 0 });
+  });
 });
 </script>
 
@@ -105,59 +114,48 @@ watch(open, (isOpen) => {
           </header>
 
           <!-- Search Results List -->
-          <div ref="listContainerRef" class="docsearch-body">
-            <!-- Empty State -->
-            <div v-if="visibleItems.length === 0" class="docsearch-empty">
-              <div class="docsearch-empty__icon">
-                <u-icon :size="24">
-                  <Search />
-                </u-icon>
+          <u-scroll ref="scrollRef" class="docsearch-body">
+            <div ref="listContainerRef" class="docsearch-content">
+              <!-- Empty State -->
+              <div v-if="visibleItems.length === 0" class="docsearch-empty">
+                <div class="docsearch-empty__icon">
+                  <u-icon :size="24">
+                    <Search />
+                  </u-icon>
+                </div>
+                <div class="docsearch-empty__title">未找到与「{{ searchQuery }}」相关的菜单</div>
+                <div class="docsearch-empty__desc">
+                  请尝试搜索菜单名称、所属分类、路径或拼音简写
+                </div>
               </div>
-              <div class="docsearch-empty__title">未找到与「{{ searchQuery }}」相关的菜单</div>
-              <div class="docsearch-empty__desc">请尝试搜索菜单名称、所属分类、路径或拼音简写</div>
-            </div>
 
-            <!-- Grouped Results -->
-            <div v-else class="docsearch-groups">
-              <section v-for="group in groupedResults" :key="group.title" class="docsearch-group">
-                <header class="docsearch-group__title">{{ group.title }}</header>
-                <div class="docsearch-group__items">
-                  <div
-                    v-for="item in group.items"
-                    :key="item.id"
-                    class="docsearch-item"
-                    :class="{ 'is-active': activeItem?.id === item.id }"
-                    role="option"
-                    :aria-selected="activeItem?.id === item.id"
-                    @mouseenter="setActiveIndexByItem(item)"
-                    @click="handleSelect(item)"
-                  >
-                    <!-- Left Icon Box -->
-                    <div class="docsearch-item__icon">
-                      <u-icon :size="15">
-                        <component :is="item.icon" />
-                      </u-icon>
-                    </div>
-
-                    <!-- Middle Info -->
-                    <div class="docsearch-item__content">
-                      <div class="docsearch-item__title">
-                        <template
-                          v-for="(part, idx) in highlightParts(item.title, searchQuery)"
-                          :key="idx"
-                        >
-                          <mark v-if="part.highlight" class="docsearch-highlight">{{
-                            part.text
-                          }}</mark>
-                          <span v-else>{{ part.text }}</span>
-                        </template>
+              <!-- Grouped Results -->
+              <div v-else class="docsearch-groups">
+                <section v-for="group in groupedResults" :key="group.title" class="docsearch-group">
+                  <header class="docsearch-group__title">{{ group.title }}</header>
+                  <div class="docsearch-group__items">
+                    <div
+                      v-for="item in group.items"
+                      :key="item.id"
+                      class="docsearch-item"
+                      :class="{ 'is-active': activeItem?.id === item.id }"
+                      role="option"
+                      :aria-selected="activeItem?.id === item.id"
+                      @mouseenter="setActiveIndexByItem(item)"
+                      @click="handleSelect(item)"
+                    >
+                      <!-- Left Icon Box -->
+                      <div class="docsearch-item__icon">
+                        <u-icon :size="15">
+                          <component :is="item.icon" />
+                        </u-icon>
                       </div>
-                      <div class="docsearch-item__meta">
-                        <span class="docsearch-item__group">{{ item.groupTitle }}</span>
-                        <span class="docsearch-item__divider">/</span>
-                        <span class="docsearch-item__path">
+
+                      <!-- Middle Info -->
+                      <div class="docsearch-item__content">
+                        <div class="docsearch-item__title">
                           <template
-                            v-for="(part, idx) in highlightParts(item.path, searchQuery)"
+                            v-for="(part, idx) in highlightParts(item.title, searchQuery)"
                             :key="idx"
                           >
                             <mark v-if="part.highlight" class="docsearch-highlight">{{
@@ -165,22 +163,37 @@ watch(open, (isOpen) => {
                             }}</mark>
                             <span v-else>{{ part.text }}</span>
                           </template>
-                        </span>
+                        </div>
+                        <div class="docsearch-item__meta">
+                          <span class="docsearch-item__group">{{ item.groupTitle }}</span>
+                          <span class="docsearch-item__divider">·</span>
+                          <span class="docsearch-item__path">
+                            <template
+                              v-for="(part, idx) in highlightParts(item.path, searchQuery)"
+                              :key="idx"
+                            >
+                              <mark v-if="part.highlight" class="docsearch-highlight">{{
+                                part.text
+                              }}</mark>
+                              <span v-else>{{ part.text }}</span>
+                            </template>
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- Right Action Hint -->
+                      <div class="docsearch-item__action">
+                        <span class="docsearch-item__action-text">跳转</span>
+                        <u-icon :size="12">
+                          <Enter />
+                        </u-icon>
                       </div>
                     </div>
-
-                    <!-- Right Action Hint -->
-                    <div class="docsearch-item__action">
-                      <span class="docsearch-item__action-text">跳转</span>
-                      <u-icon :size="12">
-                        <Enter />
-                      </u-icon>
-                    </div>
                   </div>
-                </div>
-              </section>
+                </section>
+              </div>
             </div>
-          </div>
+          </u-scroll>
 
           <!-- Modal Footer with Shortcuts Legend -->
           <footer class="docsearch-footer">
@@ -229,7 +242,8 @@ watch(open, (isOpen) => {
   position: relative;
   width: 600px;
   max-width: 100%;
-  max-height: min(600px, 80vh);
+  height: 520px;
+  max-height: min(520px, 80vh);
   display: flex;
   flex-direction: column;
   background: fn.use-var(bg-color, top);
@@ -244,12 +258,15 @@ watch(open, (isOpen) => {
 
 /* ── DocSearch Header / Input ── */
 .docsearch-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  height: 52px;
-  padding: 0 16px;
+  height: 54px;
+  padding: 0 18px;
+  background: fn.use-var(bg-color, top);
   border-bottom: 1px solid color-mix(in srgb, fn.use-var(border, muted-color) 45%, transparent);
+  box-sizing: border-box;
 }
 
 .docsearch-header__icon {
@@ -265,7 +282,7 @@ watch(open, (isOpen) => {
   outline: none;
   background: transparent;
   color: fn.use-var(text-color, title);
-  font-size: 15px;
+  font-size: 14.5px;
   font-family: inherit;
   caret-color: fn.use-var(color, primary);
 
@@ -327,15 +344,17 @@ watch(open, (isOpen) => {
 .docsearch-body {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding: 8px 10px 12px;
+}
+
+.docsearch-content {
+  padding: 10px 14px 14px;
 }
 
 /* ── Groups & Items ── */
 .docsearch-groups {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .docsearch-group {
@@ -344,7 +363,7 @@ watch(open, (isOpen) => {
 }
 
 .docsearch-group__title {
-  padding: 6px 10px 4px;
+  padding: 4px 8px 4px;
   font-size: 11px;
   font-weight: 600;
   color: fn.use-var(text-color, second);
@@ -355,14 +374,14 @@ watch(open, (isOpen) => {
 .docsearch-group__items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .docsearch-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 48px;
+  min-height: 50px;
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid transparent;
@@ -390,6 +409,7 @@ watch(open, (isOpen) => {
     .docsearch-item__action {
       opacity: 1;
       transform: translateX(0);
+      pointer-events: auto;
     }
   }
 }
@@ -468,6 +488,7 @@ watch(open, (isOpen) => {
   font-size: 11.5px;
   font-weight: 500;
   opacity: 0;
+  pointer-events: none;
   transform: translateX(-4px);
   transition:
     opacity 0.12s ease,
@@ -513,15 +534,17 @@ watch(open, (isOpen) => {
 
 /* ── Modal Footer ── */
 .docsearch-footer {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 40px;
-  padding: 0 16px;
+  height: 44px;
+  padding: 0 18px;
   border-top: 1px solid color-mix(in srgb, fn.use-var(border, muted-color) 45%, transparent);
   background: color-mix(in srgb, fn.use-var(bg-color, middle) 60%, fn.use-var(bg-color, top));
   font-size: 11.5px;
   color: fn.use-var(text-color, second);
+  box-sizing: border-box;
 }
 
 .docsearch-footer__commands {
