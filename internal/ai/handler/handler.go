@@ -23,6 +23,7 @@ type Handler struct {
 	skills    *service.SkillService
 	perm      *rbacservice.PermissionService
 	providers *service.ProviderService
+	chat      *ChatHandler
 }
 
 func NewHandler(
@@ -30,8 +31,17 @@ func NewHandler(
 	skills *service.SkillService,
 	perm *rbacservice.PermissionService,
 	providers *service.ProviderService,
+	chat ...*ChatHandler,
 ) *Handler {
-	return &Handler{agents: agents, skills: skills, perm: perm, providers: providers}
+	h := &Handler{agents: agents, skills: skills, perm: perm, providers: providers}
+	if len(chat) > 0 {
+		h.chat = chat[0]
+	}
+	return h
+}
+
+func (h *Handler) SetChatHandler(chat *ChatHandler) {
+	h.chat = chat
 }
 
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
@@ -65,6 +75,17 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	ai.GET("/providers/:id/models/:mid", rbacmw.RequirePermission(h.perm, "ai_providers:view"), h.GetModel)
 	ai.PUT("/providers/:id/models/:mid", rbacmw.RequirePermission(h.perm, "ai_providers:update"), h.UpdateModel)
 	ai.DELETE("/providers/:id/models/:mid", rbacmw.RequirePermission(h.perm, "ai_providers:delete"), h.DeleteModel)
+
+	if h.chat != nil {
+		ai.GET("/chat/sessions", h.chat.ListSessions)
+		ai.POST("/chat/sessions", h.chat.CreateSession)
+		ai.PUT("/chat/sessions/:id", h.chat.UpdateSession)
+		ai.DELETE("/chat/sessions/:id", h.chat.DeleteSession)
+		ai.GET("/chat/sessions/:id/messages", h.chat.ListMessages)
+		ai.POST("/chat/sessions/:id/messages", h.chat.CreateMessage)
+		ai.GET("/chat/models", h.chat.ListAvailableModels)
+		ai.POST("/chat/completions", h.chat.ChatCompletions)
+	}
 
 	skills := rg.Group("/skills", authMW)
 	skills.GET("", rbacmw.RequirePermission(h.perm, "ai_skills:view"), h.ListSkills)

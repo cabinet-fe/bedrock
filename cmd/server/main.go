@@ -223,7 +223,11 @@ func main() {
 	projectSvc.SetDocsAIBridge(docsBridge)
 	providerRepo := airepo.NewProviderRepository(gdb)
 	providerSvc := aiservice.NewProviderService(providerRepo)
-	aiHandler := aihandler.NewHandler(agentSvc, skillSvc, permSvc, providerSvc)
+	chatRepo := airepo.NewChatRepository(gdb)
+	chatSvc := aiservice.NewChatService(chatRepo)
+	chatProxy := aiservice.NewChatProxy(providerSvc, chatSvc)
+	chatHandler := aihandler.NewChatHandler(chatSvc, chatProxy, providerSvc)
+	aiHandler := aihandler.NewHandler(agentSvc, skillSvc, permSvc, providerSvc, chatHandler)
 
 	pipeline := engine.NewPipeline(
 		runRepo, jobRepo, repoRepo, serverRepo,

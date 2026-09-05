@@ -307,7 +307,124 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 响应 200：`{ deleted: true }`
 错误：404
 
+## Chat & Sessions
+
+用户隔离的会话与历史消息持久化管理，以及 OpenAI 兼容流式对话代理端点。所有接口要求有效登录认证，全员可用（无需管理员权限），严格按当前登录用户过滤数据，禁止跨用户访问。
+
+### GET /ai/chat/sessions — 列出会话列表
+
+权限：已登录用户
+查询参数：page?: integer, page_size?: integer
+响应 200：`ChatSession[]`（分页包）
+说明：按 `updated_at` 倒序排列，仅返回当前登录用户的会话。
+
+### POST /ai/chat/sessions — 创建会话
+
+权限：已登录用户
+请求：`{ title*, model_id? }`
+响应 201：`ChatSession`
+错误：400
+说明：创建属于当前登录用户的新会话。
+
+### PUT /ai/chat/sessions/{id} — 更新会话
+
+权限：已登录用户
+路径参数：id*: integer
+请求：`{ title?, model_id? }`
+响应 200：`ChatSession`
+错误：400 / 404
+说明：仅允许会话创建者修改会话标题或绑定的当前模型；其他用户访问返回 404。
+
+### DELETE /ai/chat/sessions/{id} — 删除会话
+
+权限：已登录用户
+路径参数：id*: integer
+响应 200：`{ deleted: true }`
+错误：404
+说明：仅允许会话创建者删除；级联删除该会话下的所有历史消息。其他用户访问返回 404。
+
+### GET /ai/chat/sessions/{id}/messages — 获取会话历史消息
+
+权限：已登录用户
+路径参数：id*: integer
+响应 200：`ChatMessage[]`
+错误：404
+说明：仅允许会话创建者获取；按消息创建时间升序排列。其他用户访问返回 404。
+
+### POST /ai/chat/sessions/{id}/messages — 新增会话消息
+
+权限：已登录用户
+路径参数：id*: integer
+请求：`{ role*, content*, reasoning_content? }`
+响应 201：`ChatMessage`
+错误：400 / 404
+说明：仅允许会话创建者添加；更新会话的 `updated_at`。
+
+### GET /ai/chat/models — 获取可用对话模型列表
+
+权限：已登录用户
+响应 200：`AiModel[]`
+说明：返回所有已启用的服务商下处于启用状态的模型列表，按排序权重升序排列，供前端对话界面直接选用。
+
+### POST /ai/chat/completions — 流式对话代理
+
+权限：已登录用户
+完整路径：`POST /api/v1/ai/chat/completions`
+请求：`ChatCompletionRequest`
+响应 200：Server-Sent Events (`text/event-stream`)
+错误：400 / 404 / 502
+说明：OpenAI 兼容端点。根据请求的 `model` 匹配已启用的服务商与模型配置，解密服务商 API Key 注入 HTTP Authorization 请求头，透传 `reasoning_effort` 与默认模型参数，向上游 OpenAI 兼容端点发起流式请求并实时以 SSE 格式转发回前端。若请求携带 `session_id`，且该会话属于当前用户，服务端将在对话完成时持久化问答消息。
+
 ## 对象形状
+
+### ChatSession
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  | 会话 ID |
+| `user_id` | `integer` |  | 所属用户 ID |
+| `title` | `string` |  | 会话标题 |
+| `model_id` | `string` |  | 关联模型标识 |
+| `created_at` | `string` |  | 创建时间 |
+| `updated_at` | `string` |  | 更新时间 |
+
+### ChatSessionInput
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `title` | `string` | 是 | 会话标题 |
+| `model_id` | `string` |  | 关联模型标识 |
+
+### ChatMessage
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  | 消息 ID |
+| `session_id` | `integer` |  | 所属会话 ID |
+| `user_id` | `integer` |  | 所属用户 ID |
+| `role` | `string` |  | 角色（`user` \| `assistant` \| `system` 等） |
+| `content` | `string` |  | 文本正文 |
+| `reasoning_content` | `string` |  | 思考/推理内容（可空） |
+| `created_at` | `string` |  | 创建时间 |
+| `updated_at` | `string` |  | 更新时间 |
+
+### ChatMessageInput
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `role` | `string` | 是 | 角色（`user` \| `assistant`） |
+| `content` | `string` | 是 | 消息正文 |
+| `reasoning_content` | `string` |  | 思考/推理内容 |
+
+### ChatCompletionRequest
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `model` | `string` | 是 | 模型标识 |
+| `messages` | `object[]` | 是 | 消息上下文列表 |
+| `stream` | `boolean` |  | 是否流式返回（代理强制或推荐 true） |
+| `reasoning_effort` | `string` |  | 推理等级（`low` \| `medium` \| `high` 等） |
+| `session_id` | `integer` |  | 可选关联的持久化会话 ID |
 
 ### SkillPackage
 

@@ -300,6 +300,28 @@ func (s *ProviderService) ListModels(providerID *uint, enabled *bool) ([]model.A
 	return items, nil
 }
 
+// FindEnabledModelWithProvider retrieves the active model and its active provider.
+func (s *ProviderService) FindEnabledModelWithProvider(modelID string) (*model.AiModel, *model.AiProvider, error) {
+	m, p, err := s.repo.FindEnabledModelWithProvider(modelID)
+	if err != nil {
+		return nil, nil, err
+	}
+	projectModel(m)
+	return m, p, nil
+}
+
+// ListAvailableModels retrieves all enabled models whose providers are also enabled.
+func (s *ProviderService) ListAvailableModels() ([]model.AiModel, error) {
+	items, err := s.repo.ListEnabledModelsWithProviders()
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		projectModel(&items[i])
+	}
+	return items, nil
+}
+
 func maskProvider(p *model.AiProvider) {
 	if p == nil {
 		return

@@ -153,3 +153,40 @@ func (r *ProviderRepository) ListModels(providerID *uint, enabled *bool) ([]mode
 	err := q.Order("sort_order ASC, id ASC").Find(&items).Error
 	return items, err
 }
+
+// FindEnabledModelWithProvider finds the first enabled model matching modelID whose provider is also enabled.
+func (r *ProviderRepository) FindEnabledModelWithProvider(modelID string) (*model.AiModel, *model.AiProvider, error) {
+	var models []model.AiModel
+	if err := r.db.Where("model_id = ? AND enabled = ?", modelID, true).
+		Order("sort_order ASC, id ASC").
+		Find(&models).Error; err != nil {
+		return nil, nil, err
+	}
+	for i := range models {
+		var provider model.AiProvider
+		if err := r.db.Where("id = ? AND enabled = ?", models[i].ProviderID, true).First(&provider).Error; err == nil {
+			return &models[i], &provider, nil
+		}
+	}
+	return nil, nil, gorm.ErrRecordNotFound
+}
+
+// ListEnabledModelsWithProviders returns all enabled models whose providers are also enabled.
+func (r *ProviderRepository) ListEnabledModelsWithProviders() ([]model.AiModel, error) {
+	var providers []model.AiProvider
+	if err := r.db.Where("enabled = ?", true).Find(&providers).Error; err != nil {
+		return nil, err
+	}
+	if len(providers) == 0 {
+		return []model.AiModel{}, nil
+	}
+	providerIDs := make([]uint, len(providers))
+	for i, p := range providers {
+		providerIDs[i] = p.ID
+	}
+	var models []model.AiModel
+	err := r.db.Where("provider_id IN ? AND enabled = ?", providerIDs, true).
+		Order("sort_order ASC, id ASC").
+		Find(&models).Error
+	return models, err
+}
