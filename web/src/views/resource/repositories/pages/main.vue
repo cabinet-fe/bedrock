@@ -21,7 +21,7 @@ import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
 import { loadDictOptions, type DictOption } from "@/lib/dict";
-import { splitCommaTags, tagType, type TagType } from "@/lib/tag";
+import { repoTagType, splitCommaTags, tagType, type TagType } from "@/lib/tag";
 import { useRepositoryStore } from "@/stores/repositories";
 
 const AUTH_TYPE_TAG: Record<string, TagType> = {
@@ -226,7 +226,7 @@ async function onBatchSyncBranches() {
             v-for="tag in splitCommaTags((rowData as Repository).tags)"
             :key="tag"
             size="small"
-            type="info"
+            :type="repoTagType(tag)"
           >
             {{ tagLabel(tag) }}
           </u-tag>

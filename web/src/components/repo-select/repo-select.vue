@@ -4,7 +4,7 @@ defineOptions({ name: "RepoSelect", inheritAttrs: false });
 import { onMounted, ref } from "vue";
 
 import { loadDictOptions } from "@/lib/dict";
-import { splitCommaTags } from "@/lib/tag";
+import { repoTagType, splitCommaTags } from "@/lib/tag";
 import { useRepositoryStore } from "@/stores/repositories";
 
 const repoStore = useRepositoryStore();
@@ -43,7 +43,12 @@ onMounted(() => {
       <span class="repo-select__option">
         <span class="repo-select__name">{{ option?.name }}</span>
         <span class="repo-select__tags">
-          <u-tag v-for="tag in splitCommaTags(option?.tags)" :key="tag" size="small">
+          <u-tag
+            v-for="tag in splitCommaTags(option?.tags)"
+            :key="tag"
+            size="small"
+            :type="repoTagType(tag)"
+          >
             {{ typeLabel(tag) }}
           </u-tag>
         </span>

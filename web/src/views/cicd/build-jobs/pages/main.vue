@@ -41,6 +41,7 @@ import {
   TRIGGER_TYPE_TAG,
   buildStageLabel,
   jobStatusLabel,
+  repoTagType,
   splitCommaTags,
   tagType,
   triggerTypeLabel,
@@ -606,7 +607,7 @@ async function rotateWebhookSecret() {
             v-for="tag in splitCommaTags((rowData as BuildJob).tags)"
             :key="tag"
             size="small"
-            type="info"
+            :type="repoTagType(tag)"
           >
             {{ tagLabel(tag) }}
           </u-tag>

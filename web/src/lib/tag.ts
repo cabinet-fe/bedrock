@@ -119,3 +119,21 @@ export function splitCommaTags(raw?: string | null): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
 }
+
+/**
+ * 代码仓库、构建任务等类型标签（对应数据字典 repo_type）
+ * 前端采用 danger，后端采用 info，其它都是 primary
+ */
+export const REPO_TYPE_TAG: Record<string, TagType> = {
+  frontend: "danger",
+  前端: "danger",
+  backend: "info",
+  后端: "info",
+};
+
+export function repoTagType(tag: string | undefined | null): TagType {
+  const trimmed = tag?.trim();
+  if (!trimmed) return undefined;
+  const lower = trimmed.toLowerCase();
+  return REPO_TYPE_TAG[lower] ?? REPO_TYPE_TAG[trimmed] ?? "primary";
+}
