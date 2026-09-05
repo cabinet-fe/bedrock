@@ -84,7 +84,11 @@ func (p *ChatProxy) ProxyCompletions(c *gin.Context, userID uint, req model.Chat
 		upstream[k] = v
 	}
 	upstream["model"] = modelID
-	upstream["messages"] = req.Messages
+	if len(req.RawMessages) > 0 {
+		upstream["messages"] = req.RawMessages
+	} else {
+		upstream["messages"] = req.Messages
+	}
 	upstream["stream"] = true
 	if req.ReasoningEffort != "" {
 		upstream["reasoning_effort"] = req.ReasoningEffort
@@ -169,11 +173,9 @@ func (p *ChatProxy) ProxyCompletions(c *gin.Context, userID uint, req model.Chat
 	// If a valid session ID is specified, persist question and answer upon completion
 	if req.SessionID != nil && *req.SessionID > 0 {
 		var lastUserContent string
-		for i := len(req.Messages) - 1; i >= 0; i-- {
-			if req.Messages[i].Role == model.RoleUser {
-				lastUserContent = req.Messages[i].Content
-				break
-			}
+		// Only save user message if the current turn was triggered by a user message (not a tool callback)
+		if len(req.Messages) > 0 && req.Messages[len(req.Messages)-1].Role == model.RoleUser {
+			lastUserContent = req.Messages[len(req.Messages)-1].StringContent()
 		}
 		_ = p.chatSvc.SaveExchange(*req.SessionID, userID, lastUserContent, accumulatedContent.String(), accumulatedReasoning.String())
 	}

@@ -198,3 +198,185 @@ func TestChatProxy_CompletionsStreamAndAuthInjection(t *testing.T) {
 		t.Fatalf("expected reasoning content '推理：分析问候语', got '%s'", msgs[1].ReasoningContent)
 	}
 }
+
+func TestChatProxy_ToolCallsAndToolCallIDPreserved(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	if err := pkg.InitEncryption(strings.Repeat("ab", 32)); err != nil {
+		t.Fatal(err)
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "proxy_tool_test.sqlite")
+	gdb, err := db.Open(&config.DatabaseConfig{Driver: "sqlite", Path: dbPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := gdb.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	if err := migration.Up(context.Background(), gdb, migration.Driver("sqlite")); err != nil {
+		t.Fatalf("migration up: %v", err)
+	}
+
+	providerRepo := repository.NewProviderRepository(gdb)
+	providerSvc := service.NewProviderService(providerRepo)
+	chatRepo := repository.NewChatRepository(gdb)
+	chatSvc := service.NewChatService(chatRepo)
+	chatProxy := service.NewChatProxy(providerSvc, chatSvc)
+
+	var receivedBody []byte
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected flusher")
+		}
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"查询到了 1 个项目。\"}}]}\n\n"))
+		flusher.Flush()
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		flusher.Flush()
+	}))
+	defer upstreamServer.Close()
+
+	p, err := providerSvc.CreateProvider(1, model.ProviderInput{
+		Name:   "ToolProvider",
+		APIURL: upstreamServer.URL,
+		APIKey: "sk-tool-test",
+	})
+	if err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	_, err = providerSvc.CreateModel(p.ID, model.ModelInput{
+		Name:    "Qwen Tool",
+		ModelID: "qwen-tool",
+	})
+	if err != nil {
+		t.Fatalf("create model failed: %v", err)
+	}
+
+	userID := uint(101)
+	sess, err := chatSvc.CreateSession(userID, model.ChatSessionInput{
+		Title:   "新对话",
+		ModelID: "qwen-tool",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Incoming JSON payload simulating @veltra/ai sending tool execution result back
+	clientJSON := `{
+		"model": "qwen-tool",
+		"session_id": ` + fmt.Sprintf("%d", sess.ID) + `,
+		"messages": [
+			{"role": "user", "content": "帮我查看当前项目"},
+			{
+				"role": "assistant",
+				"content": "",
+				"tool_calls": [
+					{
+						"id": "call_6a9b47e24d26",
+						"type": "function",
+						"function": {
+							"name": "list_projects",
+							"arguments": "{}"
+						}
+					}
+				]
+			},
+			{
+				"role": "tool",
+				"tool_call_id": "call_6a9b47e24d26",
+				"content": "{\"projects\":[{\"id\":1,\"name\":\"bedrock\"}]}"
+			}
+		],
+		"tools": [
+			{
+				"type": "function",
+				"function": {
+					"name": "list_projects",
+					"description": "查询项目列表"
+				}
+			}
+		],
+		"stream": true
+	}`
+
+	var req model.ChatCompletionRequest
+	if err := json.Unmarshal([]byte(clientJSON), &req); err != nil {
+		t.Fatalf("unmarshal client json: %v", err)
+	}
+
+	if len(req.Messages) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(req.Messages))
+	}
+	if req.Messages[2].ToolCallID != "call_6a9b47e24d26" {
+		t.Fatalf("expected tool_call_id 'call_6a9b47e24d26', got '%s'", req.Messages[2].ToolCallID)
+	}
+	if len(req.RawMessages) != 3 {
+		t.Fatalf("expected 3 raw messages, got %d", len(req.RawMessages))
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	httpReq, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/ai/chat/completions", strings.NewReader(clientJSON))
+	c.Request = httpReq
+
+	if err := chatProxy.ProxyCompletions(c, userID, req); err != nil {
+		t.Fatalf("proxy completions failed: %v", err)
+	}
+
+	// Verify upstream payload received tool_call_id and tool_calls
+	var upstreamPayload map[string]any
+	if err := json.Unmarshal(receivedBody, &upstreamPayload); err != nil {
+		t.Fatalf("unmarshal received body: %v", err)
+	}
+
+	upstreamMsgs, ok := upstreamPayload["messages"].([]any)
+	if !ok || len(upstreamMsgs) != 3 {
+		t.Fatalf("expected 3 upstream messages, got %v", upstreamPayload["messages"])
+	}
+
+	// Message 1 (assistant) must preserve tool_calls
+	msg1, ok := upstreamMsgs[1].(map[string]any)
+	if !ok {
+		t.Fatalf("msg1 not map: %v", upstreamMsgs[1])
+	}
+	toolCalls, ok := msg1["tool_calls"].([]any)
+	if !ok || len(toolCalls) == 0 {
+		t.Fatalf("expected tool_calls in assistant message, got %v", msg1)
+	}
+
+	// Message 2 (tool) must preserve tool_call_id
+	msg2, ok := upstreamMsgs[2].(map[string]any)
+	if !ok {
+		t.Fatalf("msg2 not map: %v", upstreamMsgs[2])
+	}
+	if msg2["tool_call_id"] != "call_6a9b47e24d26" {
+		t.Fatalf("expected tool_call_id 'call_6a9b47e24d26' in tool message, got '%v'", msg2["tool_call_id"])
+	}
+
+	// Verify tools were forwarded
+	tools, ok := upstreamPayload["tools"].([]any)
+	if !ok || len(tools) == 0 {
+		t.Fatalf("expected tools forwarded, got %v", upstreamPayload["tools"])
+	}
+
+	// Verify that user message was not duplicated in DB during tool response turn
+	persistedMsgs, err := chatSvc.ListMessages(sess.ID, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range persistedMsgs {
+		if m.Role == model.RoleUser {
+			t.Fatalf("unexpected user message persisted on tool turn: %+v", m)
+		}
+	}
+}
+

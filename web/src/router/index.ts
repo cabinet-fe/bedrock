@@ -403,4 +403,8 @@ router.beforeEach(async (to, from) => {
   return true;
 });
 
+router.onError((error, to) => {
+  console.error(`[Router Navigation Error] Navigating to ${to?.fullPath || "unknown"}:`, error);
+});
+
 export default router;

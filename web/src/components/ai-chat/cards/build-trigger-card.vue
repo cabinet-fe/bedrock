@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { UButton, UIcon, UTag } from "@veltra/desktop";
-import { Check, CircleCheck, CircleClose, Loading, VideoPlay, Warning } from "@veltra/icons/normal";
+import { CircleCheck, CircleClose, Loading, VideoPlay } from "@veltra/icons/normal";
 import type { ChatToolCall } from "@veltra/ai";
 
 import { useAiChatStore } from "@/stores/ai-chat";
@@ -10,7 +10,6 @@ const props = defineProps<{
   toolCall: ChatToolCall;
 }>();
 
-const rootRef = ref<HTMLElement | null>(null);
 const chatStore = useAiChatStore();
 
 const isPipeline = computed(() => {
@@ -59,22 +58,6 @@ const runId = computed<number | null>(() => {
   return null;
 });
 
-function confirmAction() {
-  const toolCallEl = rootRef.value?.closest(".u-ai-chat__tool-call");
-  const confirmBtn = toolCallEl?.querySelector(
-    ".u-ai-chat__tool-call-confirm button:first-child",
-  ) as HTMLElement | null;
-  confirmBtn?.click();
-}
-
-function rejectAction() {
-  const toolCallEl = rootRef.value?.closest(".u-ai-chat__tool-call");
-  const rejectBtn = toolCallEl?.querySelector(
-    ".u-ai-chat__tool-call-confirm button:last-child",
-  ) as HTMLElement | null;
-  rejectBtn?.click();
-}
-
 function openPanel() {
   const id = runId.value;
   if (!id) return;
@@ -89,23 +72,10 @@ function openPanel() {
 </script>
 
 <template>
-  <div ref="rootRef" class="build-trigger-card">
-    <!-- 1. 待确认敏感/危险操作 (awaiting-confirm) -->
-    <div v-if="toolCall.status === 'awaiting-confirm'" class="build-confirm-box">
-      <div class="build-confirm-box__banner">
-        <u-icon :size="16" class="warning-icon">
-          <Warning />
-        </u-icon>
-        <span class="warning-title">
-          敏感操作确认 · 即将触发{{ isPipeline ? "流水线" : "构建任务" }}
-        </span>
-      </div>
-
-      <p class="build-confirm-box__desc">
-        该操作将在平台真实发起代码拉取与云端构建执行，可能消耗计算资源并产生制品变更。
-      </p>
-
-      <div class="build-confirm-box__meta">
+  <div class="build-trigger-card">
+    <!-- 1. 待确认敏感操作 (awaiting-confirm)：展示调用参数概览，确认/拒绝由 UAiChat 原生头部按钮响应 -->
+    <div v-if="toolCall.status === 'awaiting-confirm'" class="build-param-box">
+      <div class="build-param-box__meta">
         <div class="meta-row">
           <span class="meta-label">{{ isPipeline ? "流水线 ID" : "构建任务 ID" }}：</span>
           <span class="meta-value font-mono"
@@ -120,16 +90,6 @@ function openPanel() {
           <span class="meta-label">环境变量：</span>
           <span class="meta-value font-mono">{{ JSON.stringify(args.variables) }}</span>
         </div>
-      </div>
-
-      <div class="build-confirm-box__actions">
-        <u-button type="danger" size="small" @click="confirmAction">
-          <u-icon :size="13">
-            <Check />
-          </u-icon>
-          确认触发{{ isPipeline ? "流水线" : "构建" }}
-        </u-button>
-        <u-button text size="small" @click="rejectAction"> 取消 </u-button>
       </div>
     </div>
 
@@ -206,39 +166,14 @@ function openPanel() {
   width: 100%;
 }
 
-.build-confirm-box {
-  background: color-mix(in srgb, fn.use-var(color, danger) 6%, fn.use-var(bg-color, top));
-  border: 1px solid color-mix(in srgb, fn.use-var(color, danger) 30%, transparent);
-  border-radius: fn.use-var(radius, medium);
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.build-confirm-box__banner {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  color: fn.use-var(color, danger);
-
-  .warning-icon {
-    flex-shrink: 0;
-  }
-}
-
-.build-confirm-box__desc {
-  margin: 0;
-  font-size: 12px;
-  color: fn.use-var(text-color, second);
-  line-height: 1.5;
-}
-
-.build-confirm-box__meta {
+.build-param-box {
   background: color-mix(in srgb, fn.use-var(bg-color, bottom) 50%, transparent);
-  border-radius: fn.use-var(radius, small);
-  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, fn.use-var(border, muted-color) 40%, transparent);
+  border-radius: fn.use-var(radius, medium);
+  padding: 8px 12px;
+}
+
+.build-param-box__meta {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -258,13 +193,6 @@ function openPanel() {
     color: fn.use-var(text-color, title);
     font-weight: 500;
   }
-}
-
-.build-confirm-box__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
 }
 
 .build-status-box {

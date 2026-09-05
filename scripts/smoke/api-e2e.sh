@@ -49,7 +49,7 @@ REPO="$(curl -fsS -X POST "$BASE/api/v1/resource/repositories" "${AUTH[@]}" \
 REPO_ID="$(json_get "$REPO" "o['data']['id']")"
 
 JOB="$(curl -fsS -X POST "$BASE/api/v1/build-jobs" "${AUTH[@]}" \
-  -d "{\"repository_id\":$REPO_ID,\"name\":\"smoke-job\",\"branch\":\"main\",\"build_script\":\"echo smoke\",\"work_dir\":\".\",\"trigger_manual\":true}")"
+  -d "{\"repository_id\":$REPO_ID,\"name\":\"smoke-job\",\"branch\":\"main\",\"build_script\":\"echo smoke\",\"work_dir\":\"\",\"trigger_manual\":true}")"
 JOB_ID="$(json_get "$JOB" "o['data']['id']")"
 echo "repo=$REPO_ID job=$JOB_ID"
 
@@ -60,26 +60,19 @@ echo "trigger run HTTP $RUN_CODE: $(cat /tmp/smoke-run.json)"
 RUNS="$(curl -fsS "$BASE/api/v1/build-runs?page=1&page_size=5" -H "Authorization: Bearer $TOKEN")"
 json_get "$RUNS" "o['data'].get('total',0)" >/dev/null
 
-echo "==> projects / docs draft-publish surface"
+echo "==> projects / docs CRUD surface"
 PROJ="$(curl -fsS -X POST "$BASE/api/v1/projects" "${AUTH[@]}" \
   -d '{"name":"Smoke Project","slug":"smoke-project","description":"e2e"}')"
 PROJ_ID="$(json_get "$PROJ" "o['data']['id']")"
 NODE="$(curl -fsS -X POST "$BASE/api/v1/projects/$PROJ_ID/docs" "${AUTH[@]}" \
-  -d '{"name":"readme.md","kind":"doc","draft_content":"# Smoke\n"}')"
+  -d '{"name":"readme.md","kind":"doc","content":"# Smoke\n"}')"
 NODE_ID="$(json_get "$NODE" "o['data']['id']")"
-DIFF="$(curl -fsS "$BASE/api/v1/projects/$PROJ_ID/docs/$NODE_ID/diff" -H "Authorization: Bearer $TOKEN")"
-echo "diff ok: $(json_get "$DIFF" "bool(o.get('data') is not None)")"
-PUBLISH="$(curl -sS -o /tmp/smoke-pub.json -w '%{http_code}' -X POST \
-  "$BASE/api/v1/projects/$PROJ_ID/docs/$NODE_ID/publish" "${AUTH[@]}" \
-  -d '{"expected_version":0}')"
-[[ "$PUBLISH" == "200" ]] || { echo "publish failed $PUBLISH $(cat /tmp/smoke-pub.json)" >&2; exit 1; }
-# Create a new draft then publish with stale expected_version → 409
+NODE_GET="$(curl -fsS "$BASE/api/v1/projects/$PROJ_ID/docs/$NODE_ID" -H "Authorization: Bearer $TOKEN")"
+echo "doc get ok: $(json_get "$NODE_GET" "o['data']['name'] == 'readme.md'")"
 curl -fsS -X PUT "$BASE/api/v1/projects/$PROJ_ID/docs/$NODE_ID" "${AUTH[@]}" \
-  -d '{"draft_content":"# Smoke v2\n"}' >/dev/null
-CONFLICT="$(curl -sS -o /tmp/smoke-409.json -w '%{http_code}' -X POST \
-  "$BASE/api/v1/projects/$PROJ_ID/docs/$NODE_ID/publish" "${AUTH[@]}" \
-  -d '{"expected_version":0}')"
-[[ "$CONFLICT" == "409" ]] || { echo "expected 409 on stale publish, got $CONFLICT $(cat /tmp/smoke-409.json)" >&2; exit 1; }
+  -d '{"name":"readme.md","kind":"doc","content":"# Smoke v2\n"}' >/dev/null
+DOCS_TREE="$(curl -fsS "$BASE/api/v1/projects/$PROJ_ID/docs" -H "Authorization: Bearer $TOKEN")"
+echo "doc tree ok: $(json_get "$DOCS_TREE" "len(o['data']) > 0")"
 
 echo "==> AI / PAT surfaces"
 for path in /resource/clis /ai/agents /ai/runs /skills /resource/tokens; do

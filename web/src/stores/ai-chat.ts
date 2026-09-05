@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, shallowRef } from "vue";
+import { ref, shallowRef, watch } from "vue";
 
 import {
   createChatSession,
@@ -11,12 +11,55 @@ import {
 import type { AiModel, ChatSession } from "@/api/types";
 
 const AI_MODE_STORAGE_KEY = "bedrock_ai_mode_active";
+const AI_CACHED_MODEL_KEY = "bedrock_ai_cached_model_id";
+const AI_CACHED_REASONING_KEY = "bedrock_ai_cached_reasoning_level";
 
 function getInitialAiMode(): boolean {
   try {
     return localStorage.getItem(AI_MODE_STORAGE_KEY) === "true";
   } catch {
     return false;
+  }
+}
+
+function getCachedModelId(): string {
+  try {
+    return localStorage.getItem(AI_CACHED_MODEL_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function setCachedModelId(id: string): void {
+  try {
+    if (id) {
+      localStorage.setItem(AI_CACHED_MODEL_KEY, id);
+    } else {
+      localStorage.removeItem(AI_CACHED_MODEL_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function getCachedReasoningLevel(): string | undefined {
+  try {
+    const val = localStorage.getItem(AI_CACHED_REASONING_KEY);
+    return val || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function setCachedReasoningLevel(level: string | undefined): void {
+  try {
+    if (level) {
+      localStorage.setItem(AI_CACHED_REASONING_KEY, level);
+    } else {
+      localStorage.removeItem(AI_CACHED_REASONING_KEY);
+    }
+  } catch {
+    // ignore
   }
 }
 
@@ -34,8 +77,8 @@ export const useAiChatStore = defineStore("ai-chat", () => {
   const sessions = ref<ChatSession[]>([]);
   const currentSessionId = ref<number | null>(null);
   const availableModels = shallowRef<AiModel[]>([]);
-  const currentModelId = ref<string>("");
-  const currentReasoningLevel = ref<string | undefined>(undefined);
+  const currentModelId = ref<string>(getCachedModelId());
+  const currentReasoningLevel = ref<string | undefined>(getCachedReasoningLevel());
   const loadingSessions = ref(false);
   const loadingModels = ref(false);
 
@@ -51,15 +94,29 @@ export const useAiChatStore = defineStore("ai-chat", () => {
     const target = availableModels.value.find((m) => m.model_id === modelId);
     if (!target || !target.reasoning_efforts || target.reasoning_efforts.length === 0) {
       currentReasoningLevel.value = undefined;
+      setCachedReasoningLevel(undefined);
       return;
     }
-    const currentValid = target.reasoning_efforts.some(
-      (r) => r.value === currentReasoningLevel.value,
-    );
-    if (!currentValid) {
+    const cached = getCachedReasoningLevel();
+    const currentValid = cached && target.reasoning_efforts.some((r) => r.value === cached);
+    if (currentValid) {
+      currentReasoningLevel.value = cached;
+    } else {
       currentReasoningLevel.value = target.reasoning_efforts[0]?.value;
+      setCachedReasoningLevel(currentReasoningLevel.value);
     }
   }
+
+  watch(currentModelId, (val) => {
+    if (val) {
+      setCachedModelId(val);
+      syncReasoningForModel(val);
+    }
+  });
+
+  watch(currentReasoningLevel, (val) => {
+    setCachedReasoningLevel(val);
+  });
 
   async function fetchAvailableModels(): Promise<AiModel[]> {
     loadingModels.value = true;
@@ -67,14 +124,21 @@ export const useAiChatStore = defineStore("ai-chat", () => {
       const list = await listAvailableModels();
       availableModels.value = list;
       if (list.length > 0) {
-        const hasCurrent = list.some((m) => m.model_id === currentModelId.value);
-        if (!hasCurrent) {
+        const cachedModel = getCachedModelId();
+        const hasCached = cachedModel && list.some((m) => m.model_id === cachedModel);
+        if (hasCached) {
+          currentModelId.value = cachedModel;
+        } else {
+          // 如果未设置或由于更改服务商导致模型 ID 失效，回退到默认模型（首个可用模型）
           currentModelId.value = list[0]!.model_id;
+          setCachedModelId(currentModelId.value);
         }
         syncReasoningForModel(currentModelId.value);
       } else {
         currentModelId.value = "";
         currentReasoningLevel.value = undefined;
+        setCachedModelId("");
+        setCachedReasoningLevel(undefined);
       }
       return list;
     } finally {
@@ -127,27 +191,12 @@ export const useAiChatStore = defineStore("ai-chat", () => {
     });
     sessions.value.unshift(session);
     currentSessionId.value = session.id;
-    if (session.model_id) {
-      const exists = availableModels.value.some((m) => m.model_id === session.model_id);
-      if (exists) {
-        currentModelId.value = session.model_id;
-        syncReasoningForModel(session.model_id);
-      }
-    }
     return session;
   }
 
   function selectSession(id: number): void {
     currentSessionId.value = id;
     closeRightPanel();
-    const session = sessions.value.find((s) => s.id === id);
-    if (session?.model_id) {
-      const exists = availableModels.value.some((m) => m.model_id === session.model_id);
-      if (exists) {
-        currentModelId.value = session.model_id;
-        syncReasoningForModel(session.model_id);
-      }
-    }
   }
 
   async function renameSession(id: number, title: string): Promise<void> {

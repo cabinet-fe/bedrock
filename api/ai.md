@@ -421,10 +421,21 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `model` | `string` | 是 | 模型标识 |
-| `messages` | `object[]` | 是 | 消息上下文列表 |
+| `messages` | `ChatCompletionMessage[]` | 是 | 消息上下文列表 |
 | `stream` | `boolean` |  | 是否流式返回（代理强制或推荐 true） |
 | `reasoning_effort` | `string` |  | 推理等级（`low` \| `medium` \| `high` 等） |
 | `session_id` | `integer` |  | 可选关联的持久化会话 ID |
+
+### ChatCompletionMessage
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `role` | `string` | 是 | 角色（`user` \| `assistant` \| `system` \| `tool`） |
+| `content` | `string \| object[]` |  | 消息正文（支持纯文本或结构化多模态/内容块） |
+| `name` | `string` |  | 可选发送者名称 |
+| `tool_call_id` | `string` |  | tool 角色消息关联的函数调用 ID |
+| `tool_calls` | `object[]` |  | assistant 角色返回的工具调用列表 |
+| `reasoning_content` | `string` |  | 思考/推理内容（可空） |
 
 ### SkillPackage
 
