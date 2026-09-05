@@ -70,7 +70,7 @@ bedrock
 | deployer | `internal/deployer` | 部署传输（SSH / rsync / SFTP / local / agent） | deployer 包 |
 | ops | `internal/ops` | 进程管理、开发环境 | ops handler |
 | project | `internal/project` | 项目、需求、文档 | `project/handler.RegisterRoutes` |
-| ai | `internal/ai` | AI Agent / Skill / Run | `ai/handler.RegisterRoutes` |
+| ai | `internal/ai` | AI Agent / Skill / Run / 服务商与模型 / 对话 | `ai/handler.RegisterRoutes` |
 | dsh | `internal/dsh` | DSH 交互会话：进程内 JSON-RPC / SSE 客户端 | `dsh/service` |
 | dashboard | `internal/dashboard` | 仪表盘聚合数据 | `dashboard/handler.RegisterRoutes` |
 | storage | `internal/storage` | 制品与文件存储 | storage 包 |

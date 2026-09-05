@@ -221,7 +221,9 @@ func main() {
 	agentSvc.SetTerminalNotifier(notifSvc)
 	docsBridge := aiservice.NewDocsBridge(agentSvc)
 	projectSvc.SetDocsAIBridge(docsBridge)
-	aiHandler := aihandler.NewHandler(agentSvc, skillSvc, permSvc)
+	providerRepo := airepo.NewProviderRepository(gdb)
+	providerSvc := aiservice.NewProviderService(providerRepo)
+	aiHandler := aihandler.NewHandler(agentSvc, skillSvc, permSvc, providerSvc)
 
 	pipeline := engine.NewPipeline(
 		runRepo, jobRepo, repoRepo, serverRepo,

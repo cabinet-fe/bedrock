@@ -19,17 +19,19 @@ import (
 )
 
 type Handler struct {
-	agents *service.AgentService
-	skills *service.SkillService
-	perm   *rbacservice.PermissionService
+	agents    *service.AgentService
+	skills    *service.SkillService
+	perm      *rbacservice.PermissionService
+	providers *service.ProviderService
 }
 
 func NewHandler(
 	agents *service.AgentService,
 	skills *service.SkillService,
 	perm *rbacservice.PermissionService,
+	providers *service.ProviderService,
 ) *Handler {
-	return &Handler{agents: agents, skills: skills, perm: perm}
+	return &Handler{agents: agents, skills: skills, perm: perm, providers: providers}
 }
 
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
@@ -51,6 +53,18 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	ai.GET("/runs/:id", rbacmw.RequirePermission(h.perm, "ai_runs:view"), h.GetRun)
 	ai.GET("/runs/:id/artifact", rbacmw.RequirePermission(h.perm, "ai_runs:view"), h.DownloadRunArtifact)
 	ai.POST("/runs/:id/cancel", rbacmw.RequirePermission(h.perm, "ai_agents:execute"), h.CancelRun)
+
+	ai.GET("/providers", rbacmw.RequirePermission(h.perm, "ai_providers:view"), h.ListProviders)
+	ai.POST("/providers", rbacmw.RequirePermission(h.perm, "ai_providers:create"), h.CreateProvider)
+	ai.GET("/providers/:id", rbacmw.RequirePermission(h.perm, "ai_providers:view"), h.GetProvider)
+	ai.PUT("/providers/:id", rbacmw.RequirePermission(h.perm, "ai_providers:update"), h.UpdateProvider)
+	ai.DELETE("/providers/:id", rbacmw.RequirePermission(h.perm, "ai_providers:delete"), h.DeleteProvider)
+
+	ai.GET("/providers/:id/models", rbacmw.RequirePermission(h.perm, "ai_providers:view"), h.ListModels)
+	ai.POST("/providers/:id/models", rbacmw.RequirePermission(h.perm, "ai_providers:create"), h.CreateModel)
+	ai.GET("/providers/:id/models/:mid", rbacmw.RequirePermission(h.perm, "ai_providers:view"), h.GetModel)
+	ai.PUT("/providers/:id/models/:mid", rbacmw.RequirePermission(h.perm, "ai_providers:update"), h.UpdateModel)
+	ai.DELETE("/providers/:id/models/:mid", rbacmw.RequirePermission(h.perm, "ai_providers:delete"), h.DeleteModel)
 
 	skills := rg.Group("/skills", authMW)
 	skills.GET("", rbacmw.RequirePermission(h.perm, "ai_skills:view"), h.ListSkills)

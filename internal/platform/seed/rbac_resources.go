@@ -116,6 +116,7 @@ func EnsureRBACResources(db *gorm.DB) error {
 				{Code: "ai_agents", Title: "智能体", Route: "/ai/agents", SortKey: 10, Actions: append(append([]string{}, standardCRUD...), "execute")},
 				{Code: "ai_runs", Title: "运行记录", Route: "/ai/runs", SortKey: 20, Actions: []string{"view"}},
 				{Code: "ai_skills", Title: "技能", Route: "/ai/skills", SortKey: 30, Actions: append(append([]string{}, standardCRUD...), "download")},
+				{Code: "ai_providers", Title: "服务商", Route: "/ai/providers", SortKey: 40, Actions: standardCRUD},
 			},
 		},
 		{

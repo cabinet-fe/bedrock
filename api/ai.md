@@ -223,6 +223,90 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 错误：403 / 404 / 409
 说明：不可将 `SKILL.md` 改名为其他名称；目标路径已存在返回 409。
 
+## Providers
+
+服务商与模型管理。服务商 API Key 经 AES-GCM 安全加密落库，查询接口与页面不回传明文，仅回显 `has_api_key`；模型关联指定服务商。
+
+### GET /ai/providers — 列出服务商
+
+权限：`ai_providers:view`
+查询参数：page: integer, page_size: integer
+响应 200
+说明：不回显明文 API Key，仅回显 `has_api_key`。
+
+### POST /ai/providers — 创建服务商
+
+权限：`ai_providers:create`
+请求：{ name*, api_url*, api_key?, enabled?, notes? }
+响应 201
+错误：400
+说明：`api_key` 使用 AES-GCM 安全加密存储；响应仅回显 `has_api_key`。
+
+### GET /ai/providers/{id} — 获取服务商
+
+权限：`ai_providers:view`
+路径参数：id*: integer
+响应 200
+错误：404
+说明：不回显明文 API Key，仅回显 `has_api_key`。
+
+### PUT /ai/providers/{id} — 更新服务商
+
+权限：`ai_providers:update`
+路径参数：id*: integer
+请求：{ name?, api_url?, api_key?, enabled?, notes? }
+响应 200
+错误：400 / 404
+说明：`api_key` 留空表示保留既有密钥密文，传入非空新密钥时重新加密存储。
+
+### DELETE /ai/providers/{id} — 删除服务商
+
+权限：`ai_providers:delete`
+路径参数：id*: integer
+响应 200：`{ deleted: true }`
+错误：404
+说明：级联删除该服务商下所有模型。
+
+### GET /ai/providers/{id}/models — 列出服务商模型
+
+权限：`ai_providers:view`
+路径参数：id*: integer
+查询参数：page: integer, page_size: integer
+响应 200
+说明：按 `sort_order` 升序、`id` 升序排列。
+
+### POST /ai/providers/{id}/models — 创建模型
+
+权限：`ai_providers:create`
+路径参数：id*: integer
+请求：{ name*, model_id*, enabled?, sort_order?, reasoning_efforts?, default_params?, notes? }
+响应 201
+错误：400 / 404
+说明：校验关联服务商存在性、`model_id` 重复性，以及 `default_params` 为合法 JSON 对象格式。
+
+### GET /ai/providers/{id}/models/{mid} — 获取模型详情
+
+权限：`ai_providers:view`
+路径参数：id*: integer, mid*: integer
+响应 200
+错误：404
+
+### PUT /ai/providers/{id}/models/{mid} — 更新模型
+
+权限：`ai_providers:update`
+路径参数：id*: integer, mid*: integer
+请求：{ name?, model_id?, enabled?, sort_order?, reasoning_efforts?, default_params?, notes? }
+响应 200
+错误：400 / 404
+说明：校验 `model_id` 重复性与 `default_params` 为合法 JSON 对象格式。
+
+### DELETE /ai/providers/{id}/models/{mid} — 删除模型
+
+权限：`ai_providers:delete`
+路径参数：id*: integer, mid*: integer
+响应 200：`{ deleted: true }`
+错误：404
+
 ## 对象形状
 
 ### SkillPackage
@@ -331,5 +415,57 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 | `started_at` | `string` |  | 开始时间；未开始时为空 |
 | `finished_at` | `string` |  | 结束时间；未结束时为空 |
 | `created_at` | `string` |  |  |
+
+### AiProvider
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `name` | `string` |  | 服务商名称 |
+| `api_url` | `string` |  | OpenAI 兼容 API 地址 |
+| `has_api_key` | `boolean` |  | 是否已配置 API Key（不回显明文） |
+| `enabled` | `boolean` |  | 启用状态 |
+| `notes` | `string` |  | 备注说明 |
+| `created_by` | `integer` |  | 创建者用户 ID |
+| `created_at` | `string` |  | 创建时间 |
+| `updated_at` | `string` |  | 更新时间 |
+
+### AiProviderInput
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `name` | `string` | 是 | 服务商名称 |
+| `api_url` | `string` | 是 | OpenAI 兼容 API 地址 |
+| `api_key` | `string` |  | API Key；新建时提供则加密，更新时留空保留旧密文 |
+| `enabled` | `boolean` |  | 是否启用，默认 true |
+| `notes` | `string` |  | 备注说明 |
+
+### AiModel
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `provider_id` | `integer` |  | 关联服务商 ID |
+| `name` | `string` |  | 显示名称 |
+| `model_id` | `string` |  | 模型标识（如 gpt-4o） |
+| `enabled` | `boolean` |  | 启用状态 |
+| `sort_order` | `integer` |  | 排序权重（升序） |
+| `reasoning_efforts` | `{ value: string, label: string }[]` |  | 推理等级档位选项列表 |
+| `default_params` | `object` |  | 默认模型参数配置（如温度等 JSON 对象） |
+| `notes` | `string` |  | 备注说明 |
+| `created_at` | `string` |  | 创建时间 |
+| `updated_at` | `string` |  | 更新时间 |
+
+### AiModelInput
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `name` | `string` | 是 | 显示名称 |
+| `model_id` | `string` | 是 | 模型标识 |
+| `enabled` | `boolean` |  | 是否启用，默认 true |
+| `sort_order` | `integer` |  | 排序权重，默认 0 |
+| `reasoning_efforts` | `{ value: string, label: string }[]` |  | 推理等级档位选项列表 |
+| `default_params` | `object` |  | 默认参数配置（必须为合法 JSON 对象） |
+| `notes` | `string` |  | 备注说明 |
 
 CLI 相关对象形状（CliDetectResult、CliCheckUpdateResult、CliExecuteResult、CliInstallSourceInput、CliRuntimeDefinition）见 [resource.md](resource.md)。
