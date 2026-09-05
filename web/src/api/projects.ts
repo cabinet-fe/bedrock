@@ -15,6 +15,25 @@ import type {
   UserOption,
 } from "./types";
 
+export type ListQuery = Record<string, string | number | boolean | undefined | null>;
+
+function toQuery(params?: ListQuery): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+  if (!params) return out;
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+export async function listProjects(params?: ListQuery): Promise<PageResult<ProductProject>> {
+  const { body } = await http.get<PageResult<ProductProject>>("/projects", {
+    query: toQuery(params),
+  });
+  return body;
+}
+
 export async function getProject(id: number): Promise<ProductProject> {
   const { body } = await http.get<ProductProject>(`/projects/${id}`);
   return body;

@@ -9,6 +9,7 @@ import { getAccessToken } from "@/api/http";
 import type { ChatSession } from "@/api/types";
 import { useAiChatStore } from "@/stores/ai-chat";
 import AiChatSidebar from "./ai-chat-sidebar.vue";
+import { aiChatTools } from "./tools";
 
 const emit = defineEmits<{
   (e: "exit"): void;
@@ -161,6 +162,7 @@ onMounted(async () => {
           v-model:messages="currentMessages"
           v-model:model="chatStore.currentModelId"
           v-model:reasoning-level="chatStore.currentReasoningLevel"
+          :tools="aiChatTools"
           class="ai-chat-workspace__chat"
           :transport="transport"
           :models="transport.models"
