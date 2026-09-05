@@ -1,19 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { UButton, UIcon, UInput, URadio, URadioGroup } from "@veltra/desktop";
-import { Books, External, Folder, FolderOpened, Refresh, Search } from "@veltra/icons/normal";
+import { Books, Folder, FolderOpened, Link, Refresh, Search } from "@veltra/icons/normal";
 import type { ChatToolCall } from "@veltra/ai";
 
 import { getDevDocNode, getDocNode, listDevDocTree, listDocTree } from "@/api/projects";
 import type { ProjectDocNode } from "@/api/types";
 import { MarkdownScrollPane } from "@/components/markdown-viewer";
 
-const props = defineProps<{
-  toolCall: ChatToolCall;
-}>();
+const props = withDefaults(
+  defineProps<{
+    toolCall?: ChatToolCall;
+    nodeId?: number;
+    projectId?: number;
+    docType?: "api" | "dev";
+  }>(),
+  {},
+);
 
 const parsedArguments = computed<Record<string, any>>(() => {
-  if (!props.toolCall.arguments) return {};
+  if (!props.toolCall?.arguments) return {};
   try {
     return JSON.parse(props.toolCall.arguments);
   } catch {
@@ -22,7 +28,7 @@ const parsedArguments = computed<Record<string, any>>(() => {
 });
 
 const parsedResult = computed<Record<string, any>>(() => {
-  if (!props.toolCall.result) return {};
+  if (!props.toolCall?.result) return {};
   try {
     return JSON.parse(props.toolCall.result);
   } catch {
@@ -31,6 +37,7 @@ const parsedResult = computed<Record<string, any>>(() => {
 });
 
 const projectId = computed<number>(() => {
+  if (props.projectId) return Number(props.projectId);
   const p = parsedResult.value.project_id ?? parsedArguments.value.project_id;
   return Number(p) || 0;
 });
@@ -142,7 +149,8 @@ async function loadTree() {
       if (item.kind === "dir") expandedDirIds.value.add(item.id);
     }
 
-    const targetNodeId = parsedResult.value.node_id ?? parsedArguments.value.node_id;
+    const targetNodeId =
+      props.nodeId ?? parsedResult.value.node_id ?? parsedArguments.value.node_id;
     if (targetNodeId) {
       const found = findNode(tree.value, Number(targetNodeId));
       if (found) {
@@ -165,7 +173,7 @@ async function loadTree() {
 }
 
 watch(
-  () => parsedArguments.value.doc_type ?? parsedResult.value.doc_type,
+  () => props.docType ?? parsedArguments.value.doc_type ?? parsedResult.value.doc_type,
   (val) => {
     if (val === "dev" || val === "api") {
       docKind.value = val;
@@ -211,7 +219,7 @@ function openExternalDocs() {
         </u-button>
         <u-button size="small" plain type="primary" @click="openExternalDocs">
           <u-icon :size="13">
-            <External />
+            <Link />
           </u-icon>
           管理文档
         </u-button>

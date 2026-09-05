@@ -96,23 +96,66 @@ function onNavClick(item: NavItem) {
       <header class="app-rail">
         <div class="app-rail__bar">
           <AppBreadcrumb v-if="!aiChat.aiModeActive" />
-          <div v-else class="app-rail__ai-title">
-            <u-icon :size="16" class="ai-icon">
-              <AiChat />
-            </u-icon>
-            <span>全局 AI 对话模式</span>
+          <div v-else class="app-rail__brand-title">
+            <svg
+              class="brand-logo__mark"
+              viewBox="0 0 40 40"
+              width="24"
+              height="24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path
+                d="M6 28 L20 34 L34 28 L34 22 L20 28 L6 22 Z"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+                class="brand-logo__verdigris"
+              />
+              <path
+                d="M6 20 L20 26 L34 20 L34 14 L20 20 L6 14 Z"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+                class="brand-logo__verdigris"
+              />
+              <path
+                d="M6 12 L20 18 L34 12 L28 8 L20 11 L12 8 Z"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+                class="brand-logo__verdigris"
+              />
+              <path
+                d="M12 8 L20 11 L28 8"
+                stroke="currentColor"
+                stroke-width="1.2"
+                stroke-linecap="round"
+                class="brand-logo__brass"
+              />
+              <path
+                d="M20 11 V34"
+                stroke="currentColor"
+                stroke-width="1"
+                stroke-linecap="round"
+                opacity="0.55"
+                class="brand-logo__brass"
+              />
+            </svg>
+            <span class="brand-title__text">磐石开发平台</span>
           </div>
           <div class="app-rail__utils" role="group" aria-label="操作区">
             <u-button
               :type="aiChat.aiModeActive ? 'primary' : 'text'"
               class="app-rail__ai-btn"
-              title="切换全局 AI 模式"
+              :title="aiChat.aiModeActive ? '切换到经典模式' : '切换到全局 AI 模式'"
               @click="aiChat.toggleAiMode()"
             >
               <u-icon :size="14">
                 <AiChat />
               </u-icon>
-              {{ aiChat.aiModeActive ? "退出 AI 模式" : "AI 模式" }}
+              {{ aiChat.aiModeActive ? "经典模式" : "AI 模式" }}
             </u-button>
             <MenuSearch v-if="!aiChat.aiModeActive" />
             <ThemeSwitcher />
@@ -135,7 +178,7 @@ function onNavClick(item: NavItem) {
       </header>
 
       <main class="app-main" :class="{ 'is-ai-mode': aiChat.aiModeActive }">
-        <AiChatWorkspace v-if="aiChat.aiModeActive" @exit="aiChat.toggleAiMode(false)" />
+        <AiChatWorkspace v-if="aiChat.aiModeActive" />
         <router-view v-else v-slot="{ Component, route: viewRoute }">
           <Transition name="fade" mode="out-in">
             <component :is="Component" :key="viewRoute.path" class="app-page" />
@@ -312,16 +355,25 @@ function onNavClick(item: NavItem) {
   gap: 4px;
 }
 
-.app-rail__ai-title {
+.app-rail__brand-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
+  letter-spacing: 0.04em;
   color: fn.use-var(text-color, title);
 
-  .ai-icon {
+  .brand-logo__mark {
+    flex-shrink: 0;
+  }
+
+  .brand-logo__verdigris {
     color: fn.use-var(color, primary);
+  }
+
+  .brand-logo__brass {
+    color: #b08a4a;
   }
 }
 

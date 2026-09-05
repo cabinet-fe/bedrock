@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { UButton, UIcon, UTag } from "@veltra/desktop";
-import { External, Refresh, VideoPlay } from "@veltra/icons/normal";
+import { Link, Refresh, VideoPlay } from "@veltra/icons/normal";
 import type { ChatToolCall } from "@veltra/ai";
 
 import { getBuildRun, getPipelineRun } from "@/api/cicd";
@@ -10,9 +10,14 @@ import BuildLogViewer, { resolveBuildLogStatus } from "@/components/build-log-vi
 import { formatDateTime, formatDurationBetween } from "@/lib/datetime";
 import { JOB_STATUS_TAG, jobStatusLabel, tagType } from "@/lib/tag";
 
-const props = defineProps<{
-  toolCall: ChatToolCall;
-}>();
+const props = withDefaults(
+  defineProps<{
+    toolCall?: ChatToolCall;
+    runId?: number;
+    runType?: "build" | "pipeline";
+  }>(),
+  {},
+);
 
 const buildRun = ref<BuildRun | null>(null);
 const pipelineRun = ref<PipelineRun | null>(null);
@@ -21,7 +26,7 @@ const error = ref("");
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const parsedArguments = computed<Record<string, any>>(() => {
-  if (!props.toolCall.arguments) return {};
+  if (!props.toolCall?.arguments) return {};
   try {
     return JSON.parse(props.toolCall.arguments);
   } catch {
@@ -30,7 +35,7 @@ const parsedArguments = computed<Record<string, any>>(() => {
 });
 
 const parsedResult = computed<Record<string, any>>(() => {
-  if (!props.toolCall.result) return {};
+  if (!props.toolCall?.result) return {};
   try {
     return JSON.parse(props.toolCall.result);
   } catch {
@@ -39,21 +44,25 @@ const parsedResult = computed<Record<string, any>>(() => {
 });
 
 const runType = computed<"build" | "pipeline">(() => {
+  if (props.runType) return props.runType;
   if (parsedResult.value.run_type === "pipeline") return "pipeline";
   if (parsedArguments.value.type === "pipeline") return "pipeline";
-  if (props.toolCall.name === "trigger_pipeline") return "pipeline";
+  if (props.toolCall?.name === "trigger_pipeline") return "pipeline";
   if (parsedArguments.value.pipeline_id) return "pipeline";
   return "build";
 });
 
 const runId = computed<number | null>(() => {
+  if (props.runId && Number(props.runId) > 0) {
+    return Number(props.runId);
+  }
   if (parsedResult.value.run_id && Number(parsedResult.value.run_id) > 0) {
     return Number(parsedResult.value.run_id);
   }
   if (parsedArguments.value.run_id && Number(parsedArguments.value.run_id) > 0) {
     return Number(parsedArguments.value.run_id);
   }
-  if (typeof props.toolCall.result === "string") {
+  if (typeof props.toolCall?.result === "string") {
     const match = props.toolCall.result.match(/(?:run_id|运行 ID|运行|#)\s*[:：#]?\s*(\d+)/i);
     if (match && match[1]) {
       return Number(match[1]);
@@ -163,7 +172,7 @@ function openDetail() {
   <div class="build-detail-panel">
     <!-- 待用户确认态 -->
     <div
-      v-if="toolCall.status === 'awaiting-confirm'"
+      v-if="toolCall?.status === 'awaiting-confirm'"
       class="build-detail-panel__notice is-warning"
     >
       <div class="build-detail-panel__notice-title">⚠️ 等待确认</div>
@@ -173,14 +182,14 @@ function openDetail() {
     </div>
 
     <!-- 被用户拒绝态 -->
-    <div v-else-if="toolCall.status === 'rejected'" class="build-detail-panel__notice is-danger">
+    <div v-else-if="toolCall?.status === 'rejected'" class="build-detail-panel__notice is-danger">
       <div class="build-detail-panel__notice-title">❌ 操作已拒绝</div>
       <p class="build-detail-panel__notice-desc">您已拒绝执行本次运行触发请求。</p>
     </div>
 
     <!-- 运行中且未出 ID -->
     <div
-      v-else-if="toolCall.status === 'running' && !runId"
+      v-else-if="toolCall?.status === 'running' && !runId"
       class="build-detail-panel__notice is-info"
     >
       <div class="build-detail-panel__notice-title">正在触发...</div>
@@ -189,11 +198,11 @@ function openDetail() {
 
     <!-- 调用错误 -->
     <div
-      v-else-if="toolCall.status === 'error' && !runId"
+      v-else-if="toolCall?.status === 'error' && !runId"
       class="build-detail-panel__notice is-danger"
     >
       <div class="build-detail-panel__notice-title">❌ 触发失败</div>
-      <p class="build-detail-panel__notice-desc">{{ toolCall.error || "执行出错" }}</p>
+      <p class="build-detail-panel__notice-desc">{{ toolCall?.error || "执行出错" }}</p>
     </div>
 
     <!-- 成功获取到运行 ID -->
@@ -225,7 +234,7 @@ function openDetail() {
               </u-button>
               <u-button size="small" type="primary" plain @click="openDetail">
                 <u-icon :size="13">
-                  <External />
+                  <Link />
                 </u-icon>
                 打开详情页
               </u-button>
@@ -309,7 +318,7 @@ function openDetail() {
               </u-button>
               <u-button size="small" type="primary" plain @click="openDetail">
                 <u-icon :size="13">
-                  <External />
+                  <Link />
                 </u-icon>
                 打开详情页
               </u-button>

@@ -22,8 +22,8 @@ import { listCredentials, listRepositories, listServers } from "@/api/resource";
 import type { ProjectDocNode } from "@/api/types";
 import { formatDateTime, formatDurationBetween } from "@/lib/datetime";
 
-import BuildDetailPanel from "./panels/build-detail-panel.vue";
-import DocViewerPanel from "./panels/doc-viewer-panel.vue";
+import BuildTriggerCard from "./cards/build-trigger-card.vue";
+import { useAiChatStore } from "@/stores/ai-chat";
 
 function formatTreeSummary(nodes: ProjectDocNode[], indent = ""): string {
   const lines: string[] = [];
@@ -327,7 +327,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 8. 触发 CI/CD 构建任务（敏感，需确认，右侧面板渲染）
+  // 8. 触发 CI/CD 构建任务（敏感，需确认，会话内确认 + 触发后自动打开右侧面板）
   {
     name: "trigger_build_job",
     label: "触发构建任务",
@@ -335,17 +335,8 @@ export const aiChatTools: ChatTool[] = [
     description:
       "触发指定的 CI/CD 构建任务运行。注意：这是敏感操作，将在平台发起真实代码拉取与构建，执行前必须由用户确认。",
     needsConfirm: true,
-    renderTo: "panel",
-    panelWidth: 700,
-    panelTitle: (call) => {
-      try {
-        const args = JSON.parse(call.arguments || "{}");
-        return `构建运行 · 任务 #${args.job_id || ""}`;
-      } catch {
-        return "构建运行详情";
-      }
-    },
-    render: BuildDetailPanel,
+    autoCollapse: false,
+    render: BuildTriggerCard,
     parameters: {
       type: "object",
       properties: {
@@ -365,6 +356,13 @@ export const aiChatTools: ChatTool[] = [
         variables: args.variables,
       });
 
+      const chatStore = useAiChatStore();
+      chatStore.openRightPanel({
+        type: "build",
+        id: run.id,
+        title: `构建运行 #${run.id} · 任务 #${run.build_job_id}`,
+      });
+
       return {
         success: true,
         run_id: run.id,
@@ -378,7 +376,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 9. 触发 CI/CD 流水线（敏感，需确认，右侧面板渲染）
+  // 9. 触发 CI/CD 流水线（敏感，需确认，会话内确认 + 触发后自动打开右侧面板）
   {
     name: "trigger_pipeline",
     label: "触发流水线",
@@ -386,17 +384,8 @@ export const aiChatTools: ChatTool[] = [
     description:
       "触发指定的 CI/CD 流水线运行。注意：这是敏感操作，将在平台发起整条流水线执行，执行前必须由用户确认。",
     needsConfirm: true,
-    renderTo: "panel",
-    panelWidth: 700,
-    panelTitle: (call) => {
-      try {
-        const args = JSON.parse(call.arguments || "{}");
-        return `流水线运行 · 流水线 #${args.pipeline_id || ""}`;
-      } catch {
-        return "流水线运行详情";
-      }
-    },
-    render: BuildDetailPanel,
+    autoCollapse: false,
+    render: BuildTriggerCard,
     parameters: {
       type: "object",
       properties: {
@@ -408,6 +397,13 @@ export const aiChatTools: ChatTool[] = [
     execute: async (args: { pipeline_id: number; variables?: Record<string, unknown> }) => {
       const run = await enqueuePipelineRun(args.pipeline_id, {
         variables: args.variables,
+      });
+
+      const chatStore = useAiChatStore();
+      chatStore.openRightPanel({
+        type: "pipeline",
+        id: run.id,
+        title: `流水线运行 #${run.id} · 流水线 #${run.build_pipeline_id}`,
       });
 
       return {
@@ -422,23 +418,14 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 10. 查看构建/流水线详情与实时日志（右侧面板渲染）
+  // 10. 查看构建/流水线详情与实时日志
   {
     name: "view_build_run",
     label: "查看运行详情",
     icon: VideoPlay,
     description: "在右侧侧边面板中查看指定的构建运行或流水线运行的实时状态、日志与基本信息。",
-    renderTo: "panel",
-    panelWidth: 700,
-    panelTitle: (call) => {
-      try {
-        const args = JSON.parse(call.arguments || "{}");
-        return `运行详情 · #${args.run_id || ""}`;
-      } catch {
-        return "运行详情";
-      }
-    },
-    render: BuildDetailPanel,
+    autoCollapse: false,
+    render: BuildTriggerCard,
     parameters: {
       type: "object",
       properties: {
@@ -453,8 +440,14 @@ export const aiChatTools: ChatTool[] = [
     },
     execute: async (args: { run_id: number; run_type?: "build" | "pipeline" }) => {
       const type = args.run_type ?? "build";
+      const chatStore = useAiChatStore();
       if (type === "pipeline") {
         const run = await getPipelineRun(args.run_id);
+        chatStore.openRightPanel({
+          type: "pipeline",
+          id: run.id,
+          title: `流水线运行 #${run.id}`,
+        });
         return {
           success: true,
           run_id: run.id,
@@ -465,6 +458,11 @@ export const aiChatTools: ChatTool[] = [
         };
       }
       const run = await getBuildRun(args.run_id);
+      chatStore.openRightPanel({
+        type: "build",
+        id: run.id,
+        title: `构建运行 #${run.id}`,
+      });
       return {
         success: true,
         run_id: run.id,
@@ -591,25 +589,14 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 14. 查看项目开发/接口文档（右侧面板渲染 Markdown）
+  // 14. 查看项目开发/接口文档
   {
     name: "view_project_doc",
     label: "查看项目文档",
     icon: Books,
     description:
       "查看指定项目的接口文档或开发文档树及选中文档的 Markdown 正文。在右侧侧边面板中渲染完整文档树与正文。",
-    renderTo: "panel",
-    panelWidth: 760,
-    panelTitle: (call) => {
-      try {
-        const args = JSON.parse(call.arguments || "{}");
-        const kind = args.doc_type === "dev" ? "开发文档" : "接口文档";
-        return `${kind} · 项目 #${args.project_id || ""}`;
-      } catch {
-        return "项目文档查看";
-      }
-    },
-    render: DocViewerPanel,
+    autoCollapse: false,
     parameters: {
       type: "object",
       properties: {
@@ -642,6 +629,15 @@ export const aiChatTools: ChatTool[] = [
           // ignore
         }
       }
+
+      const chatStore = useAiChatStore();
+      chatStore.openRightPanel({
+        type: "doc",
+        id: args.node_id || 0,
+        projectId: args.project_id,
+        docType: kind,
+        title: `${kind === "dev" ? "开发文档" : "接口文档"} · 项目 #${args.project_id}`,
+      });
 
       const summaryTree = formatTreeSummary(tree);
       const link =

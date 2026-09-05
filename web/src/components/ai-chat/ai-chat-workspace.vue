@@ -1,27 +1,52 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { createOpenAITransport, UAiChat, type ChatMessage } from "@veltra/ai";
-import { Rollback } from "@veltra/icons/normal";
 import "@veltra/ai/style";
+import { UButton, UIcon } from "@veltra/desktop";
+import { Books, Close, VideoPlay } from "@veltra/icons/normal";
 
 import { listChatMessages } from "@/api/ai";
 import { getAccessToken } from "@/api/http";
-import type { ChatSession } from "@/api/types";
 import { useAiChatStore } from "@/stores/ai-chat";
 import AiChatSidebar from "./ai-chat-sidebar.vue";
+import BuildDetailPanel from "./panels/build-detail-panel.vue";
+import DocViewerPanel from "./panels/doc-viewer-panel.vue";
 import { aiChatTools } from "./tools";
-
-const emit = defineEmits<{
-  (e: "exit"): void;
-}>();
 
 const chatStore = useAiChatStore();
 const currentMessages = ref<ChatMessage[]>([]);
 const loadingMessages = ref(false);
 
-const activeSession = computed<ChatSession | undefined>(() => {
-  return chatStore.sessions.find((s) => s.id === chatStore.currentSessionId);
-});
+function handleChatClick(event: MouseEvent) {
+  const target = (event.target as HTMLElement)?.closest("a");
+  if (!target) return;
+  const href = target.getAttribute("href");
+  if (!href) return;
+
+  const buildMatch = href.match(/^\/cicd\/build-runs\/(\d+)/);
+  if (buildMatch && buildMatch[1]) {
+    event.preventDefault();
+    event.stopPropagation();
+    chatStore.openRightPanel({
+      type: "build",
+      id: Number(buildMatch[1]),
+      title: `构建运行 #${buildMatch[1]}`,
+    });
+    return;
+  }
+
+  const pipelineMatch = href.match(/^\/cicd\/pipeline-runs\/(\d+)/);
+  if (pipelineMatch && pipelineMatch[1]) {
+    event.preventDefault();
+    event.stopPropagation();
+    chatStore.openRightPanel({
+      type: "pipeline",
+      id: Number(pipelineMatch[1]),
+      title: `流水线运行 #${pipelineMatch[1]}`,
+    });
+    return;
+  }
+}
 
 const transport = computed(() => {
   const token = getAccessToken();
@@ -128,27 +153,11 @@ onMounted(async () => {
     <AiChatSidebar @select-session="loadSessionMessages" />
 
     <section class="ai-chat-workspace__main">
-      <header class="ai-chat-workspace__header">
-        <div class="ai-chat-workspace__info">
-          <span class="ai-chat-workspace__session-title">
-            {{ activeSession?.title || "AI 对话" }}
-          </span>
-          <span v-if="chatStore.currentModelId" class="ai-chat-workspace__model-tag">
-            {{ chatStore.currentModelId }}
-          </span>
-        </div>
-
-        <div class="ai-chat-workspace__actions">
-          <u-button class="ai-chat-workspace__exit-btn" @click="emit('exit')">
-            <u-icon :size="14">
-              <Rollback />
-            </u-icon>
-            退出 AI 模式
-          </u-button>
-        </div>
-      </header>
-
-      <div class="ai-chat-workspace__chat-container" :class="{ 'is-loading': loadingMessages }">
+      <div
+        class="ai-chat-workspace__chat-container"
+        :class="{ 'is-loading': loadingMessages }"
+        @click="handleChatClick"
+      >
         <div
           v-if="chatStore.availableModels.length === 0 && !chatStore.loadingModels"
           class="ai-chat-workspace__empty-model"
@@ -173,6 +182,41 @@ onMounted(async () => {
         />
       </div>
     </section>
+
+    <!-- 右侧详情面板（构建/流水线/文档等） -->
+    <aside v-if="chatStore.activeRightPanel" class="ai-chat-workspace__right-panel">
+      <div class="ai-chat-workspace__panel-header">
+        <div class="ai-chat-workspace__panel-title">
+          <u-icon :size="16" class="panel-icon">
+            <Books v-if="chatStore.activeRightPanel.type === 'doc'" />
+            <VideoPlay v-else />
+          </u-icon>
+          <span>{{ chatStore.activeRightPanel.title || "运行详情" }}</span>
+        </div>
+        <u-button text circle size="small" title="关闭面板" @click="chatStore.closeRightPanel()">
+          <u-icon :size="14">
+            <Close />
+          </u-icon>
+        </u-button>
+      </div>
+
+      <div class="ai-chat-workspace__panel-body">
+        <BuildDetailPanel
+          v-if="
+            chatStore.activeRightPanel.type === 'build' ||
+            chatStore.activeRightPanel.type === 'pipeline'
+          "
+          :run-id="chatStore.activeRightPanel.id"
+          :run-type="chatStore.activeRightPanel.type"
+        />
+        <DocViewerPanel
+          v-else-if="chatStore.activeRightPanel.type === 'doc'"
+          :node-id="chatStore.activeRightPanel.id"
+          :project-id="chatStore.activeRightPanel.projectId"
+          :doc-type="chatStore.activeRightPanel.docType"
+        />
+      </div>
+    </aside>
   </div>
 </template>
 
@@ -196,52 +240,6 @@ onMounted(async () => {
   flex-direction: column;
   overflow: hidden;
   background: fn.use-var(bg-color, middle);
-}
-
-.ai-chat-workspace__header {
-  height: 48px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: 1px solid color-mix(in srgb, fn.use-var(border, muted-color) 60%, transparent);
-  background: fn.use-var(bg-color, top);
-}
-
-.ai-chat-workspace__info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.ai-chat-workspace__session-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: fn.use-var(text-color, title);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-chat-workspace__model-tag {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: fn.use-var(radius, small);
-  background: color-mix(in srgb, fn.use-var(color, primary) 14%, transparent);
-  color: fn.use-var(color, primary);
-  font-family: monospace;
-}
-
-.ai-chat-workspace__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ai-chat-workspace__exit-btn {
-  gap: 6px;
 }
 
 .ai-chat-workspace__chat-container {
@@ -282,5 +280,60 @@ onMounted(async () => {
     font-size: 12px;
     color: fn.use-var(text-color, placeholder);
   }
+}
+
+.ai-chat-workspace__right-panel {
+  width: 680px;
+  max-width: 50vw;
+  min-width: 360px;
+  height: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid color-mix(in srgb, fn.use-var(border, muted-color) 70%, transparent);
+  background: fn.use-var(bg-color, top);
+  z-index: 5;
+  animation: slideInRight 0.2s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.ai-chat-workspace__panel-header {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid color-mix(in srgb, fn.use-var(border, muted-color) 50%, transparent);
+  background: fn.use-var(bg-color, middle);
+}
+
+.ai-chat-workspace__panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: fn.use-var(text-color, title);
+
+  .panel-icon {
+    color: fn.use-var(color, primary);
+  }
+}
+
+.ai-chat-workspace__panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 </style>

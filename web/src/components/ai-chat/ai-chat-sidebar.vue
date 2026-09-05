@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
-import { AiChat, Delete, Edit, Message, Plus } from "@veltra/icons/normal";
+import { Delete, Edit, Message, Plus } from "@veltra/icons/normal";
 
 import type { ChatSession } from "@/api/types";
 import { useAiChatStore } from "@/stores/ai-chat";
@@ -104,12 +104,6 @@ function formatSessionTime(dateStr: string): string {
 <template>
   <aside class="ai-chat-sidebar">
     <div class="ai-chat-sidebar__header">
-      <div class="ai-chat-sidebar__title">
-        <u-icon :size="18" class="ai-chat-sidebar__logo">
-          <AiChat />
-        </u-icon>
-        <span>AI 对话会话</span>
-      </div>
       <u-button
         type="primary"
         class="ai-chat-sidebar__new-btn"
@@ -123,7 +117,7 @@ function formatSessionTime(dateStr: string): string {
       </u-button>
     </div>
 
-    <div class="ai-chat-sidebar__list">
+    <u-scroll class="ai-chat-sidebar__list">
       <div
         v-if="sortedSessions.length === 0 && !chatStore.loadingSessions"
         class="ai-chat-sidebar__empty"
@@ -191,7 +185,7 @@ function formatSessionTime(dateStr: string): string {
           </u-pop-confirm>
         </div>
       </div>
-    </div>
+    </u-scroll>
   </aside>
 </template>
 
@@ -210,24 +204,8 @@ function formatSessionTime(dateStr: string): string {
 }
 
 .ai-chat-sidebar__header {
-  padding: 16px 14px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  padding: 12px 10px;
   border-bottom: 1px solid color-mix(in srgb, fn.use-var(border, muted-color) 40%, transparent);
-}
-
-.ai-chat-sidebar__title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--u-nav-strong-color, fn.use-var(text-color, title));
-}
-
-.ai-chat-sidebar__logo {
-  color: fn.use-var(color, primary);
 }
 
 .ai-chat-sidebar__new-btn {
@@ -238,11 +216,14 @@ function formatSessionTime(dateStr: string): string {
 
 .ai-chat-sidebar__list {
   flex: 1;
-  overflow-y: auto;
-  padding: 8px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  min-height: 0;
+
+  :deep(.u-scroll__content) {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
 }
 
 .ai-chat-sidebar__empty {

@@ -10,8 +10,27 @@ import {
 } from "@/api/ai";
 import type { AiModel, ChatSession } from "@/api/types";
 
+const AI_MODE_STORAGE_KEY = "bedrock_ai_mode_active";
+
+function getInitialAiMode(): boolean {
+  try {
+    return localStorage.getItem(AI_MODE_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export interface ActiveRightPanel {
+  type: "build" | "pipeline" | "doc";
+  id: number;
+  title?: string;
+  projectId?: number;
+  docType?: "api" | "dev";
+}
+
 export const useAiChatStore = defineStore("ai-chat", () => {
-  const aiModeActive = ref(false);
+  const aiModeActive = ref(getInitialAiMode());
+  const activeRightPanel = ref<ActiveRightPanel | null>(null);
   const sessions = ref<ChatSession[]>([]);
   const currentSessionId = ref<number | null>(null);
   const availableModels = shallowRef<AiModel[]>([]);
@@ -19,6 +38,14 @@ export const useAiChatStore = defineStore("ai-chat", () => {
   const currentReasoningLevel = ref<string | undefined>(undefined);
   const loadingSessions = ref(false);
   const loadingModels = ref(false);
+
+  function openRightPanel(panel: ActiveRightPanel) {
+    activeRightPanel.value = panel;
+  }
+
+  function closeRightPanel() {
+    activeRightPanel.value = null;
+  }
 
   function syncReasoningForModel(modelId: string) {
     const target = availableModels.value.find((m) => m.model_id === modelId);
@@ -80,8 +107,15 @@ export const useAiChatStore = defineStore("ai-chat", () => {
   async function toggleAiMode(active?: boolean): Promise<void> {
     const next = active ?? !aiModeActive.value;
     aiModeActive.value = next;
+    try {
+      localStorage.setItem(AI_MODE_STORAGE_KEY, String(next));
+    } catch {
+      // ignore
+    }
     if (next) {
       await Promise.all([fetchAvailableModels(), fetchSessions()]);
+    } else {
+      closeRightPanel();
     }
   }
 
@@ -105,6 +139,7 @@ export const useAiChatStore = defineStore("ai-chat", () => {
 
   function selectSession(id: number): void {
     currentSessionId.value = id;
+    closeRightPanel();
     const session = sessions.value.find((s) => s.id === id);
     if (session?.model_id) {
       const exists = availableModels.value.some((m) => m.model_id === session.model_id);
@@ -151,6 +186,7 @@ export const useAiChatStore = defineStore("ai-chat", () => {
 
   return {
     aiModeActive,
+    activeRightPanel,
     sessions,
     currentSessionId,
     availableModels,
@@ -158,6 +194,8 @@ export const useAiChatStore = defineStore("ai-chat", () => {
     currentReasoningLevel,
     loadingSessions,
     loadingModels,
+    openRightPanel,
+    closeRightPanel,
     toggleAiMode,
     fetchAvailableModels,
     fetchSessions,
