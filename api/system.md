@@ -1,6 +1,6 @@
 # 系统管理
 
-用户、角色、RBAC 资源、菜单、字典、操作日志、通知。
+用户、角色、RBAC 资源、菜单、字典、操作日志、通知、系统备份。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
 业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
@@ -272,7 +272,76 @@
 响应 200
 错误：401
 
+## 系统备份
+
+### GET /system/backups — 列出备份记录
+
+权限：`system_backup:view`
+查询参数：page: integer, page_size: integer
+响应 200：data = SystemBackupPage
+错误：401 / 403
+
+### POST /system/backups — 创建备份
+
+权限：`system_backup:create`
+请求：{ modules*, note }
+响应 201：data = SystemBackup
+错误：400 / 401 / 403
+说明：`modules` 为备份模块列表（可选 `database`、`config`、`storage`、`artifacts`、`logs`），至少包含一项。
+
+### GET /system/backups/{id}/download — 下载备份包
+
+权限：`system_backup:download`
+路径参数：id*: integer
+响应 200：application/zip 二进制流
+错误：401 / 403 / 404
+说明：流式下载服务端对应的 .zip 物理备份归档包。
+
+### DELETE /system/backups/{id} — 删除备份记录
+
+权限：`system_backup:delete`
+路径参数：id*: integer
+响应 200
+错误：400 / 401 / 403 / 404
+说明：同步删除数据库备份记录及服务端对应的 .zip 物理文件。
+
+### POST /system/backups/inspect — 上传备份包预检校验
+
+权限：`system_backup:restore`
+请求：multipart/form-data（file*: 备份 .zip 文件）
+响应 200：data = BackupInspectResult
+错误：400 / 401 / 403
+说明：上传临时备份 zip 包进行预检，解构并校验其中的 manifest.json、系统版本兼容性与数据库引擎匹配度，返回解析出的元数据及临时文件 token，用于后续确认恢复。
+
+### POST /system/backups/restore — 执行系统在线恢复
+
+权限：`system_backup:restore`
+请求：{ backup_id, upload_token, admin_password*, auto_snapshot }
+响应 200：data = { success: boolean, message: string }
+错误：400 / 401 / 403 / 404
+说明：支持指定已有的 `backup_id` 或预检获得的 `upload_token` 执行覆盖还原。必须传入当前登录管理员的登录密码 `admin_password` 进行身份二次核验。`auto_snapshot` 默认为 true，勾选后在覆盖还原前自动对现有数据生成安全前置快照。
+
 ## 对象形状
+
+### BackupInspectResult
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `upload_token` | `string` | 是 | 临时上传凭证 |
+| `manifest` | `BackupManifest` | 是 | 解析出的清单信息 |
+| `compatible` | `boolean` | 是 | 当前环境是否兼容可恢复 |
+| `message` | `string` |  | 校验提示或不兼容原因 |
+
+### BackupManifest
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `version` | `string` | 是 | 清单格式版本（如 1.0） |
+| `app_version` | `string` |  | 应用版本 |
+| `db_driver` | `string` | 是 | 数据库驱动类型（sqlite / mysql / postgres） |
+| `modules` | `string[]` | 是 | 包含的模块列表（database / config / storage / artifacts / logs） |
+| `created_at` | `string(date-time)` | 是 | 备份生成时间 |
+| `note` | `string` |  | 备注信息 |
 
 ### DictItem
 
@@ -532,6 +601,51 @@
 | `id` | `integer` |  |  |
 | `role_id` | `integer` |  |  |
 | `permission` | `string` |  |  |
+
+### SystemBackup
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` | 是 |  |
+| `filename` | `string` | 是 | 备份文件名 |
+| `file_path` | `string` | 是 | 服务端文件相对路径 |
+| `file_size` | `integer` | 是 | 物理文件大小（字节） |
+| `modules` | `string[]` | 是 | 包含的模块列表 |
+| `note` | `string` |  | 备份备注 |
+| `status` | `'success' \| 'processing' \| 'failed'` | 是 | 备份状态 |
+| `error_message` | `string` |  | 失败时的错误详情 |
+| `created_by` | `integer` |  | 创建人用户 ID |
+| `created_at` | `string(date-time)` | 是 | 创建时间 |
+| `updated_at` | `string(date-time)` | 是 | 更新时间 |
+
+### SystemBackupCreateRequest
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `modules` | `string[]` | 是 | 包含模块列表（database / config / storage / artifacts / logs），至少 1 项 |
+| `note` | `string` |  | 备注信息 |
+
+### SystemBackupPage
+
+组合：`Page` + `inline`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `items` | `any[]` | 是 |  |
+| `total` | `integer` | 是 |  |
+| `page` | `integer` | 是 |  |
+| `page_size` | `integer` | 是 |  |
+| `total_pages` | `integer` | 是 |  |
+| `items` | `SystemBackup[]` |  |  |
+
+### SystemBackupRestoreRequest
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `backup_id` | `integer` |  | 历史备份记录 ID（与 upload_token 二选一） |
+| `upload_token` | `string` |  | 预检上传凭证（与 backup_id 二选一） |
+| `admin_password` | `string` | 是 | 当前登录管理员密码核验 |
+| `auto_snapshot` | `boolean` |  | 还原前自动创建快照，缺省 true |
 
 ### User
 
