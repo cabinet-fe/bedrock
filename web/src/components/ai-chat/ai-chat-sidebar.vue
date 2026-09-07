@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
-import { Delete, Edit, Message, Plus } from "@veltra/icons/normal";
+import { Delete, Edit, Hide, Message, Plus } from "@veltra/icons/normal";
 
 import type { ChatSession } from "@/api/types";
 import { useAiChatStore } from "@/stores/ai-chat";
 
 const emit = defineEmits<{
-  (e: "select-session", sessionId: number): void;
+  (e: "select-session", sessionId: number | null): void;
 }>();
 
 const chatStore = useAiChatStore();
@@ -20,13 +20,14 @@ const sortedSessions = computed(() => {
 const editingId = ref<number | null>(null);
 const editingTitle = ref("");
 
-async function handleNewSession() {
-  try {
-    const session = await chatStore.createSession("新对话");
-    emit("select-session", session.id);
-  } catch (err) {
-    console.error("创建会话失败:", err);
-  }
+function handleNewSession() {
+  chatStore.startDraft();
+  emit("select-session", null);
+}
+
+function handleNewTemporarySession() {
+  chatStore.startTemporary();
+  emit("select-session", null);
 }
 
 function handleSelectSession(session: ChatSession) {
@@ -67,9 +68,7 @@ function cancelRename() {
 async function handleDelete(sessionId: number) {
   try {
     await chatStore.deleteSession(sessionId);
-    if (chatStore.currentSessionId !== null) {
-      emit("select-session", chatStore.currentSessionId);
-    }
+    emit("select-session", chatStore.currentSessionId);
   } catch (err) {
     console.error("删除会话失败:", err);
   }
@@ -104,17 +103,37 @@ function formatSessionTime(dateStr: string): string {
 <template>
   <aside class="ai-chat-sidebar">
     <div class="ai-chat-sidebar__header">
-      <u-button
-        type="primary"
-        class="ai-chat-sidebar__new-btn"
-        :loading="chatStore.loadingSessions"
-        @click="handleNewSession"
-      >
-        <u-icon :size="14">
-          <Plus />
+      <div class="ai-chat-sidebar__actions">
+        <u-button
+          type="primary"
+          class="ai-chat-sidebar__btn ai-chat-sidebar__btn--new"
+          :class="{ 'is-active': chatStore.isDraft }"
+          @click="handleNewSession"
+        >
+          <u-icon :size="13">
+            <Plus />
+          </u-icon>
+          新建会话
+        </u-button>
+        <u-button
+          class="ai-chat-sidebar__btn ai-chat-sidebar__btn--temp"
+          :class="{ 'is-active': chatStore.isTemporary }"
+          title="新建临时会话（无痕模式，不保存记录）"
+          @click="handleNewTemporarySession"
+        >
+          <u-icon :size="13">
+            <Hide />
+          </u-icon>
+          临时会话
+        </u-button>
+      </div>
+
+      <div v-if="chatStore.isTemporary" class="ai-chat-sidebar__temp-badge">
+        <u-icon :size="12">
+          <Hide />
         </u-icon>
-        新建会话
-      </u-button>
+        <span>当前处于无痕临时会话</span>
+      </div>
     </div>
 
     <u-scroll class="ai-chat-sidebar__list">
@@ -206,12 +225,54 @@ function formatSessionTime(dateStr: string): string {
 .ai-chat-sidebar__header {
   padding: 12px 10px;
   border-bottom: 1px solid color-mix(in srgb, fn.use-var(border, muted-color) 40%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.ai-chat-sidebar__new-btn {
-  width: 100%;
+.ai-chat-sidebar__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-chat-sidebar__btn {
+  flex: 1;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: 12px;
+
+  &--temp {
+    border: 1px dashed color-mix(in srgb, fn.use-var(border, muted-color) 80%, transparent);
+    background: transparent;
+    color: var(--u-nav-second-color, fn.use-var(text-color, secondary));
+
+    &:hover {
+      border-color: fn.use-var(color, warning);
+      color: fn.use-var(color, warning);
+      background: color-mix(in srgb, fn.use-var(color, warning) 8%, transparent);
+    }
+
+    &.is-active {
+      border-color: fn.use-var(color, warning);
+      color: fn.use-var(color, warning);
+      background: color-mix(in srgb, fn.use-var(color, warning) 15%, transparent);
+      font-weight: 500;
+    }
+  }
+}
+
+.ai-chat-sidebar__temp-badge {
+  display: flex;
+  align-items: center;
   justify-content: center;
   gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: fn.use-var(radius, small);
+  color: fn.use-var(color, warning);
+  background: color-mix(in srgb, fn.use-var(color, warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, fn.use-var(color, warning) 30%, transparent);
 }
 
 .ai-chat-sidebar__list {

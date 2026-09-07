@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useResizeObserver } from "@veltra/compositions";
-import { createOpenAITransport, UAiChat, type ChatMessage } from "@veltra/ai";
+import { createOpenAITransport, UAiChat, type ChatMessage, type ChatTransport } from "@veltra/ai";
 import "@veltra/ai/style";
 import { UButton, UIcon, ULayout } from "@veltra/desktop";
 import "@veltra/desktop/components/layout/style";
-import { Books, Close, VideoPlay } from "@veltra/icons/normal";
+import { Books, Close, Hide, VideoPlay } from "@veltra/icons/normal";
 
 import { listChatMessages } from "@/api/ai";
 import { getAccessToken } from "@/api/http";
@@ -146,6 +146,8 @@ const selectedReasoningLevel = computed({
   },
 });
 
+let activeDraftSessionId: number | null = null;
+
 const transport = computed(() => {
   const token = getAccessToken();
   const rawModels = chatStore.availableModels;
@@ -170,28 +172,60 @@ const transport = computed(() => {
         ? [{ id: chatStore.currentModelId, label: chatStore.currentModelId }]
         : [{ id: "fallback-model", label: "暂无可用模型" }];
 
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  if (chatStore.currentSessionId) {
-    headers["X-Session-ID"] = String(chatStore.currentSessionId);
-  }
+  const send: ChatTransport = async (request, handlers) => {
+    // 1. 草稿状态下发送首条消息时，前端自动调用创建会话接口完成持久化，会话进入左侧列表并按首条提问更新会话标题
+    if (chatStore.isDraft && !chatStore.isTemporary) {
+      try {
+        const firstUser = request.messages.find((m) => m.role === "user");
+        const rawTitle = firstUser?.content?.trim() || "新对话";
+        const title = rawTitle.slice(0, 30);
+        const session = await chatStore.createSession(title, request.model);
+        activeDraftSessionId = session.id;
+      } catch (err) {
+        handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
+        return;
+      }
+    }
 
-  return createOpenAITransport({
-    headers,
-    providers: [
-      {
-        id: "bedrock-ai",
-        label: "Bedrock AI",
-        endpoint: "/api/v1/ai/chat/completions",
-        models: effectiveModels,
-      },
-    ],
+    // 2. 临时会话不携带 X-Session-ID，后端不落库；普通持久化会话携带当前会话 ID
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    if (!chatStore.isTemporary && chatStore.currentSessionId) {
+      headers["X-Session-ID"] = String(chatStore.currentSessionId);
+    }
+
+    const delegate = createOpenAITransport({
+      headers,
+      providers: [
+        {
+          id: "bedrock-ai",
+          label: "Bedrock AI",
+          endpoint: "/api/v1/ai/chat/completions",
+          models: effectiveModels,
+        },
+      ],
+    });
+
+    return delegate(request, handlers);
+  };
+
+  return Object.assign(send, {
+    models: effectiveModels.map((m) => ({
+      ...m,
+      providerId: "bedrock-ai",
+      providerLabel: "Bedrock AI",
+    })),
+    defaultModel: effectiveModels[0]?.id || "fallback-model",
   });
 });
 
-async function loadSessionMessages(sessionId: number) {
+async function loadSessionMessages(sessionId: number | null) {
+  if (sessionId === null) {
+    currentMessages.value = [];
+    return;
+  }
   loadingMessages.value = true;
   try {
     const list = await listChatMessages(sessionId);
@@ -213,6 +247,10 @@ async function loadSessionMessages(sessionId: number) {
 watch(
   () => chatStore.currentSessionId,
   (sessionId) => {
+    if (sessionId !== null && sessionId === activeDraftSessionId) {
+      activeDraftSessionId = null;
+      return;
+    }
     if (sessionId) {
       void loadSessionMessages(sessionId);
     } else {
@@ -223,6 +261,9 @@ watch(
 );
 
 async function onFinish(_msg: ChatMessage) {
+  if (chatStore.isTemporary) {
+    return;
+  }
   await chatStore.fetchSessions();
   if (chatStore.currentSessionId) {
     const session = chatStore.sessions.find((s) => s.id === chatStore.currentSessionId);
@@ -247,9 +288,6 @@ onMounted(async () => {
   if (chatStore.sessions.length === 0) {
     await chatStore.fetchSessions();
   }
-  if (chatStore.sessions.length === 0 && chatStore.availableModels.length > 0) {
-    await chatStore.createSession("新对话");
-  }
 });
 </script>
 
@@ -271,6 +309,19 @@ onMounted(async () => {
       @resize-end="resizing = false"
     >
       <section class="ai-chat-workspace__main">
+        <!-- 临时会话提示横幅 -->
+        <div v-if="chatStore.isTemporary" class="ai-chat-workspace__temporary-banner">
+          <div class="ai-chat-workspace__temporary-tag">
+            <u-icon :size="13">
+              <Hide />
+            </u-icon>
+            <span>无痕临时会话</span>
+          </div>
+          <span class="ai-chat-workspace__temporary-desc">
+            当前处于临时无痕会话，消息仅保存在本地内存，不会持久化到数据库且不进入历史列表。
+          </span>
+        </div>
+
         <div
           class="ai-chat-workspace__chat-container"
           :class="{ 'is-loading': loadingMessages }"
@@ -398,6 +449,34 @@ onMounted(async () => {
   flex-direction: column;
   overflow: hidden;
   background: fn.use-var(bg-color, middle);
+}
+
+.ai-chat-workspace__temporary-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, fn.use-var(color, warning) 10%, fn.use-var(bg-color, top));
+  border-bottom: 1px solid color-mix(in srgb, fn.use-var(color, warning) 25%, transparent);
+  flex-shrink: 0;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.ai-chat-workspace__temporary-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: fn.use-var(radius, small);
+  font-size: 12px;
+  font-weight: 600;
+  color: fn.use-var(color, warning);
+  background: color-mix(in srgb, fn.use-var(color, warning) 15%, transparent);
+}
+
+.ai-chat-workspace__temporary-desc {
+  font-size: 12px;
+  color: fn.use-var(text-color, secondary);
 }
 
 .ai-chat-workspace__chat-container {

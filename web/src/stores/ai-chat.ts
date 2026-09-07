@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 
 import {
   createChatSession,
@@ -103,6 +103,8 @@ export const useAiChatStore = defineStore("ai-chat", () => {
   const activeRightPanel = ref<ActiveRightPanel | null>(null);
   const sessions = ref<ChatSession[]>([]);
   const currentSessionId = ref<number | null>(null);
+  const isTemporary = ref(false);
+  const isDraft = computed(() => !isTemporary.value && currentSessionId.value === null);
   const availableModels = shallowRef<AiModel[]>([]);
   const currentModelId = ref<string>(getCachedModelId());
   const currentReasoningLevel = ref<string | undefined>(
@@ -209,10 +211,8 @@ export const useAiChatStore = defineStore("ai-chat", () => {
       if (currentSessionId.value !== null) {
         const exists = items.some((s) => s.id === currentSessionId.value);
         if (!exists) {
-          currentSessionId.value = items.length > 0 ? items[0]!.id : null;
+          currentSessionId.value = null;
         }
-      } else if (items.length > 0) {
-        currentSessionId.value = items[0]!.id;
       }
 
       return items;
@@ -243,12 +243,26 @@ export const useAiChatStore = defineStore("ai-chat", () => {
       model_id: model || undefined,
     });
     sessions.value.unshift(session);
+    isTemporary.value = false;
     currentSessionId.value = session.id;
     return session;
   }
 
   function selectSession(id: number): void {
+    isTemporary.value = false;
     currentSessionId.value = id;
+    closeRightPanel();
+  }
+
+  function startDraft(): void {
+    isTemporary.value = false;
+    currentSessionId.value = null;
+    closeRightPanel();
+  }
+
+  function startTemporary(): void {
+    isTemporary.value = true;
+    currentSessionId.value = null;
     closeRightPanel();
   }
 
@@ -273,7 +287,8 @@ export const useAiChatStore = defineStore("ai-chat", () => {
       sessions.value.splice(idx, 1);
     }
     if (currentSessionId.value === id) {
-      currentSessionId.value = sessions.value.length > 0 ? sessions.value[0]!.id : null;
+      currentSessionId.value = null;
+      isTemporary.value = false;
     }
   }
 
@@ -301,6 +316,8 @@ export const useAiChatStore = defineStore("ai-chat", () => {
     activeRightPanel,
     sessions,
     currentSessionId,
+    isTemporary,
+    isDraft,
     availableModels,
     currentModelId,
     currentReasoningLevel,
@@ -314,6 +331,8 @@ export const useAiChatStore = defineStore("ai-chat", () => {
     fetchSessions,
     createSession,
     selectSession,
+    startDraft,
+    startTemporary,
     renameSession,
     deleteSession,
     setModel,
