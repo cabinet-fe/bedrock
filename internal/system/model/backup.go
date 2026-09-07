@@ -114,6 +114,19 @@ type BackupManifest struct {
 	Note       string    `json:"note,omitempty"`        // Backup note
 }
 
+// HasModule checks whether the manifest includes the specified module.
+func (m *BackupManifest) HasModule(module string) bool {
+	if m == nil {
+		return false
+	}
+	for _, mod := range m.Modules {
+		if mod == module {
+			return true
+		}
+	}
+	return false
+}
+
 // SystemBackupCreateRequest represents the request body for creating a backup.
 type SystemBackupCreateRequest struct {
 	Modules []string `json:"modules" binding:"required"`

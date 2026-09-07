@@ -54,6 +54,53 @@ func Open(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 	return db, nil
 }
 
+// Close safely closes the underlying sql.DB connection pool of db.
+func Close(db *gorm.DB) error {
+	if db == nil {
+		return nil
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}
+
+// Reset safely closes the old connection pool of target (if open) and reinitializes
+// target with a new connection pool according to cfg, preserving existing pointers to target.
+func Reset(target *gorm.DB, cfg *config.DatabaseConfig) error {
+	if target == nil {
+		return fmt.Errorf("target database is nil")
+	}
+	if cfg == nil {
+		return fmt.Errorf("database config is nil")
+	}
+
+	// Safely close the old sql.DB if present
+	if oldSQLDB, err := target.DB(); err == nil && oldSQLDB != nil {
+		_ = oldSQLDB.Close()
+	}
+
+	newDB, err := Open(cfg)
+	if err != nil {
+		return fmt.Errorf("reopening database: %w", err)
+	}
+
+	newSQLDB, err := newDB.DB()
+	if err != nil {
+		return fmt.Errorf("getting new sql db: %w", err)
+	}
+
+	target.Config.ConnPool = newSQLDB
+	target.Config.Dialector = newDB.Config.Dialector
+	target.ConnPool = newSQLDB
+	if target.Statement != nil {
+		target.Statement.ConnPool = newSQLDB
+	}
+	target.Error = nil
+	return nil
+}
+
 func dialectorFor(cfg *config.DatabaseConfig) (gorm.Dialector, error) {
 	switch cfg.Driver {
 	case "sqlite":
