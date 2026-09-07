@@ -83,6 +83,16 @@ const router = createRouter({
           },
         },
         {
+          path: "system/backup",
+          name: "system-backup",
+          component: () => import("@/views/system/backup/pages/main.vue"),
+          meta: {
+            permission: "system_backup:view",
+            title: "系统备份",
+            keepAliveName: "SystemBackup",
+          },
+        },
+        {
           path: "resource/repositories",
           name: "resource-repositories",
           component: () => import("@/views/resource/repositories/pages/main.vue"),

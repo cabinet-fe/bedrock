@@ -951,3 +951,68 @@ export interface ChatSessionMessageInput {
   content: string;
   reasoning_content?: string;
 }
+
+// System Backup & Restore
+
+export type BackupModule = "database" | "config" | "storage" | "artifacts" | "logs";
+
+export type BackupStatus = "success" | "processing" | "failed";
+
+export interface SystemBackup {
+  id: number;
+  filename: string;
+  file_path: string;
+  file_size: number;
+  modules: BackupModule[];
+  note?: string;
+  status: BackupStatus;
+  error_message?: string;
+  created_by?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type BackupRecord = SystemBackup;
+
+export interface BackupManifest {
+  version: string;
+  app_version?: string;
+  db_driver: string;
+  modules: BackupModule[];
+  created_at: string;
+  note?: string;
+}
+
+export interface BackupInspectResult {
+  upload_token: string;
+  manifest: BackupManifest;
+  compatible: boolean;
+  message?: string;
+}
+
+export type InspectBackupResult = BackupInspectResult;
+
+export interface SystemBackupCreateRequest {
+  modules: BackupModule[];
+  note?: string;
+}
+
+export type CreateBackupParams = SystemBackupCreateRequest;
+
+export interface SystemBackupPage extends PageResult<SystemBackup> {}
+
+export interface SystemBackupRestoreRequest {
+  backup_id?: number;
+  upload_token?: string;
+  admin_password: string;
+  auto_snapshot?: boolean;
+}
+
+export type RestoreBackupParams = SystemBackupRestoreRequest;
+
+export interface SystemBackupRestoreResult {
+  success: boolean;
+  message: string;
+}
+
+export type RestoreBackupResult = SystemBackupRestoreResult;

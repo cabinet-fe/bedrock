@@ -1,12 +1,17 @@
 import { http } from "./http";
 import type {
+  BackupInspectResult,
+  CreateBackupParams,
   Dictionary,
   MenuGroup,
   NotificationItem,
   PageResult,
   PermissionCatalogGroup,
   RbacResource,
+  RestoreBackupParams,
+  RestoreBackupResult,
   Role,
+  SystemBackup,
   User,
 } from "./types";
 
@@ -179,4 +184,49 @@ export function notificationWsUrl(token: string): string {
 
 export async function clearOperationLogs(): Promise<void> {
   await http.delete("/operation-logs");
+}
+
+export async function fetchBackupList(params?: ListQuery): Promise<PageResult<SystemBackup>> {
+  const { body } = await http.get<PageResult<SystemBackup>>("/system/backups", {
+    query: toQuery(params),
+  });
+  return body;
+}
+
+export async function createBackup(body: CreateBackupParams): Promise<SystemBackup> {
+  const { body: data } = await http.post<SystemBackup>("/system/backups", body);
+  return data;
+}
+
+export async function deleteBackup(id: number): Promise<void> {
+  await http.delete(`/system/backups/${id}`);
+}
+
+export function downloadBackupUrl(id: number): string {
+  return `/api/v1/system/backups/${id}/download`;
+}
+
+export async function downloadBackup(id: number): Promise<Blob> {
+  const { body } = await http.get<Blob>(`/system/backups/${id}/download`, {
+    responseType: "blob",
+  });
+  return body;
+}
+
+export async function inspectBackupFile(file: File | FormData): Promise<BackupInspectResult> {
+  const form =
+    file instanceof FormData
+      ? file
+      : (() => {
+          const fd = new FormData();
+          fd.append("file", file);
+          return fd;
+        })();
+  const { body } = await http.post<BackupInspectResult>("/system/backups/inspect", form);
+  return body;
+}
+
+export async function restoreBackup(body: RestoreBackupParams): Promise<RestoreBackupResult> {
+  const { body: data } = await http.post<RestoreBackupResult>("/system/backups/restore", body);
+  return data;
 }
