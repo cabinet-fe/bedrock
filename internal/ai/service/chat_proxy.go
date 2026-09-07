@@ -84,10 +84,11 @@ func (p *ChatProxy) ProxyCompletions(c *gin.Context, userID uint, req model.Chat
 		upstream[k] = v
 	}
 	upstream["model"] = modelID
-	if len(req.RawMessages) > 0 {
-		upstream["messages"] = req.RawMessages
+	sanitizedMsgs, sanitizedRaw := sanitizeMessages(req.Messages, req.RawMessages)
+	if len(sanitizedRaw) > 0 {
+		upstream["messages"] = sanitizedRaw
 	} else {
-		upstream["messages"] = req.Messages
+		upstream["messages"] = sanitizedMsgs
 	}
 	upstream["stream"] = true
 	if req.ReasoningEffort != "" {
@@ -181,4 +182,53 @@ func (p *ChatProxy) ProxyCompletions(c *gin.Context, userID uint, req model.Chat
 	}
 
 	return nil
+}
+
+// sanitizeMessages filters out orphan tool messages that lack a preceding assistant
+// message with tool_calls, preventing upstream providers from returning HTTP 400:
+// "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'".
+func sanitizeMessages(msgs []model.ChatCompletionMessage, rawMsgs []json.RawMessage) ([]model.ChatCompletionMessage, []json.RawMessage) {
+	if len(msgs) == 0 {
+		return msgs, rawMsgs
+	}
+
+	sanitizedMsgs := make([]model.ChatCompletionMessage, 0, len(msgs))
+	var sanitizedRaw []json.RawMessage
+	hasRaw := len(rawMsgs) == len(msgs)
+	if hasRaw {
+		sanitizedRaw = make([]json.RawMessage, 0, len(rawMsgs))
+	}
+
+	for i, m := range msgs {
+		if m.Role == model.RoleTool {
+			hasPrecedingToolCalls := false
+			for j := len(sanitizedMsgs) - 1; j >= 0; j-- {
+				prev := sanitizedMsgs[j]
+				if prev.Role == model.RoleTool {
+					continue
+				}
+				if prev.Role == model.RoleAssistant && prev.ToolCalls != nil {
+					if tcList, ok := prev.ToolCalls.([]any); ok && len(tcList) > 0 {
+						hasPrecedingToolCalls = true
+					} else if tcStr, ok := prev.ToolCalls.(string); ok && tcStr != "" && tcStr != "[]" {
+						hasPrecedingToolCalls = true
+					} else if prev.ToolCalls != nil {
+						hasPrecedingToolCalls = true
+					}
+				}
+				break
+			}
+
+			if !hasPrecedingToolCalls {
+				continue
+			}
+		}
+
+		sanitizedMsgs = append(sanitizedMsgs, m)
+		if hasRaw {
+			sanitizedRaw = append(sanitizedRaw, rawMsgs[i])
+		}
+	}
+
+	return sanitizedMsgs, sanitizedRaw
 }

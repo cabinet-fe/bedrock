@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -379,4 +380,106 @@ func TestChatProxy_ToolCallsAndToolCallIDPreserved(t *testing.T) {
 		}
 	}
 }
+
+func TestChatProxy_OrphanToolMessagesSanitized(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	if err := pkg.InitEncryption(strings.Repeat("cd", 32)); err != nil {
+		t.Fatal(err)
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "proxy_orphan_test.sqlite")
+	gdb, err := db.Open(&config.DatabaseConfig{Driver: "sqlite", Path: dbPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := gdb.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	if err := migration.Up(context.Background(), gdb, migration.Driver("sqlite")); err != nil {
+		t.Fatalf("migration up: %v", err)
+	}
+
+	providerRepo := repository.NewProviderRepository(gdb)
+	providerSvc := service.NewProviderService(providerRepo)
+	chatRepo := repository.NewChatRepository(gdb)
+	chatSvc := service.NewChatService(chatRepo)
+	chatProxy := service.NewChatProxy(providerSvc, chatSvc)
+
+	var receivedBody []byte
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected flusher")
+		}
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"OK\"}}]}\n\n"))
+		flusher.Flush()
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		flusher.Flush()
+	}))
+	defer upstreamServer.Close()
+
+	p, err := providerSvc.CreateProvider(1, model.ProviderInput{
+		Name:   "OrphanToolProvider",
+		APIURL: upstreamServer.URL,
+		APIKey: "sk-orphan-test",
+	})
+	if err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	_, err = providerSvc.CreateModel(p.ID, model.ModelInput{
+		Name:    "Model 1",
+		ModelID: "gpt-orphan-test",
+	})
+	if err != nil {
+		t.Fatalf("create model failed: %v", err)
+	}
+
+	// Craft payload with an orphan tool message (preceding message is user, not assistant with tool_calls)
+	rawJSON := `{
+		"model": "gpt-orphan-test",
+		"messages": [
+			{"role": "user", "content": "hello"},
+			{"role": "tool", "tool_call_id": "orphan_call_123", "content": "{\"status\":\"ok\"}"}
+		]
+	}`
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/chat/completions", bytes.NewReader([]byte(rawJSON)))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	var req model.ChatCompletionRequest
+	if err := json.Unmarshal([]byte(rawJSON), &req); err != nil {
+		t.Fatalf("unmarshal req failed: %v", err)
+	}
+
+	if err := chatProxy.ProxyCompletions(c, 1, req); err != nil {
+		t.Fatalf("proxy completions failed: %v", err)
+	}
+
+	// Verify upstream received messages WITHOUT the orphan tool message
+	var upstreamPayload map[string]any
+	if err := json.Unmarshal(receivedBody, &upstreamPayload); err != nil {
+		t.Fatalf("unmarshal received body: %v", err)
+	}
+
+	upstreamMsgs, ok := upstreamPayload["messages"].([]any)
+	if !ok {
+		t.Fatalf("expected messages slice, got %v", upstreamPayload["messages"])
+	}
+	// Orphan tool message must have been pruned! Only user message remains.
+	if len(upstreamMsgs) != 1 {
+		t.Fatalf("expected 1 sanitized message, got %d: %v", len(upstreamMsgs), upstreamMsgs)
+	}
+}
+
 
