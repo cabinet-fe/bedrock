@@ -40,6 +40,7 @@ declare module 'vue' {
     NotificationBell: typeof import('./src/components/notification-bell/notification-bell.vue')['default']
     ProjectSelect: typeof import('./src/components/project-select/project-select.vue')['default']
     ProTable: typeof import('./src/components/pro-table/pro-table.vue')['default']
+    QueryTableCard: typeof import('./src/components/ai-chat/cards/query-table-card.vue')['default']
     RepoSelect: typeof import('./src/components/repo-select/repo-select.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

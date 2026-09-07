@@ -23,6 +23,7 @@ import type { ProjectDocNode } from "@/api/types";
 import { formatDateTime, formatDurationBetween } from "@/lib/datetime";
 
 import BuildTriggerCard from "./cards/build-trigger-card.vue";
+import QueryTableCard from "./cards/query-table-card.vue";
 import { useAiChatStore } from "@/stores/ai-chat";
 
 function formatTreeSummary(nodes: ProjectDocNode[], indent = ""): string {
@@ -48,6 +49,7 @@ export const aiChatTools: ChatTool[] = [
     icon: Folder,
     description:
       "查询平台上的项目列表。支持按关键字 keyword、状态 status (active/archived) 及分页查询。",
+    render: QueryTableCard,
     parameters: {
       type: "object",
       properties: {
@@ -70,18 +72,29 @@ export const aiChatTools: ChatTool[] = [
         page_size: args.page_size ?? 10,
       });
 
-      if (!res.items || res.items.length === 0) {
-        return "未找到符合条件的项目。";
-      }
+      const columns = [
+        { key: "id", name: "ID", width: 70, align: "center" as const },
+        { key: "name", name: "项目名称", minWidth: 140, type: "link" as const, linkKey: "link" },
+        { key: "slug", name: "标识 (Slug)", minWidth: 120 },
+        { key: "status", name: "状态", width: 90, type: "tag" as const },
+        { key: "description", name: "描述", minWidth: 160 },
+      ];
 
-      const rows = res.items
-        .map(
-          (p) =>
-            `| ${p.id} | [${p.name}](/project/projects/${p.id}) | ${p.slug} | ${p.status} | ${p.description || "—"} |`,
-        )
-        .join("\n");
+      const items = (res.items || []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        status: p.status,
+        description: p.description || "—",
+        link: `/project/projects/${p.id}`,
+      }));
 
-      return `### 项目列表（共 ${res.total} 条）\n\n| ID | 项目名称 | 标识 (Slug) | 状态 | 描述 |\n| :--- | :--- | :--- | :--- | :--- |\n${rows}`;
+      return JSON.stringify({
+        title: "项目列表",
+        total: res.total,
+        columns,
+        items,
+      });
     },
   },
 
@@ -91,6 +104,7 @@ export const aiChatTools: ChatTool[] = [
     label: "查询代码仓库",
     icon: GitBranch,
     description: "查询平台已配置的代码仓库列表。支持按关键字 keyword 过滤搜索。",
+    render: QueryTableCard,
     parameters: {
       type: "object",
       properties: {
@@ -106,18 +120,29 @@ export const aiChatTools: ChatTool[] = [
         page_size: args.page_size ?? 10,
       });
 
-      if (!res.items || res.items.length === 0) {
-        return "未找到符合条件的代码仓库。";
-      }
+      const columns = [
+        { key: "id", name: "ID", width: 70, align: "center" as const },
+        { key: "name", name: "仓库名称", minWidth: 140, type: "link" as const, linkKey: "link" },
+        { key: "auth_type", name: "认证方式", width: 100, type: "tag" as const },
+        { key: "repo_url", name: "仓库地址", minWidth: 200 },
+        { key: "branch", name: "分支预览", minWidth: 100 },
+      ];
 
-      const rows = res.items
-        .map(
-          (r) =>
-            `| ${r.id} | ${r.name} | ${r.auth_type} | ${r.repo_url} | ${r.branches?.[0] || "—"} |`,
-        )
-        .join("\n");
+      const items = (res.items || []).map((r) => ({
+        id: r.id,
+        name: r.name,
+        auth_type: r.auth_type,
+        repo_url: r.repo_url,
+        branch: r.branches?.[0] || "—",
+        link: "/resource/repositories",
+      }));
 
-      return `### 代码仓库列表（共 ${res.total} 条）\n\n| ID | 仓库名称 | 认证方式 | 仓库地址 | 分支预览 |\n| :--- | :--- | :--- | :--- | :--- |\n${rows}`;
+      return JSON.stringify({
+        title: "代码仓库列表",
+        total: res.total,
+        columns,
+        items,
+      });
     },
   },
 
@@ -127,6 +152,7 @@ export const aiChatTools: ChatTool[] = [
     label: "查询服务器",
     icon: Server,
     description: "查询部署服务器主机列表。支持按关键字 keyword、标签 tag 过滤。",
+    render: QueryTableCard,
     parameters: {
       type: "object",
       properties: {
@@ -149,15 +175,31 @@ export const aiChatTools: ChatTool[] = [
         page_size: args.page_size ?? 10,
       });
 
-      if (!res.items || res.items.length === 0) {
-        return "未找到符合条件的服务器。";
-      }
+      const columns = [
+        { key: "id", name: "ID", width: 70, align: "center" as const },
+        { key: "name", name: "服务器名称", minWidth: 140, type: "link" as const, linkKey: "link" },
+        { key: "host", name: "主机 / IP", minWidth: 130 },
+        { key: "port", name: "SSH 端口", width: 90, align: "center" as const },
+        { key: "os_type", name: "系统", width: 100 },
+        { key: "status", name: "状态", width: 90, type: "tag" as const },
+      ];
 
-      const rows = res.items
-        .map((s) => `| ${s.id} | ${s.name} | ${s.host} | ${s.port} | ${s.os_type} | ${s.status} |`)
-        .join("\n");
+      const items = (res.items || []).map((s) => ({
+        id: s.id,
+        name: s.name,
+        host: s.host,
+        port: s.port,
+        os_type: s.os_type || "linux",
+        status: s.status,
+        link: "/resource/servers",
+      }));
 
-      return `### 服务器列表（共 ${res.total} 条）\n\n| ID | 服务器名称 | 主机 / IP | SSH 端口 | 系统 | 状态 |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n${rows}`;
+      return JSON.stringify({
+        title: "服务器列表",
+        total: res.total,
+        columns,
+        items,
+      });
     },
   },
 
@@ -168,6 +210,7 @@ export const aiChatTools: ChatTool[] = [
     icon: Key,
     description:
       "查询平台凭证列表（密钥、密码、访问 Token 等）。结果仅展示基本摘要信息，绝不透出敏感机密。",
+    render: QueryTableCard,
     parameters: {
       type: "object",
       properties: {
@@ -190,18 +233,29 @@ export const aiChatTools: ChatTool[] = [
         page_size: args.page_size ?? 10,
       });
 
-      if (!res.items || res.items.length === 0) {
-        return "未找到符合条件的凭证。";
-      }
+      const columns = [
+        { key: "id", name: "ID", width: 70, align: "center" as const },
+        { key: "name", name: "凭证名称", minWidth: 140, type: "link" as const, linkKey: "link" },
+        { key: "type", name: "凭证类型", width: 110, type: "tag" as const },
+        { key: "description", name: "描述", minWidth: 160 },
+        { key: "updated_at", name: "更新时间", width: 170 },
+      ];
 
-      const rows = res.items
-        .map(
-          (c) =>
-            `| ${c.id} | ${c.name} | ${c.type} | ${c.description || "—"} | ${c.updated_at ? c.updated_at.slice(0, 19).replace("T", " ") : "—"} |`,
-        )
-        .join("\n");
+      const items = (res.items || []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        type: c.type,
+        description: c.description || "—",
+        updated_at: c.updated_at ? c.updated_at.slice(0, 19).replace("T", " ") : "—",
+        link: "/resource/credentials",
+      }));
 
-      return `### 凭证列表（共 ${res.total} 条）\n\n| ID | 凭证名称 | 凭证类型 | 描述 | 更新时间 |\n| :--- | :--- | :--- | :--- | :--- |\n${rows}`;
+      return JSON.stringify({
+        title: "凭证列表",
+        total: res.total,
+        columns,
+        items,
+      });
     },
   },
 
@@ -211,6 +265,7 @@ export const aiChatTools: ChatTool[] = [
     label: "查询构建任务",
     icon: VideoPlay,
     description: "查询 CI/CD 构建任务定义列表。支持按关键字 keyword 过滤。",
+    render: QueryTableCard,
     parameters: {
       type: "object",
       properties: {
@@ -226,18 +281,29 @@ export const aiChatTools: ChatTool[] = [
         page_size: args.page_size ?? 10,
       });
 
-      if (!res.items || res.items.length === 0) {
-        return "未找到符合条件的构建任务。";
-      }
+      const columns = [
+        { key: "id", name: "ID", width: 70, align: "center" as const },
+        { key: "name", name: "任务名称", minWidth: 150, type: "link" as const, linkKey: "link" },
+        { key: "repository_name", name: "关联仓库", minWidth: 120 },
+        { key: "branch", name: "构建分支", minWidth: 100 },
+        { key: "status", name: "状态", width: 90, type: "tag" as const },
+      ];
 
-      const rows = res.items
-        .map(
-          (j) =>
-            `| ${j.id} | [${j.name}](/cicd/build-jobs) | 仓库 #${j.repository_id} | ${j.branch || "—"} | ${j.enabled ? "已启用" : "已禁用"} |`,
-        )
-        .join("\n");
+      const items = (res.items || []).map((j) => ({
+        id: j.id,
+        name: j.name,
+        repository_name: `仓库 #${j.repository_id}`,
+        branch: j.branch || "—",
+        status: j.enabled ? "已启用" : "已禁用",
+        link: "/cicd/build-jobs",
+      }));
 
-      return `### CI/CD 构建任务列表（共 ${res.total} 条）\n\n| ID | 任务名称 | 关联仓库 | 构建分支 | 状态 |\n| :--- | :--- | :--- | :--- | :--- |\n${rows}`;
+      return JSON.stringify({
+        title: "CI/CD 构建任务列表",
+        total: res.total,
+        columns,
+        items,
+      });
     },
   },
 
@@ -247,6 +313,7 @@ export const aiChatTools: ChatTool[] = [
     label: "查询流水线",
     icon: VideoPlay,
     description: "查询 CI/CD 流水线列表。支持按关键字 keyword 过滤。",
+    render: QueryTableCard,
     parameters: {
       type: "object",
       properties: {
@@ -262,18 +329,27 @@ export const aiChatTools: ChatTool[] = [
         page_size: args.page_size ?? 10,
       });
 
-      if (!res.items || res.items.length === 0) {
-        return "未找到符合条件的流水线。";
-      }
+      const columns = [
+        { key: "id", name: "ID", width: 70, align: "center" as const },
+        { key: "name", name: "流水线名称", minWidth: 150, type: "link" as const, linkKey: "link" },
+        { key: "status", name: "状态", width: 90, type: "tag" as const },
+        { key: "description", name: "描述", minWidth: 160 },
+      ];
 
-      const rows = res.items
-        .map(
-          (p) =>
-            `| ${p.id} | [${p.name}](/cicd/pipelines) | ${p.enabled ? "已启用" : "已禁用"} | ${p.description || "—"} |`,
-        )
-        .join("\n");
+      const items = (res.items || []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        status: p.enabled ? "已启用" : "已禁用",
+        description: p.description || "—",
+        link: "/cicd/pipelines",
+      }));
 
-      return `### CI/CD 流水线列表（共 ${res.total} 条）\n\n| ID | 流水线名称 | 状态 | 描述 |\n| :--- | :--- | :--- | :--- |\n${rows}`;
+      return JSON.stringify({
+        title: "CI/CD 流水线列表",
+        total: res.total,
+        columns,
+        items,
+      });
     },
   },
 
@@ -283,6 +359,7 @@ export const aiChatTools: ChatTool[] = [
     label: "查询构建记录",
     icon: VideoPlay,
     description: "查询最近的 CI/CD 构建运行历史记录。支持按任务 ID、流水线 ID、状态过滤。",
+    render: QueryTableCard,
     parameters: {
       type: "object",
       properties: {
@@ -312,18 +389,49 @@ export const aiChatTools: ChatTool[] = [
         page_size: args.page_size ?? 10,
       });
 
-      if (!res.items || res.items.length === 0) {
-        return "未找到符合条件的构建运行记录。";
-      }
+      const columns = [
+        {
+          key: "id",
+          name: "运行 ID",
+          width: 90,
+          align: "center" as const,
+          type: "link" as const,
+          linkKey: "link",
+        },
+        { key: "build_job_id", name: "任务 ID", width: 90, align: "center" as const },
+        { key: "branch", name: "构建分支", minWidth: 100 },
+        { key: "commit_hash", name: "Commit", width: 90 },
+        { key: "status", name: "状态", width: 90, type: "tag" as const },
+        { key: "stage", name: "阶段", width: 90, type: "tag" as const },
+        { key: "trigger_type", name: "触发方式", width: 90, type: "tag" as const },
+        {
+          key: "action",
+          name: "详情链接",
+          width: 100,
+          align: "center" as const,
+          type: "link" as const,
+          linkKey: "link",
+        },
+      ];
 
-      const rows = res.items
-        .map(
-          (r) =>
-            `| ${r.id} | #${r.build_job_id} | ${r.branch || "—"} | ${r.commit_hash ? r.commit_hash.slice(0, 8) : "—"} | ${r.status} | ${r.stage || "—"} | ${r.trigger_type || "manual"} | [/cicd/build-runs/${r.id}](/cicd/build-runs/${r.id}) |`,
-        )
-        .join("\n");
+      const items = (res.items || []).map((r) => ({
+        id: r.id,
+        build_job_id: `#${r.build_job_id}`,
+        branch: r.branch || "—",
+        commit_hash: r.commit_hash ? r.commit_hash.slice(0, 8) : "—",
+        status: r.status,
+        stage: r.stage || "—",
+        trigger_type: r.trigger_type || "manual",
+        action: "查看详情",
+        link: `/cicd/build-runs/${r.id}`,
+      }));
 
-      return `### 构建运行记录（共 ${res.total} 条）\n\n| 运行 ID | 任务 ID | 构建分支 | Commit | 状态 | 阶段 | 触发方式 | 详情链接 |\n| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n${rows}`;
+      return JSON.stringify({
+        title: "构建运行记录",
+        total: res.total,
+        columns,
+        items,
+      });
     },
   },
 
@@ -480,6 +588,7 @@ export const aiChatTools: ChatTool[] = [
     label: "查询智能体",
     icon: Brain,
     description: "查询平台上的 AI 智能体定义列表。支持按关键字 keyword 过滤搜索。",
+    render: QueryTableCard,
     parameters: {
       type: "object",
       properties: {
@@ -495,18 +604,29 @@ export const aiChatTools: ChatTool[] = [
         page_size: args.page_size ?? 10,
       });
 
-      if (!res.items || res.items.length === 0) {
-        return "未找到符合条件的智能体。";
-      }
+      const columns = [
+        { key: "id", name: "ID", width: 70, align: "center" as const },
+        { key: "name", name: "智能体名称", minWidth: 140, type: "link" as const, linkKey: "link" },
+        { key: "cli_key", name: "CLI Key", minWidth: 120 },
+        { key: "description", name: "描述", minWidth: 160 },
+        { key: "status", name: "启用状态", width: 90, type: "tag" as const },
+      ];
 
-      const rows = res.items
-        .map(
-          (a) =>
-            `| ${a.id} | [${a.name}](/ai/agents) | ${a.cli_key} | ${a.description || "—"} | ${a.enabled ? "已启用" : "已禁用"} |`,
-        )
-        .join("\n");
+      const items = (res.items || []).map((a) => ({
+        id: a.id,
+        name: a.name,
+        cli_key: a.cli_key,
+        description: a.description || "—",
+        status: a.enabled ? "已启用" : "已禁用",
+        link: "/ai/agents",
+      }));
 
-      return `### AI 智能体列表（共 ${res.total} 个）\n\n| ID | 智能体名称 | CLI Key | 描述 | 启用状态 |\n| :--- | :--- | :--- | :--- | :--- |\n${rows}`;
+      return JSON.stringify({
+        title: "AI 智能体列表",
+        total: res.total,
+        columns,
+        items,
+      });
     },
   },
 
@@ -516,6 +636,7 @@ export const aiChatTools: ChatTool[] = [
     label: "查询智能体运行",
     icon: Brain,
     description: "查询 AI 智能体的运行历史记录。支持按智能体 ID、状态过滤。",
+    render: QueryTableCard,
     parameters: {
       type: "object",
       properties: {
@@ -542,18 +663,45 @@ export const aiChatTools: ChatTool[] = [
         page_size: args.page_size ?? 10,
       });
 
-      if (!res.items || res.items.length === 0) {
-        return "未找到符合条件的智能体运行记录。";
-      }
+      const columns = [
+        {
+          key: "id",
+          name: "运行 ID",
+          width: 90,
+          align: "center" as const,
+          type: "link" as const,
+          linkKey: "link",
+        },
+        { key: "agent_id", name: "智能体 ID", width: 90, align: "center" as const },
+        { key: "status", name: "状态", width: 90, type: "tag" as const },
+        { key: "duration", name: "耗时", width: 100, align: "center" as const },
+        { key: "created_at", name: "触发时间", width: 170 },
+        {
+          key: "action",
+          name: "详情链接",
+          width: 100,
+          align: "center" as const,
+          type: "link" as const,
+          linkKey: "link",
+        },
+      ];
 
-      const rows = res.items
-        .map(
-          (r) =>
-            `| ${r.id} | #${r.agent_id} | ${r.status} | ${formatDurationBetween(r.started_at, r.finished_at)} | ${formatDateTime(r.created_at)} | [/ai/runs/${r.id}](/ai/runs/${r.id}) |`,
-        )
-        .join("\n");
+      const items = (res.items || []).map((r) => ({
+        id: r.id,
+        agent_id: `#${r.agent_id}`,
+        status: r.status,
+        duration: formatDurationBetween(r.started_at, r.finished_at) || "—",
+        created_at: formatDateTime(r.created_at) || "—",
+        action: "查看详情",
+        link: `/ai/runs/${r.id}`,
+      }));
 
-      return `### AI 智能体运行记录（共 ${res.total} 条）\n\n| 运行 ID | 智能体 ID | 状态 | 耗时 | 触发时间 | 详情链接 |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n${rows}`;
+      return JSON.stringify({
+        title: "AI 智能体运行记录",
+        total: res.total,
+        columns,
+        items,
+      });
     },
   },
 
