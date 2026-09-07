@@ -13,6 +13,7 @@ import type { AiModel, ChatSession } from "@/api/types";
 const AI_MODE_STORAGE_KEY = "bedrock_ai_mode_active";
 const AI_CACHED_MODEL_KEY = "bedrock_ai_cached_model_id";
 const AI_CACHED_REASONING_KEY = "bedrock_ai_cached_reasoning_level";
+const AI_CACHED_REASONING_MAP_KEY = "bedrock_ai_cached_reasoning_map";
 
 function getInitialAiMode(): boolean {
   try {
@@ -24,7 +25,8 @@ function getInitialAiMode(): boolean {
 
 function getCachedModelId(): string {
   try {
-    return localStorage.getItem(AI_CACHED_MODEL_KEY) || "";
+    const val = localStorage.getItem(AI_CACHED_MODEL_KEY);
+    return val && val !== "fallback-model" ? val : "";
   } catch {
     return "";
   }
@@ -32,9 +34,9 @@ function getCachedModelId(): string {
 
 function setCachedModelId(id: string): void {
   try {
-    if (id) {
+    if (id && id !== "fallback-model") {
       localStorage.setItem(AI_CACHED_MODEL_KEY, id);
-    } else {
+    } else if (!id) {
       localStorage.removeItem(AI_CACHED_MODEL_KEY);
     }
   } catch {
@@ -42,8 +44,23 @@ function setCachedModelId(id: string): void {
   }
 }
 
-function getCachedReasoningLevel(): string | undefined {
+function getCachedReasoningMap(): Record<string, string> {
   try {
+    const raw = localStorage.getItem(AI_CACHED_REASONING_MAP_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function getCachedReasoningLevel(modelId?: string): string | undefined {
+  try {
+    if (modelId) {
+      const map = getCachedReasoningMap();
+      if (map[modelId]) {
+        return map[modelId];
+      }
+    }
     const val = localStorage.getItem(AI_CACHED_REASONING_KEY);
     return val || undefined;
   } catch {
@@ -51,12 +68,22 @@ function getCachedReasoningLevel(): string | undefined {
   }
 }
 
-function setCachedReasoningLevel(level: string | undefined): void {
+function setCachedReasoningLevel(level: string | undefined, modelId?: string): void {
   try {
     if (level) {
       localStorage.setItem(AI_CACHED_REASONING_KEY, level);
+      if (modelId && modelId !== "fallback-model") {
+        const map = getCachedReasoningMap();
+        map[modelId] = level;
+        localStorage.setItem(AI_CACHED_REASONING_MAP_KEY, JSON.stringify(map));
+      }
     } else {
       localStorage.removeItem(AI_CACHED_REASONING_KEY);
+      if (modelId) {
+        const map = getCachedReasoningMap();
+        delete map[modelId];
+        localStorage.setItem(AI_CACHED_REASONING_MAP_KEY, JSON.stringify(map));
+      }
     }
   } catch {
     // ignore
@@ -78,9 +105,13 @@ export const useAiChatStore = defineStore("ai-chat", () => {
   const currentSessionId = ref<number | null>(null);
   const availableModels = shallowRef<AiModel[]>([]);
   const currentModelId = ref<string>(getCachedModelId());
-  const currentReasoningLevel = ref<string | undefined>(getCachedReasoningLevel());
+  const currentReasoningLevel = ref<string | undefined>(
+    getCachedReasoningLevel(getCachedModelId()),
+  );
   const loadingSessions = ref(false);
   const loadingModels = ref(false);
+  const modelsLoaded = ref(false);
+  let fetchModelsPromise: Promise<AiModel[]> | null = null;
 
   function openRightPanel(panel: ActiveRightPanel) {
     activeRightPanel.value = panel;
@@ -91,59 +122,81 @@ export const useAiChatStore = defineStore("ai-chat", () => {
   }
 
   function syncReasoningForModel(modelId: string) {
-    const target = availableModels.value.find((m) => m.model_id === modelId);
-    if (!target || !target.reasoning_efforts || target.reasoning_efforts.length === 0) {
-      currentReasoningLevel.value = undefined;
-      setCachedReasoningLevel(undefined);
+    if (!modelsLoaded.value || availableModels.value.length === 0) {
       return;
     }
-    const cached = getCachedReasoningLevel();
-    const currentValid = cached && target.reasoning_efforts.some((r) => r.value === cached);
-    if (currentValid) {
+    const target = availableModels.value.find((m) => m.model_id === modelId);
+    if (!target) {
+      return;
+    }
+    if (!target.reasoning_efforts || target.reasoning_efforts.length === 0) {
+      currentReasoningLevel.value = undefined;
+      setCachedReasoningLevel(undefined, modelId);
+      return;
+    }
+
+    const cached = currentReasoningLevel.value ?? getCachedReasoningLevel(modelId);
+    const matched = cached && target.reasoning_efforts.some((r) => r.value === cached);
+    if (matched) {
       currentReasoningLevel.value = cached;
+      setCachedReasoningLevel(cached, modelId);
     } else {
-      currentReasoningLevel.value = target.reasoning_efforts[0]?.value;
-      setCachedReasoningLevel(currentReasoningLevel.value);
+      const fallback = target.reasoning_efforts[0]?.value;
+      currentReasoningLevel.value = fallback;
+      setCachedReasoningLevel(fallback, modelId);
     }
   }
 
   watch(currentModelId, (val) => {
-    if (val) {
-      setCachedModelId(val);
-      syncReasoningForModel(val);
+    if (!val || val === "fallback-model") return;
+    if (modelsLoaded.value) {
+      const isValid = availableModels.value.some((m) => m.model_id === val);
+      if (isValid) {
+        setCachedModelId(val);
+        syncReasoningForModel(val);
+      }
     }
   });
 
   watch(currentReasoningLevel, (val) => {
-    setCachedReasoningLevel(val);
+    if (!modelsLoaded.value) return;
+    setCachedReasoningLevel(val, currentModelId.value);
   });
 
   async function fetchAvailableModels(): Promise<AiModel[]> {
-    loadingModels.value = true;
-    try {
-      const list = await listAvailableModels();
-      availableModels.value = list;
-      if (list.length > 0) {
-        const cachedModel = getCachedModelId();
-        const hasCached = cachedModel && list.some((m) => m.model_id === cachedModel);
-        if (hasCached) {
-          currentModelId.value = cachedModel;
-        } else {
-          // 如果未设置或由于更改服务商导致模型 ID 失效，回退到默认模型（首个可用模型）
-          currentModelId.value = list[0]!.model_id;
-          setCachedModelId(currentModelId.value);
-        }
-        syncReasoningForModel(currentModelId.value);
-      } else {
-        currentModelId.value = "";
-        currentReasoningLevel.value = undefined;
-        setCachedModelId("");
-        setCachedReasoningLevel(undefined);
-      }
-      return list;
-    } finally {
-      loadingModels.value = false;
+    if (fetchModelsPromise) {
+      return fetchModelsPromise;
     }
+    loadingModels.value = true;
+    fetchModelsPromise = (async () => {
+      try {
+        const list = await listAvailableModels();
+        availableModels.value = list;
+        modelsLoaded.value = true;
+        if (list.length > 0) {
+          const cachedModel = getCachedModelId();
+          const hasCached = cachedModel && list.some((m) => m.model_id === cachedModel);
+          if (hasCached) {
+            currentModelId.value = cachedModel;
+          } else {
+            // 如果未设置或由于更改服务商导致模型 ID 失效，回退到默认模型（首个可用模型）
+            currentModelId.value = list[0]!.model_id;
+            setCachedModelId(currentModelId.value);
+          }
+          syncReasoningForModel(currentModelId.value);
+        } else {
+          currentModelId.value = "";
+          currentReasoningLevel.value = undefined;
+          setCachedModelId("");
+          setCachedReasoningLevel(undefined);
+        }
+        return list;
+      } finally {
+        loadingModels.value = false;
+        fetchModelsPromise = null;
+      }
+    })();
+    return fetchModelsPromise;
   }
 
   async function fetchSessions(): Promise<ChatSession[]> {
@@ -225,12 +278,22 @@ export const useAiChatStore = defineStore("ai-chat", () => {
   }
 
   function setModel(modelId: string) {
+    if (!modelId || modelId === "fallback-model") return;
     currentModelId.value = modelId;
-    syncReasoningForModel(modelId);
+    if (modelsLoaded.value) {
+      const isValid = availableModels.value.some((m) => m.model_id === modelId);
+      if (isValid) {
+        setCachedModelId(modelId);
+        syncReasoningForModel(modelId);
+      }
+    }
   }
 
   function setReasoningLevel(level: string | undefined) {
     currentReasoningLevel.value = level;
+    if (modelsLoaded.value) {
+      setCachedReasoningLevel(level, currentModelId.value);
+    }
   }
 
   return {
@@ -243,6 +306,7 @@ export const useAiChatStore = defineStore("ai-chat", () => {
     currentReasoningLevel,
     loadingSessions,
     loadingModels,
+    modelsLoaded,
     openRightPanel,
     closeRightPanel,
     toggleAiMode,
@@ -254,5 +318,7 @@ export const useAiChatStore = defineStore("ai-chat", () => {
     deleteSession,
     setModel,
     setReasoningLevel,
+    syncReasoningForModel,
+    getCachedReasoningLevel,
   };
 });

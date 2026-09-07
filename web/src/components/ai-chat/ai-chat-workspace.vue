@@ -122,6 +122,30 @@ function handleChatClick(event: MouseEvent) {
   }
 }
 
+const selectedModel = computed({
+  get: () => chatStore.currentModelId,
+  set: (val: string) => {
+    if (!val || val === "fallback-model") return;
+    if (chatStore.availableModels.length > 0) {
+      if (chatStore.availableModels.some((m) => m.model_id === val)) {
+        chatStore.setModel(val);
+      }
+    } else {
+      chatStore.currentModelId = val;
+    }
+  },
+});
+
+const selectedReasoningLevel = computed({
+  get: () => chatStore.currentReasoningLevel,
+  set: (val: string | undefined) => {
+    if (chatStore.availableModels.length === 0 && val === undefined) {
+      return;
+    }
+    chatStore.setReasoningLevel(val);
+  },
+});
+
 const transport = computed(() => {
   const token = getAccessToken();
   const rawModels = chatStore.availableModels;
@@ -133,11 +157,18 @@ const transport = computed(() => {
       m.reasoning_efforts && m.reasoning_efforts.length > 0
         ? m.reasoning_efforts.map((r) => ({ value: r.value, label: r.label }))
         : undefined,
-    defaultReasoningLevel: m.reasoning_efforts?.[0]?.value,
+    defaultReasoningLevel:
+      (m.model_id === chatStore.currentModelId ? chatStore.currentReasoningLevel : undefined) ??
+      chatStore.getCachedReasoningLevel(m.model_id) ??
+      m.reasoning_efforts?.[0]?.value,
   }));
 
   const effectiveModels =
-    models.length > 0 ? models : [{ id: "fallback-model", label: "暂无可用模型" }];
+    models.length > 0
+      ? models
+      : chatStore.currentModelId
+        ? [{ id: chatStore.currentModelId, label: chatStore.currentModelId }]
+        : [{ id: "fallback-model", label: "暂无可用模型" }];
 
   const headers: Record<string, string> = {};
   if (token) {
@@ -246,7 +277,14 @@ onMounted(async () => {
           @click="handleChatClick"
         >
           <div
-            v-if="chatStore.availableModels.length === 0 && !chatStore.loadingModels"
+            v-if="!chatStore.modelsLoaded && chatStore.loadingModels"
+            class="ai-chat-workspace__empty-model"
+          >
+            <p>正在加载可用模型...</p>
+          </div>
+
+          <div
+            v-else-if="chatStore.availableModels.length === 0"
             class="ai-chat-workspace__empty-model"
           >
             <p>当前平台暂无可用的 AI 模型配置。</p>
@@ -256,8 +294,8 @@ onMounted(async () => {
           <u-ai-chat
             v-else
             v-model:messages="currentMessages"
-            v-model:model="chatStore.currentModelId"
-            v-model:reasoning-level="chatStore.currentReasoningLevel"
+            v-model:model="selectedModel"
+            v-model:reasoning-level="selectedReasoningLevel"
             :tools="aiChatTools"
             :welcome="welcomeSuggestions"
             class="ai-chat-workspace__chat"
