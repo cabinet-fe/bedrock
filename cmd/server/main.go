@@ -129,6 +129,7 @@ func main() {
 	menuGroupRepo := rbacrepo.NewMenuGroupRepository(gdb)
 	dictRepo := systemrepo.NewDictionaryRepository(gdb)
 	logRepo := systemrepo.NewOperationLogRepository(gdb)
+	backupRepo := systemrepo.NewBackupRepository(gdb)
 
 	permSvc := rbacservice.NewPermissionService(roleRepo, resourceRepo, menuGroupRepo)
 	roleSvc := rbacservice.NewRoleService(roleRepo, resourceRepo)
@@ -137,6 +138,13 @@ func main() {
 	userSvc := systemservice.NewUserService(userRepo, roleSvc)
 	dictSvc := systemservice.NewDictionaryService(dictRepo)
 	auditSvc := systemservice.NewAuditService(logRepo)
+	backupEngine := systemservice.NewBackupEngine(systemservice.BackupEngineOptions{
+		DB:         gdb,
+		Config:     cfg,
+		AppVersion: version,
+		ConfigPath: *configPath,
+	})
+	backupSvc := systemservice.NewBackupService(backupRepo, backupEngine, userRepo)
 
 	authSvc, err := authservice.NewAuthService(cfg, userRepo, permSvc)
 	if err != nil {
@@ -149,6 +157,7 @@ func main() {
 	resourceHandler := rbachandler.NewResourceHandler(resourceSvc, menuGroupSvc, permSvc)
 	dictHandler := systemhandler.NewDictionaryHandler(dictSvc, permSvc)
 	logHandler := systemhandler.NewOperationLogHandler(auditSvc, permSvc)
+	backupHandler := systemhandler.NewBackupHandler(backupSvc, permSvc)
 
 	credRepo := resourcerepo.NewCredentialRepository(gdb)
 	repoRepo := resourcerepo.NewRepositoryRepository(gdb)
@@ -311,6 +320,7 @@ func main() {
 	projectHandler.RegisterRoutes(api, authMW)
 	aiHandler.RegisterRoutes(api, authMW)
 	notifHandler.RegisterRoutes(api, authMW)
+	backupHandler.RegisterRoutes(api, authMW)
 
 	api.GET("/health", func(c *gin.Context) {
 		pkg.Success(c, gin.H{

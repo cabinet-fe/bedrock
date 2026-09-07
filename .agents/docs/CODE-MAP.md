@@ -63,7 +63,7 @@ bedrock
 | middleware | `internal/middleware` | Gin 中间件（CORS 等） | `middleware/cors.go` |
 | auth | `internal/auth` | 登录、JWT / PAT、当前用户 | `auth/handler.RegisterRoutes` |
 | rbac | `internal/rbac` | 角色与权限判定 | `rbac/handler.RegisterRoutes` |
-| system | `internal/system` | 用户、角色、字典、操作日志、通知、权限资源 | `system/handler.RegisterRoutes` |
+| system | `internal/system` | 用户、角色、字典、操作日志、通知、权限资源、系统备份与恢复 | `system/handler.RegisterRoutes` |
 | resource | `internal/resource` | 仓库、服务器、凭证、访问令牌等资源 | resource handler |
 | cicd | `internal/cicd` | 构建任务/脚本任务/构建运行/流水线/Webhook API | `cicd/handler.RegisterRoutes` |
 | engine | `internal/engine` | 流水线执行引擎（调度、构建、分发） | `engine/pipeline_distribute.go` 等 |

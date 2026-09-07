@@ -274,6 +274,8 @@
 
 ## 系统备份
 
+系统备份与恢复管理接口。
+
 ### GET /system/backups — 列出备份记录
 
 权限：`system_backup:view`
