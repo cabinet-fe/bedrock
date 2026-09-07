@@ -38,6 +38,7 @@ declare module 'vue' {
     MenuSearch: typeof import('./src/components/menu-search/menu-search.vue')['default']
     MenuSearchModal: typeof import('./src/components/menu-search/menu-search-modal.vue')['default']
     NotificationBell: typeof import('./src/components/notification-bell/notification-bell.vue')['default']
+    ProjectDetailPanel: typeof import('./src/components/ai-chat/panels/project-detail-panel.vue')['default']
     ProjectSelect: typeof import('./src/components/project-select/project-select.vue')['default']
     ProTable: typeof import('./src/components/pro-table/pro-table.vue')['default']
     QueryTableCard: typeof import('./src/components/ai-chat/cards/query-table-card.vue')['default']

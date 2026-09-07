@@ -5,7 +5,7 @@ import { createOpenAITransport, UAiChat, type ChatMessage, type ChatTransport } 
 import "@veltra/ai/style";
 import { UButton, UIcon, ULayout } from "@veltra/desktop";
 import "@veltra/desktop/components/layout/style";
-import { Books, Close, Hide, VideoPlay } from "@veltra/icons/normal";
+import { Books, Close, Folder, Hide, VideoPlay } from "@veltra/icons/normal";
 
 import { listChatMessages } from "@/api/ai";
 import { getAccessToken } from "@/api/http";
@@ -13,11 +13,14 @@ import { useAiChatStore } from "@/stores/ai-chat";
 import AiChatSidebar from "./ai-chat-sidebar.vue";
 import BuildDetailPanel from "./panels/build-detail-panel.vue";
 import DocViewerPanel from "./panels/doc-viewer-panel.vue";
+import ProjectDetailPanel from "./panels/project-detail-panel.vue";
 import { aiChatTools } from "./tools";
 
 const chatStore = useAiChatStore();
+const chatRef = ref<InstanceType<typeof UAiChat> | null>(null);
 const currentMessages = ref<ChatMessage[]>([]);
 const loadingMessages = ref(false);
+const isCreatingDraftSession = ref(false);
 
 const welcomeSuggestions = [
   "今天有什么我可以帮你的？",
@@ -96,6 +99,18 @@ function handleChatClick(event: MouseEvent) {
   if (!target) return;
   const href = target.getAttribute("href");
   if (!href) return;
+
+  const projectMatch = href.match(/\/projects?(?:\/projects)?\/(\d+)/);
+  if (projectMatch && projectMatch[1]) {
+    event.preventDefault();
+    event.stopPropagation();
+    chatStore.openRightPanel({
+      type: "project",
+      id: Number(projectMatch[1]),
+      title: `项目 #${projectMatch[1]}`,
+    });
+    return;
+  }
 
   const buildMatch = href.match(/^\/cicd\/build-runs\/(\d+)/);
   if (buildMatch && buildMatch[1]) {
@@ -176,6 +191,7 @@ const transport = computed(() => {
     // 1. 草稿状态下发送首条消息时，前端自动调用创建会话接口完成持久化，会话进入左侧列表并按首条提问更新会话标题
     if (chatStore.isDraft && !chatStore.isTemporary) {
       try {
+        isCreatingDraftSession.value = true;
         const firstUser = request.messages.find((m) => m.role === "user");
         const rawTitle = firstUser?.content?.trim() || "新对话";
         const title = rawTitle.slice(0, 30);
@@ -184,6 +200,8 @@ const transport = computed(() => {
       } catch (err) {
         handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
         return;
+      } finally {
+        isCreatingDraftSession.value = false;
       }
     }
 
@@ -221,13 +239,22 @@ const transport = computed(() => {
   });
 });
 
+const systemPrompt = `你是 Bedrock 研发管理平台的 AI 智能助手。
+平台前端交互界面已经具备专门的可视化卡片（如数据表格卡片、构建触发卡片、状态面板等）来展示工具调用的查询结果。
+因此，当工具调用成功并返回数据后：
+1. 绝对不要在你的 Markdown 文字回复中重复绘制表格，严禁重复输出卡片中已经呈现的表格数据与多行列表。
+2. 保持回答简明扼要，仅用自然语言概述核心结果（例如找到多少个项目/任务、当前状态概况），并解答用户的具体疑问或提供可行的下一步建议操作。
+3. 如果用户只是要求查询/展示列表，工具卡片已经展示了完整数据，无需再重复绘制任何表格。`;
+
 async function loadSessionMessages(sessionId: number | null) {
   if (sessionId === null) {
+    chatRef.value?.clear();
     currentMessages.value = [];
     return;
   }
   loadingMessages.value = true;
   try {
+    chatRef.value?.clear();
     const list = await listChatMessages(sessionId);
     currentMessages.value = list.map((item) => ({
       id: String(item.id),
@@ -247,6 +274,9 @@ async function loadSessionMessages(sessionId: number | null) {
 watch(
   () => chatStore.currentSessionId,
   (sessionId) => {
+    if (isCreatingDraftSession.value) {
+      return;
+    }
     if (sessionId !== null && sessionId === activeDraftSessionId) {
       activeDraftSessionId = null;
       return;
@@ -254,6 +284,7 @@ watch(
     if (sessionId) {
       void loadSessionMessages(sessionId);
     } else {
+      chatRef.value?.clear();
       currentMessages.value = [];
     }
   },
@@ -344,12 +375,14 @@ onMounted(async () => {
 
           <u-ai-chat
             v-else
+            ref="chatRef"
             v-model:messages="currentMessages"
             v-model:model="selectedModel"
             v-model:reasoning-level="selectedReasoningLevel"
             :tools="aiChatTools"
             :welcome="welcomeSuggestions"
             class="ai-chat-workspace__chat"
+            :system-prompt="systemPrompt"
             :transport="transport"
             :models="transport.models"
             placeholder="输入问题，Enter 发送，Shift+Enter 换行..."
@@ -360,7 +393,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <!-- 右侧详情面板（构建/流水线/文档等） -->
+      <!-- 右侧详情面板（构建/流水线/文档/项目等） -->
       <aside
         v-if="chatStore.activeRightPanel"
         ref="panelRef"
@@ -370,9 +403,10 @@ onMounted(async () => {
           <div class="ai-chat-workspace__panel-title">
             <u-icon :size="16" class="panel-icon">
               <Books v-if="chatStore.activeRightPanel.type === 'doc'" />
+              <Folder v-else-if="chatStore.activeRightPanel.type === 'project'" />
               <VideoPlay v-else />
             </u-icon>
-            <span>{{ chatStore.activeRightPanel.title || "运行详情" }}</span>
+            <span>{{ chatStore.activeRightPanel.title || "详情" }}</span>
           </div>
           <u-button text circle size="small" title="关闭面板" @click="chatStore.closeRightPanel()">
             <u-icon :size="14">
@@ -382,8 +416,12 @@ onMounted(async () => {
         </div>
 
         <div class="ai-chat-workspace__panel-body">
+          <ProjectDetailPanel
+            v-if="chatStore.activeRightPanel.type === 'project'"
+            :project-id="chatStore.activeRightPanel.id"
+          />
           <BuildDetailPanel
-            v-if="
+            v-else-if="
               chatStore.activeRightPanel.type === 'build' ||
               chatStore.activeRightPanel.type === 'pipeline'
             "
@@ -495,6 +533,13 @@ onMounted(async () => {
 .ai-chat-workspace__chat {
   height: 100%;
   width: 100%;
+
+  /* 增加会话区域上下内边距，避免紧贴顶部横幅与底部视口边缘 */
+  :deep(.u-ai-chat__main) {
+    padding-top: 16px;
+    padding-bottom: 16px;
+    box-sizing: border-box;
+  }
 
   /* 关闭图片与文件附件上传入口，仅支持纯文本交互 */
   :deep(.u-ai-chat__input-attach),

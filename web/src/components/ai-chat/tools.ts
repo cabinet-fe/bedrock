@@ -26,6 +26,9 @@ import BuildTriggerCard from "./cards/build-trigger-card.vue";
 import QueryTableCard from "./cards/query-table-card.vue";
 import { useAiChatStore } from "@/stores/ai-chat";
 
+const TABLE_CARD_HINT =
+  "数据已在前端表格卡片中直观呈现。模型在文本回复中严禁重复输出 Markdown 表格或逐项罗列数据，仅做总体说明或给出后续指引。";
+
 function formatTreeSummary(nodes: ProjectDocNode[], indent = ""): string {
   const lines: string[] = [];
   for (const n of nodes) {
@@ -48,7 +51,7 @@ export const aiChatTools: ChatTool[] = [
     label: "查询项目列表",
     icon: Folder,
     description:
-      "查询平台上的项目列表。支持按关键字 keyword、状态 status (active/archived) 及分页查询。",
+      "查询平台上的项目列表。支持按关键字 keyword、状态 status (active/archived) 及分页查询。注意：结果已由前端卡片直接以表格形式呈现，模型回复时严禁重复输出 Markdown 表格。",
     render: QueryTableCard,
     parameters: {
       type: "object",
@@ -94,6 +97,7 @@ export const aiChatTools: ChatTool[] = [
         total: res.total,
         columns,
         items,
+        _hint: TABLE_CARD_HINT,
       });
     },
   },
@@ -103,7 +107,8 @@ export const aiChatTools: ChatTool[] = [
     name: "list_repositories",
     label: "查询代码仓库",
     icon: GitBranch,
-    description: "查询平台已配置的代码仓库列表。支持按关键字 keyword 过滤搜索。",
+    description:
+      "查询平台已配置的代码仓库列表。支持按关键字 keyword 过滤搜索。注意：结果已由前端卡片直接以表格形式呈现，模型回复时严禁重复输出 Markdown 表格。",
     render: QueryTableCard,
     parameters: {
       type: "object",
@@ -142,6 +147,7 @@ export const aiChatTools: ChatTool[] = [
         total: res.total,
         columns,
         items,
+        _hint: TABLE_CARD_HINT,
       });
     },
   },
@@ -151,7 +157,8 @@ export const aiChatTools: ChatTool[] = [
     name: "list_servers",
     label: "查询服务器",
     icon: Server,
-    description: "查询部署服务器主机列表。支持按关键字 keyword、标签 tag 过滤。",
+    description:
+      "查询部署服务器主机列表。支持按关键字 keyword、标签 tag 过滤。注意：结果已由前端卡片直接以表格形式呈现，模型回复时严禁重复输出 Markdown 表格。",
     render: QueryTableCard,
     parameters: {
       type: "object",
@@ -199,6 +206,7 @@ export const aiChatTools: ChatTool[] = [
         total: res.total,
         columns,
         items,
+        _hint: TABLE_CARD_HINT,
       });
     },
   },
@@ -209,7 +217,7 @@ export const aiChatTools: ChatTool[] = [
     label: "查询凭证",
     icon: Key,
     description:
-      "查询平台凭证列表（密钥、密码、访问 Token 等）。结果仅展示基本摘要信息，绝不透出敏感机密。",
+      "查询平台凭证列表（密钥、密码、访问 Token 等）。结果仅展示基本摘要信息，绝不透出敏感机密。注意：结果已由前端卡片直接以表格形式呈现，模型回复时严禁重复输出 Markdown 表格。",
     render: QueryTableCard,
     parameters: {
       type: "object",
@@ -255,6 +263,7 @@ export const aiChatTools: ChatTool[] = [
         total: res.total,
         columns,
         items,
+        _hint: TABLE_CARD_HINT,
       });
     },
   },
@@ -264,7 +273,8 @@ export const aiChatTools: ChatTool[] = [
     name: "list_build_jobs",
     label: "查询构建任务",
     icon: VideoPlay,
-    description: "查询 CI/CD 构建任务定义列表。支持按关键字 keyword 过滤。",
+    description:
+      "查询 CI/CD 构建任务定义列表。支持按关键字 keyword 过滤。注意：结果已由前端卡片直接以表格形式呈现，模型回复时严禁重复输出 Markdown 表格。",
     render: QueryTableCard,
     parameters: {
       type: "object",
@@ -303,6 +313,7 @@ export const aiChatTools: ChatTool[] = [
         total: res.total,
         columns,
         items,
+        _hint: TABLE_CARD_HINT,
       });
     },
   },
@@ -312,7 +323,8 @@ export const aiChatTools: ChatTool[] = [
     name: "list_pipelines",
     label: "查询流水线",
     icon: VideoPlay,
-    description: "查询 CI/CD 流水线列表。支持按关键字 keyword 过滤。",
+    description:
+      "查询 CI/CD 流水线列表。支持按关键字 keyword 过滤。注意：结果已由前端卡片直接以表格形式呈现，模型回复时严禁重复输出 Markdown 表格。",
     render: QueryTableCard,
     parameters: {
       type: "object",
@@ -349,6 +361,7 @@ export const aiChatTools: ChatTool[] = [
         total: res.total,
         columns,
         items,
+        _hint: TABLE_CARD_HINT,
       });
     },
   },
@@ -358,7 +371,8 @@ export const aiChatTools: ChatTool[] = [
     name: "list_build_runs",
     label: "查询构建记录",
     icon: VideoPlay,
-    description: "查询最近的 CI/CD 构建运行历史记录。支持按任务 ID、流水线 ID、状态过滤。",
+    description:
+      "查询最近的 CI/CD 构建运行历史记录。支持按任务 ID、流水线 ID、状态过滤。注意：结果已由前端卡片直接以表格形式呈现，模型回复时严禁重复输出 Markdown 表格。",
     render: QueryTableCard,
     parameters: {
       type: "object",
@@ -431,6 +445,7 @@ export const aiChatTools: ChatTool[] = [
         total: res.total,
         columns,
         items,
+        _hint: TABLE_CARD_HINT,
       });
     },
   },
@@ -587,7 +602,8 @@ export const aiChatTools: ChatTool[] = [
     name: "list_ai_agents",
     label: "查询智能体",
     icon: Brain,
-    description: "查询平台上的 AI 智能体定义列表。支持按关键字 keyword 过滤搜索。",
+    description:
+      "查询平台上的 AI 智能体定义列表。支持按关键字 keyword 过滤搜索。注意：结果已由前端卡片直接以表格形式呈现，模型回复时严禁重复输出 Markdown 表格。",
     render: QueryTableCard,
     parameters: {
       type: "object",
@@ -626,6 +642,7 @@ export const aiChatTools: ChatTool[] = [
         total: res.total,
         columns,
         items,
+        _hint: TABLE_CARD_HINT,
       });
     },
   },
@@ -635,7 +652,8 @@ export const aiChatTools: ChatTool[] = [
     name: "list_agent_runs",
     label: "查询智能体运行",
     icon: Brain,
-    description: "查询 AI 智能体的运行历史记录。支持按智能体 ID、状态过滤。",
+    description:
+      "查询 AI 智能体的运行历史记录。支持按智能体 ID、状态过滤。注意：结果已由前端卡片直接以表格形式呈现，模型回复时严禁重复输出 Markdown 表格。",
     render: QueryTableCard,
     parameters: {
       type: "object",
@@ -701,6 +719,7 @@ export const aiChatTools: ChatTool[] = [
         total: res.total,
         columns,
         items,
+        _hint: TABLE_CARD_HINT,
       });
     },
   },

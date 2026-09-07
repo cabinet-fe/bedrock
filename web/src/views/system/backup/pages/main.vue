@@ -71,7 +71,7 @@ const columns = defineProTableColumns([
     sortable: true,
     render: ({ val }) => formatDateTime(val),
   },
-  { key: "action", name: "操作", width: 180, align: "center", fixed: "right" },
+  { key: "action", name: "操作", width: 240, align: "center", fixed: "right" },
 ]);
 
 // --------------------------- 一键备份 ---------------------------

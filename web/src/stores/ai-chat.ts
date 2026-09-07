@@ -91,7 +91,7 @@ function setCachedReasoningLevel(level: string | undefined, modelId?: string): v
 }
 
 export interface ActiveRightPanel {
-  type: "build" | "pipeline" | "doc";
+  type: "build" | "pipeline" | "doc" | "project";
   id: number;
   title?: string;
   projectId?: number;
