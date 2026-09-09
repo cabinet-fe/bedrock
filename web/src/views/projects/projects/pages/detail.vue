@@ -30,9 +30,7 @@ function parseRouteId(raw: unknown): number | null {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
-// Layout keys detail by path and keep-alive caches the instance. Freeze path/id at
-// setup so deactivated instances do not re-read the global route (e.g. /ai/runs/:id)
-// and call getProject with a foreign id → 「项目不存在」.
+// Pages are keyed by route.path, so path/id are fixed for this instance.
 const detailPath = route.path;
 const projectID = parseRouteId(route.params.id);
 

@@ -20,7 +20,7 @@ const router = createRouter({
           path: "",
           name: "home",
           component: () => import("@/pages/home.vue"),
-          meta: { title: "首页", keepAliveName: "HomePage" },
+          meta: { title: "首页" },
         },
         {
           path: "handbook",
@@ -29,7 +29,6 @@ const router = createRouter({
           meta: {
             permission: "handbook:view",
             title: "操作手册",
-            keepAliveName: "HelpHandbook",
           },
         },
         {
@@ -39,7 +38,6 @@ const router = createRouter({
           meta: {
             permission: "system_users:view",
             title: "用户管理",
-            keepAliveName: "SystemUsers",
           },
         },
         {
@@ -49,7 +47,6 @@ const router = createRouter({
           meta: {
             permission: "system_roles:view",
             title: "角色管理",
-            keepAliveName: "SystemRoles",
           },
         },
         {
@@ -59,7 +56,6 @@ const router = createRouter({
           meta: {
             permission: "system_resources:view",
             title: "权限资源",
-            keepAliveName: "SystemResources",
           },
         },
         {
@@ -69,7 +65,6 @@ const router = createRouter({
           meta: {
             permission: "system_dictionaries:view",
             title: "数据字典",
-            keepAliveName: "SystemDictionaries",
           },
         },
         {
@@ -79,7 +74,6 @@ const router = createRouter({
           meta: {
             permission: "system_operation_logs:view",
             title: "操作日志",
-            keepAliveName: "SystemOperationLogs",
           },
         },
         {
@@ -89,7 +83,6 @@ const router = createRouter({
           meta: {
             permission: "system_backup:view",
             title: "系统备份",
-            keepAliveName: "SystemBackup",
           },
         },
         {
@@ -99,7 +92,6 @@ const router = createRouter({
           meta: {
             permission: "resource_repositories:view",
             title: "代码仓库",
-            keepAliveName: "ResourceRepositories",
           },
         },
         {
@@ -109,7 +101,6 @@ const router = createRouter({
           meta: {
             permission: "resource_servers:view",
             title: "服务器",
-            keepAliveName: "ResourceServers",
           },
         },
         {
@@ -119,7 +110,6 @@ const router = createRouter({
           meta: {
             permission: "resource_credentials:view",
             title: "凭证管理",
-            keepAliveName: "ResourceCredentials",
           },
         },
         {
@@ -129,7 +119,6 @@ const router = createRouter({
           meta: {
             permission: "resource_tokens:view",
             title: "访问令牌",
-            keepAliveName: "ResourceTokens",
           },
         },
         {
@@ -139,7 +128,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_build_jobs:view",
             title: "构建任务",
-            keepAliveName: "CicdBuildJobs",
           },
         },
         {
@@ -149,7 +137,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_build_runs:view",
             title: "构建记录",
-            keepAliveName: "CicdBuildRuns",
           },
         },
         {
@@ -159,7 +146,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_build_runs:view",
             title: "构建详情",
-            keepAliveName: "CicdBuildRunDetail",
           },
         },
         {
@@ -169,7 +155,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_script_jobs:view",
             title: "脚本任务",
-            keepAliveName: "CicdScriptJobs",
           },
         },
         {
@@ -179,7 +164,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_script_runs:view",
             title: "脚本记录",
-            keepAliveName: "CicdScriptRuns",
           },
         },
         {
@@ -189,7 +173,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_script_runs:view",
             title: "脚本详情",
-            keepAliveName: "CicdScriptRunDetail",
           },
         },
         {
@@ -199,7 +182,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_pipelines:view",
             title: "构建流水线",
-            keepAliveName: "CicdPipelines",
           },
         },
         {
@@ -209,7 +191,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_pipelines:view",
             title: "流水线编排",
-            keepAliveName: "CicdPipelineEditor",
           },
         },
         {
@@ -219,7 +200,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_pipeline_runs:view",
             title: "流水线运行",
-            keepAliveName: "CicdPipelineRuns",
           },
         },
         {
@@ -229,7 +209,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_pipeline_runs:view",
             title: "流水线运行详情",
-            keepAliveName: "CicdPipelineRunDetail",
           },
         },
         {
@@ -243,7 +222,6 @@ const router = createRouter({
           meta: {
             permission: "project_projects:view",
             title: "项目列表",
-            keepAliveName: "Projects",
           },
         },
         {
@@ -253,7 +231,6 @@ const router = createRouter({
           meta: {
             permission: "project_projects:view",
             title: "项目详情",
-            keepAliveName: "ProjectDetail",
           },
         },
         {
@@ -265,7 +242,6 @@ const router = createRouter({
             permission: "project_requirements:view",
             projectTab: "requirements",
             title: "需求",
-            keepAliveName: "ProjectRequirements",
           },
         },
         {
@@ -276,7 +252,6 @@ const router = createRouter({
             permission: "project_docs:view",
             projectTab: "docs",
             title: "接口文档",
-            keepAliveName: "ProjectDocs",
           },
         },
         {
@@ -287,7 +262,6 @@ const router = createRouter({
             permission: "project_dev_docs:view",
             projectTab: "dev-docs",
             title: "开发文档",
-            keepAliveName: "ProjectDevDocs",
           },
         },
         {
@@ -302,7 +276,7 @@ const router = createRouter({
           path: "cicd/:rest(.*)*",
           name: "cicd-placeholder",
           component: () => import("@/pages/placeholder.vue"),
-          meta: { title: "CI/CD", keepAliveName: "PlaceholderPage" },
+          meta: { title: "CI/CD" },
         },
         {
           path: "ops/processes",
@@ -311,7 +285,6 @@ const router = createRouter({
           meta: {
             permission: "ops_processes:view",
             title: "进程管理",
-            keepAliveName: "OpsProcesses",
           },
         },
         {
@@ -321,20 +294,19 @@ const router = createRouter({
           meta: {
             permission: "ops_dev_environments:view",
             title: "开发环境",
-            keepAliveName: "OpsDevEnvironments",
           },
         },
         {
           path: "ai/agents",
           name: "ai-agents",
           component: () => import("@/views/ai/agents/pages/main.vue"),
-          meta: { permission: "ai_agents:view", title: "Agents", keepAliveName: "AiAgents" },
+          meta: { permission: "ai_agents:view", title: "Agents" },
         },
         {
           path: "ai/runs",
           name: "ai-runs",
           component: () => import("@/views/ai/runs/pages/main.vue"),
-          meta: { permission: "ai_runs:view", title: "运行记录", keepAliveName: "AiRuns" },
+          meta: { permission: "ai_runs:view", title: "运行记录" },
         },
         {
           path: "ai/runs/:id",
@@ -343,14 +315,13 @@ const router = createRouter({
           meta: {
             permission: "ai_runs:view",
             title: "运行详情",
-            keepAliveName: "AiRunDetail",
           },
         },
         {
           path: "ai/skills",
           name: "ai-skills",
           component: () => import("@/views/ai/skills/pages/main.vue"),
-          meta: { permission: "ai_skills:view", title: "Skills", keepAliveName: "AiSkills" },
+          meta: { permission: "ai_skills:view", title: "Skills" },
         },
         {
           path: "ai/skills/:id",
@@ -359,7 +330,6 @@ const router = createRouter({
           meta: {
             permission: "ai_skills:view",
             title: "技能详情",
-            keepAliveName: "AiSkillDetail",
           },
         },
         {
@@ -369,7 +339,6 @@ const router = createRouter({
           meta: {
             permission: "ai_providers:view",
             title: "服务商",
-            keepAliveName: "AiProviders",
           },
         },
       ],

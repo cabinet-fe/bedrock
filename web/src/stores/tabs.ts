@@ -10,8 +10,6 @@ export type WorkspaceTab = {
   title: string;
   /** Route kind label (e.g. 构建详情); updateTitle composes `${kind} • ${detail}`. */
   kind?: string;
-  /** Vue component name for keep-alive include */
-  name: string;
   closable: boolean;
 };
 
@@ -30,7 +28,6 @@ const HOME_TAB: WorkspaceTab = {
   key: "/",
   fullPath: "/",
   title: "首页",
-  name: "HomePage",
   closable: false,
 };
 
@@ -41,7 +38,6 @@ function isWorkspaceTab(value: unknown): value is WorkspaceTab {
     typeof t.key === "string" &&
     typeof t.fullPath === "string" &&
     typeof t.title === "string" &&
-    typeof t.name === "string" &&
     typeof t.closable === "boolean" &&
     (t.kind === undefined || typeof t.kind === "string")
   );
@@ -74,22 +70,6 @@ function clearCache() {
   storage.session.remove(TABS_KEY);
 }
 
-function keepAliveNameFromRoute(route: {
-  name?: string | symbol | null;
-  meta: Record<string, unknown>;
-}): string {
-  const metaName = route.meta.keepAliveName;
-  if (typeof metaName === "string" && metaName) return metaName;
-  const name = route.name;
-  if (typeof name === "string" && name) {
-    return name
-      .split("-")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join("");
-  }
-  return "AnonymousPage";
-}
-
 export const useTabsStore = defineStore("tabs", () => {
   const cached = loadCache();
   const tabs = ref<WorkspaceTab[]>(cached?.tabs ?? [{ ...HOME_TAB }]);
@@ -112,7 +92,6 @@ export const useTabsStore = defineStore("tabs", () => {
     if (existing) {
       existing.title = tab.title;
       existing.fullPath = tab.fullPath;
-      existing.name = tab.name;
       if (tab.kind) existing.kind = tab.kind;
       activeKey.value = existing.key;
       persist(tabs.value, activeKey.value);
@@ -123,7 +102,6 @@ export const useTabsStore = defineStore("tabs", () => {
       fullPath: tab.fullPath,
       title: tab.title,
       kind: tab.kind,
-      name: tab.name,
       closable: tab.closable ?? tab.key !== "/",
     });
     activeKey.value = tab.key;
@@ -182,22 +160,13 @@ export const useTabsStore = defineStore("tabs", () => {
     persist(tabs.value, activeKey.value);
   }
 
-  function syncFromRoute(
-    route: {
-      fullPath: string;
-      path: string;
-      name?: string | symbol | null;
-      meta: Record<string, unknown>;
-    },
-    title: string,
-  ) {
+  function syncFromRoute(route: { fullPath: string; path: string }, title: string) {
     if (route.path === "/login") return;
     if (isEmbedWindow()) return;
     const existing = findByKey(route.path);
     if (existing) {
       // Preserve custom titles set via updateTitle; only refresh navigation fields.
       existing.fullPath = route.fullPath;
-      existing.name = keepAliveNameFromRoute(route);
       if (!existing.kind) {
         existing.kind = title;
         // Upgrade legacy cached titles that lack the kind prefix.
@@ -214,7 +183,6 @@ export const useTabsStore = defineStore("tabs", () => {
       fullPath: route.fullPath,
       title,
       kind: title,
-      name: keepAliveNameFromRoute(route),
       closable: route.path !== "/",
     });
   }
