@@ -152,6 +152,7 @@ const buildJobOptions = computed(() =>
 );
 
 const columns = defineProTableColumns([
+  { key: "id", name: "ID", width: 70, align: "center" },
   { key: "name", name: "名称" },
   { key: "cli_key", name: "CLI", width: 120, align: "center" },
   { key: "workspace_status", name: "工作区", width: 110, align: "center" },

@@ -224,6 +224,7 @@ const formGroups = [
 ];
 
 const columns = defineProTableColumns([
+  { key: "id", name: "ID", width: 70, align: "center" },
   { key: "name", name: "名称" },
   { key: "repository", name: "仓库" },
   { key: "tags", name: "类型", width: 160 },

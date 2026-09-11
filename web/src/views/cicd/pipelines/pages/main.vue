@@ -55,6 +55,7 @@ const form = reactive({
 });
 
 const columns = defineProTableColumns([
+  { key: "id", name: "ID", width: 70, align: "center" },
   { key: "name", name: "名称" },
   { key: "enabled", name: "启用", width: 80, align: "center" },
   { key: "triggers", name: "触发" },
