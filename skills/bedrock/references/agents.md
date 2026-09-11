@@ -11,7 +11,7 @@
   node <本技能目录>/scripts/bedrock.mjs search --type agents [--keyword 名称]
   ```
 
-把选中的写进 `.bedrock.json`：
+把选中的写进 `.bedrock.jsonc`：
 
 ```jsonc
 {

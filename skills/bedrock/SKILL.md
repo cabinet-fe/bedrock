@@ -1,13 +1,13 @@
 ---
 name: bedrock
-description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、调用智能体，并轮询状态与抓取日志。配置存于项目根目录 .bedrock.json（含访问令牌）。当用户要求构建/部署项目、跑流水线、执行脚本任务、运行智能体（如 "/bedrock 构建xxx"、"跑一下流水线"、提到 bedrock），或工作区存在 .bedrock.json 且用户要求运行其中任务时使用；配置缺失时引导用户补全并生成 .bedrock.json 与 .gitignore。
+description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、调用智能体，并轮询状态与抓取日志。配置存于项目根目录 .bedrock.jsonc（含访问令牌）。当用户要求构建/部署项目、跑流水线、执行脚本任务、运行智能体（如 "/bedrock 构建xxx"、"跑一下流水线"、提到 bedrock），或工作区存在 .bedrock.jsonc 且用户要求运行其中任务时使用；配置缺失时引导用户补全并生成 .bedrock.jsonc 与 .gitignore。
 ---
 
 # bedrock
 
 通过本技能目录下的 `scripts/bedrock.mjs`（Node.js ≥ 24）操作 Bedrock 服务器。下文命令中的 `<cli>` 均指 `node <本技能目录>/scripts/bedrock.mjs`。
 
-配置文件为项目根目录 `.bedrock.json`（从当前目录向上自动查找）：
+配置文件为项目根目录 `.bedrock.jsonc`（JSONC 格式，支持 `//` 注释；从当前目录向上自动查找）：
 
 ```jsonc
 {
@@ -20,7 +20,7 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
 }
 ```
 
-`.bedrock.json` 含访问令牌，属于敏感文件：绝不能提交到 git（`init` 子命令会自动写入 `.gitignore`，改动配置后复查一下）、不要在回复中完整展示 pat。
+`.bedrock.jsonc` 含访问令牌，属于敏感文件：绝不能提交到 git（`init` 子命令会自动写入 `.gitignore`，改动配置后复查一下）、不要在回复中完整展示 pat。
 
 ## 第一步：检查配置
 
@@ -35,20 +35,20 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
 
 需要向用户收集：① base_url；② pat；③ 要登记的任务（构建/脚本/流水线/智能体，name + id）。一次性把缺失项问清楚，不要挤牙膏。
 
-1. 生成模板（自动把 `.bedrock.json` 追加进 .gitignore；若提示已存在则直接编辑现有文件）：
+1. 生成模板（自动把 `.bedrock.jsonc` 追加进 .gitignore；若提示已存在则直接编辑现有文件）：
 
    ```bash
    <cli> init
    ```
 
-2. 把用户给的 pat、base_url 填入模板（保持合法 JSON，注释可保留）。用户不知道 id 很正常——先填 pat 与 base_url，再用服务器查询帮用户挑：
+2. 把用户给的 pat、base_url 填入模板（保持合法 JSONC，注释可保留）。用户不知道 id 很正常——先填 pat 与 base_url，再用服务器查询帮用户挑：
 
    ```bash
    <cli> search --type builds                  # 也支持 scripts / pipelines / agents
    <cli> search --type agents --keyword 订单   # 按名称过滤
    ```
 
-   把结果（id + 名称）展示给用户选择，选中后写入 `.bedrock.json` 对应数组。
+   把结果（id + 名称）展示给用户选择，选中后写入 `.bedrock.jsonc` 对应数组。
 
 3. 智能体的填写与使用说明 → 先读 `references/agents.md` 再向用户解释或提问。
 4. 校验：`<cli> doctor --remote`（会实际请求服务器健康检查）。
@@ -65,7 +65,7 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
    <cli> agent --name "xxxx智能体" --prompt "修复登录超时问题并自测"
    ```
 
-   `--name` 在配置中匹配不到时，用 `search` 到服务器上找候选，问用户是否采用，并把选中的登记进 `.bedrock.json`，下次就不用再查。
+   `--name` 在配置中匹配不到时，用 `search` 到服务器上找候选，问用户是否采用，并把选中的登记进 `.bedrock.jsonc`，下次就不用再查。
 
 2. **配置里只有一个任务**：直接运行，不要提问。快捷方式：`<cli> run`（自动识别类型）。
 

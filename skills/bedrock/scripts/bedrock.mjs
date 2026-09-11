@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Bedrock 客户端 CLI：校验项目根目录 .bedrock.json 配置，触发构建 / 脚本任务 / 流水线 / 智能体并轮询到终态。
+// Bedrock 客户端 CLI：校验项目根目录 .bedrock.jsonc 配置，触发构建 / 脚本任务 / 流水线 / 智能体并轮询到终态。
 // 需要 Node.js >= 24（使用内置 fetch 与现代语法）。
 
 import fs from "node:fs";
 import path from "node:path";
 
 const MIN_NODE_MAJOR = 24;
-const CONFIG_NAME = ".bedrock.json";
+const CONFIG_NAME = ".bedrock.jsonc"; // JSONC：支持注释，编辑器按带注释 JSON 高亮
 const API_PREFIX = "/api/v1";
 
 const KINDS = {
@@ -67,6 +67,7 @@ const SUCCESS_STATUS = "success";
 const TERMINAL_STATUSES = new Set(["success", "failed", "cancelled", "interrupted"]);
 
 const TEMPLATE = `{
+  // 本文件是 JSONC，支持 // 与 /* */ 注释；脚本解析时会自动剥离。
   // Bedrock 访问令牌（PAT），以 br_ 开头。在 Bedrock Web「资源 → 访问令牌」创建，
   // 勾选需要的 scope：builds:run / scripts:run / pipelines:run / agents:run
   "pat": "",
@@ -243,7 +244,7 @@ function loadConfig(opts) {
   try {
     parsed = JSON.parse(stripJsonComments(raw));
   } catch (err) {
-    die(2, `${file} 不是合法 JSON（已支持 // 注释）：${err.message}`);
+    die(2, `${file} 不是合法 JSONC（支持 // 与 /* */ 注释）：${err.message}`);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     die(2, `${file} 顶层应为一个对象`);
@@ -461,7 +462,7 @@ function cmdInit(opts) {
   fs.writeFileSync(target, TEMPLATE, "utf8");
   const ignored = addGitignore(path.dirname(target));
   out(`已创建 ${target}`);
-  out(ignored ? `已确保 ${path.join(path.dirname(target), ".gitignore")} 忽略 .bedrock.json` : ".gitignore 已包含 .bedrock.json，无需修改");
+  out(ignored ? `已确保 ${path.join(path.dirname(target), ".gitignore")} 忽略 ${CONFIG_NAME}` : ".gitignore 已包含相关条目，无需修改");
   out("");
   out("下一步：");
   out("  1. 填入 pat（br_ 开头）与 base_url（如 http://192.168.1.10:8080）");
@@ -567,7 +568,7 @@ async function cmdLog(opts) {
 // ---------- 入口 ----------
 
 function printUsage() {
-  out(`Bedrock 客户端 CLI（配置: 项目根目录 ${CONFIG_NAME}，Node.js >= ${MIN_NODE_MAJOR}）
+  out(`Bedrock 客户端 CLI（配置: 项目根目录 ${CONFIG_NAME}，JSONC 格式支持注释；Node.js >= ${MIN_NODE_MAJOR}）
 
 用法: node bedrock.mjs <子命令> [选项]
 
