@@ -6,7 +6,7 @@ web/.env.local
 *.log
 cmd/server/dist/
 web/dist/
-bedrock
+/bedrock
 /bedrock-*
 server
 .tmp/
