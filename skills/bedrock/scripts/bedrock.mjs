@@ -67,10 +67,8 @@ const SUCCESS_STATUS = "success";
 const TERMINAL_STATUSES = new Set(["success", "failed", "cancelled", "interrupted"]);
 
 const TEMPLATE = `{
-  // 本文件是 JSONC，支持 // 与 /* */ 注释；脚本解析时会自动剥离。
-  // Bedrock 访问令牌（PAT），以 br_ 开头。在 Bedrock Web「资源 → 访问令牌」创建，
-  // 勾选需要的 scope：builds:run / scripts:run / pipelines:run / agents:run
-  "pat": "",
+  // 本文件是 JSONC，支持 // 与 /* */ 注释；无敏感信息，应提交到 git。
+  // 访问令牌（PAT）为敏感信息，请通过环境变量 BEDROCK_PAT 或 .env / .env.local 配置（不要提交到 git）。
   // Bedrock 服务器地址，如 http://192.168.1.10:8080（末尾不要带 /api/v1，带了也会被自动忽略）
   "base_url": "",
   // 构建任务：name 任意便于记忆，id 为 Bedrock 构建任务 ID
@@ -176,6 +174,40 @@ function stripJsonComments(text) {
   return result;
 }
 
+function tryLoadEnvFile(filePath) {
+  try {
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      process.loadEnvFile(filePath);
+      return true;
+    }
+  } catch {
+    // 忽略加载错误
+  }
+  return false;
+}
+
+function loadEnvFiles(dir, customEnvFile) {
+  // 如果关键环境变量为空字符串，清理掉以允许 .env/.env.local 文件生效
+  for (const k of ["BEDROCK_PAT", "BEDROCK_BASE_URL", "BEDROCK_CONFIG"]) {
+    if (process.env[k] !== undefined && !process.env[k].trim()) {
+      delete process.env[k];
+    }
+  }
+  if (customEnvFile && customEnvFile !== true) {
+    tryLoadEnvFile(path.resolve(customEnvFile));
+  }
+  const dirs = [dir, process.cwd()].filter(Boolean);
+  const seen = new Set();
+  for (const d of dirs) {
+    const resolved = path.resolve(d);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    // Node.js process.loadEnvFile 不会覆盖已有变量；因此先加载 .env.local，再加载 .env
+    tryLoadEnvFile(path.join(resolved, ".env.local"));
+    tryLoadEnvFile(path.join(resolved, ".env"));
+  }
+}
+
 function findConfigFile(explicit) {
   if (explicit) return path.resolve(explicit);
   if (process.env.BEDROCK_CONFIG) return path.resolve(process.env.BEDROCK_CONFIG);
@@ -200,8 +232,9 @@ function requireConfigFile(opts) {
         "请先初始化配置：",
         `  node ${path.resolve(process.argv[1] ?? "bedrock.mjs")} init`,
         "",
-        "然后填入 pat（br_ 开头的访问令牌）与 base_url（如 http://192.168.1.10:8080），",
-        "并在 builds / scripts / pipelines / agents 中登记要操作的 { name, id }。",
+        "然后在 .bedrock.jsonc 填入 base_url（如 http://192.168.1.10:8080），",
+        "在环境变量或 .env / .env.local 中配置 BEDROCK_PAT=br_xxx，",
+        "并在 builds / scripts / pipelines / agents 中登记要操作的任务 { name, id }。",
       ].join("\n"),
     );
   }
@@ -239,6 +272,7 @@ function validateEntries(section, entries, file) {
 
 function loadConfig(opts) {
   const file = requireConfigFile(opts);
+  loadEnvFiles(path.dirname(file), opts["env-file"]);
   const raw = fs.readFileSync(file, "utf8");
   let parsed;
   try {
@@ -249,19 +283,32 @@ function loadConfig(opts) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     die(2, `${file} 顶层应为一个对象`);
   }
-  const pat = process.env.BEDROCK_PAT || parsed.pat;
+  let patSource = "env";
+  let pat = process.env.BEDROCK_PAT;
+  if (!pat && parsed.pat) {
+    pat = parsed.pat;
+    patSource = "config";
+    console.error(`⚠ 警告: ${file} 中包含 "pat"。建议移至环境变量 BEDROCK_PAT 或 .env / .env.local，以便将 ${CONFIG_NAME} 提交至 git。`);
+  }
   const baseRaw = process.env.BEDROCK_BASE_URL || parsed.base_url;
   if (!pat || typeof pat !== "string") {
-    die(2, `${file} 缺少 "pat"（Bedrock 访问令牌，br_ 开头，可在 Bedrock Web「资源 → 访问令牌」创建）`);
+    die(
+      2,
+      [
+        `未找到访问令牌（PAT）。`,
+        `请设置环境变量 BEDROCK_PAT（或在 .env / .env.local 中配置 BEDROCK_PAT=br_xxx）。`,
+        `PAT 可在 Bedrock Web「资源 → 访问令牌」创建，以 br_ 开头。`,
+      ].join("\n"),
+    );
   }
   if (!pat.startsWith("br_")) {
-    die(2, `${file} 的 "pat" 应以 br_ 开头（服务端据此识别 PAT），当前值形如 "${String(pat).slice(0, 6)}…"`);
+    die(2, `PAT 应以 br_ 开头（服务端据此识别 PAT），当前值形如 "${String(pat).slice(0, 6)}…"`);
   }
   const base_url = normalizeBaseUrl(baseRaw);
   if (!base_url) {
     die(2, `${file} 缺少 "base_url"（Bedrock 服务器地址，例如 http://192.168.1.10:8080）`);
   }
-  const config = { file, pat, base_url, sections: {} };
+  const config = { file, pat, patSource, base_url, sections: {} };
   for (const def of Object.values(KINDS)) {
     config.sections[def.section] = validateEntries(def.section, parsed[def.section], file);
   }
@@ -460,34 +507,65 @@ function cmdInit(opts) {
     die(2, `${target} 已存在；直接编辑它即可。如需覆盖重建，加 --force（会清空现有内容）。`);
   }
   fs.writeFileSync(target, TEMPLATE, "utf8");
-  const ignored = addGitignore(path.dirname(target));
-  out(`已创建 ${target}`);
-  out(ignored ? `已确保 ${path.join(path.dirname(target), ".gitignore")} 忽略 ${CONFIG_NAME}` : ".gitignore 已包含相关条目，无需修改");
+  const { changed, added } = syncGitignore(path.dirname(target));
+  out(`已创建 ${target}（无敏感信息，可提交至 git）`);
+  if (added.length > 0) {
+    out(`已更新 ${path.join(path.dirname(target), ".gitignore")} 忽略敏感文件：${added.join("、")}`);
+  } else {
+    out(".gitignore 已包含敏感环境变量忽略规则，无需修改");
+  }
   out("");
   out("下一步：");
-  out("  1. 填入 pat（br_ 开头）与 base_url（如 http://192.168.1.10:8080）");
-  out("  2. 在 builds / scripts / pipelines / agents 中登记 { name, id }");
-  out("     不知道 id？填好 pat 和 base_url 后执行 search 子命令查询，例如：");
+  out("  1. 在环境变量或 .env / .env.local 中配置访问令牌（已加入 .gitignore，切勿提交至 git）：");
+  out("       BEDROCK_PAT=br_xxx");
+  out("  2. 在 .bedrock.jsonc 中填入 base_url（如 http://192.168.1.10:8080）与任务列表");
+  out("     不知道 id？配置好 BEDROCK_PAT 和 base_url 后执行 search 查询，例如：");
   out(`       node ${path.resolve(process.argv[1] ?? "bedrock.mjs")} search --type builds`);
   out(`  3. node ${path.resolve(process.argv[1] ?? "bedrock.mjs")} doctor --remote 校验配置与连通性`);
 }
 
-function addGitignore(dir) {
+function syncGitignore(dir) {
   const file = path.join(dir, ".gitignore");
-  let content = "";
-  if (fs.existsSync(file)) content = fs.readFileSync(file, "utf8");
-  if (content.split(/\r?\n/).some((line) => line.trim() === CONFIG_NAME)) return false;
-  if (content && !content.endsWith("\n")) content += "\n";
-  content += `${CONFIG_NAME}\n`;
-  fs.writeFileSync(file, content, "utf8");
-  return true;
+  let content = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  let lines = content.split(/\r?\n/);
+  let changed = false;
+
+  // 移除对 .bedrock.jsonc 的忽略（因为没有敏感信息，应该提交到 git）
+  const filteredLines = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (trimmed === CONFIG_NAME || trimmed === `/${CONFIG_NAME}`) {
+      changed = true;
+      return false;
+    }
+    return true;
+  });
+
+  // 确保敏感环境变量文件被忽略
+  const toIgnore = [".env", ".env.local"];
+  const existingSet = new Set(filteredLines.map((l) => l.trim()));
+  const added = [];
+  for (const item of toIgnore) {
+    if (!existingSet.has(item)) {
+      filteredLines.push(item);
+      added.push(item);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    let newContent = filteredLines.join("\n");
+    if (!newContent.endsWith("\n") && newContent.length > 0) newContent += "\n";
+    fs.writeFileSync(file, newContent, "utf8");
+  }
+  return { changed, added };
 }
 
 function cmdDoctor(opts) {
   const file = requireConfigFile(opts);
   const config = loadConfig(opts);
   out(`配置文件: ${file}`);
-  out(`✓ pat: ${maskSecret(config.pat)}`);
+  const patHint = config.patSource === "config" ? "来自 .bedrock.jsonc（已废弃，建议迁移至环境变量）" : "来自环境变量 / .env";
+  out(`✓ pat: ${maskSecret(config.pat)} (${patHint})`);
   out(`✓ base_url: ${config.base_url}`);
   let total = 0;
   for (const def of Object.values(KINDS)) {
@@ -568,12 +646,12 @@ async function cmdLog(opts) {
 // ---------- 入口 ----------
 
 function printUsage() {
-  out(`Bedrock 客户端 CLI（配置: 项目根目录 ${CONFIG_NAME}，JSONC 格式支持注释；Node.js >= ${MIN_NODE_MAJOR}）
+  out(`Bedrock 客户端 CLI（配置: 项目根目录 ${CONFIG_NAME}，JSONC 格式支持注释，提交至 git；Node.js >= ${MIN_NODE_MAJOR}）
 
 用法: node bedrock.mjs <子命令> [选项]
 
 子命令:
-  init               在当前目录创建 ${CONFIG_NAME} 模板并写入 .gitignore（已存在则拒绝，--force 覆盖）
+  init               在当前目录创建 ${CONFIG_NAME} 模板并更新 .gitignore（已存在则拒绝，--force 覆盖）
   doctor [--remote]  校验配置完整性；--remote 同时检查服务器连通性
   run                配置中恰好只有一个任务时直接运行；多个/零个时列出供选择
   build              触发构建:    --name 名称 | --id N [--branch 分支]
@@ -586,11 +664,15 @@ function printUsage() {
 
 通用选项:
   --config <路径>        指定配置文件（默认从当前目录向上查找 ${CONFIG_NAME}）
+  --env-file <路径>      指定环境文件（默认自动加载 .env.local 与 .env）
   --no-wait              只触发不等待完成
   --timeout <秒>         等待超时（默认 1800）
   --poll-interval <秒>   轮询间隔（默认 5）
 
-环境变量: BEDROCK_PAT / BEDROCK_BASE_URL 优先于配置文件；BEDROCK_CONFIG 指定配置路径。
+认证与环境变量:
+  BEDROCK_PAT       访问令牌（br_ 开头），存于环境变量或 .env / .env.local（勿提交到 git）
+  BEDROCK_BASE_URL  服务器地址，可覆盖配置文件中的 base_url
+  BEDROCK_CONFIG    指定配置文件路径
 
 任务触发后脚本会轮询到终态（success / failed / cancelled / interrupted），
 失败时自动输出日志尾部。退出码: 0 成功, 1 运行失败/请求失败, 2 配置或用法错误。`);

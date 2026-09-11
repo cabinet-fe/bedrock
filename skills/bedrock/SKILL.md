@@ -1,6 +1,6 @@
 ---
 name: bedrock
-description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、调用智能体，并轮询状态与抓取日志。配置存于项目根目录 .bedrock.jsonc（含访问令牌）。当用户要求构建/部署项目、跑流水线、执行脚本任务、运行智能体（如 "/bedrock 构建xxx"、"跑一下流水线"、提到 bedrock），或工作区存在 .bedrock.jsonc 且用户要求运行其中任务时使用；配置缺失时引导用户补全并生成 .bedrock.jsonc 与 .gitignore。
+description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、调用智能体，并轮询状态与抓取日志。项目配置存于根目录 .bedrock.jsonc（无敏感信息，可提交至 git），访问令牌存于环境变量 BEDROCK_PAT（可存于 .env/.env.local，由 .gitignore 忽略）。当用户要求构建/部署项目、跑流水线、执行脚本任务、运行智能体（如 "/bedrock 构建xxx"、"跑一下流水线"、提到 bedrock），或工作区存在 .bedrock.jsonc 且用户要求运行其中任务时使用；配置缺失时引导用户补全并生成 .bedrock.jsonc 与更新 .gitignore。
 ---
 
 # bedrock
@@ -11,7 +11,6 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
 
 ```jsonc
 {
-  "pat": "br_xxx",        // 访问令牌，Bedrock Web「资源 → 访问令牌」创建
   "base_url": "http://192.168.1.10:8080",  // 服务器地址，不带 /api/v1 结尾
   "builds":    [{ "name": "xx项目", "id": 1 }],
   "scripts":   [{ "name": "xxx脚本任务", "id": 1 }],
@@ -20,7 +19,8 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
 }
 ```
 
-`.bedrock.jsonc` 含访问令牌，属于敏感文件：绝不能提交到 git（`init` 子命令会自动写入 `.gitignore`，改动配置后复查一下）、不要在回复中完整展示 pat。
+`.bedrock.jsonc` 不含敏感信息，**应该提交到 git**。
+访问令牌（PAT，br_ 开头）属于敏感信息，**不得写入 `.bedrock.jsonc`**，需通过环境变量 `BEDROCK_PAT` 或本地环境文件（`.env` / `.env.local`）提供（`init` 子命令会自动更新 `.gitignore` 忽略 `.env` 和 `.env.local`）。不要在回复中完整展示 pat。
 
 ## 第一步：检查配置
 
@@ -35,13 +35,16 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
 
 需要向用户收集：① base_url；② pat；③ 要登记的任务（构建/脚本/流水线/智能体，name + id）。一次性把缺失项问清楚，不要挤牙膏。
 
-1. 生成模板（自动把 `.bedrock.jsonc` 追加进 .gitignore；若提示已存在则直接编辑现有文件）：
+1. 生成模板（自动把 `.env` 与 `.env.local` 追加进 `.gitignore`；`.bedrock.jsonc` 可提交到 git；若提示已存在则直接编辑现有文件）：
 
    ```bash
    <cli> init
    ```
 
-2. 把用户给的 pat、base_url 填入模板（保持合法 JSONC，注释可保留）。用户不知道 id 很正常——先填 pat 与 base_url，再用服务器查询帮用户挑：
+2. 凭据与配置填写：
+   - 将用户提供的 pat 写入 `.env` 或 `.env.local`（形如 `BEDROCK_PAT=br_xxx`）或在 shell 中设置；
+   - 将 base_url 与任务写入 `.bedrock.jsonc`。
+   用户不知道 id 很正常——先配好 pat 与 base_url，再用服务器查询帮用户挑：
 
    ```bash
    <cli> search --type builds                  # 也支持 scripts / pipelines / agents
@@ -86,4 +89,4 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
 
 - 触发类命令退出码：0 成功、1 运行或请求失败、2 配置/用法错误；401 = 令牌无效，403 = 缺 scope。
 - 智能体运行前置条件是工作区就绪（`workspace_status = ready`），详见 `references/agents.md`；API 细节（字段、状态机、WebSocket 日志）见 `references/api.md`。
-- pat 也可用环境变量 `BEDROCK_PAT` / `BEDROCK_BASE_URL` 覆盖（CI 场景），脚本会优先读环境变量。
+- 访问令牌 PAT 优先从环境变量 `BEDROCK_PAT` 或 `.env` / `.env.local` 读取；`BEDROCK_BASE_URL` 可覆盖配置中的 base_url。

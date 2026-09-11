@@ -5,7 +5,7 @@
 ## 怎么找到智能体 id
 
 - Bedrock Web：「AI → 智能体」列表页，每行直接展示 ID 列。
-- 或配好 pat / base_url 后用 CLI 查：
+- 或配好 BEDROCK_PAT 与 base_url 后用 CLI 查：
 
   ```bash
   node <本技能目录>/scripts/bedrock.mjs search --type agents [--keyword 名称]
