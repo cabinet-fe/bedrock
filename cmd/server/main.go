@@ -211,7 +211,11 @@ func main() {
 		logger.Fatal("Failed to init storage service", zap.Error(err))
 	}
 	projectSvc := projectservice.NewProjectService(projectRepo, storageSvc)
+	bugRepo := projectrepo.NewBugRepository(gdb)
+	bugSvc := projectservice.NewBugService(bugRepo, projectRepo)
+	bugHandler := projecthandler.NewBugHandler(bugSvc, permSvc)
 	projectHandler := projecthandler.NewProjectHandler(projectSvc, permSvc)
+	projectHandler.SetBugHandler(bugHandler)
 
 	aiRepo := airepo.NewAIRepository(gdb)
 	skillsRoot := filepath.Join(cfg.Storage.Root, "skills")

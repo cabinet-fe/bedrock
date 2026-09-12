@@ -295,12 +295,23 @@ func (s *ProjectService) DeleteProject(actor AccessContext, id uint) error {
 	if err != nil {
 		return err
 	}
+	bugAttachments, err := s.repo.ListBugAttachmentsByProject(id)
+	if err != nil {
+		return err
+	}
 	if err := s.repo.DeleteProject(id); err != nil {
 		return err
 	}
-	for _, attachment := range attachments {
-		if err := s.storage.Delete(attachment.StorageObjectID); err != nil {
-			return err
+	if s.storage != nil {
+		for _, attachment := range attachments {
+			if err := s.storage.Delete(attachment.StorageObjectID); err != nil {
+				return err
+			}
+		}
+		for _, attachment := range bugAttachments {
+			if err := s.storage.Delete(attachment.StorageObjectID); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

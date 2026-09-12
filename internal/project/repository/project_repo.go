@@ -105,6 +105,19 @@ func (r *ProjectRepository) DeleteProject(id uint) error {
 		if err := tx.Where("project_id = ?", id).Delete(&model.DevDocNode{}).Error; err != nil {
 			return err
 		}
+		bugs := tx.Model(&model.ProjectBug{}).Select("id").Where("project_id = ?", id)
+		if err := tx.Where("bug_id IN (?)", bugs).Delete(&model.ProjectBugComment{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("bug_id IN (?)", bugs).Delete(&model.ProjectBugAttachment{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("bug_id IN (?)", bugs).Delete(&model.ProjectBugActivity{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ?", id).Delete(&model.ProjectBug{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&model.ProductProject{}, id).Error
 	})
 }
@@ -136,6 +149,15 @@ func (r *ProjectRepository) ListMemberRoles(projectIDs []uint, userID uint) (map
 		roles[member.ProjectID] = member.Role
 	}
 	return roles, nil
+}
+
+// ListUserProjectIDs returns all project IDs where the user is a member or creator.
+func (r *ProjectRepository) ListUserProjectIDs(userID uint) ([]uint, error) {
+	var ids []uint
+	err := r.db.Model(&model.ProductProject{}).
+		Where("product_projects.id IN (SELECT project_id FROM project_members WHERE user_id = ?) OR product_projects.created_by = ?", userID, userID).
+		Pluck("id", &ids).Error
+	return ids, err
 }
 
 func (r *ProjectRepository) ListMembers(projectID uint) ([]model.ProjectMember, error) {
@@ -354,6 +376,16 @@ func (r *ProjectRepository) ListAttachmentsByProject(projectID uint) ([]model.Re
 		Joins("JOIN requirements ON requirements.id = requirement_attachments.requirement_id").
 		Where("requirements.project_id = ?", projectID).
 		Order("requirement_attachments.id ASC").
+		Find(&attachments).Error
+	return attachments, err
+}
+
+func (r *ProjectRepository) ListBugAttachmentsByProject(projectID uint) ([]model.ProjectBugAttachment, error) {
+	var attachments []model.ProjectBugAttachment
+	err := r.db.Model(&model.ProjectBugAttachment{}).
+		Joins("JOIN project_bugs ON project_bugs.id = project_bug_attachments.bug_id").
+		Where("project_bugs.project_id = ?", projectID).
+		Order("project_bug_attachments.id ASC").
 		Find(&attachments).Error
 	return attachments, err
 }

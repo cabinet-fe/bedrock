@@ -30,3 +30,12 @@ func IsNotFound(err error) bool {
 	_, ok := errors.AsType[*NotFoundError](err)
 	return ok
 }
+
+type BadRequestError struct{ Message string }
+
+func (e *BadRequestError) Error() string { return e.Message }
+func NewBadRequest(message string) error { return &BadRequestError{Message: message} }
+func IsBadRequest(err error) bool {
+	_, ok := errors.AsType[*BadRequestError](err)
+	return ok
+}

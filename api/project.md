@@ -245,7 +245,7 @@
 
 权限：`project_bugs:delete`
 路径参数：id*: integer, bugID*: integer
-响应 200
+响应 200：data = { id: integer }
 错误：403 / 404
 
 ### PUT /projects/{id}/bugs/{bugID}/status — 流转缺陷状态

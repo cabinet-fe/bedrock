@@ -1,0 +1,352 @@
+package service
+
+import (
+	"context"
+	"testing"
+
+	authmodel "bedrock/internal/auth/model"
+	authrepo "bedrock/internal/auth/repository"
+	"bedrock/internal/pkg"
+	"bedrock/internal/platform/config"
+	"bedrock/internal/platform/db"
+	"bedrock/internal/platform/migration"
+	_ "bedrock/internal/platform/migration/migrations"
+	"bedrock/internal/platform/seed"
+	projectmodel "bedrock/internal/project/model"
+	projectrepo "bedrock/internal/project/repository"
+	storagerepo "bedrock/internal/storage/repository"
+	storageservice "bedrock/internal/storage/service"
+
+	"gorm.io/gorm"
+)
+
+func newTestEnv(t *testing.T) (*BugService, *ProjectService, *projectrepo.BugRepository, *projectrepo.ProjectRepository, *gorm.DB) {
+	t.Helper()
+	gdb, err := db.Open(&config.DatabaseConfig{Driver: "sqlite", Path: t.TempDir() + "/bedrock-bug.sqlite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		sqlDB, _ := gdb.DB()
+		if sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+	})
+	if err := migration.Up(context.Background(), gdb, migration.Driver("sqlite")); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.EnsureRBACResources(gdb); err != nil {
+		t.Fatal(err)
+	}
+
+	storage, err := storageservice.NewStorageService(
+		storagerepo.NewStorageRepository(gdb),
+		t.TempDir(),
+		storageservice.Limits{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	projectRepo := projectrepo.NewProjectRepository(gdb)
+	bugRepo := projectrepo.NewBugRepository(gdb)
+	projectSvc := NewProjectService(projectRepo, storage)
+	bugSvc := NewBugService(bugRepo, projectRepo)
+
+	// Seed dummy users for creator/assignee attachment
+	userRepo := authrepo.NewUserRepository(gdb)
+	for i := 1; i <= 10; i++ {
+		_ = userRepo.Create(&authmodel.User{
+			Username:     "user" + string(rune('0'+i)),
+			DisplayName:  "User " + string(rune('0'+i)),
+			PasswordHash: "hashed",
+			IsActive:     true,
+		})
+	}
+
+	return bugSvc, projectSvc, bugRepo, projectRepo, gdb
+}
+
+func allBugPermissions() []string {
+	return []string{
+		"project_projects:create", "project_projects:view", "project_projects:update", "project_projects:delete",
+		"project_bugs:create", "project_bugs:view", "project_bugs:update", "project_bugs:delete",
+	}
+}
+
+func TestBugCRUD(t *testing.T) {
+	bugSvc, projectSvc, _, _, _ := newTestEnv(t)
+	owner := actor(1, allBugPermissions()...)
+	project := createProject(t, projectSvc, owner, "bug-crud-project")
+
+	// 1. Validation errors on create
+	if _, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: ""}); !IsBadRequest(err) {
+		t.Fatalf("empty title must fail with bad request, got %v", err)
+	}
+	if _, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "T", Severity: "invalid"}); !IsBadRequest(err) {
+		t.Fatalf("invalid severity must fail with bad request, got %v", err)
+	}
+	if _, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "T", Priority: "invalid"}); !IsBadRequest(err) {
+		t.Fatalf("invalid priority must fail with bad request, got %v", err)
+	}
+
+	// 2. Successful creation with defaults
+	assigneeID := uint(2)
+	created, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{
+		Title:       "Test Bug 1",
+		Description: "Detailed description",
+		AssigneeID:  &assigneeID,
+		Branch:      "main",
+	})
+	if err != nil {
+		t.Fatalf("create bug failed: %v", err)
+	}
+	if created.ID == 0 || created.Status != projectmodel.BugStatusOpen {
+		t.Fatalf("unexpected bug state: %+v", created)
+	}
+	if created.Severity != projectmodel.BugSeverityNormal || created.Priority != projectmodel.BugPriorityNormal {
+		t.Fatalf("unexpected defaults: severity=%s, priority=%s", created.Severity, created.Priority)
+	}
+	if created.ProjectName != "bug-crud-project" {
+		t.Fatalf("expected attached project name 'bug-crud-project', got %s", created.ProjectName)
+	}
+
+	// 3. GetBug
+	fetched, err := bugSvc.GetBug(owner, project.ID, created.ID)
+	if err != nil {
+		t.Fatalf("get bug failed: %v", err)
+	}
+	if fetched.Title != "Test Bug 1" || fetched.Description != "Detailed description" {
+		t.Fatalf("unexpected fetched content: %+v", fetched)
+	}
+
+	// 4. UpdateBug
+	newTitle := "Updated Bug 1"
+	newSev := projectmodel.BugSeverityCritical
+	newPri := projectmodel.BugPriorityUrgent
+	clearAssignee := uint(0)
+	updated, err := bugSvc.UpdateBug(owner, project.ID, created.ID, UpdateBugInput{
+		Title:      &newTitle,
+		Severity:   &newSev,
+		Priority:   &newPri,
+		AssigneeID: &clearAssignee,
+	})
+	if err != nil {
+		t.Fatalf("update bug failed: %v", err)
+	}
+	if updated.Title != newTitle || updated.Severity != newSev || updated.Priority != newPri || updated.AssigneeID != nil {
+		t.Fatalf("unexpected updated bug: %+v", updated)
+	}
+
+	// 5. DeleteBug
+	if err := bugSvc.DeleteBug(owner, project.ID, created.ID); err != nil {
+		t.Fatalf("delete bug failed: %v", err)
+	}
+	if _, err := bugSvc.GetBug(owner, project.ID, created.ID); !IsNotFound(err) {
+		t.Fatalf("deleted bug must return not found, got %v", err)
+	}
+}
+
+func TestBugStatusTransitions(t *testing.T) {
+	bugSvc, projectSvc, _, _, _ := newTestEnv(t)
+	owner := actor(1, allBugPermissions()...)
+	project := createProject(t, projectSvc, owner, "bug-status-project")
+
+	bug, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{
+		Title: "Status Flow Bug",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Flow through legal statuses
+	transitions := []string{
+		projectmodel.BugStatusInProgress,
+		projectmodel.BugStatusResolved,
+		projectmodel.BugStatusClosed,
+		projectmodel.BugStatusRejected,
+		projectmodel.BugStatusOpen,
+	}
+
+	for _, target := range transitions {
+		updated, err := bugSvc.TransitionBugStatus(owner, project.ID, bug.ID, TransitionBugStatusInput{
+			Status:  target,
+			Comment: "Moving to " + target,
+		})
+		if err != nil {
+			t.Fatalf("transition to %s failed: %v", target, err)
+		}
+		if updated.Status != target {
+			t.Fatalf("expected status %s, got %s", target, updated.Status)
+		}
+	}
+
+	// Invalid transition status
+	if _, err := bugSvc.TransitionBugStatus(owner, project.ID, bug.ID, TransitionBugStatusInput{
+		Status: "unknown_status",
+	}); !IsBadRequest(err) {
+		t.Fatalf("unknown status must fail with bad request, got %v", err)
+	}
+
+	// Verify activity logs
+	activities, err := bugSvc.ListBugActivities(owner, project.ID, bug.ID)
+	if err != nil {
+		t.Fatalf("list activities failed: %v", err)
+	}
+	// 1 create activity + 5 status change activities = 6
+	if len(activities) != 6 {
+		t.Fatalf("expected 6 activities, got %d", len(activities))
+	}
+	if activities[0].Action != projectmodel.BugActivityCreate {
+		t.Fatalf("first activity should be create, got %s", activities[0].Action)
+	}
+	for i := 1; i <= 5; i++ {
+		if activities[i].Action != projectmodel.BugActivityStatusChange {
+			t.Fatalf("activity %d should be status_change, got %s", i, activities[i].Action)
+		}
+		if activities[i].ToStatus != transitions[i-1] {
+			t.Fatalf("activity %d expected to_status %s, got %s", i, transitions[i-1], activities[i].ToStatus)
+		}
+	}
+}
+
+func TestBugACLAndDataScope(t *testing.T) {
+	bugSvc, projectSvc, _, _, _ := newTestEnv(t)
+	owner := actor(1, allBugPermissions()...)
+	projectA := createProject(t, projectSvc, owner, "project-a")
+	projectB := createProject(t, projectSvc, owner, "project-b")
+
+	// Add member with readonly role to ProjectA
+	if _, err := projectSvc.AddMember(owner, projectA.ID, MemberInput{UserID: 2, Role: projectmodel.ProjectRoleReadonly}); err != nil {
+		t.Fatal(err)
+	}
+	// Add member with standard member role to ProjectA
+	if _, err := projectSvc.AddMember(owner, projectA.ID, MemberInput{UserID: 3, Role: projectmodel.ProjectRoleMember}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create bug in ProjectA and ProjectB
+	bugA, err := bugSvc.CreateBug(owner, projectA.ID, CreateBugInput{Title: "Bug in A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = bugSvc.CreateBug(owner, projectB.ID, CreateBugInput{Title: "Bug in B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	readonlyUser := actor(2, allBugPermissions()...)
+	memberUser := actor(3, allBugPermissions()...)
+	nonMemberUser := actor(4, allBugPermissions()...)
+
+	// 1. Non-member cannot view ProjectA bugs
+	if _, _, err := bugSvc.ListProjectBugs(nonMemberUser, projectA.ID, projectrepo.BugFilter{}, pkg.ListQuery{Page: 1, PageSize: 10}); !IsForbidden(err) {
+		t.Fatalf("non-member list must be forbidden, got %v", err)
+	}
+	if _, err := bugSvc.GetBug(nonMemberUser, projectA.ID, bugA.ID); !IsForbidden(err) {
+		t.Fatalf("non-member get must be forbidden, got %v", err)
+	}
+
+	// 2. Readonly user can view, but cannot create / update / delete
+	if _, _, err := bugSvc.ListProjectBugs(readonlyUser, projectA.ID, projectrepo.BugFilter{}, pkg.ListQuery{Page: 1, PageSize: 10}); err != nil {
+		t.Fatalf("readonly user should be able to view bugs: %v", err)
+	}
+	if _, err := bugSvc.CreateBug(readonlyUser, projectA.ID, CreateBugInput{Title: "Fail"}); !IsForbidden(err) {
+		t.Fatalf("readonly user create must be forbidden, got %v", err)
+	}
+	title := "Fail"
+	if _, err := bugSvc.UpdateBug(readonlyUser, projectA.ID, bugA.ID, UpdateBugInput{Title: &title}); !IsForbidden(err) {
+		t.Fatalf("readonly user update must be forbidden, got %v", err)
+	}
+	if _, err := bugSvc.TransitionBugStatus(readonlyUser, projectA.ID, bugA.ID, TransitionBugStatusInput{Status: projectmodel.BugStatusClosed}); !IsForbidden(err) {
+		t.Fatalf("readonly user transition status must be forbidden, got %v", err)
+	}
+	if err := bugSvc.DeleteBug(readonlyUser, projectA.ID, bugA.ID); !IsForbidden(err) {
+		t.Fatalf("readonly user delete must be forbidden, got %v", err)
+	}
+
+	// 3. Member user can create and update, but cannot delete (only admin/owner)
+	newBug, err := bugSvc.CreateBug(memberUser, projectA.ID, CreateBugInput{Title: "Member Bug"})
+	if err != nil {
+		t.Fatalf("member should create bug: %v", err)
+	}
+	if _, err := bugSvc.UpdateBug(memberUser, projectA.ID, newBug.ID, UpdateBugInput{Title: &title}); err != nil {
+		t.Fatalf("member should update bug: %v", err)
+	}
+	if err := bugSvc.DeleteBug(memberUser, projectA.ID, newBug.ID); !IsForbidden(err) {
+		t.Fatalf("regular member delete bug must be forbidden (requires admin/owner), got %v", err)
+	}
+
+	// 4. ListAcrossProjects:
+	// - User 3 (member of ProjectA only, data_scope=self) sees only Bug in A
+	bugsUser3, totalUser3, err := bugSvc.ListAcrossProjects(memberUser, projectrepo.BugFilter{}, pkg.ListQuery{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list across projects for user3 failed: %v", err)
+	}
+	if totalUser3 != 2 || len(bugsUser3) != 2 { // bugA and newBug
+		t.Fatalf("expected user3 to see 2 bugs in ProjectA, got total=%d, len=%d", totalUser3, len(bugsUser3))
+	}
+	for _, b := range bugsUser3 {
+		if b.ProjectID != projectA.ID {
+			t.Fatalf("user3 must only see ProjectA bugs, got project %d", b.ProjectID)
+		}
+	}
+
+	// - SuperAdmin sees all bugs across both projects
+	superAdmin := NewAccessContext(99, true, nil)
+	bugsSuper, totalSuper, err := bugSvc.ListAcrossProjects(superAdmin, projectrepo.BugFilter{}, pkg.ListQuery{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list across projects for superadmin failed: %v", err)
+	}
+	if totalSuper != 3 || len(bugsSuper) != 3 {
+		t.Fatalf("expected superadmin to see all 3 bugs, got total=%d, len=%d", totalSuper, len(bugsSuper))
+	}
+}
+
+func TestBugLifecycleOnProjectDelete(t *testing.T) {
+	bugSvc, projectSvc, bugRepo, _, _ := newTestEnv(t)
+	owner := actor(1, allBugPermissions()...)
+	project := createProject(t, projectSvc, owner, "bug-lifecycle-project")
+
+	bug, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "Lifecycle Bug"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete the project
+	if err := projectSvc.DeleteProject(owner, project.ID); err != nil {
+		t.Fatalf("delete project failed: %v", err)
+	}
+
+	// Bug should be deleted
+	if _, err := bugRepo.FindByID(bug.ID); err == nil {
+		t.Fatalf("bug should have been deleted along with the project")
+	}
+
+	// Status counts should be empty
+	counts, err := bugRepo.CountByStatus(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(counts) != 0 {
+		t.Fatalf("expected 0 status counts, got %v", counts)
+	}
+}
+
+func TestBugCountByStatus(t *testing.T) {
+	bugSvc, projectSvc, _, _, _ := newTestEnv(t)
+	owner := actor(1, allBugPermissions()...)
+	project := createProject(t, projectSvc, owner, "bug-count-project")
+
+	_, _ = bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "Bug 1"})
+	b2, _ := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "Bug 2"})
+	_, _ = bugSvc.TransitionBugStatus(owner, project.ID, b2.ID, TransitionBugStatusInput{Status: projectmodel.BugStatusResolved})
+
+	counts, err := bugSvc.CountByStatus(owner, project.ID)
+	if err != nil {
+		t.Fatalf("count by status failed: %v", err)
+	}
+	if counts[projectmodel.BugStatusOpen] != 1 || counts[projectmodel.BugStatusResolved] != 1 {
+		t.Fatalf("unexpected counts: %+v", counts)
+	}
+}

@@ -20,12 +20,17 @@ import (
 )
 
 type ProjectHandler struct {
-	svc  *projectservice.ProjectService
-	perm *rbacservice.PermissionService
+	svc        *projectservice.ProjectService
+	perm       *rbacservice.PermissionService
+	bugHandler *BugHandler
 }
 
 func NewProjectHandler(svc *projectservice.ProjectService, perm *rbacservice.PermissionService) *ProjectHandler {
 	return &ProjectHandler{svc: svc, perm: perm}
+}
+
+func (h *ProjectHandler) SetBugHandler(bh *BugHandler) {
+	h.bugHandler = bh
 }
 
 func (h *ProjectHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
@@ -88,6 +93,10 @@ func (h *ProjectHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerF
 	g.PUT("/:id/dev-docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_dev_docs:update"), h.UpdateDevDocNode)
 	g.POST("/:id/dev-docs/:nodeID/move", rbacmw.RequirePermission(h.perm, "project_dev_docs:update"), h.MoveDevDocNode)
 	g.DELETE("/:id/dev-docs/:nodeID", rbacmw.RequirePermission(h.perm, "project_dev_docs:delete"), h.DeleteDevDocNode)
+
+	if h.bugHandler != nil {
+		h.bugHandler.RegisterRoutesOnGroup(g)
+	}
 }
 
 func (h *ProjectHandler) ListProjects(c *gin.Context) {
