@@ -1,12 +1,19 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"bedrock/internal/pkg"
 	"bedrock/internal/project/model"
 	"bedrock/internal/project/repository"
+	storagemodel "bedrock/internal/storage/model"
+	storageservice "bedrock/internal/storage/service"
 
 	"gorm.io/gorm"
 )
@@ -39,15 +46,22 @@ type TransitionBugStatusInput struct {
 type BugService struct {
 	bugRepo     *repository.BugRepository
 	projectRepo *repository.ProjectRepository
+	storage     *storageservice.StorageService
 	acl         *projectACL
+	aiBridge    BugAIBridge
 }
 
-func NewBugService(bugRepo *repository.BugRepository, projectRepo *repository.ProjectRepository) *BugService {
+func NewBugService(bugRepo *repository.BugRepository, projectRepo *repository.ProjectRepository, storage *storageservice.StorageService) *BugService {
 	return &BugService{
 		bugRepo:     bugRepo,
 		projectRepo: projectRepo,
+		storage:     storage,
 		acl:         newProjectACL(projectRepo),
 	}
+}
+
+func (s *BugService) SetAIBridge(bridge BugAIBridge) {
+	s.aiBridge = bridge
 }
 
 // CheckBugProject verifies that a bug exists, belongs to projectID, and actor has required permissions.
@@ -270,4 +284,301 @@ func (s *BugService) CountByStatus(actor AccessContext, projectID uint) (map[str
 		return nil, err
 	}
 	return s.bugRepo.CountByStatus(projectID)
+}
+
+// ListComments retrieves all comments for a bug.
+func (s *BugService) ListComments(actor AccessContext, projectID, bugID uint) ([]model.ProjectBugComment, error) {
+	if _, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:view", capBugView); err != nil {
+		return nil, err
+	}
+	return s.bugRepo.ListComments(bugID)
+}
+
+// CreateComment adds a new comment to a bug.
+func (s *BugService) CreateComment(actor AccessContext, projectID, bugID uint, content string) (*model.ProjectBugComment, error) {
+	if _, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:create", capBugEdit); err != nil {
+		return nil, err
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, NewBadRequest("评论内容不能为空")
+	}
+
+	comment := &model.ProjectBugComment{
+		BugID:     bugID,
+		Content:   content,
+		CreatedBy: actor.UserID,
+	}
+	if err := s.bugRepo.CreateComment(comment); err != nil {
+		return nil, err
+	}
+
+	activity := &model.ProjectBugActivity{
+		BugID:     bugID,
+		Action:    model.BugActivityComment,
+		Comment:   content,
+		CreatedBy: actor.UserID,
+	}
+	_ = s.bugRepo.RecordActivity(activity)
+
+	return s.bugRepo.FindCommentByID(comment.ID)
+}
+
+// UpdateComment modifies an existing bug comment with ownership check.
+func (s *BugService) UpdateComment(actor AccessContext, projectID, bugID, commentID uint, content string) (*model.ProjectBugComment, error) {
+	if _, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:update", capBugEdit); err != nil {
+		return nil, err
+	}
+
+	member, err := s.acl.Require(projectID, actor, "project_bugs:update", capBugEdit)
+	if err != nil {
+		return nil, err
+	}
+
+	comment, err := s.bugRepo.FindCommentByID(commentID)
+	if errors.Is(err, gorm.ErrRecordNotFound) || comment == nil || comment.BugID != bugID {
+		return nil, NewNotFound("评论不存在")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if !actor.SuperAdmin && !actor.Has("project_projects:manage_all") && comment.CreatedBy != actor.UserID &&
+		(member == nil || (member.Role != model.ProjectRoleOwner && member.Role != model.ProjectRoleAdmin)) {
+		return nil, NewForbidden("只能编辑自己的评论")
+	}
+
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, NewBadRequest("评论内容不能为空")
+	}
+
+	comment.Content = content
+	if err := s.bugRepo.UpdateComment(comment); err != nil {
+		return nil, err
+	}
+
+	return s.bugRepo.FindCommentByID(comment.ID)
+}
+
+// DeleteComment removes a comment with ownership check.
+func (s *BugService) DeleteComment(actor AccessContext, projectID, bugID, commentID uint) error {
+	if _, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:delete", capBugEdit); err != nil {
+		return err
+	}
+
+	member, err := s.acl.Require(projectID, actor, "project_bugs:delete", capBugEdit)
+	if err != nil {
+		return err
+	}
+
+	comment, err := s.bugRepo.FindCommentByID(commentID)
+	if errors.Is(err, gorm.ErrRecordNotFound) || comment == nil || comment.BugID != bugID {
+		return NewNotFound("评论不存在")
+	}
+	if err != nil {
+		return err
+	}
+
+	if !actor.SuperAdmin && !actor.Has("project_projects:manage_all") && comment.CreatedBy != actor.UserID &&
+		(member == nil || (member.Role != model.ProjectRoleOwner && member.Role != model.ProjectRoleAdmin)) {
+		return NewForbidden("只能删除自己的评论")
+	}
+
+	return s.bugRepo.DeleteComment(commentID)
+}
+
+// ListAttachments retrieves all attachments belonging to a bug.
+func (s *BugService) ListAttachments(actor AccessContext, projectID, bugID uint) ([]model.ProjectBugAttachment, error) {
+	if _, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:view", capBugView); err != nil {
+		return nil, err
+	}
+	return s.bugRepo.ListAttachments(bugID)
+}
+
+// AddAttachment validates file size, type, stores the content in StorageService, and creates attachment record.
+func (s *BugService) AddAttachment(actor AccessContext, projectID, bugID uint, filename, contentType string, source io.Reader, size int64) (*model.ProjectBugAttachment, error) {
+	if _, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:update", capBugEdit); err != nil {
+		return nil, err
+	}
+
+	filename = safeFilename(filename)
+	if filename == "" {
+		return nil, NewBadRequest("附件文件名不能为空")
+	}
+
+	if s.storage != nil && size > s.storage.MaxBytes(storagemodel.KindAttachment) {
+		return nil, storageservice.ErrTooLarge
+	}
+
+	if !isAllowedBugAttachment(filename, contentType) {
+		return nil, NewBadRequest("不支持的文件类型，仅支持上传图片或日志/文本/压缩包等附件")
+	}
+
+	if s.storage == nil {
+		return nil, errors.New("存储服务未配置")
+	}
+
+	object, err := s.storage.Put(storagemodel.KindAttachment, contentType, source, size, actor.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	att := &model.ProjectBugAttachment{
+		BugID:           bugID,
+		StorageObjectID: object.ID,
+		Filename:        filename,
+		CreatedBy:       actor.UserID,
+	}
+	if err := s.bugRepo.CreateAttachment(att); err != nil {
+		_ = s.storage.Delete(object.ID)
+		return nil, err
+	}
+
+	return s.bugRepo.FindAttachmentByID(att.ID)
+}
+
+// OpenAttachment opens the attachment file stream for download.
+func (s *BugService) OpenAttachment(actor AccessContext, projectID, bugID, attachmentID uint) (*os.File, *model.ProjectBugAttachment, string, error) {
+	if _, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:view", capBugView); err != nil {
+		return nil, nil, "", err
+	}
+
+	att, err := s.bugRepo.FindAttachmentByID(attachmentID)
+	if errors.Is(err, gorm.ErrRecordNotFound) || att == nil || att.BugID != bugID {
+		return nil, nil, "", NewNotFound("附件不存在")
+	}
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	if s.storage == nil {
+		return nil, nil, "", errors.New("存储服务未配置")
+	}
+
+	file, object, err := s.storage.Open(att.StorageObjectID)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return file, att, object.ContentType, nil
+}
+
+// DeleteAttachment removes an attachment and purges the backing storage object.
+func (s *BugService) DeleteAttachment(actor AccessContext, projectID, bugID, attachmentID uint) error {
+	if _, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:update", capBugEdit); err != nil {
+		return err
+	}
+
+	att, err := s.bugRepo.FindAttachmentByID(attachmentID)
+	if errors.Is(err, gorm.ErrRecordNotFound) || att == nil || att.BugID != bugID {
+		return NewNotFound("附件不存在")
+	}
+	if err != nil {
+		return err
+	}
+
+	if err := s.bugRepo.DeleteAttachment(attachmentID); err != nil {
+		return err
+	}
+
+	if s.storage != nil {
+		_ = s.storage.Delete(att.StorageObjectID)
+	}
+	return nil
+}
+
+// AIExtract extracts structured bug fields from logs or stack traces.
+func (s *BugService) AIExtract(actor AccessContext, projectID uint, content string) (*BugAIExtractResult, error) {
+	if _, err := s.acl.Require(projectID, actor, "project_bugs:create", capBugEdit); err != nil {
+		return nil, err
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, NewBadRequest("解析内容不能为空")
+	}
+	if s.aiBridge == nil {
+		return nil, errors.New("AI 服务未初始化")
+	}
+	return s.aiBridge.Extract(context.Background(), content)
+}
+
+// AIAnalyze analyzes the root cause of a bug and persists the result to the bug entity.
+func (s *BugService) AIAnalyze(actor AccessContext, projectID, bugID uint, prompt string) (string, error) {
+	bug, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:execute", capBugEdit)
+	if err != nil {
+		return "", err
+	}
+	if s.aiBridge == nil {
+		return "", errors.New("AI 服务未初始化")
+	}
+
+	analysis, err := s.aiBridge.Analyze(context.Background(), bug, prompt)
+	if err != nil {
+		return "", err
+	}
+
+	bug.AIAnalysis = analysis
+	bug.UpdatedBy = actor.UserID
+	if err := s.bugRepo.Update(bug); err != nil {
+		return "", err
+	}
+	return analysis, nil
+}
+
+// DispatchAgent launches an AgentRun for investigating this bug, associates run_id, and records activity.
+func (s *BugService) DispatchAgent(actor AccessContext, projectID, bugID, agentID uint, userPrompt string) (uint, error) {
+	bug, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:execute", capBugEdit)
+	if err != nil {
+		return 0, err
+	}
+	if agentID == 0 {
+		return 0, NewBadRequest("必须指定智能体 agent_id")
+	}
+	if s.aiBridge == nil {
+		return 0, errors.New("AI 排查服务未初始化")
+	}
+
+	runID, err := s.aiBridge.DispatchAgent(context.Background(), bug, agentID, actor.UserID, userPrompt)
+	if err != nil {
+		return 0, err
+	}
+
+	bug.LastAgentRunID = &runID
+	bug.UpdatedBy = actor.UserID
+	if err := s.bugRepo.Update(bug); err != nil {
+		return 0, err
+	}
+
+	comment := strings.TrimSpace(userPrompt)
+	if comment == "" {
+		comment = fmt.Sprintf("派发 Agent #%d 自动化排查", agentID)
+	}
+	activity := &model.ProjectBugActivity{
+		BugID:     bug.ID,
+		Action:    model.BugActivityAgentDispatch,
+		Comment:   comment,
+		CreatedBy: actor.UserID,
+	}
+	_ = s.bugRepo.RecordActivity(activity)
+
+	return runID, nil
+}
+
+func isAllowedBugAttachment(filename, contentType string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	allowedExts := map[string]bool{
+		".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".svg": true, ".bmp": true,
+		".log": true, ".txt": true, ".json": true, ".xml": true, ".yaml": true, ".yml": true, ".md": true,
+		".csv": true, ".pdf": true, ".zip": true, ".tar": true, ".gz": true, ".tgz": true,
+	}
+	if allowedExts[ext] {
+		return true
+	}
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	if strings.HasPrefix(ct, "image/") || strings.HasPrefix(ct, "text/") ||
+		ct == "application/json" || ct == "application/xml" || ct == "application/pdf" ||
+		ct == "application/zip" || ct == "application/gzip" || ct == "application/x-tar" {
+		return true
+	}
+	return false
 }

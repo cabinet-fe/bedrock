@@ -309,7 +309,7 @@
 
 权限：`project_bugs:delete`
 路径参数：id*: integer, bugID*: integer, commentID*: integer
-响应 200
+响应 200：data = { id: integer }
 错误：403 / 404
 
 ### GET /projects/{id}/bugs/{bugID}/attachments — 列出缺陷附件
@@ -331,7 +331,7 @@
 
 权限：`project_bugs:update`
 路径参数：id*: integer, bugID*: integer, attachmentID*: integer
-响应 200
+响应 200：data = { id: integer }
 错误：403 / 404
 
 ### GET /projects/{id}/bugs/{bugID}/attachments/{attachmentID}/download — 下载缺陷附件

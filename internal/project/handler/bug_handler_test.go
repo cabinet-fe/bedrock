@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -28,6 +29,25 @@ import (
 	storagerepo "bedrock/internal/storage/repository"
 	storageservice "bedrock/internal/storage/service"
 )
+
+type mockHandlerAIBridge struct{}
+
+func (m *mockHandlerAIBridge) Extract(ctx context.Context, content string) (*projectservice.BugAIExtractResult, error) {
+	return &projectservice.BugAIExtractResult{
+		Title:       "Extracted Bug Title",
+		Description: "Extracted Bug Description",
+		Severity:    "high",
+		Priority:    "urgent",
+	}, nil
+}
+
+func (m *mockHandlerAIBridge) Analyze(ctx context.Context, bug *projectmodel.ProjectBug, prompt string) (string, error) {
+	return "AI 根因分析结论：空指针异常", nil
+}
+
+func (m *mockHandlerAIBridge) DispatchAgent(ctx context.Context, bug *projectmodel.ProjectBug, agentID, userID uint, userPrompt string) (uint, error) {
+	return 999, nil
+}
 
 func setupBugHandlerTest(t *testing.T) (*gin.Engine, *BugHandler, *ProjectHandler, *projectservice.BugService, *projectservice.ProjectService, *gorm.DB) {
 	t.Helper()
@@ -67,7 +87,8 @@ func setupBugHandlerTest(t *testing.T) (*gin.Engine, *BugHandler, *ProjectHandle
 	)
 
 	projectSvc := projectservice.NewProjectService(projectRepo, storage)
-	bugSvc := projectservice.NewBugService(bugRepo, projectRepo)
+	bugSvc := projectservice.NewBugService(bugRepo, projectRepo, storage)
+	bugSvc.SetAIBridge(&mockHandlerAIBridge{})
 
 	bugHandler := NewBugHandler(bugSvc, permSvc)
 	projectHandler := NewProjectHandler(projectSvc, permSvc)
@@ -94,7 +115,7 @@ func setupBugHandlerTest(t *testing.T) (*gin.Engine, *BugHandler, *ProjectHandle
 	}
 	if err := roleRepo.ReplacePermissions(devRole.ID, []string{
 		"project_projects:view", "project_projects:create", "project_projects:update", "project_projects:delete",
-		"project_bugs:view", "project_bugs:create", "project_bugs:update", "project_bugs:delete",
+		"project_bugs:view", "project_bugs:create", "project_bugs:update", "project_bugs:delete", "project_bugs:execute",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -280,5 +301,206 @@ func TestBugHandlerHTTPFlow(t *testing.T) {
 	resp = doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr, nil, 1, false)
 	if resp.Code != http.StatusNotFound {
 		t.Fatalf("deleted bug expected 404, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func jsonBytes(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
+}
+
+func TestBugHandlerComments(t *testing.T) {
+	router, _, projectHandler, _, projectSvc, _ := setupBugHandlerTest(t)
+	owner := projectservice.NewAccessContext(1, true, nil)
+	proj, _ := projectSvc.CreateProject(owner, projectservice.CreateProjectInput{Name: "Comment Proj", Slug: "comment-proj"})
+	projIDStr := strconv.Itoa(int(proj.ID))
+	_ = projectHandler
+
+	// Add member 2
+	_, _ = projectSvc.AddMember(owner, proj.ID, projectservice.MemberInput{UserID: 2, Role: projectmodel.ProjectRoleMember})
+
+	// Create a bug
+	resp := doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs", jsonBytes(map[string]any{
+		"title": "Bug for Comment Test",
+	}), 1, false)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("create bug failed: %s", resp.Body.String())
+	}
+	var createBugResp struct {
+		Data projectmodel.ProjectBug `json:"data"`
+	}
+	_ = json.Unmarshal(resp.Body.Bytes(), &createBugResp)
+	bugIDStr := strconv.Itoa(int(createBugResp.Data.ID))
+
+	// 1. Create comment (201)
+	resp = doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/comments", jsonBytes(map[string]any{
+		"content": "This is a test comment",
+	}), 2, false)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("create comment expected 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var commentResp struct {
+		Data projectmodel.ProjectBugComment `json:"data"`
+	}
+	_ = json.Unmarshal(resp.Body.Bytes(), &commentResp)
+	commentIDStr := strconv.Itoa(int(commentResp.Data.ID))
+
+	// 2. List comments (200)
+	resp = doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/comments", nil, 2, false)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("list comments expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var listResp struct {
+		Data []projectmodel.ProjectBugComment `json:"data"`
+	}
+	_ = json.Unmarshal(resp.Body.Bytes(), &listResp)
+	if len(listResp.Data) != 1 {
+		t.Fatalf("expected 1 comment, got %d", len(listResp.Data))
+	}
+
+	// 3. Update comment (200)
+	resp = doRequest(router, http.MethodPut, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/comments/"+commentIDStr, jsonBytes(map[string]any{
+		"content": "Updated comment content",
+	}), 2, false)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("update comment expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	// 4. Delete comment (200)
+	resp = doRequest(router, http.MethodDelete, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/comments/"+commentIDStr, nil, 2, false)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("delete comment expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestBugHandlerAttachments(t *testing.T) {
+	router, _, _, _, projectSvc, _ := setupBugHandlerTest(t)
+	owner := projectservice.NewAccessContext(1, true, nil)
+	proj, _ := projectSvc.CreateProject(owner, projectservice.CreateProjectInput{Name: "Attach Proj", Slug: "attach-proj"})
+	projIDStr := strconv.Itoa(int(proj.ID))
+
+	// Create a bug
+	resp := doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs", jsonBytes(map[string]any{
+		"title": "Bug for Attachment Test",
+	}), 1, false)
+	var createBugResp struct {
+		Data projectmodel.ProjectBug `json:"data"`
+	}
+	_ = json.Unmarshal(resp.Body.Bytes(), &createBugResp)
+	bugIDStr := strconv.Itoa(int(createBugResp.Data.ID))
+
+	// 1. Upload attachment via multipart (201)
+	bodyBuf := &bytes.Buffer{}
+	mw := multipart.NewWriter(bodyBuf)
+	fw, err := mw.CreateFormFile("file", "test_log.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = fw.Write([]byte("panic: runtime error\n"))
+	_ = mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/attachments", bodyBuf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("X-User-ID", "1")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("upload attachment expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var attResp struct {
+		Data projectmodel.ProjectBugAttachment `json:"data"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &attResp)
+	attIDStr := strconv.Itoa(int(attResp.Data.ID))
+
+	// 2. List attachments (200)
+	resp = doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/attachments", nil, 1, false)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("list attachments expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	// 3. Download attachment (200)
+	resp = doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/attachments/"+attIDStr+"/download", nil, 1, false)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("download attachment expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if resp.Body.String() != "panic: runtime error\n" {
+		t.Fatalf("unexpected downloaded content: %s", resp.Body.String())
+	}
+
+	// 4. Delete attachment (200)
+	resp = doRequest(router, http.MethodDelete, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/attachments/"+attIDStr, nil, 1, false)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("delete attachment expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestBugHandlerAIAndAgent(t *testing.T) {
+	router, _, _, _, projectSvc, _ := setupBugHandlerTest(t)
+	owner := projectservice.NewAccessContext(1, true, nil)
+	proj, _ := projectSvc.CreateProject(owner, projectservice.CreateProjectInput{Name: "AI Proj", Slug: "ai-proj"})
+	projIDStr := strconv.Itoa(int(proj.ID))
+
+	// 1. AI Extract (200)
+	resp := doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/ai-extract", jsonBytes(map[string]any{
+		"content": "panic: unexpected nil pointer at main.go:123",
+	}), 1, false)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("ai-extract expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var extractResp struct {
+		Data projectservice.BugAIExtractResult `json:"data"`
+	}
+	_ = json.Unmarshal(resp.Body.Bytes(), &extractResp)
+	if extractResp.Data.Title != "Extracted Bug Title" {
+		t.Fatalf("unexpected extracted title: %s", extractResp.Data.Title)
+	}
+
+	// Create bug
+	resp = doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs", jsonBytes(map[string]any{
+		"title":       extractResp.Data.Title,
+		"description": extractResp.Data.Description,
+		"severity":    extractResp.Data.Severity,
+		"priority":    extractResp.Data.Priority,
+	}), 1, false)
+	var createBugResp struct {
+		Data projectmodel.ProjectBug `json:"data"`
+	}
+	_ = json.Unmarshal(resp.Body.Bytes(), &createBugResp)
+	bugIDStr := strconv.Itoa(int(createBugResp.Data.ID))
+
+	// 2. AI Analyze (200)
+	resp = doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/ai-analyze", jsonBytes(map[string]any{
+		"prompt": "请补充排查建议",
+	}), 1, false)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("ai-analyze expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var analyzeResp struct {
+		Data struct {
+			AIAnalysis string `json:"ai_analysis"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(resp.Body.Bytes(), &analyzeResp)
+	if analyzeResp.Data.AIAnalysis != "AI 根因分析结论：空指针异常" {
+		t.Fatalf("unexpected analyze response: %s", analyzeResp.Data.AIAnalysis)
+	}
+
+	// 3. Dispatch Agent (202 Accepted)
+	resp = doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/dispatch-agent", jsonBytes(map[string]any{
+		"agent_id":    10,
+		"user_prompt": "排查空指针",
+	}), 1, false)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("dispatch-agent expected 202, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var dispatchResp struct {
+		Data struct {
+			AgentRunID uint `json:"agent_run_id"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(resp.Body.Bytes(), &dispatchResp)
+	if dispatchResp.Data.AgentRunID != 999 {
+		t.Fatalf("expected agent_run_id 999, got %d", dispatchResp.Data.AgentRunID)
 	}
 }

@@ -359,3 +359,195 @@ func (r *BugRepository) attachActivityUsers(activities []model.ProjectBugActivit
 	}
 	return nil
 }
+
+// CreateComment persists a new bug comment.
+func (r *BugRepository) CreateComment(comment *model.ProjectBugComment) error {
+	return r.db.Create(comment).Error
+}
+
+// FindCommentByID retrieves a bug comment by ID with creator info attached.
+func (r *BugRepository) FindCommentByID(id uint) (*model.ProjectBugComment, error) {
+	var comment model.ProjectBugComment
+	if err := r.db.First(&comment, id).Error; err != nil {
+		return nil, err
+	}
+	comments := []model.ProjectBugComment{comment}
+	if err := r.attachCommentUsers(comments); err != nil {
+		return nil, err
+	}
+	return &comments[0], nil
+}
+
+// ListComments retrieves all comments for a bug in ascending chronological order.
+func (r *BugRepository) ListComments(bugID uint) ([]model.ProjectBugComment, error) {
+	var comments []model.ProjectBugComment
+	if err := r.db.Where("bug_id = ?", bugID).Order("created_at ASC, id ASC").Find(&comments).Error; err != nil {
+		return nil, err
+	}
+	if err := r.attachCommentUsers(comments); err != nil {
+		return nil, err
+	}
+	return comments, nil
+}
+
+// UpdateComment updates an existing bug comment.
+func (r *BugRepository) UpdateComment(comment *model.ProjectBugComment) error {
+	return r.db.Save(comment).Error
+}
+
+// DeleteComment removes a bug comment.
+func (r *BugRepository) DeleteComment(id uint) error {
+	return r.db.Delete(&model.ProjectBugComment{}, id).Error
+}
+
+func (r *BugRepository) attachCommentUsers(comments []model.ProjectBugComment) error {
+	if len(comments) == 0 {
+		return nil
+	}
+	userIDs := make([]uint, 0, len(comments))
+	seen := make(map[uint]struct{}, len(comments))
+	for _, c := range comments {
+		if c.CreatedBy > 0 {
+			if _, ok := seen[c.CreatedBy]; !ok {
+				seen[c.CreatedBy] = struct{}{}
+				userIDs = append(userIDs, c.CreatedBy)
+			}
+		}
+	}
+	if len(userIDs) == 0 {
+		return nil
+	}
+	var users []model.UserOption
+	if err := r.db.Table("users").
+		Select("id, username, display_name").
+		Where("id IN ?", userIDs).
+		Find(&users).Error; err != nil {
+		return err
+	}
+	userMap := make(map[uint]model.UserOption, len(users))
+	for _, u := range users {
+		userMap[u.ID] = u
+	}
+	for i := range comments {
+		if u, ok := userMap[comments[i].CreatedBy]; ok {
+			comments[i].CreatorUsername = u.Username
+			if u.DisplayName != "" {
+				comments[i].CreatorName = u.DisplayName
+			} else {
+				comments[i].CreatorName = u.Username
+			}
+		}
+	}
+	return nil
+}
+
+// CreateAttachment records a new bug attachment metadata record.
+func (r *BugRepository) CreateAttachment(att *model.ProjectBugAttachment) error {
+	return r.db.Create(att).Error
+}
+
+// FindAttachmentByID retrieves a bug attachment by ID with storage metadata and creator info.
+func (r *BugRepository) FindAttachmentByID(id uint) (*model.ProjectBugAttachment, error) {
+	var att model.ProjectBugAttachment
+	if err := r.db.First(&att, id).Error; err != nil {
+		return nil, err
+	}
+	atts := []model.ProjectBugAttachment{att}
+	if err := r.attachAttachmentDetails(atts); err != nil {
+		return nil, err
+	}
+	return &atts[0], nil
+}
+
+// ListAttachments retrieves all attachments associated with a bug.
+func (r *BugRepository) ListAttachments(bugID uint) ([]model.ProjectBugAttachment, error) {
+	var atts []model.ProjectBugAttachment
+	if err := r.db.Where("bug_id = ?", bugID).Order("created_at ASC, id ASC").Find(&atts).Error; err != nil {
+		return nil, err
+	}
+	if err := r.attachAttachmentDetails(atts); err != nil {
+		return nil, err
+	}
+	return atts, nil
+}
+
+// DeleteAttachment removes a bug attachment metadata record.
+func (r *BugRepository) DeleteAttachment(id uint) error {
+	return r.db.Delete(&model.ProjectBugAttachment{}, id).Error
+}
+
+func (r *BugRepository) attachAttachmentDetails(atts []model.ProjectBugAttachment) error {
+	if len(atts) == 0 {
+		return nil
+	}
+	userIDs := make([]uint, 0, len(atts))
+	seenUsers := make(map[uint]struct{}, len(atts))
+	storageIDs := make([]uint, 0, len(atts))
+	seenStorage := make(map[uint]struct{}, len(atts))
+
+	for _, a := range atts {
+		if a.CreatedBy > 0 {
+			if _, ok := seenUsers[a.CreatedBy]; !ok {
+				seenUsers[a.CreatedBy] = struct{}{}
+				userIDs = append(userIDs, a.CreatedBy)
+			}
+		}
+		if a.StorageObjectID > 0 {
+			if _, ok := seenStorage[a.StorageObjectID]; !ok {
+				seenStorage[a.StorageObjectID] = struct{}{}
+				storageIDs = append(storageIDs, a.StorageObjectID)
+			}
+		}
+	}
+
+	if len(userIDs) > 0 {
+		var users []model.UserOption
+		if err := r.db.Table("users").
+			Select("id, username, display_name").
+			Where("id IN ?", userIDs).
+			Find(&users).Error; err != nil {
+			return err
+		}
+		userMap := make(map[uint]model.UserOption, len(users))
+		for _, u := range users {
+			userMap[u.ID] = u
+		}
+		for i := range atts {
+			if u, ok := userMap[atts[i].CreatedBy]; ok {
+				atts[i].CreatorUsername = u.Username
+				if u.DisplayName != "" {
+					atts[i].CreatorName = u.DisplayName
+				} else {
+					atts[i].CreatorName = u.Username
+				}
+			}
+		}
+	}
+
+	if len(storageIDs) > 0 {
+		type storageMeta struct {
+			ID          uint   `gorm:"column:id"`
+			Size        int64  `gorm:"column:size"`
+			ContentType string `gorm:"column:content_type"`
+		}
+		var metas []storageMeta
+		if err := r.db.Table("storage_objects").
+			Select("id, size, content_type").
+			Where("id IN ?", storageIDs).
+			Find(&metas).Error; err != nil {
+			return err
+		}
+		metaMap := make(map[uint]storageMeta, len(metas))
+		for _, m := range metas {
+			metaMap[m.ID] = m
+		}
+		for i := range atts {
+			if m, ok := metaMap[atts[i].StorageObjectID]; ok {
+				atts[i].FileSize = m.Size
+				atts[i].ContentType = m.ContentType
+			}
+		}
+	}
+
+	return nil
+}
