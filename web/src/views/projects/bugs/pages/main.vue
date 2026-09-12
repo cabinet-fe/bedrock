@@ -1,13 +1,14 @@
 <script setup lang="ts">
 defineOptions({ name: "ProjectBugsWorkbench" });
 
-import { onMounted, reactive, ref, useTemplateRef } from "vue";
+import { computed, onMounted, reactive, ref, useTemplateRef } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@veltra/desktop";
 
 import { listProjects } from "@/api/projects";
 import type { ProductProject, ProjectBug } from "@/api/types";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
+import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
 import {
   BUG_PRIORITY_OPTIONS,
@@ -21,9 +22,21 @@ import {
   bugStatusLabel,
   tagType,
 } from "@/lib/tag";
+import BugDetailDialog from "@/views/projects/bugs/components/bug-detail-dialog.vue";
+import BugFormDialog from "@/views/projects/bugs/components/bug-form-dialog.vue";
 
 const router = useRouter();
+const { hasPermission } = usePermission();
 const tableRef = useTemplateRef("table");
+
+const canCreateBug = computed(() => hasPermission("project_bugs:create"));
+const canUpdateBug = computed(() => hasPermission("project_bugs:update"));
+
+const formDialogOpen = ref(false);
+const detailDialogOpen = ref(false);
+const currentBug = ref<ProjectBug | null>(null);
+const detailProjectId = ref<number | undefined>(undefined);
+const detailBugId = ref<number | undefined>(undefined);
 
 const projectOptions = ref<{ label: string; value: number }[]>([]);
 const query = reactive({
@@ -50,7 +63,7 @@ const columns = defineProTableColumns([
     sortable: true,
     render: ({ val }) => formatDateTime(val),
   },
-  { key: "action", name: "操作", width: 100, align: "center", fixed: "right" },
+  { key: "action", name: "操作", width: 140, align: "center", fixed: "right" },
 ]);
 
 onMounted(async () => {
@@ -65,11 +78,33 @@ onMounted(async () => {
   }
 });
 
-function goToBugDetail(row: ProjectBug) {
-  void router.push({
-    path: `/project/projects/${row.project_id}`,
-    query: { tab: "bugs", bug_id: String(row.id) },
-  });
+function handleCreate() {
+  currentBug.value = null;
+  formDialogOpen.value = true;
+}
+
+function handleViewBug(row: ProjectBug) {
+  detailProjectId.value = row.project_id;
+  detailBugId.value = row.id;
+  detailDialogOpen.value = true;
+}
+
+function handleEditBug(row: ProjectBug) {
+  currentBug.value = row;
+  formDialogOpen.value = true;
+}
+
+function onDetailEdit(bug: ProjectBug) {
+  currentBug.value = bug;
+  formDialogOpen.value = true;
+}
+
+function onSaved() {
+  void tableRef.value?.reload();
+}
+
+function onRefresh() {
+  void tableRef.value?.reload();
 }
 
 function goToProject(projectId: number) {
@@ -122,8 +157,14 @@ function goToProject(projectId: number) {
         <u-input v-model="query.keyword" placeholder="搜索标题/描述" style="width: 200px" />
       </template>
 
+      <template #toolbar>
+        <u-button v-if="canCreateBug" type="primary" @click.prevent="handleCreate">
+          新建缺陷
+        </u-button>
+      </template>
+
       <template #column:title="{ rowData }">
-        <a class="bug-title-link" href="#" @click.prevent="goToBugDetail(rowData as ProjectBug)">
+        <a class="bug-title-link" href="#" @click.prevent="handleViewBug(rowData as ProjectBug)">
           {{ (rowData as ProjectBug).title }}
         </a>
       </template>
@@ -166,10 +207,27 @@ function goToProject(projectId: number) {
 
       <template #column:action="{ rowData }">
         <u-action-group :max="2">
-          <u-action @run="goToBugDetail(rowData as ProjectBug)">查看</u-action>
+          <u-action @run="handleViewBug(rowData as ProjectBug)">查看</u-action>
+          <u-action v-if="canUpdateBug" @run="handleEditBug(rowData as ProjectBug)">编辑</u-action>
         </u-action-group>
       </template>
     </ProTable>
+
+    <BugFormDialog
+      v-model="formDialogOpen"
+      :project-id="query.project_id"
+      :bug="currentBug"
+      :project-options="projectOptions"
+      @saved="onSaved"
+    />
+
+    <BugDetailDialog
+      v-model="detailDialogOpen"
+      :project-id="detailProjectId"
+      :bug-id="detailBugId"
+      @edit="onDetailEdit"
+      @refresh="onRefresh"
+    />
   </div>
 </template>
 

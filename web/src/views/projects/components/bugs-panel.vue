@@ -1,7 +1,8 @@
 <script setup lang="ts">
 defineOptions({ name: "ProjectBugsPanel" });
 
-import { computed, onMounted, reactive, useTemplateRef } from "vue";
+import { computed, onMounted, reactive, ref, useTemplateRef } from "vue";
+import { useRoute } from "vue-router";
 import { message } from "@veltra/desktop";
 
 import { deleteProjectBug, listProjectBugs } from "@/api/projects";
@@ -23,6 +24,8 @@ import {
   tagType,
 } from "@/lib/tag";
 import { useRepositoryStore } from "@/stores/repositories";
+import BugDetailDialog from "@/views/projects/bugs/components/bug-detail-dialog.vue";
+import BugFormDialog from "@/views/projects/bugs/components/bug-form-dialog.vue";
 
 const props = defineProps<{
   project: ProductProject;
@@ -39,7 +42,13 @@ const emit = defineEmits<{
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
 const repoStore = useRepositoryStore();
+const route = useRoute();
 const tableRef = useTemplateRef("table");
+
+const formDialogOpen = ref(false);
+const detailDialogOpen = ref(false);
+const editingBug = ref<ProjectBug | null>(null);
+const detailBugId = ref<number | undefined>(undefined);
 
 const stats = reactive({
   total: 0,
@@ -135,15 +144,36 @@ const removeBug = bind(async (bug: ProjectBug) => {
 });
 
 function handleCreate() {
+  editingBug.value = null;
+  formDialogOpen.value = true;
   emit("create");
 }
 
 function handleView(bug: ProjectBug) {
+  detailBugId.value = bug.id;
+  detailDialogOpen.value = true;
   emit("view", bug);
 }
 
 function handleEdit(bug: ProjectBug) {
+  editingBug.value = bug;
+  formDialogOpen.value = true;
   emit("edit", bug);
+}
+
+function onDetailEdit(bug: ProjectBug) {
+  editingBug.value = bug;
+  formDialogOpen.value = true;
+}
+
+async function onBugSaved() {
+  await tableRef.value?.reload();
+  void loadStats();
+}
+
+async function onDetailRefresh() {
+  await tableRef.value?.reload();
+  void loadStats();
 }
 
 function resolveRepoBranch(bug: ProjectBug): string {
@@ -161,6 +191,13 @@ function resolveRepoBranch(bug: ProjectBug): string {
 onMounted(() => {
   void loadStats();
   void repoStore.load();
+  if (route.query.bug_id) {
+    const bId = Number(route.query.bug_id);
+    if (Number.isFinite(bId) && bId > 0) {
+      detailBugId.value = bId;
+      detailDialogOpen.value = true;
+    }
+  }
 });
 </script>
 
@@ -304,6 +341,23 @@ onMounted(() => {
         </u-action-group>
       </template>
     </ProTable>
+
+    <BugFormDialog
+      v-model="formDialogOpen"
+      :project-id="project.id"
+      :bug="editingBug"
+      @saved="onBugSaved"
+    />
+
+    <BugDetailDialog
+      v-model="detailDialogOpen"
+      :project-id="project.id"
+      :bug-id="detailBugId"
+      :project-role="projectRole"
+      :manage-all="manageAll"
+      @edit="onDetailEdit"
+      @refresh="onDetailRefresh"
+    />
   </div>
 </template>
 
