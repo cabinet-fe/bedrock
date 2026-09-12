@@ -137,3 +137,80 @@ export function repoTagType(tag: string | undefined | null): TagType {
   const lower = trimmed.toLowerCase();
   return REPO_TYPE_TAG[lower] ?? REPO_TYPE_TAG[trimmed] ?? "primary";
 }
+
+/** 缺陷状态标签与文案 */
+export const BUG_STATUS_TAG: Record<string, TagType> = {
+  open: "primary",
+  in_progress: "warning",
+  resolved: "success",
+  closed: undefined,
+  rejected: "danger",
+};
+
+const BUG_STATUS_LABEL: Record<string, string> = {
+  open: "待处理",
+  in_progress: "处理中",
+  resolved: "已解决",
+  closed: "已关闭",
+  rejected: "已拒绝",
+};
+
+export function bugStatusLabel(value: string | undefined | null): string {
+  if (!value) return "";
+  return BUG_STATUS_LABEL[value] ?? value;
+}
+
+export const BUG_STATUS_OPTIONS = Object.entries(BUG_STATUS_LABEL).map(([value, label]) => ({
+  value,
+  label,
+}));
+
+/** 缺陷严重程度标签与文案 */
+export const BUG_SEVERITY_TAG: Record<string, TagType> = {
+  low: undefined,
+  normal: "info",
+  high: "warning",
+  critical: "danger",
+};
+
+const BUG_SEVERITY_LABEL: Record<string, string> = {
+  low: "轻微",
+  normal: "一般",
+  high: "严重",
+  critical: "致命",
+};
+
+export function bugSeverityLabel(value: string | undefined | null): string {
+  if (!value) return "";
+  return BUG_SEVERITY_LABEL[value] ?? value;
+}
+
+export const BUG_SEVERITY_OPTIONS = Object.entries(BUG_SEVERITY_LABEL).map(([value, label]) => ({
+  value,
+  label,
+}));
+
+/** 缺陷优先级标签与文案 */
+export const BUG_PRIORITY_TAG: Record<string, TagType> = {
+  low: undefined,
+  normal: "info",
+  high: "warning",
+  urgent: "danger",
+};
+
+const BUG_PRIORITY_LABEL: Record<string, string> = {
+  low: "低",
+  normal: "普通",
+  high: "高",
+  urgent: "紧急",
+};
+
+export function bugPriorityLabel(value: string | undefined | null): string {
+  if (!value) return "";
+  return BUG_PRIORITY_LABEL[value] ?? value;
+}
+
+export const BUG_PRIORITY_OPTIONS = Object.entries(BUG_PRIORITY_LABEL).map(([value, label]) => ({
+  value,
+  label,
+}));

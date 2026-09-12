@@ -2,10 +2,20 @@ import { saveBlob } from "@cat-kit/fe";
 
 import { http } from "./http";
 import type {
+  AIExtractBugResult,
   ApiDocNode,
+  BugActivity,
+  BugAIAnalyzeResponse,
+  BugAttachment,
+  BugComment,
+  BugDispatchAgentResponse,
+  BugStatusTransitionInput,
   DevDocNode,
   PageResult,
   ProductProject,
+  ProjectBug,
+  ProjectBugCreateInput,
+  ProjectBugUpdateInput,
   ProjectMember,
   ProjectRole,
   Requirement,
@@ -244,6 +254,189 @@ export async function downloadRequirementAttachment(
 ): Promise<void> {
   const { body } = await http.get<Blob>(
     `/projects/${projectID}/requirements/${requirementID}/attachments/${attachmentID}/download`,
+    { responseType: "blob" },
+  );
+  saveBlob(body, filename);
+}
+
+export async function listBugsAcrossProjects(params?: ListQuery): Promise<PageResult<ProjectBug>> {
+  const { body } = await http.get<PageResult<ProjectBug>>("/projects/bugs", {
+    query: toQuery(params),
+  });
+  return body;
+}
+
+export async function listProjectBugs(
+  projectID: number,
+  params?: ListQuery,
+): Promise<PageResult<ProjectBug>> {
+  const { body } = await http.get<PageResult<ProjectBug>>(`/projects/${projectID}/bugs`, {
+    query: toQuery(params),
+  });
+  return body;
+}
+
+export async function getProjectBug(projectID: number, bugID: number): Promise<ProjectBug> {
+  const { body } = await http.get<ProjectBug>(`/projects/${projectID}/bugs/${bugID}`);
+  return body;
+}
+
+export async function createProjectBug(
+  projectID: number,
+  input: ProjectBugCreateInput | Record<string, unknown>,
+): Promise<ProjectBug> {
+  const { body } = await http.post<ProjectBug>(`/projects/${projectID}/bugs`, input);
+  return body;
+}
+
+export async function updateProjectBug(
+  projectID: number,
+  bugID: number,
+  input: ProjectBugUpdateInput | Record<string, unknown>,
+): Promise<ProjectBug> {
+  const { body } = await http.put<ProjectBug>(`/projects/${projectID}/bugs/${bugID}`, input);
+  return body;
+}
+
+export async function deleteProjectBug(projectID: number, bugID: number): Promise<void> {
+  await http.delete(`/projects/${projectID}/bugs/${bugID}`);
+}
+
+export async function transitionProjectBugStatus(
+  projectID: number,
+  bugID: number,
+  input: BugStatusTransitionInput | { status: string; comment?: string },
+): Promise<ProjectBug> {
+  const { body } = await http.put<ProjectBug>(`/projects/${projectID}/bugs/${bugID}/status`, input);
+  return body;
+}
+
+export async function listProjectBugActivities(
+  projectID: number,
+  bugID: number,
+): Promise<BugActivity[]> {
+  const { body } = await http.get<{ items?: BugActivity[] } | BugActivity[]>(
+    `/projects/${projectID}/bugs/${bugID}/activities`,
+  );
+  return Array.isArray(body) ? body : (body.items ?? []);
+}
+
+export async function aiExtractBug(
+  projectID: number,
+  content: string,
+): Promise<AIExtractBugResult> {
+  const { body } = await http.post<AIExtractBugResult>(`/projects/${projectID}/bugs/ai-extract`, {
+    content,
+  });
+  return body;
+}
+
+export async function aiAnalyzeBug(
+  projectID: number,
+  bugID: number,
+  prompt?: string,
+): Promise<BugAIAnalyzeResponse> {
+  const { body } = await http.post<BugAIAnalyzeResponse>(
+    `/projects/${projectID}/bugs/${bugID}/ai-analyze`,
+    { prompt },
+  );
+  return body;
+}
+
+export async function dispatchAgentForBug(
+  projectID: number,
+  bugID: number,
+  input: { agent_id: number; user_prompt?: string },
+): Promise<BugDispatchAgentResponse> {
+  const { body } = await http.post<BugDispatchAgentResponse>(
+    `/projects/${projectID}/bugs/${bugID}/dispatch-agent`,
+    input,
+  );
+  return body;
+}
+
+export async function listProjectBugComments(
+  projectID: number,
+  bugID: number,
+): Promise<BugComment[]> {
+  const { body } = await http.get<{ items?: BugComment[] } | BugComment[]>(
+    `/projects/${projectID}/bugs/${bugID}/comments`,
+  );
+  return Array.isArray(body) ? body : (body.items ?? []);
+}
+
+export async function createProjectBugComment(
+  projectID: number,
+  bugID: number,
+  content: string,
+): Promise<BugComment> {
+  const { body } = await http.post<BugComment>(`/projects/${projectID}/bugs/${bugID}/comments`, {
+    content,
+  });
+  return body;
+}
+
+export async function updateProjectBugComment(
+  projectID: number,
+  bugID: number,
+  commentID: number,
+  content: string,
+): Promise<BugComment> {
+  const { body } = await http.put<BugComment>(
+    `/projects/${projectID}/bugs/${bugID}/comments/${commentID}`,
+    { content },
+  );
+  return body;
+}
+
+export async function deleteProjectBugComment(
+  projectID: number,
+  bugID: number,
+  commentID: number,
+): Promise<void> {
+  await http.delete(`/projects/${projectID}/bugs/${bugID}/comments/${commentID}`);
+}
+
+export async function listProjectBugAttachments(
+  projectID: number,
+  bugID: number,
+): Promise<BugAttachment[]> {
+  const { body } = await http.get<{ items?: BugAttachment[] } | BugAttachment[]>(
+    `/projects/${projectID}/bugs/${bugID}/attachments`,
+  );
+  return Array.isArray(body) ? body : (body.items ?? []);
+}
+
+export async function uploadProjectBugAttachment(
+  projectID: number,
+  bugID: number,
+  file: File,
+): Promise<BugAttachment> {
+  const form = new FormData();
+  form.append("file", file);
+  const { body } = await http.post<BugAttachment>(
+    `/projects/${projectID}/bugs/${bugID}/attachments`,
+    form,
+  );
+  return body;
+}
+
+export async function deleteProjectBugAttachment(
+  projectID: number,
+  bugID: number,
+  attachmentID: number,
+): Promise<void> {
+  await http.delete(`/projects/${projectID}/bugs/${bugID}/attachments/${attachmentID}`);
+}
+
+export async function downloadProjectBugAttachment(
+  projectID: number,
+  bugID: number,
+  attachmentID: number,
+  filename: string,
+): Promise<void> {
+  const { body } = await http.get<Blob>(
+    `/projects/${projectID}/bugs/${bugID}/attachments/${attachmentID}/download`,
     { responseType: "blob" },
   );
   saveBlob(body, filename);

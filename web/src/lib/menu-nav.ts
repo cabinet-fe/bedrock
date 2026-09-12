@@ -18,6 +18,7 @@ import {
   Skill,
   Terminal,
   Token,
+  TriangleAlert,
   User,
 } from "@veltra/icons/normal";
 import type { Component } from "vue";
@@ -42,6 +43,7 @@ const MENU_DEFAULT_ICONS: Record<string, Component> = {
   "/cicd/pipeline-runs": History,
   "/project/projects": Folder,
   "/project/requirements": Checklist,
+  "/project/bugs": TriangleAlert,
   "/project/docs": Books,
   "/project/dev-docs": Books,
   "/ai/agents": Agent,

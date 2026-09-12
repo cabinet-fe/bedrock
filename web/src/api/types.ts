@@ -695,6 +695,116 @@ export interface RequirementAttachment {
   created_at: string;
 }
 
+export type BugStatus = "open" | "in_progress" | "resolved" | "closed" | "rejected";
+export type BugSeverity = "low" | "normal" | "high" | "critical";
+export type BugPriority = "low" | "normal" | "high" | "urgent";
+
+export interface ProjectBug {
+  id: number;
+  project_id: number;
+  title: string;
+  description?: string;
+  status: BugStatus;
+  severity: BugSeverity;
+  priority: BugPriority;
+  assignee_id?: number | null;
+  repository_id?: number | null;
+  branch?: string;
+  last_agent_run_id?: number | null;
+  ai_analysis?: string;
+  created_by: number;
+  updated_by: number;
+  created_at: string;
+  updated_at: string;
+  project_name?: string;
+  assignee_name?: string;
+  assignee_username?: string;
+  creator_name?: string;
+  creator_username?: string;
+  repository_name?: string;
+}
+
+export interface ProjectBugCreateInput {
+  title: string;
+  description?: string;
+  severity?: BugSeverity;
+  priority?: BugPriority;
+  assignee_id?: number | null;
+  repository_id?: number | null;
+  branch?: string;
+}
+
+export interface ProjectBugUpdateInput {
+  title?: string;
+  description?: string;
+  severity?: BugSeverity;
+  priority?: BugPriority;
+  assignee_id?: number | null;
+  repository_id?: number | null;
+  branch?: string;
+}
+
+export interface BugStatusTransitionInput {
+  status: BugStatus;
+  comment?: string;
+}
+
+export interface BugActivity {
+  id: number;
+  bug_id: number;
+  action: string;
+  from_status?: string;
+  to_status?: string;
+  comment?: string;
+  created_by: number;
+  creator_name?: string;
+  creator_username?: string;
+  created_at: string;
+}
+export type ProjectBugActivity = BugActivity;
+
+export interface BugComment {
+  id: number;
+  bug_id: number;
+  content: string;
+  created_by: number;
+  creator_name?: string;
+  creator_username?: string;
+  created_at: string;
+  updated_at: string;
+}
+export type ProjectBugComment = BugComment;
+
+export interface BugAttachment {
+  id: number;
+  bug_id: number;
+  storage_object_id: number;
+  filename: string;
+  file_size?: number;
+  content_type?: string;
+  created_by: number;
+  creator_name?: string;
+  creator_username?: string;
+  created_at: string;
+}
+export type ProjectBugAttachment = BugAttachment;
+
+export interface AIExtractBugResult {
+  title: string;
+  description?: string;
+  severity?: BugSeverity;
+  priority?: BugPriority;
+}
+export type BugAIExtractResponse = AIExtractBugResult;
+
+export interface BugAIAnalyzeResponse {
+  ai_analysis: string;
+}
+
+export interface BugDispatchAgentResponse {
+  agent_run_id: number;
+}
+
 export interface ApiDocNode {
   id: number;
   project_id: number;

@@ -32,6 +32,7 @@ export const MENU_KEYWORDS: Record<string, string[]> = {
   "/cicd/pipeline-runs": ["pipeline", "run", "history", "流水线运行", "执行记录"],
   "/project/projects": ["project", "xiangmu", "xm", "app", "项目列表", "工程"],
   "/project/requirements": ["requirement", "xuqiu", "xq", "issue", "demand", "需求", "迭代"],
+  "/project/bugs": ["bug", "bugs", "quexian", "qx", "issue", "defect", "缺陷", "缺陷管理", "问题"],
   "/project/docs": ["docs", "api", "swagger", "jiekou", "jk", "wendang", "wd", "接口文档"],
   "/project/dev-docs": ["docs", "dev", "kaifa", "kf", "wendang", "开发文档", "架构"],
   "/ai/agents": ["agent", "ai", "bot", "zhinengti", "znt", "智能体"],

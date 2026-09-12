@@ -245,6 +245,15 @@ const router = createRouter({
           },
         },
         {
+          path: "project/bugs",
+          name: "project-bugs",
+          component: () => import("@/views/projects/bugs/pages/main.vue"),
+          meta: {
+            permission: "project_bugs:view",
+            title: "缺陷管理",
+          },
+        },
+        {
           path: "project/docs",
           name: "project-docs",
           component: () => import("@/views/projects/docs/pages/main.vue"),
