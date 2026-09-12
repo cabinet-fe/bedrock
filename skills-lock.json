@@ -7,12 +7,11 @@
       "skillPath": "skills/roles/backend-expert/SKILL.md",
       "computedHash": "9526196e53cb22acf4eb571b18bfa8ba37eb0fdaf6bba278989a96f8634cd58f"
     },
-    "cat-kit": {
-      "source": "cabinet-fe/cat-kit",
-      "ref": "main",
+    "docs-search": {
+      "source": "cabinet-fe/prompt-engineering",
       "sourceType": "github",
-      "skillPath": "skills/cat-kit/SKILL.md",
-      "computedHash": "1dfdb3a3d47261f8a74893d6dfd2a42cf8e32783e78aeec0f3617781b8e51e02"
+      "skillPath": "skills/tools/docs-search/SKILL.md",
+      "computedHash": "d994fd7c9b3b94b5e3c89e9514ba818d21da0ffdbd356334873347e5a924a698"
     },
     "frontend-expert": {
       "source": "cabinet-fe/prompt-engineering",
@@ -37,13 +36,6 @@
       "sourceType": "github",
       "skillPath": "skills/langs/go/SKILL.md",
       "computedHash": "89946c6d0e0ca0c066a8af01cdfc2618784c62d2a1cdeb383b61f1340f8892ba"
-    },
-    "veltra-ui": {
-      "source": "cabinet-fe/ultra-ui",
-      "ref": "dev",
-      "sourceType": "github",
-      "skillPath": "skills/veltra-ui/SKILL.md",
-      "computedHash": "6113f728943d5756f0b836b6ed76a8e8800dc094197ab615a6bf43fe37416015"
     },
     "vue": {
       "source": "cabinet-fe/prompt-engineering",
