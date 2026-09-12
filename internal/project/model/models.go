@@ -150,3 +150,20 @@ type DevDocNode struct {
 }
 
 func (DevDocNode) TableName() string { return "dev_doc_nodes" }
+
+// AllProjectModels returns all domain model instances in the project package.
+func AllProjectModels() []any {
+	return []any{
+		&ProductProject{},
+		&ProjectMember{},
+		&Requirement{},
+		&RequirementComment{},
+		&RequirementAttachment{},
+		&ApiDocNode{},
+		&DevDocNode{},
+		&ProjectBug{},
+		&ProjectBugComment{},
+		&ProjectBugAttachment{},
+		&ProjectBugActivity{},
+	}
+}

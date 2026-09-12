@@ -18,7 +18,7 @@ bedrock
 │   ├── engine/                 # 流水线执行引擎（调度、构建、分发）
 │   ├── deployer/               # 部署传输（SSH / rsync / SFTP 等）
 │   ├── ops/                    # 运维：进程、开发环境等
-│   ├── project/                # 项目、需求、文档
+│   ├── project/                # 项目、需求、缺陷、文档
 │   ├── ai/                     # AI Agent / Skill / Run
 │   ├── dsh/                    # DSH 交互会话（JSON-RPC / SSE 客户端）
 │   ├── dashboard/              # 仪表盘聚合数据
@@ -69,7 +69,7 @@ bedrock
 | engine | `internal/engine` | 流水线执行引擎（调度、构建、分发） | `engine/pipeline_distribute.go` 等 |
 | deployer | `internal/deployer` | 部署传输（SSH / rsync / SFTP / local / agent） | deployer 包 |
 | ops | `internal/ops` | 进程管理、开发环境 | ops handler |
-| project | `internal/project` | 项目、需求、文档 | `project/handler.RegisterRoutes` |
+| project | `internal/project` | 项目、需求、缺陷、文档 | `project/handler.RegisterRoutes` |
 | ai | `internal/ai` | AI Agent / Skill / Run / 服务商与模型 / 对话 | `ai/handler.RegisterRoutes` |
 | dsh | `internal/dsh` | DSH 交互会话：进程内 JSON-RPC / SSE 客户端 | `dsh/service` |
 | dashboard | `internal/dashboard` | 仪表盘聚合数据 | `dashboard/handler.RegisterRoutes` |

@@ -54,6 +54,7 @@ func TestContract_MigrationsAndCICDTables(t *testing.T) {
 				"dev_environments", "dev_env_install_sources", "dev_env_jobs", "schema_migrations",
 				"storage_objects", "product_projects", "project_members", "requirements",
 				"requirement_comments", "requirement_attachments", "api_doc_nodes", "dev_doc_nodes",
+				"project_bugs", "project_bug_comments", "project_bug_attachments", "project_bug_activities",
 				"menu_groups", "rbac_resources", "roles",
 			} {
 				if !gdb.Migrator().HasTable(table) {

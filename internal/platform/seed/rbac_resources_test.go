@@ -83,3 +83,75 @@ func TestEnsureRBACResources_SystemBackup(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureRBACResources_ProjectBugs(t *testing.T) {
+	gdb, err := db.Open(&config.DatabaseConfig{
+		Driver: "sqlite",
+		Path:   filepath.Join(t.TempDir(), "seed_bugs.sqlite"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migration.Up(context.Background(), gdb, migration.Driver("sqlite")); err != nil {
+		t.Fatalf("migration.Up failed: %v", err)
+	}
+
+	if err := seed.EnsureRBACResources(gdb); err != nil {
+		t.Fatalf("EnsureRBACResources failed: %v", err)
+	}
+
+	// Verify menu resource
+	var menu rbacmodel.RbacResource
+	if err := gdb.Where("full_code = ? AND type = ?", "project_bugs", rbacmodel.ResourceTypeMenu).First(&menu).Error; err != nil {
+		t.Fatalf("expected project_bugs menu resource: %v", err)
+	}
+	if menu.Title != "缺陷" || menu.Route != "/project/bugs" {
+		t.Errorf("unexpected menu title/route: %s / %s", menu.Title, menu.Route)
+	}
+	if menu.Hidden {
+		t.Errorf("project_bugs menu should not be hidden")
+	}
+
+	// Verify 5 action features (standardCRUD + execute)
+	expectedActions := map[string]string{
+		"project_bugs:view":    "查看",
+		"project_bugs:create":  "创建",
+		"project_bugs:update":  "更新",
+		"project_bugs:delete":  "删除",
+		"project_bugs:execute": "执行",
+	}
+
+	for fullCode, expectedTitle := range expectedActions {
+		var feat rbacmodel.RbacResource
+		if err := gdb.Where("full_code = ? AND type = ?", fullCode, rbacmodel.ResourceTypeAction).First(&feat).Error; err != nil {
+			t.Errorf("expected feature %s: %v", fullCode, err)
+			continue
+		}
+		if feat.Title != expectedTitle {
+			t.Errorf("feature %s title = %q, want %q", fullCode, feat.Title, expectedTitle)
+		}
+	}
+
+	// Verify super-admin receives all 5 actions
+	roles := rbacrepo.NewRoleRepository(gdb)
+	resources := rbacrepo.NewResourceRepository(gdb)
+	groups := rbacrepo.NewMenuGroupRepository(gdb)
+	permSvc := rbacservice.NewPermissionService(roles, resources, groups)
+
+	perms, err := permSvc.ResolvePermissions(1, true)
+	if err != nil {
+		t.Fatalf("ResolvePermissions for super admin: %v", err)
+	}
+
+	permSet := make(map[string]bool)
+	for _, p := range perms {
+		permSet[p] = true
+	}
+
+	for fullCode := range expectedActions {
+		if !permSet[fullCode] {
+			t.Errorf("super admin missing permission: %s", fullCode)
+		}
+	}
+}
