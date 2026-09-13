@@ -217,7 +217,7 @@ async function handleSubmit() {
       </u-button>
     </div>
 
-    <u-form ref="form" :model="form" label-width="96px">
+    <u-form ref="form" :model="form" label-width="96px" :cols="2">
       <u-select
         v-if="!props.projectId && projectOptions?.length"
         v-model="form.project_id"
@@ -226,6 +226,7 @@ async function handleSubmit() {
         :options="projectOptions"
         :rules="{ required: '请选择所属项目' }"
         placeholder="选择项目"
+        span="full"
       />
 
       <u-input
@@ -234,65 +235,58 @@ async function handleSubmit() {
         field="title"
         :rules="{ required: '请输入缺陷标题' }"
         placeholder="简要概括缺陷现象或错误"
+        span="full"
       />
 
-      <div class="form-grid-2">
-        <u-select
-          v-model="form.severity"
-          label="严重程度"
-          field="severity"
-          :options="BUG_SEVERITY_OPTIONS"
-          placeholder="选择严重程度"
-        />
-        <u-select
-          v-model="form.priority"
-          label="优先级"
-          field="priority"
-          :options="BUG_PRIORITY_OPTIONS"
-          placeholder="选择优先级"
-        />
-      </div>
+      <u-select
+        v-model="form.severity"
+        label="严重程度"
+        field="severity"
+        :options="BUG_SEVERITY_OPTIONS"
+        placeholder="选择严重程度"
+      />
+      <u-select
+        v-model="form.priority"
+        label="优先级"
+        field="priority"
+        :options="BUG_PRIORITY_OPTIONS"
+        placeholder="选择优先级"
+      />
 
-      <div class="form-grid-2">
-        <u-select
-          v-model="form.assignee_id"
-          label="经办人"
-          field="assignee_id"
-          :options="memberOptions"
-          clearable
-          filterable
-          placeholder="指派经办人 (可选)"
-        />
-      </div>
+      <u-select
+        v-model="form.assignee_id"
+        label="经办人"
+        field="assignee_id"
+        :options="memberOptions"
+        clearable
+        filterable
+        placeholder="指派经办人 (可选)"
+        span="full"
+      />
 
-      <div class="form-grid-2">
-        <u-form-item label="关联代码仓" field="repository_id">
-          <RepoSelect
-            :model-value="form.repository_id"
-            clearable
-            placeholder="关联代码仓 (可选)"
-            style="width: 100%"
-            @update:model-value="handleRepoChange"
-          />
-        </u-form-item>
-        <u-select
-          v-model="form.branch"
-          label="分支"
-          field="branch"
-          :options="branchOptions"
-          filterable
-          creatable
+      <u-form-item label="关联代码仓" field="repository_id">
+        <RepoSelect
+          :model-value="form.repository_id"
           clearable
-          :disabled="!form.repository_id"
-          :placeholder="
-            form.repository_id
-              ? loadingBranches
-                ? '加载分支…'
-                : '选择或输入分支'
-              : '请先选择代码仓'
-          "
+          min-width="0"
+          placeholder="关联代码仓 (可选)"
+          style="width: 100%; min-width: 0"
+          @update:model-value="handleRepoChange"
         />
-      </div>
+      </u-form-item>
+      <u-select
+        v-model="form.branch"
+        label="分支"
+        field="branch"
+        :options="branchOptions"
+        filterable
+        creatable
+        clearable
+        :disabled="!form.repository_id"
+        :placeholder="
+          form.repository_id ? (loadingBranches ? '加载分支…' : '选择或输入分支') : '请先选择代码仓'
+        "
+      />
 
       <u-textarea
         v-model="form.description"
@@ -300,6 +294,7 @@ async function handleSubmit() {
         field="description"
         :rows="6"
         placeholder="详细描述缺陷现象、复现步骤、报错信息或期望表现..."
+        span="full"
       />
     </u-form>
 
@@ -341,7 +336,7 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   padding: 8px 12px;
   border-radius: fn.use-var(radius, default);
   background: fn.use-var(bg-color, muted);
@@ -350,12 +345,6 @@ async function handleSubmit() {
 .bug-form-header-tip {
   font-size: 13px;
   color: fn.use-var(text-color, secondary);
-}
-
-.form-grid-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
 }
 
 .ai-extract-hint {
