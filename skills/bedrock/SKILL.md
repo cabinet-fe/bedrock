@@ -1,6 +1,6 @@
 ---
 name: bedrock
-description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、调用智能体，并轮询状态与抓取日志。项目配置存于根目录 .bedrock.jsonc（无敏感信息，可提交至 git），访问令牌存于环境变量 BEDROCK_PAT（可存于 .env/.env.local，由 .gitignore 忽略）。当用户要求构建/部署项目、跑流水线、执行脚本任务、运行智能体（如 "/bedrock 构建xxx"、"跑一下流水线"、提到 bedrock），或工作区存在 .bedrock.jsonc 且用户要求运行其中任务时使用；配置缺失时引导用户补全并生成 .bedrock.jsonc 与更新 .gitignore。
+description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、调用智能体，并轮询状态与抓取日志；也可按绑定拉取/流转/评论项目缺陷（bug 命令组）。项目配置存于根目录 .bedrock.jsonc（无敏感信息，可提交至 git），访问令牌存于环境变量 BEDROCK_PAT（可存于 .env/.env.local，由 .gitignore 忽略）。当用户要求构建/部署项目、跑流水线、执行脚本任务、运行智能体（如 "/bedrock 构建xxx"、"跑一下流水线"、提到 bedrock），或要求处理缺陷、修 bug、拉取缺陷、回写缺陷状态（如"拉一下我的 bug"、"修完把缺陷改成 resolved"），或工作区存在 .bedrock.jsonc 且用户要求运行其中任务时使用；配置缺失时引导用户补全并生成 .bedrock.jsonc 与更新 .gitignore。
 ---
 
 # bedrock
@@ -15,7 +15,8 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
   "builds":    [{ "name": "xx项目", "id": 1 }],
   "scripts":   [{ "name": "xxx脚本任务", "id": 1 }],
   "pipelines": [{ "name": "xxx流水线", "id": 1 }],
-  "agents":    [{ "name": "xxxx智能体", "id": 1 }]
+  "agents":    [{ "name": "xxxx智能体", "id": 1 }],
+  "bugs": { "project_slug": "xxx项目slug", "developer": "用户名或用户ID" }  // 缺陷工作流绑定，见 references/bugs.md
 }
 ```
 
@@ -30,10 +31,11 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
 
 - 输出全部 ✓ 且已登记任务 → 进入「选择任务并运行」。
 - 文件不存在 / 缺 pat / 缺 base_url / 任务未登记 → 进入「配置引导」。
+- `bug 绑定` 未配置或 ✗ 不完整：仅影响 `bug` 命令组（缺陷工作流），按输出提示补全 `bugs` 段，其余命令不受影响。
 
 ## 配置引导（配置缺失时）
 
-需要向用户收集：① base_url；② pat；③ 要登记的任务（构建/脚本/流水线/智能体，name + id）。一次性把缺失项问清楚，不要挤牙膏。
+需要向用户收集：① base_url；② pat；③ 要登记的任务（构建/脚本/流水线/智能体，name + id）；④（可选，要做缺陷工作流时）bug 绑定（project slug + developer）。一次性把缺失项问清楚，不要挤牙膏。
 
 1. 生成模板（自动把 `.env` 与 `.env.local` 追加进 `.gitignore`；`.bedrock.jsonc` 可提交到 git；若提示已存在则直接编辑现有文件）：
 
@@ -49,13 +51,14 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
    ```bash
    <cli> search --type builds                  # 也支持 scripts / pipelines / agents
    <cli> search --type agents --keyword 订单   # 按名称过滤
+   <cli> search --type projects                # 查项目 slug（补全 bugs 绑定用）
    ```
 
-   把结果（id + 名称）展示给用户选择，选中后写入 `.bedrock.jsonc` 对应数组。
+   把结果（id + 名称）展示给用户选择，选中后写入 `.bedrock.jsonc` 对应数组；bug 绑定写入 `bugs` 段（`project_slug` + `developer`，用法见 `references/bugs.md`）。
 
 3. 智能体的填写与使用说明 → 先读 `references/agents.md` 再向用户解释或提问。
 4. 校验：`<cli> doctor --remote`（会实际请求服务器健康检查）。
-5. 提醒用户：PAT 创建时需勾选 `builds:run` / `scripts:run` / `pipelines:run` / `agents:run` 中对应 scope，否则触发会 403。
+5. 提醒用户：PAT 创建时需勾选 `builds:run` / `scripts:run` / `pipelines:run` / `agents:run` 中对应 scope，否则触发会 403；要用 `bug` 命令组还需勾选 `bugs:read`（读）与 `bugs:write`（流转 / 评论）。
 
 ## 选择任务并运行
 
@@ -74,6 +77,19 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
 
 3. **配置里有多个任务且用户没指定**：交互式提问让用户选。先问类型（仅当多种类型都有配置时；用 AskUserQuestion），再问具体任务。AskUserQuestion 每题最多 4 个选项，超出时改为文字列出编号让用户回复。问题里直接展示配置中的任务名（可附 id），不要让用户猜。
 
+## 缺陷工作流
+
+用户要求拉取/处理缺陷、修 bug、修复后回写缺陷状态时 → 先读 `references/bugs.md`，再按「拉取 → 修复 → 回写」闭环执行（默认口径：绑定项目 + assignee 为绑定开发者 + 未关闭）：
+
+```bash
+<cli> bug list                                # 1. 拉取待修缺陷
+<cli> bug show 123                            # 2. 阅读详情（描述/评论/活动）并定位
+<cli> bug status 123 --to resolved            # 3. 修复验证后回写状态
+<cli> bug comment 123 --content "根因与修复说明"  # 4. 评论说明（根因/修复方式/验证结果/关联提交）
+```
+
+绑定在 `.bedrock.jsonc` 的 `bugs` 段（`project_slug` + `developer`）；缺失时脚本会给出配置引导，slug 可用 `search --type projects` 查询。
+
 ## 运行与结果汇报
 
 默认行为：触发（服务器返回 202 表示已排队）→ 脚本轮询到终态（默认 5s 间隔、30 分钟超时，`--timeout` / `--poll-interval` / `--no-wait` 可调）→ 输出结果。构建/脚本失败时脚本自动打印日志尾部；智能体成功时打印完整 `output_text`。
@@ -88,5 +104,5 @@ description: 通过 Bedrock CLI 触发构建、运行脚本任务/流水线、�
 ## 注意
 
 - 触发类命令退出码：0 成功、1 运行或请求失败、2 配置/用法错误；401 = 令牌无效，403 = 缺 scope。
-- 智能体运行前置条件是工作区就绪（`workspace_status = ready`），详见 `references/agents.md`；API 细节（字段、状态机、WebSocket 日志）见 `references/api.md`。
+- 智能体运行前置条件是工作区就绪（`workspace_status = ready`），详见 `references/agents.md`；缺陷工作流详见 `references/bugs.md`；API 细节（字段、状态机、WebSocket 日志）见 `references/api.md`。
 - 访问令牌 PAT 优先从环境变量 `BEDROCK_PAT` 或 `.env` / `.env.local` 读取；`BEDROCK_BASE_URL` 可覆盖配置中的 base_url。

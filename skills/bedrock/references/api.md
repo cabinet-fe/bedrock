@@ -1,6 +1,6 @@
 # Bedrock HTTP API 摘要
 
-服务端为 Go (gin) 单体，路由前缀 `/api/v1`；完整契约见仓库 `api/` 目录（`api/cicd.md`、`api/cicd-scripts.md`、`api/ai.md`、`api/resource.md`），通用约定见 `API-SPEC.md`。`scripts/bedrock.mjs` 已封装以下全部调用，一般无需直接发 HTTP；本文用于排查与扩展。
+服务端为 Go (gin) 单体，路由前缀 `/api/v1`；完整契约见仓库 `api/` 目录（`api/cicd.md`、`api/cicd-scripts.md`、`api/ai.md`、`api/resource.md`、`api/project.md`），通用约定见 `API-SPEC.md`。`scripts/bedrock.mjs` 已封装以下全部调用，一般无需直接发 HTTP；本文用于排查与扩展。
 
 ## 认证与信封
 
@@ -27,6 +27,18 @@
 - `GET /ai/agents?page&page_size` → items 含 `id/name/enabled/cli_key/workspace_status`
 
 辅助端点：`POST /build-runs/:id/cancel`、`POST /build-runs/:id/retry`、`GET /build-runs/:id/artifact`；脚本运行与流水线运行同理（`/script-runs/:id/cancel` 等）；智能体 `POST /ai/runs/:id/cancel`、`GET /ai/runs/:id/artifact`（成功后产出 zip）。
+
+## 缺陷（bug 命令组）
+
+绑定与闭环流程见 `bugs.md`；完整契约见仓库 `api/project.md`（缺陷部分）。
+
+- 项目解析：`GET /projects?page&page_size&keyword` — PAT `bugs:read` 返回精简 `items`（仅 `id` / `name` / `slug`），供 `search --type projects` 与 `bugs.project_slug` → 项目 ID 解析。
+- 列表：`GET /projects/bugs?project_id&assignee&exclude_closed=true&status&page&page_size` — 跨项目聚合查询；`assignee` 接受用户名或用户 ID（两者同时传以 `assignee` 为准）；`exclude_closed=true` 一次拉取「未关闭」口径（排除 `closed`）；响应分页 `items/total/page/page_size/total_pages`，条目为 ProjectBug（含 `project_name`、`assignee_username` 等附加字段）。
+- 详情：`GET /projects/{id}/bugs/{bugID}` — 描述、状态、severity / priority、经办人、分支等（读需 `bugs:read`）。
+- 评论：`GET /projects/{id}/bugs/{bugID}/comments`（数组）、`POST .../comments`，body `{ content }`（写需 `bugs:write`）。
+- 活动记录：`GET /projects/{id}/bugs/{bugID}/activities` — `action ∈ create / status_change / comment`，流转自动记录 `from_status → to_status`。
+- 流转：`PUT /projects/{id}/bugs/{bugID}/status`，body `{ status, comment? }`（写需 `bugs:write`）；状态机五种合法状态 `open` / `in_progress` / `resolved` / `closed` / `rejected`，其余值 400。
+- 附件：`GET .../attachments` 列表、`GET .../attachments/{attachmentID}/download` 下载（读需 `bugs:read`；CLI 暂未封装，图片预览到平台 Web 查看）。
 
 ## 状态机
 

@@ -66,6 +66,9 @@ const SEARCH_TYPES = {
 const SUCCESS_STATUS = "success";
 const TERMINAL_STATUSES = new Set(["success", "failed", "cancelled", "interrupted"]);
 
+const BUG_STATUSES = ["open", "in_progress", "resolved", "closed", "rejected"];
+const BUG_USAGE = "用法: bug list [--status S] [--all] [--page N] | bug show <id> | bug status <id> --to <status> | bug comment <id> --content <文本>（详见技能目录 references/bugs.md）";
+
 const TEMPLATE = `{
   // 本文件是 JSONC，支持 // 与 /* */ 注释；无敏感信息，应提交到 git。
   // 访问令牌（PAT）为敏感信息，请通过环境变量 BEDROCK_PAT 或 .env / .env.local 配置（不要提交到 git）。
@@ -86,7 +89,12 @@ const TEMPLATE = `{
   // 智能体（说明见技能目录 references/agents.md）
   "agents": [
     // { "name": "xxxx智能体", "id": 1 }
-  ]
+  ],
+  // 缺陷工作流绑定（bug 命令组，说明见技能目录 references/bugs.md）
+  "bugs": {
+    // "project_slug": "xxx项目slug",  // 绑定项目 slug，可用 search --type projects 查询
+    // "developer": "用户名或用户ID"     // 绑定开发者，bug list 默认按其过滤 assignee
+  }
 }
 `;
 
@@ -270,6 +278,32 @@ function validateEntries(section, entries, file) {
   return entries;
 }
 
+// "bugs" 段是 bug 命令组的绑定配置：project_slug 定位项目，developer（用户名或用户 ID）过滤 assignee。
+function validateBugBinding(parsed, file) {
+  const raw = parsed.bugs;
+  if (raw === undefined) return { project_slug: "", developer: "" };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    die(2, `${file} 中 "bugs" 应为对象，例如 { "project_slug": "my-project", "developer": "zhangsan" }`);
+  }
+  const bugs = { project_slug: "", developer: "" };
+  if (raw.project_slug !== undefined) {
+    if (typeof raw.project_slug !== "string" || !raw.project_slug.trim()) {
+      die(2, `${file} 中 "bugs.project_slug" 应为非空字符串（项目 slug，可用 search --type projects 查询）`);
+    }
+    bugs.project_slug = raw.project_slug.trim();
+  }
+  if (raw.developer !== undefined) {
+    if (typeof raw.developer === "number" && Number.isInteger(raw.developer)) {
+      bugs.developer = String(raw.developer);
+    } else if (typeof raw.developer === "string" && raw.developer.trim()) {
+      bugs.developer = raw.developer.trim();
+    } else {
+      die(2, `${file} 中 "bugs.developer" 应为非空字符串（用户名）或整数（用户 ID）`);
+    }
+  }
+  return bugs;
+}
+
 function loadConfig(opts) {
   const file = requireConfigFile(opts);
   loadEnvFiles(path.dirname(file), opts["env-file"]);
@@ -312,6 +346,7 @@ function loadConfig(opts) {
   for (const def of Object.values(KINDS)) {
     config.sections[def.section] = validateEntries(def.section, parsed[def.section], file);
   }
+  config.bugs = validateBugBinding(parsed, file);
   return config;
 }
 
@@ -344,7 +379,7 @@ async function apiRequest(config, method, apiPath, body, scopeHint) {
     const lines = [`请求失败 ${res.status} ${method} ${url}`, message];
     if (envelope?.request_id) lines.push(`request_id: ${envelope.request_id}`);
     if (res.status === 401) lines.push("提示：PAT 无效或已过期，检查 pat 是否以 br_ 开头、是否被删除，或在 Bedrock Web 重新生成。");
-    if (res.status === 403 && scopeHint) lines.push(`提示：当前 PAT 可能缺少 scope ${scopeHint}。`);
+    if (res.status === 403 && scopeHint) lines.push(`提示：当前 PAT 可能缺少 scope ${scopeHint}。请在 Bedrock Web「资源 → 访问令牌」创建勾选了该 scope 的 PAT，并更新 BEDROCK_PAT。`);
     die(1, lines.join("\n"));
   }
   return envelope.data;
@@ -575,6 +610,14 @@ function cmdDoctor(opts) {
     for (const entry of entries) out(`  - ${entry.name} (id=${entry.id})`);
   }
   if (total === 1) out("提示: 只登记了一个任务，可直接用 run 子命令或 /bedrock 直接运行。");
+  const bugs = config.bugs;
+  if (bugs.project_slug && bugs.developer) {
+    out(`✓ bug 绑定 (bugs): project_slug=${bugs.project_slug} developer=${bugs.developer}`);
+  } else if (!bugs.project_slug && !bugs.developer) {
+    out("bug 绑定 (bugs): 未配置（bug 命令组不可用；如需缺陷闭环，在 .bedrock.jsonc 的 bugs 段填写 project_slug 与 developer）");
+  } else {
+    out(`✗ bug 绑定 (bugs) 不完整：${!bugs.project_slug ? "缺 project_slug " : ""}${!bugs.developer ? "缺 developer" : ""}。请补全后再使用 bug 命令组，示例：{ "project_slug": "my-project", "developer": "zhangsan" }`);
+  }
   if (opts.remote === true) {
     const url = `${config.base_url}${API_PREFIX}/health`;
     out(`远程检查: GET ${url} ...`);
@@ -606,10 +649,18 @@ async function cmdRun(opts) {
 
 async function cmdSearch(opts) {
   const type = typeof opts.type === "string" ? opts.type : undefined;
-  if (!type || !SEARCH_TYPES[type]) {
-    die(2, "用法: search --type builds|scripts|pipelines|agents [--keyword 关键字]");
+  if (!type || (!SEARCH_TYPES[type] && type !== "projects")) {
+    die(2, "用法: search --type builds|scripts|pipelines|agents|projects [--keyword 关键字]");
   }
   const config = loadConfig(opts);
+  if (type === "projects") {
+    // PAT bugs:read 返回精简 id/name/slug，用于补全 bugs.project_slug 绑定
+    const data = await fetchProjects(config, opts.keyword);
+    const items = data?.items ?? [];
+    out(`共 ${data?.total ?? items.length} 个项目${opts.keyword && opts.keyword !== true ? `（关键字: ${opts.keyword}）` : ""}`);
+    for (const item of items) out(`  id=${item.id}  slug=${item.slug}  ${item.name}`);
+    return;
+  }
   const def = KINDS[SEARCH_TYPES[type]];
   const params = new URLSearchParams({ page: "1", page_size: "50" });
   if (opts.keyword && opts.keyword !== true) params.set("keyword", String(opts.keyword));
@@ -643,6 +694,151 @@ async function cmdLog(opts) {
   out(lines.slice(-tail).join("\n"));
 }
 
+// ---------- 缺陷工作流（bug 命令组） ----------
+
+// bug 命令组依赖 bugs 绑定；缺失时给出配置引导（示例 + 查询指引）。
+function requireBugBinding(config) {
+  const bugs = config.bugs;
+  if (!bugs.project_slug || !bugs.developer) {
+    const missing = [!bugs.project_slug && "project_slug（绑定项目 slug）", !bugs.developer && "developer（绑定开发者，用户名或用户 ID）"].filter(Boolean).join("、");
+    die(
+      2,
+      [
+        `${config.file} 缺少 bug 命令组所需绑定：${missing}。`,
+        "请在 \"bugs\" 段补全，示例：",
+        '  "bugs": { "project_slug": "my-project", "developer": "zhangsan" }',
+        `不知道 project slug？配置好 BEDROCK_PAT 后执行 search --type projects 查询服务器可见项目。`,
+      ].join("\n"),
+    );
+  }
+  return bugs;
+}
+
+// GET /projects 对 bugs:read PAT 返回精简 items（id/name/slug），用于 slug 解析与 search。
+async function fetchProjects(config, keyword) {
+  const params = new URLSearchParams({ page: "1", page_size: "100" });
+  if (keyword && keyword !== true) params.set("keyword", String(keyword));
+  return apiRequest(config, "GET", `/projects?${params}`, undefined, "bugs:read");
+}
+
+async function resolveProjectBySlug(config, slug) {
+  const data = await fetchProjects(config);
+  const items = data?.items ?? [];
+  const hit = items.find((p) => p.slug === slug);
+  if (hit) return hit.id;
+  const more = (data?.total ?? 0) > items.length ? `（仅列出前 ${items.length} 个，共 ${data.total} 个）` : "";
+  die(
+    2,
+    [
+      `绑定的 bugs.project_slug "${slug}" 在服务器上未找到（或 PAT 无权访问）${more}。`,
+      `服务器上可见的项目：${items.map((p) => `${p.slug}(id=${p.id})`).join("、") || "（无）"}`,
+      `请更正 ${config.file} 中的 bugs.project_slug 后重试。`,
+    ].join("\n"),
+  );
+}
+
+// bug 子命令共用的执行上下文：绑定校验 + slug → 项目 ID 解析。
+async function bugContext(config) {
+  const binding = requireBugBinding(config);
+  const projectId = await resolveProjectBySlug(config, binding.project_slug);
+  return { binding, projectId };
+}
+
+function parseBugId(raw) {
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) die(2, `缺陷 ID 应为正整数，收到："${raw ?? ""}"`);
+  return id;
+}
+
+function fmtTime(s) {
+  return String(s ?? "").replace("T", " ").slice(0, 16);
+}
+
+function describeBugActivity(a) {
+  const who = a.creator_name ?? a.creator_username ?? `user#${a.created_by}`;
+  if (a.action === "status_change") {
+    return `${who} 流转状态 ${a.from_status ?? "?"} → ${a.to_status ?? "?"}${a.comment ? `（${a.comment}）` : ""}`;
+  }
+  if (a.action === "create") return `${who} 创建缺陷`;
+  return `${who} ${a.action}${a.comment ? `：${a.comment}` : ""}`;
+}
+
+async function bugList(opts, config) {
+  const { binding, projectId } = await bugContext(config);
+  const params = new URLSearchParams({ page: "1", page_size: "50", project_id: String(projectId), assignee: binding.developer });
+  const status = typeof opts.status === "string" ? opts.status : undefined;
+  if (status !== undefined) {
+    if (!BUG_STATUSES.includes(status)) die(2, `--status 仅支持：${BUG_STATUSES.join(" | ")}`);
+    params.set("status", status);
+  } else if (opts.all !== true) {
+    params.set("exclude_closed", "true");
+  }
+  if (opts.page !== undefined && opts.page !== true) params.set("page", String(opts.page));
+  const data = await apiRequest(config, "GET", `/projects/bugs?${params}`, undefined, "bugs:read");
+  const items = data?.items ?? [];
+  const scope = status !== undefined ? `status=${status}` : opts.all === true ? "含已关闭" : "未关闭";
+  out(`项目 ${binding.project_slug} 中 assignee=${binding.developer} 的缺陷（${scope}，共 ${data?.total ?? items.length} 条，第 ${data?.page ?? 1}/${data?.total_pages ?? 1} 页）`);
+  if (items.length === 0) {
+    out("（无符合条件的缺陷）");
+    return;
+  }
+  for (const bug of items) {
+    out(`  #${bug.id}  [${bug.status}]  ${bug.title}`);
+    out(`        严重=${bug.severity ?? "-"} 优先级=${bug.priority ?? "-"} 经办=${bug.assignee_name ?? "-"} 更新=${fmtTime(bug.updated_at)}`);
+  }
+  if ((data?.total_pages ?? 1) > (data?.page ?? 1)) out(`提示：还有下一页，可加 --page ${(data?.page ?? 1) + 1}`);
+}
+
+async function bugShow(args, config) {
+  const bugId = parseBugId(args[0]);
+  const { binding, projectId } = await bugContext(config);
+  const bug = await apiRequest(config, "GET", `/projects/${projectId}/bugs/${bugId}`, undefined, "bugs:read");
+  out(`缺陷 #${bug.id}  [${bug.status}]  ${bug.title}`);
+  out(`项目: ${bug.project_name ?? binding.project_slug}  严重程度: ${bug.severity ?? "-"}  优先级: ${bug.priority ?? "-"}`);
+  out(`经办人: ${bug.assignee_name ? `${bug.assignee_name}(${bug.assignee_username ?? "-"})` : "未指派"}  创建: ${fmtTime(bug.created_at)}  更新: ${fmtTime(bug.updated_at)}`);
+  if (bug.repository_name || bug.branch) out(`代码: ${bug.repository_name ?? "-"}${bug.branch ? ` @${bug.branch}` : ""}`);
+  if (bug.description) {
+    out("---- 描述 ----");
+    out(bug.description);
+  }
+  const comments = await apiRequest(config, "GET", `/projects/${projectId}/bugs/${bugId}/comments`, undefined, "bugs:read");
+  out(`---- 评论（${comments?.length ?? 0} 条） ----`);
+  for (const c of comments ?? []) out(`  [${fmtTime(c.created_at)}] ${c.creator_name ?? c.creator_username ?? "?"}: ${c.content}`);
+  const activities = await apiRequest(config, "GET", `/projects/${projectId}/bugs/${bugId}/activities`, undefined, "bugs:read");
+  out(`---- 活动（${activities?.length ?? 0} 条） ----`);
+  for (const a of activities ?? []) out(`  [${fmtTime(a.created_at)}] ${describeBugActivity(a)}`);
+}
+
+async function bugStatus(args, opts, config) {
+  const bugId = parseBugId(args[0]);
+  const to = typeof opts.to === "string" ? opts.to : undefined;
+  if (!to || !BUG_STATUSES.includes(to)) die(2, `用法: bug status <id> --to <${BUG_STATUSES.join("|")}>`);
+  const { projectId } = await bugContext(config);
+  const bug = await apiRequest(config, "PUT", `/projects/${projectId}/bugs/${bugId}/status`, { status: to }, "bugs:write");
+  out(`✅ 缺陷 #${bugId} 状态已流转为 ${bug.status}`);
+  out(`可用 bug comment ${bugId} --content "根因与修复说明" 补充评论。`);
+}
+
+async function bugComment(args, opts, config) {
+  const bugId = parseBugId(args[0]);
+  const content = typeof opts.content === "string" ? opts.content : undefined;
+  if (!content || !content.trim()) die(2, '用法: bug comment <id> --content "评论内容"');
+  const { projectId } = await bugContext(config);
+  const comment = await apiRequest(config, "POST", `/projects/${projectId}/bugs/${bugId}/comments`, { content }, "bugs:write");
+  out(`✅ 已评论缺陷 #${bugId}（comment_id=${comment?.id ?? "-"}）`);
+}
+
+async function cmdBug(positional, opts) {
+  const sub = positional[0];
+  const args = positional.slice(1);
+  if (sub !== "list" && sub !== "show" && sub !== "status" && sub !== "comment") die(2, BUG_USAGE);
+  const config = loadConfig(opts);
+  if (sub === "list") await bugList(opts, config);
+  else if (sub === "show") await bugShow(args, config);
+  else if (sub === "status") await bugStatus(args, opts, config);
+  else await bugComment(args, opts, config);
+}
+
 // ---------- 入口 ----------
 
 function printUsage() {
@@ -658,9 +854,14 @@ function printUsage() {
   script             运行脚本任务: --name 名称 | --id N
   pipeline           运行流水线:   --name 名称 | --id N
   agent              运行智能体:   --name 名称 | --id N [--prompt "任务描述"]
-  search             查询服务器任务列表: --type builds|scripts|pipelines|agents [--keyword 关键字]
+  search             查询服务器任务列表: --type builds|scripts|pipelines|agents|projects [--keyword 关键字]
   status             查询一次运行: --type build|script|pipeline|agent --run-id N
   log                构建/脚本运行日志: --type build|script --run-id N [--tail N]
+  bug                缺陷工作流（绑定 .bedrock.jsonc 的 bugs 段，详见 references/bugs.md）:
+                       bug list [--status S] [--all] [--page N]   按绑定项目+开发者列缺陷（默认未关闭）
+                       bug show <id>                              缺陷详情（描述/评论/活动）
+                       bug status <id> --to <status>              流转状态（open|in_progress|resolved|closed|rejected）
+                       bug comment <id> --content <文本>          发表评论
 
 通用选项:
   --config <路径>        指定配置文件（默认从当前目录向上查找 ${CONFIG_NAME}）
@@ -684,7 +885,7 @@ if (nodeMajor < MIN_NODE_MAJOR) {
 }
 
 const [command, ...rest] = process.argv.slice(2);
-const { opts } = parseArgs(rest);
+const { opts, positional } = parseArgs(rest);
 
 switch (command) {
   case undefined:
@@ -722,6 +923,9 @@ switch (command) {
     break;
   case "log":
     await cmdLog(opts);
+    break;
+  case "bug":
+    await cmdBug(positional, opts);
     break;
   default:
     die(2, `未知子命令 "${command}"\n\n` + "运行 `node bedrock.mjs` 查看用法。");
