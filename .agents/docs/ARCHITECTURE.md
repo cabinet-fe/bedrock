@@ -18,6 +18,7 @@
 
 - 单体 **Bedrock Server**（Go/Gin）：HTTP API（`/api/v1`）、WebSocket（`/ws`）、调度器、Cron、本机构建执行、本机 AI CLI，全部内嵌同一进程；前端静态资源 embed
 - 独立 **Deploy Agent**（Go，独立二进制）：在远端目标机执行部署，与 Server 同版本发布，支持 Linux/Windows
+- **浏览器插件**（`extension/`，规划；Manifest V3，仅最新 Chrome）：任意页面弹窗向平台报缺陷——自动截当前页可见区域为附件、描述带来源网址，PAT（`br_`）鉴权调用 `/api/v1`；开发者模式加载已解压目录使用，不随 Server 二进制分发
 - 数据：GORM + sqlite（默认，零外部依赖）/ postgres / mysql；版本化 migration + `schema_migrations`；启动时连通性失败拒绝启动
 - 认证：JWT（access）+ 刷新 Cookie + PAT（Bearer）；RBAC 多角色权限判定
 - 配置：Viper，`BEDROCK_` 前缀环境变量覆盖；`encryption.key`（64 hex，AES-GCM）敏感字段加密
