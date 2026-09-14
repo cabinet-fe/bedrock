@@ -217,15 +217,6 @@
 响应 201：data = ProjectBug
 错误：400 / 403 / 404
 
-### POST /projects/{id}/bugs/ai-extract — AI 智能提单解析
-
-权限：`project_bugs:create`
-路径参数：id*: integer
-请求：BugAIExtractRequest
-响应 200：data = BugAIExtractResponse
-错误：400 / 403 / 500
-说明：接收错误堆栈/日志文本，调用大模型智能解析提取结构化信息（title, description, severity, priority）。
-
 ### GET /projects/{id}/bugs/{bugID} — 获取缺陷详情
 
 权限：`project_bugs:view`
@@ -263,24 +254,6 @@
 路径参数：id*: integer, bugID*: integer
 响应 200：data = ProjectBugActivity[]
 错误：403 / 404
-
-### POST /projects/{id}/bugs/{bugID}/ai-analyze — AI 根因分析
-
-权限：`project_bugs:execute`
-路径参数：id*: integer, bugID*: integer
-请求：BugAIAnalyzeRequest
-响应 200：data = BugAIAnalyzeResponse
-错误：400 / 403 / 500
-说明：结合缺陷上下文（标题、描述、代码仓、分支等）调用大模型生成根因推断与修复建议，并持久化回填至缺陷 `ai_analysis` 字段。
-
-### POST /projects/{id}/bugs/{bugID}/dispatch-agent — 派发 Agent 自动化排查
-
-权限：`project_bugs:execute`
-路径参数：id*: integer, bugID*: integer
-请求：BugDispatchAgentRequest
-响应 202：data = BugDispatchAgentResponse
-错误：400 / 403 / 500
-说明：指定绑定了对应代码仓的 Bedrock Agent 异步执行代码排查，触发生成 `AgentRun`（记录 `project_id` 与 `bug_id` 关联），并将 `run_id` 记录至缺陷，缺陷详情可实时查看排查状态与执行日志。
 
 ### GET /projects/{id}/bugs/{bugID}/comments — 列出缺陷评论
 
@@ -714,46 +687,6 @@
 | --- | --- | --- | --- |
 | `items` | `RequirementStatusOption[]` | 是 |  |
 
-### BugAIExtractRequest
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `content` | `string` | 是 | 错误堆栈、控制台日志或缺陷描述文本 |
-
-### BugAIExtractResponse
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `title` | `string` | 是 | AI 提炼的缺陷标题 |
-| `description` | `string` |  | AI 整理的问题描述/复现步骤 |
-| `severity` | `'low' \| 'normal' \| 'high' \| 'critical'` |  | AI 建议的严重程度 |
-| `priority` | `'low' \| 'normal' \| 'high' \| 'urgent'` |  | AI 建议的优先级 |
-
-### BugAIAnalyzeRequest
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `prompt` | `string` |  | 可选的用户补充分析提示 |
-
-### BugAIAnalyzeResponse
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `ai_analysis` | `string` | 是 | AI 分析得出的根因推断与修复建议 |
-
-### BugDispatchAgentRequest
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `agent_id` | `integer` | 是 | 指定执行排查任务的 Bedrock Agent ID |
-| `user_prompt` | `string` |  | 用户附加的排查指示或提示词 |
-
-### BugDispatchAgentResponse
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `agent_run_id` | `integer` | 是 | 触发生成的 AgentRun 任务 ID |
-
 ### BugStatusTransitionRequest
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -775,8 +708,6 @@
 | `assignee_id` | `integer` |  | 经办人用户 ID |
 | `repository_id` | `integer` |  | 关联代码仓库 ID |
 | `branch` | `string` |  | 关联分支名 |
-| `last_agent_run_id` | `integer` |  | 最近一次排查关联的 AgentRun ID |
-| `ai_analysis` | `string` |  | AI 根因分析内容 |
 | `created_by` | `integer` | 是 |  |
 | `updated_by` | `integer` | 是 |  |
 | `created_at` | `string(date-time)` | 是 |  |
@@ -794,7 +725,7 @@
 | --- | --- | --- | --- |
 | `id` | `integer` | 是 |  |
 | `bug_id` | `integer` | 是 |  |
-| `action` | `string` | 是 | 活动动作（status_change, create, comment, agent_dispatch） |
+| `action` | `string` | 是 | 活动动作（status_change, create, comment） |
 | `from_status` | `string` |  | 变更前状态 |
 | `to_status` | `string` |  | 变更后状态 |
 | `comment` | `string` |  | 备注信息 |

@@ -4,7 +4,7 @@ defineOptions({ name: "BugFormDialog" });
 import { computed, reactive, ref, useTemplateRef, watch } from "vue";
 import { message, type FormExposed } from "@veltra/desktop";
 
-import { aiExtractBug, createProjectBug, listMembers, updateProjectBug } from "@/api/projects";
+import { createProjectBug, listMembers, updateProjectBug } from "@/api/projects";
 import { listRepositoryBranches } from "@/api/resource";
 import type { BugPriority, BugSeverity, ProjectBug } from "@/api/types";
 import RepoSelect from "@/components/repo-select/repo-select.vue";
@@ -43,10 +43,6 @@ const form = reactive({ ...defaultForm });
 const memberOptions = ref<{ label: string; value: number }[]>([]);
 const branchOptions = ref<{ label: string; value: string }[]>([]);
 const loadingBranches = ref(false);
-
-const aiExtractOpen = ref(false);
-const aiLogContent = ref("");
-const aiExtracting = ref(false);
 
 async function loadMembers(pid?: number) {
   if (!pid) {
@@ -135,33 +131,6 @@ watch(
   },
 );
 
-async function handleAIExtract() {
-  const pid = effectiveProjectId.value;
-  if (!pid) {
-    message.warning("请先选择所属项目，再进行 AI 日志解析");
-    return;
-  }
-  if (!aiLogContent.value.trim()) return;
-
-  aiExtracting.value = true;
-  try {
-    const result = await aiExtractBug(pid, aiLogContent.value.trim());
-    Object.assign(form, {
-      ...(result.title ? { title: result.title } : {}),
-      ...(result.description ? { description: result.description } : {}),
-      ...(result.severity ? { severity: result.severity } : {}),
-      ...(result.priority ? { priority: result.priority } : {}),
-    });
-    message.success("AI 智能提取成功，已自动回填表单");
-    aiExtractOpen.value = false;
-    aiLogContent.value = "";
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : "AI 日志解析失败");
-  } finally {
-    aiExtracting.value = false;
-  }
-}
-
 async function handleSubmit() {
   if (busy.value) return;
   const valid = await formRef.value?.validate();
@@ -212,9 +181,6 @@ async function handleSubmit() {
   >
     <div class="bug-form-header-bar">
       <span class="bug-form-header-tip">填写缺陷基本信息与协同责任人</span>
-      <u-button type="secondary" size="small" @click="aiExtractOpen = true">
-        ✨ AI 智能解析日志填单
-      </u-button>
     </div>
 
     <u-form ref="form" :model="form" label-width="96px" :cols="2">
@@ -302,30 +268,6 @@ async function handleSubmit() {
       <u-button @click="close()">取消</u-button>
       <u-button type="primary" :loading="busy" @click="handleSubmit">保存</u-button>
     </template>
-
-    <!-- AI 智能日志提取弹窗 -->
-    <u-dialog v-model="aiExtractOpen" title="AI 智能解析日志提单" style="width: 580px">
-      <p class="ai-extract-hint">
-        粘贴系统异常日志、堆栈跟踪或控制台错误，AI
-        将自动提炼出缺陷标题、严重程度、优先级及详细复现描述并回填表单。
-      </p>
-      <u-textarea
-        v-model="aiLogContent"
-        :rows="8"
-        placeholder="请在此粘贴错误日志或异常调用栈文本..."
-      />
-      <template #footer="{ close }">
-        <u-button @click="close()">取消</u-button>
-        <u-button
-          type="primary"
-          :loading="aiExtracting"
-          :disabled="!aiLogContent.trim()"
-          @click="handleAIExtract"
-        >
-          开始解析并回填
-        </u-button>
-      </template>
-    </u-dialog>
   </u-dialog>
 </template>
 
@@ -345,12 +287,5 @@ async function handleSubmit() {
 .bug-form-header-tip {
   font-size: 13px;
   color: fn.use-var(text-color, secondary);
-}
-
-.ai-extract-hint {
-  margin-bottom: 10px;
-  font-size: 13px;
-  color: fn.use-var(text-color, secondary);
-  line-height: 1.5;
 }
 </style>

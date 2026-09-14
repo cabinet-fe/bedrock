@@ -1,9 +1,7 @@
 package service
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -48,7 +46,6 @@ type BugService struct {
 	projectRepo *repository.ProjectRepository
 	storage     *storageservice.StorageService
 	acl         *projectACL
-	aiBridge    BugAIBridge
 }
 
 func NewBugService(bugRepo *repository.BugRepository, projectRepo *repository.ProjectRepository, storage *storageservice.StorageService) *BugService {
@@ -58,10 +55,6 @@ func NewBugService(bugRepo *repository.BugRepository, projectRepo *repository.Pr
 		storage:     storage,
 		acl:         newProjectACL(projectRepo),
 	}
-}
-
-func (s *BugService) SetAIBridge(bridge BugAIBridge) {
-	s.aiBridge = bridge
 }
 
 // CheckBugProject verifies that a bug exists, belongs to projectID, and actor has required permissions.
@@ -485,83 +478,6 @@ func (s *BugService) DeleteAttachment(actor AccessContext, projectID, bugID, att
 		_ = s.storage.Delete(att.StorageObjectID)
 	}
 	return nil
-}
-
-// AIExtract extracts structured bug fields from logs or stack traces.
-func (s *BugService) AIExtract(actor AccessContext, projectID uint, content string) (*BugAIExtractResult, error) {
-	if _, err := s.acl.Require(projectID, actor, "project_bugs:create", capBugEdit); err != nil {
-		return nil, err
-	}
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return nil, NewBadRequest("解析内容不能为空")
-	}
-	if s.aiBridge == nil {
-		return nil, errors.New("AI 服务未初始化")
-	}
-	return s.aiBridge.Extract(context.Background(), content)
-}
-
-// AIAnalyze analyzes the root cause of a bug and persists the result to the bug entity.
-func (s *BugService) AIAnalyze(actor AccessContext, projectID, bugID uint, prompt string) (string, error) {
-	bug, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:execute", capBugEdit)
-	if err != nil {
-		return "", err
-	}
-	if s.aiBridge == nil {
-		return "", errors.New("AI 服务未初始化")
-	}
-
-	analysis, err := s.aiBridge.Analyze(context.Background(), bug, prompt)
-	if err != nil {
-		return "", err
-	}
-
-	bug.AIAnalysis = analysis
-	bug.UpdatedBy = actor.UserID
-	if err := s.bugRepo.Update(bug); err != nil {
-		return "", err
-	}
-	return analysis, nil
-}
-
-// DispatchAgent launches an AgentRun for investigating this bug, associates run_id, and records activity.
-func (s *BugService) DispatchAgent(actor AccessContext, projectID, bugID, agentID uint, userPrompt string) (uint, error) {
-	bug, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:execute", capBugEdit)
-	if err != nil {
-		return 0, err
-	}
-	if agentID == 0 {
-		return 0, NewBadRequest("必须指定智能体 agent_id")
-	}
-	if s.aiBridge == nil {
-		return 0, errors.New("AI 排查服务未初始化")
-	}
-
-	runID, err := s.aiBridge.DispatchAgent(context.Background(), bug, agentID, actor.UserID, userPrompt)
-	if err != nil {
-		return 0, err
-	}
-
-	bug.LastAgentRunID = &runID
-	bug.UpdatedBy = actor.UserID
-	if err := s.bugRepo.Update(bug); err != nil {
-		return 0, err
-	}
-
-	comment := strings.TrimSpace(userPrompt)
-	if comment == "" {
-		comment = fmt.Sprintf("派发 Agent #%d 自动化排查", agentID)
-	}
-	activity := &model.ProjectBugActivity{
-		BugID:     bug.ID,
-		Action:    model.BugActivityAgentDispatch,
-		Comment:   comment,
-		CreatedBy: actor.UserID,
-	}
-	_ = s.bugRepo.RecordActivity(activity)
-
-	return runID, nil
 }
 
 func isAllowedBugAttachment(filename, contentType string) bool {

@@ -2,13 +2,10 @@ import { saveBlob } from "@cat-kit/fe";
 
 import { http } from "./http";
 import type {
-  AIExtractBugResult,
   ApiDocNode,
   BugActivity,
-  BugAIAnalyzeResponse,
   BugAttachment,
   BugComment,
-  BugDispatchAgentResponse,
   BugStatusTransitionInput,
   DevDocNode,
   PageResult,
@@ -319,40 +316,6 @@ export async function listProjectBugActivities(
     `/projects/${projectID}/bugs/${bugID}/activities`,
   );
   return Array.isArray(body) ? body : (body.items ?? []);
-}
-
-export async function aiExtractBug(
-  projectID: number,
-  content: string,
-): Promise<AIExtractBugResult> {
-  const { body } = await http.post<AIExtractBugResult>(`/projects/${projectID}/bugs/ai-extract`, {
-    content,
-  });
-  return body;
-}
-
-export async function aiAnalyzeBug(
-  projectID: number,
-  bugID: number,
-  prompt?: string,
-): Promise<BugAIAnalyzeResponse> {
-  const { body } = await http.post<BugAIAnalyzeResponse>(
-    `/projects/${projectID}/bugs/${bugID}/ai-analyze`,
-    { prompt },
-  );
-  return body;
-}
-
-export async function dispatchAgentForBug(
-  projectID: number,
-  bugID: number,
-  input: { agent_id: number; user_prompt?: string },
-): Promise<BugDispatchAgentResponse> {
-  const { body } = await http.post<BugDispatchAgentResponse>(
-    `/projects/${projectID}/bugs/${bugID}/dispatch-agent`,
-    input,
-  );
-  return body;
 }
 
 export async function listProjectBugComments(

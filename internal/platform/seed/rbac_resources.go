@@ -106,7 +106,7 @@ func EnsureRBACResources(db *gorm.DB) error {
 				},
 				{
 					Code: "project_bugs", Title: "缺陷", Route: "/project/bugs", SortKey: 15,
-					Actions: append(append([]string{}, standardCRUD...), "execute"),
+					Actions: standardCRUD,
 				},
 				// Hidden from nav: still seeded so project-detail tabs / API permissions keep working.
 				{Code: "project_requirements", Title: "需求管理", Route: "/project/requirements", SortKey: 20, Hidden: true, Actions: standardCRUD},

@@ -30,25 +30,6 @@ import (
 	storageservice "bedrock/internal/storage/service"
 )
 
-type mockHandlerAIBridge struct{}
-
-func (m *mockHandlerAIBridge) Extract(ctx context.Context, content string) (*projectservice.BugAIExtractResult, error) {
-	return &projectservice.BugAIExtractResult{
-		Title:       "Extracted Bug Title",
-		Description: "Extracted Bug Description",
-		Severity:    "high",
-		Priority:    "urgent",
-	}, nil
-}
-
-func (m *mockHandlerAIBridge) Analyze(ctx context.Context, bug *projectmodel.ProjectBug, prompt string) (string, error) {
-	return "AI 根因分析结论：空指针异常", nil
-}
-
-func (m *mockHandlerAIBridge) DispatchAgent(ctx context.Context, bug *projectmodel.ProjectBug, agentID, userID uint, userPrompt string) (uint, error) {
-	return 999, nil
-}
-
 func setupBugHandlerTest(t *testing.T) (*gin.Engine, *BugHandler, *ProjectHandler, *projectservice.BugService, *projectservice.ProjectService, *gorm.DB) {
 	t.Helper()
 	gdb, err := db.Open(&config.DatabaseConfig{Driver: "sqlite", Path: t.TempDir() + "/bug-handler.sqlite"})
@@ -88,7 +69,6 @@ func setupBugHandlerTest(t *testing.T) (*gin.Engine, *BugHandler, *ProjectHandle
 
 	projectSvc := projectservice.NewProjectService(projectRepo, storage)
 	bugSvc := projectservice.NewBugService(bugRepo, projectRepo, storage)
-	bugSvc.SetAIBridge(&mockHandlerAIBridge{})
 
 	bugHandler := NewBugHandler(bugSvc, permSvc)
 	projectHandler := NewProjectHandler(projectSvc, permSvc)
@@ -115,7 +95,7 @@ func setupBugHandlerTest(t *testing.T) (*gin.Engine, *BugHandler, *ProjectHandle
 	}
 	if err := roleRepo.ReplacePermissions(devRole.ID, []string{
 		"project_projects:view", "project_projects:create", "project_projects:update", "project_projects:delete",
-		"project_bugs:view", "project_bugs:create", "project_bugs:update", "project_bugs:delete", "project_bugs:execute",
+		"project_bugs:view", "project_bugs:create", "project_bugs:update", "project_bugs:delete",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -432,75 +412,5 @@ func TestBugHandlerAttachments(t *testing.T) {
 	resp = doRequest(router, http.MethodDelete, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/attachments/"+attIDStr, nil, 1, false)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("delete attachment expected 200, got %d: %s", resp.Code, resp.Body.String())
-	}
-}
-
-func TestBugHandlerAIAndAgent(t *testing.T) {
-	router, _, _, _, projectSvc, _ := setupBugHandlerTest(t)
-	owner := projectservice.NewAccessContext(1, true, nil)
-	proj, _ := projectSvc.CreateProject(owner, projectservice.CreateProjectInput{Name: "AI Proj", Slug: "ai-proj"})
-	projIDStr := strconv.Itoa(int(proj.ID))
-
-	// 1. AI Extract (200)
-	resp := doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/ai-extract", jsonBytes(map[string]any{
-		"content": "panic: unexpected nil pointer at main.go:123",
-	}), 1, false)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("ai-extract expected 200, got %d: %s", resp.Code, resp.Body.String())
-	}
-	var extractResp struct {
-		Data projectservice.BugAIExtractResult `json:"data"`
-	}
-	_ = json.Unmarshal(resp.Body.Bytes(), &extractResp)
-	if extractResp.Data.Title != "Extracted Bug Title" {
-		t.Fatalf("unexpected extracted title: %s", extractResp.Data.Title)
-	}
-
-	// Create bug
-	resp = doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs", jsonBytes(map[string]any{
-		"title":       extractResp.Data.Title,
-		"description": extractResp.Data.Description,
-		"severity":    extractResp.Data.Severity,
-		"priority":    extractResp.Data.Priority,
-	}), 1, false)
-	var createBugResp struct {
-		Data projectmodel.ProjectBug `json:"data"`
-	}
-	_ = json.Unmarshal(resp.Body.Bytes(), &createBugResp)
-	bugIDStr := strconv.Itoa(int(createBugResp.Data.ID))
-
-	// 2. AI Analyze (200)
-	resp = doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/ai-analyze", jsonBytes(map[string]any{
-		"prompt": "请补充排查建议",
-	}), 1, false)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("ai-analyze expected 200, got %d: %s", resp.Code, resp.Body.String())
-	}
-	var analyzeResp struct {
-		Data struct {
-			AIAnalysis string `json:"ai_analysis"`
-		} `json:"data"`
-	}
-	_ = json.Unmarshal(resp.Body.Bytes(), &analyzeResp)
-	if analyzeResp.Data.AIAnalysis != "AI 根因分析结论：空指针异常" {
-		t.Fatalf("unexpected analyze response: %s", analyzeResp.Data.AIAnalysis)
-	}
-
-	// 3. Dispatch Agent (202 Accepted)
-	resp = doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/dispatch-agent", jsonBytes(map[string]any{
-		"agent_id":    10,
-		"user_prompt": "排查空指针",
-	}), 1, false)
-	if resp.Code != http.StatusAccepted {
-		t.Fatalf("dispatch-agent expected 202, got %d: %s", resp.Code, resp.Body.String())
-	}
-	var dispatchResp struct {
-		Data struct {
-			AgentRunID uint `json:"agent_run_id"`
-		} `json:"data"`
-	}
-	_ = json.Unmarshal(resp.Body.Bytes(), &dispatchResp)
-	if dispatchResp.Data.AgentRunID != 999 {
-		t.Fatalf("expected agent_run_id 999, got %d", dispatchResp.Data.AgentRunID)
 	}
 }

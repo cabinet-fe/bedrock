@@ -40,7 +40,7 @@ func TestMigration000051_ProjectBugs(t *testing.T) {
 	expectedBugCols := []string{
 		"id", "project_id", "title", "description", "status",
 		"severity", "priority", "assignee_id", "repository_id",
-		"branch", "last_agent_run_id", "ai_analysis", "created_by",
+		"branch", "created_by",
 		"updated_by", "created_at", "updated_at", "deleted_at",
 	}
 	for _, col := range expectedBugCols {

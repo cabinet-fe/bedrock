@@ -710,8 +710,6 @@ export interface ProjectBug {
   assignee_id?: number | null;
   repository_id?: number | null;
   branch?: string;
-  last_agent_run_id?: number | null;
-  ai_analysis?: string;
   created_by: number;
   updated_by: number;
   created_at: string;
@@ -788,22 +786,6 @@ export interface BugAttachment {
   created_at: string;
 }
 export type ProjectBugAttachment = BugAttachment;
-
-export interface AIExtractBugResult {
-  title: string;
-  description?: string;
-  severity?: BugSeverity;
-  priority?: BugPriority;
-}
-export type BugAIExtractResponse = AIExtractBugResult;
-
-export interface BugAIAnalyzeResponse {
-  ai_analysis: string;
-}
-
-export interface BugDispatchAgentResponse {
-  agent_run_id: number;
-}
 
 export interface ApiDocNode {
   id: number;

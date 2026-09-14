@@ -33,31 +33,28 @@ const (
 
 // Bug activity action constants.
 const (
-	BugActivityStatusChange  = "status_change"
-	BugActivityCreate        = "create"
-	BugActivityComment       = "comment"
-	BugActivityAgentDispatch = "agent_dispatch"
+	BugActivityStatusChange = "status_change"
+	BugActivityCreate       = "create"
+	BugActivityComment      = "comment"
 )
 
 // ProjectBug represents a bug entity in a project.
 type ProjectBug struct {
-	ID             uint           `json:"id" gorm:"primaryKey"`
-	ProjectID      uint           `json:"project_id" gorm:"not null;index"`
-	Title          string         `json:"title" gorm:"size:500;not null"`
-	Description    string         `json:"description" gorm:"type:text"`
-	Status         string         `json:"status" gorm:"size:50;not null;default:open;index"`
-	Severity       string         `json:"severity" gorm:"size:30;not null;default:normal;index"`
-	Priority       string         `json:"priority" gorm:"size:30;not null;default:normal;index"`
-	AssigneeID     *uint          `json:"assignee_id,omitempty" gorm:"index"`
-	RepositoryID   *uint          `json:"repository_id,omitempty" gorm:"index"`
-	Branch         string         `json:"branch,omitempty" gorm:"size:255"`
-	LastAgentRunID *uint          `json:"last_agent_run_id,omitempty" gorm:"index"`
-	AIAnalysis     string         `json:"ai_analysis,omitempty" gorm:"column:ai_analysis;type:text"`
-	CreatedBy      uint           `json:"created_by" gorm:"index"`
-	UpdatedBy      uint           `json:"updated_by" gorm:"index"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	DeletedAt      gorm.DeletedAt `json:"-" gorm:"index"`
+	ID           uint           `json:"id" gorm:"primaryKey"`
+	ProjectID    uint           `json:"project_id" gorm:"not null;index"`
+	Title        string         `json:"title" gorm:"size:500;not null"`
+	Description  string         `json:"description" gorm:"type:text"`
+	Status       string         `json:"status" gorm:"size:50;not null;default:open;index"`
+	Severity     string         `json:"severity" gorm:"size:30;not null;default:normal;index"`
+	Priority     string         `json:"priority" gorm:"size:30;not null;default:normal;index"`
+	AssigneeID   *uint          `json:"assignee_id,omitempty" gorm:"index"`
+	RepositoryID *uint          `json:"repository_id,omitempty" gorm:"index"`
+	Branch       string         `json:"branch,omitempty" gorm:"size:255"`
+	CreatedBy    uint           `json:"created_by" gorm:"index"`
+	UpdatedBy    uint           `json:"updated_by" gorm:"index"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`
 
 	// Non-persisted view fields
 	ProjectName      string `json:"project_name,omitempty" gorm:"-"`

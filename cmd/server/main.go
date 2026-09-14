@@ -234,8 +234,6 @@ func main() {
 	agentSvc.SetTerminalNotifier(notifSvc)
 	docsBridge := aiservice.NewDocsBridge(agentSvc)
 	projectSvc.SetDocsAIBridge(docsBridge)
-	bugAIBridge := projectservice.NewDefaultBugAIBridge(gdb, &agentBugLauncher{agents: agentSvc})
-	bugSvc.SetAIBridge(bugAIBridge)
 	providerRepo := airepo.NewProviderRepository(gdb)
 	providerSvc := aiservice.NewProviderService(providerRepo)
 	chatRepo := airepo.NewChatRepository(gdb)
@@ -419,21 +417,4 @@ func main() {
 	if sqlDB, err := gdb.DB(); err == nil {
 		_ = sqlDB.Close()
 	}
-}
-
-type agentBugLauncher struct {
-	agents *aiservice.AgentService
-}
-
-func (l *agentBugLauncher) CreateRun(agentID uint, userID uint, projectID uint, prompt string) (uint, error) {
-	run, err := l.agents.CreateRun(agentID, aiservice.CreateRunInput{
-		TriggerType: "bug_investigation",
-		TriggeredBy: userID,
-		ProjectID:   &projectID,
-		UserPrompt:  prompt,
-	})
-	if err != nil {
-		return 0, err
-	}
-	return run.ID, nil
 }

@@ -73,7 +73,7 @@ func newTestEnv(t *testing.T) (*BugService, *ProjectService, *projectrepo.BugRep
 func allBugPermissions() []string {
 	return []string{
 		"project_projects:create", "project_projects:view", "project_projects:update", "project_projects:delete",
-		"project_bugs:create", "project_bugs:view", "project_bugs:update", "project_bugs:delete", "project_bugs:execute",
+		"project_bugs:create", "project_bugs:view", "project_bugs:update", "project_bugs:delete",
 	}
 }
 
@@ -512,118 +512,5 @@ func TestBugAttachments(t *testing.T) {
 	}
 	if len(atts) != 0 {
 		t.Fatalf("expected 0 attachments after delete, got %d", len(atts))
-	}
-}
-
-type mockBugAIBridge struct {
-	extractResult *BugAIExtractResult
-	extractErr    error
-	analyzeResult string
-	analyzeErr    error
-	dispatchRunID uint
-	dispatchErr   error
-}
-
-func (m *mockBugAIBridge) Extract(ctx context.Context, content string) (*BugAIExtractResult, error) {
-	return m.extractResult, m.extractErr
-}
-
-func (m *mockBugAIBridge) Analyze(ctx context.Context, bug *projectmodel.ProjectBug, prompt string) (string, error) {
-	return m.analyzeResult, m.analyzeErr
-}
-
-func (m *mockBugAIBridge) DispatchAgent(ctx context.Context, bug *projectmodel.ProjectBug, agentID, userID uint, userPrompt string) (uint, error) {
-	return m.dispatchRunID, m.dispatchErr
-}
-
-func TestBugAIAndAgent(t *testing.T) {
-	bugSvc, projectSvc, bugRepo, _, _ := newTestEnv(t)
-	owner := actor(1, allBugPermissions()...)
-	project := createProject(t, projectSvc, owner, "bug-ai-project")
-
-	mockBridge := &mockBugAIBridge{
-		extractResult: &BugAIExtractResult{
-			Title:       "NullPointerException in UserService",
-			Description: "Stack trace at UserService.java:42",
-			Severity:    projectmodel.BugSeverityHigh,
-			Priority:    projectmodel.BugPriorityHigh,
-		},
-		analyzeResult: "根因推断：用户认证上下文未正确注入导致空指针。修复建议：添加判空校验与防御性编程。",
-		dispatchRunID: 888,
-	}
-	bugSvc.SetAIBridge(mockBridge)
-
-	// 1. Test AIExtract
-	extractRes, err := bugSvc.AIExtract(owner, project.ID, "ERROR NullPointerException at UserService.java:42")
-	if err != nil {
-		t.Fatalf("ai-extract failed: %v", err)
-	}
-	if extractRes.Title != "NullPointerException in UserService" || extractRes.Severity != projectmodel.BugSeverityHigh {
-		t.Fatalf("unexpected extract result: %+v", extractRes)
-	}
-
-	// 2. Create bug
-	bug, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{
-		Title:       extractRes.Title,
-		Description: extractRes.Description,
-		Severity:    extractRes.Severity,
-		Priority:    extractRes.Priority,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// 3. Test AIAnalyze
-	analysis, err := bugSvc.AIAnalyze(owner, project.ID, bug.ID, "请重点排查中间件拦截链路")
-	if err != nil {
-		t.Fatalf("ai-analyze failed: %v", err)
-	}
-	if analysis != mockBridge.analyzeResult {
-		t.Fatalf("unexpected analysis result: %s", analysis)
-	}
-
-	// Verify persistence in DB
-	refreshed, err := bugRepo.FindByID(bug.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if refreshed.AIAnalysis != mockBridge.analyzeResult {
-		t.Fatalf("ai_analysis was not persisted to bug entity, got %s", refreshed.AIAnalysis)
-	}
-
-	// 4. Test DispatchAgent
-	runID, err := bugSvc.DispatchAgent(owner, project.ID, bug.ID, 12, "重点分析堆栈")
-	if err != nil {
-		t.Fatalf("dispatch-agent failed: %v", err)
-	}
-	if runID != 888 {
-		t.Fatalf("expected runID 888, got %d", runID)
-	}
-
-	// Verify last_agent_run_id updated on bug
-	refreshed, err = bugRepo.FindByID(bug.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if refreshed.LastAgentRunID == nil || *refreshed.LastAgentRunID != 888 {
-		t.Fatalf("last_agent_run_id not updated, got %v", refreshed.LastAgentRunID)
-	}
-
-	// Verify activity recorded
-	activities, err := bugSvc.ListBugActivities(owner, project.ID, bug.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var foundDispatch bool
-	for _, a := range activities {
-		if a.Action == projectmodel.BugActivityAgentDispatch {
-			foundDispatch = true
-			if a.Comment != "重点分析堆栈" {
-				t.Fatalf("unexpected dispatch activity comment: %s", a.Comment)
-			}
-		}
-	}
-	if !foundDispatch {
-		t.Fatalf("agent_dispatch activity was not recorded")
 	}
 }

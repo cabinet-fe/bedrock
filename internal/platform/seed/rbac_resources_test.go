@@ -113,13 +113,12 @@ func TestEnsureRBACResources_ProjectBugs(t *testing.T) {
 		t.Errorf("project_bugs menu should not be hidden")
 	}
 
-	// Verify 5 action features (standardCRUD + execute)
+	// Verify 4 action features (standardCRUD; execute removed with bug AI)
 	expectedActions := map[string]string{
-		"project_bugs:view":    "查看",
-		"project_bugs:create":  "创建",
-		"project_bugs:update":  "更新",
-		"project_bugs:delete":  "删除",
-		"project_bugs:execute": "执行",
+		"project_bugs:view":   "查看",
+		"project_bugs:create": "创建",
+		"project_bugs:update": "更新",
+		"project_bugs:delete": "删除",
 	}
 
 	for fullCode, expectedTitle := range expectedActions {
@@ -132,8 +131,15 @@ func TestEnsureRBACResources_ProjectBugs(t *testing.T) {
 			t.Errorf("feature %s title = %q, want %q", fullCode, feat.Title, expectedTitle)
 		}
 	}
+	var executeCount int64
+	if err := gdb.Model(&rbacmodel.RbacResource{}).Where("full_code = ?", "project_bugs:execute").Count(&executeCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if executeCount != 0 {
+		t.Errorf("project_bugs:execute feature should not be seeded")
+	}
 
-	// Verify super-admin receives all 5 actions
+	// Verify super-admin receives all 4 actions
 	roles := rbacrepo.NewRoleRepository(gdb)
 	resources := rbacrepo.NewResourceRepository(gdb)
 	groups := rbacrepo.NewMenuGroupRepository(gdb)

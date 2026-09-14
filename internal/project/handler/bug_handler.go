@@ -32,14 +32,11 @@ func (h *BugHandler) RegisterRoutesOnGroup(g *gin.RouterGroup) {
 	g.GET("/bugs", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.ListAcrossProjects)
 	g.GET("/:id/bugs", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.ListProjectBugs)
 	g.POST("/:id/bugs", rbacmw.RequirePermission(h.perm, "project_bugs:create"), h.CreateBug)
-	g.POST("/:id/bugs/ai-extract", rbacmw.RequirePermission(h.perm, "project_bugs:create"), h.AIExtract)
 	g.GET("/:id/bugs/:bugID", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.GetBug)
 	g.PUT("/:id/bugs/:bugID", rbacmw.RequirePermission(h.perm, "project_bugs:update"), h.UpdateBug)
 	g.DELETE("/:id/bugs/:bugID", rbacmw.RequirePermission(h.perm, "project_bugs:delete"), h.DeleteBug)
 	g.PUT("/:id/bugs/:bugID/status", rbacmw.RequirePermission(h.perm, "project_bugs:update"), h.UpdateBugStatus)
 	g.GET("/:id/bugs/:bugID/activities", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.ListBugActivities)
-	g.POST("/:id/bugs/:bugID/ai-analyze", rbacmw.RequirePermission(h.perm, "project_bugs:execute"), h.AIAnalyze)
-	g.POST("/:id/bugs/:bugID/dispatch-agent", rbacmw.RequirePermission(h.perm, "project_bugs:execute"), h.DispatchAgent)
 	g.GET("/:id/bugs/:bugID/comments", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.ListComments)
 	g.POST("/:id/bugs/:bugID/comments", rbacmw.RequirePermission(h.perm, "project_bugs:create"), h.CreateComment)
 	g.PUT("/:id/bugs/:bugID/comments/:commentID", rbacmw.RequirePermission(h.perm, "project_bugs:update"), h.UpdateComment)
@@ -244,79 +241,6 @@ func (h *BugHandler) ListBugActivities(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, activities)
-}
-
-type aiExtractRequest struct {
-	Content string `json:"content"`
-}
-
-func (h *BugHandler) AIExtract(c *gin.Context) {
-	projectID, ok := parseID(c, "id")
-	if !ok {
-		return
-	}
-	actor, ok := h.actor(c)
-	if !ok {
-		return
-	}
-	var req aiExtractRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Error(c, http.StatusBadRequest, "无效参数")
-		return
-	}
-	result, err := h.svc.AIExtract(actor, projectID, req.Content)
-	if err != nil {
-		writeServiceError(c, err)
-		return
-	}
-	pkg.Success(c, result)
-}
-
-type aiAnalyzeRequest struct {
-	Prompt string `json:"prompt"`
-}
-
-func (h *BugHandler) AIAnalyze(c *gin.Context) {
-	projectID, bugID, actor, ok := h.bugActor(c)
-	if !ok {
-		return
-	}
-	var req aiAnalyzeRequest
-	_ = c.ShouldBindJSON(&req)
-
-	result, err := h.svc.AIAnalyze(actor, projectID, bugID, req.Prompt)
-	if err != nil {
-		writeServiceError(c, err)
-		return
-	}
-	pkg.Success(c, gin.H{"ai_analysis": result})
-}
-
-type dispatchAgentRequest struct {
-	AgentID    uint   `json:"agent_id"`
-	UserPrompt string `json:"user_prompt"`
-}
-
-func (h *BugHandler) DispatchAgent(c *gin.Context) {
-	projectID, bugID, actor, ok := h.bugActor(c)
-	if !ok {
-		return
-	}
-	var req dispatchAgentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Error(c, http.StatusBadRequest, "无效参数")
-		return
-	}
-	if req.AgentID == 0 {
-		pkg.Error(c, http.StatusBadRequest, "必须指定智能体 agent_id")
-		return
-	}
-	runID, err := h.svc.DispatchAgent(actor, projectID, bugID, req.AgentID, req.UserPrompt)
-	if err != nil {
-		writeServiceError(c, err)
-		return
-	}
-	c.JSON(http.StatusAccepted, pkg.Response{Code: 0, Message: "accepted", Data: gin.H{"agent_run_id": runID}})
 }
 
 func (h *BugHandler) ListComments(c *gin.Context) {
