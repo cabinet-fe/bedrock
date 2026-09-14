@@ -5,7 +5,7 @@
 ## 认证与信封
 
 - PAT 认证：请求头 `Authorization: Bearer br_xxx`。服务端按 `br_` 前缀识别 PAT（否则按 JWT 解析），PAT 创建接口为 `POST /resource/tokens`（需先用 JWT 登录），响应 `data.token` 是明文令牌，只在创建时返回一次。
-- PAT scope：`builds:run` / `scripts:run` / `pipelines:run` / `agents:run`（触发类）与 `skills:read`、`docs:read|write`、`dev_docs:read|write`。触发接口缺 scope 时返回 403。
+- PAT scope：`builds:run` / `scripts:run` / `pipelines:run` / `agents:run`（触发类）与 `skills:read`、`docs:read|write`、`dev_docs:read|write`、`bugs:read|write`。触发接口缺 scope 时返回 403。
 - 响应信封：`{ code, message, data?, request_id? }`，`code=0` 为成功；分页响应 `data = { items, total, page, page_size, total_pages }`。
 - 写接口支持 `Idempotency-Key` 头幂等。列表接口通用参数：`page`、`page_size`、`keyword`、`sort=<field>@asc|desc`。
 - 健康检查：`GET /api/v1/health`（免认证）。

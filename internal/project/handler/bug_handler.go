@@ -12,6 +12,7 @@ import (
 	projectservice "bedrock/internal/project/service"
 	rbacmw "bedrock/internal/rbac/middleware"
 	rbacservice "bedrock/internal/rbac/service"
+	resourcemodel "bedrock/internal/resource/model"
 )
 
 type BugHandler struct {
@@ -28,23 +29,26 @@ func (h *BugHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc)
 	h.RegisterRoutesOnGroup(g)
 }
 
+// RegisterRoutesOnGroup mirrors the requireDocsAuth pattern: PAT requests need
+// the bug scope (read for queries, write for create/transition/comment/upload),
+// JWT requests keep RBAC. Routes not covered by a bug scope stay JWT-only.
 func (h *BugHandler) RegisterRoutesOnGroup(g *gin.RouterGroup) {
-	g.GET("/bugs", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.ListAcrossProjects)
-	g.GET("/:id/bugs", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.ListProjectBugs)
-	g.POST("/:id/bugs", rbacmw.RequirePermission(h.perm, "project_bugs:create"), h.CreateBug)
-	g.GET("/:id/bugs/:bugID", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.GetBug)
+	g.GET("/bugs", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:view", resourcemodel.ScopeBugsRead), h.ListAcrossProjects)
+	g.GET("/:id/bugs", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:view", resourcemodel.ScopeBugsRead), h.ListProjectBugs)
+	g.POST("/:id/bugs", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:create", resourcemodel.ScopeBugsWrite), h.CreateBug)
+	g.GET("/:id/bugs/:bugID", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:view", resourcemodel.ScopeBugsRead), h.GetBug)
 	g.PUT("/:id/bugs/:bugID", rbacmw.RequirePermission(h.perm, "project_bugs:update"), h.UpdateBug)
 	g.DELETE("/:id/bugs/:bugID", rbacmw.RequirePermission(h.perm, "project_bugs:delete"), h.DeleteBug)
-	g.PUT("/:id/bugs/:bugID/status", rbacmw.RequirePermission(h.perm, "project_bugs:update"), h.UpdateBugStatus)
-	g.GET("/:id/bugs/:bugID/activities", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.ListBugActivities)
-	g.GET("/:id/bugs/:bugID/comments", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.ListComments)
-	g.POST("/:id/bugs/:bugID/comments", rbacmw.RequirePermission(h.perm, "project_bugs:create"), h.CreateComment)
+	g.PUT("/:id/bugs/:bugID/status", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:update", resourcemodel.ScopeBugsWrite), h.UpdateBugStatus)
+	g.GET("/:id/bugs/:bugID/activities", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:view", resourcemodel.ScopeBugsRead), h.ListBugActivities)
+	g.GET("/:id/bugs/:bugID/comments", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:view", resourcemodel.ScopeBugsRead), h.ListComments)
+	g.POST("/:id/bugs/:bugID/comments", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:create", resourcemodel.ScopeBugsWrite), h.CreateComment)
 	g.PUT("/:id/bugs/:bugID/comments/:commentID", rbacmw.RequirePermission(h.perm, "project_bugs:update"), h.UpdateComment)
 	g.DELETE("/:id/bugs/:bugID/comments/:commentID", rbacmw.RequirePermission(h.perm, "project_bugs:delete"), h.DeleteComment)
-	g.GET("/:id/bugs/:bugID/attachments", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.ListAttachments)
-	g.POST("/:id/bugs/:bugID/attachments", rbacmw.RequirePermission(h.perm, "project_bugs:update"), h.UploadAttachment)
+	g.GET("/:id/bugs/:bugID/attachments", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:view", resourcemodel.ScopeBugsRead), h.ListAttachments)
+	g.POST("/:id/bugs/:bugID/attachments", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:update", resourcemodel.ScopeBugsWrite), h.UploadAttachment)
 	g.DELETE("/:id/bugs/:bugID/attachments/:attachmentID", rbacmw.RequirePermission(h.perm, "project_bugs:update"), h.DeleteAttachment)
-	g.GET("/:id/bugs/:bugID/attachments/:attachmentID/download", rbacmw.RequirePermission(h.perm, "project_bugs:view"), h.DownloadAttachment)
+	g.GET("/:id/bugs/:bugID/attachments/:attachmentID/download", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:view", resourcemodel.ScopeBugsRead), h.DownloadAttachment)
 }
 
 func (h *BugHandler) actor(c *gin.Context) (projectservice.AccessContext, bool) {
@@ -63,7 +67,22 @@ func (h *BugHandler) actor(c *gin.Context) (projectservice.AccessContext, bool) 
 	return projectservice.NewAccessContextWithDataScope(userID, isSuper, permissions, dataScope), true
 }
 
-func (h *BugHandler) bugActor(c *gin.Context) (uint, uint, projectservice.AccessContext, bool) {
+// actorWithPATPermission grants patPermission to PAT requests: the route's PAT
+// scope substitutes the global RBAC permission in service-layer checks.
+func (h *BugHandler) actorWithPATPermission(c *gin.Context, patPermission string) (projectservice.AccessContext, bool) {
+	actor, ok := h.actor(c)
+	if !ok {
+		return projectservice.AccessContext{}, false
+	}
+	if authmiddleware.IsPAT(c) {
+		actor.Permissions[patPermission] = struct{}{}
+	}
+	return actor, true
+}
+
+// bugActor parses :id / :bugID and resolves the access context. A non-empty
+// patPermission is granted to PAT requests (see actorWithPATPermission).
+func (h *BugHandler) bugActor(c *gin.Context, patPermission ...string) (uint, uint, projectservice.AccessContext, bool) {
 	projectID, ok := parseID(c, "id")
 	if !ok {
 		return 0, 0, projectservice.AccessContext{}, false
@@ -72,37 +91,64 @@ func (h *BugHandler) bugActor(c *gin.Context) (uint, uint, projectservice.Access
 	if !ok {
 		return 0, 0, projectservice.AccessContext{}, false
 	}
-	actor, ok := h.actor(c)
+	var actor projectservice.AccessContext
+	if len(patPermission) > 0 {
+		actor, ok = h.actorWithPATPermission(c, patPermission[0])
+	} else {
+		actor, ok = h.actor(c)
+	}
 	if !ok {
 		return 0, 0, projectservice.AccessContext{}, false
 	}
 	return projectID, bugID, actor, true
 }
 
-type acrossBugQuery struct {
+type bugListQuery struct {
 	pkg.ListQuery
-	Keyword    string `form:"keyword"`
-	ProjectID  *uint  `form:"project_id"`
-	Status     string `form:"status"`
-	Severity   string `form:"severity"`
-	Priority   string `form:"priority"`
-	AssigneeID *uint  `form:"assignee_id"`
+	Keyword       string `form:"keyword"`
+	ProjectID     *uint  `form:"project_id"`
+	Status        string `form:"status"`
+	Severity      string `form:"severity"`
+	Priority      string `form:"priority"`
+	AssigneeID    *uint  `form:"assignee_id"`
+	Assignee      string `form:"assignee"`
+	ExcludeClosed bool   `form:"exclude_closed"`
+}
+
+// bugListFilter builds the repo filter; assignee (username or user ID) takes
+// precedence over assignee_id. Writes the error response and returns false on
+// resolution failure.
+func (h *BugHandler) bugListFilter(c *gin.Context, query bugListQuery) (repository.BugFilter, bool) {
+	filter := repository.BugFilter{
+		Keyword:       query.Keyword,
+		ProjectID:     query.ProjectID,
+		Status:        query.Status,
+		Severity:      query.Severity,
+		Priority:      query.Priority,
+		AssigneeID:    query.AssigneeID,
+		ExcludeClosed: query.ExcludeClosed,
+	}
+	if query.Assignee != "" {
+		assigneeID, err := h.svc.ResolveAssigneeRef(query.Assignee)
+		if err != nil {
+			writeServiceError(c, err)
+			return filter, false
+		}
+		filter.AssigneeID = assigneeID
+	}
+	return filter, true
 }
 
 func (h *BugHandler) ListAcrossProjects(c *gin.Context) {
-	actor, ok := h.actor(c)
+	actor, ok := h.actorWithPATPermission(c, "project_bugs:view")
 	if !ok {
 		return
 	}
-	var query acrossBugQuery
+	var query bugListQuery
 	q := pkg.BindList(c, &query)
-	filter := repository.BugFilter{
-		Keyword:    query.Keyword,
-		ProjectID:  query.ProjectID,
-		Status:     query.Status,
-		Severity:   query.Severity,
-		Priority:   query.Priority,
-		AssigneeID: query.AssigneeID,
+	filter, ok := h.bugListFilter(c, query)
+	if !ok {
+		return
 	}
 	items, total, err := h.svc.ListAcrossProjects(actor, filter, q)
 	if err != nil {
@@ -112,32 +158,23 @@ func (h *BugHandler) ListAcrossProjects(c *gin.Context) {
 	pkg.PageSuccess(c, items, total, q)
 }
 
-type projectBugQuery struct {
-	pkg.ListQuery
-	Keyword    string `form:"keyword"`
-	Status     string `form:"status"`
-	Severity   string `form:"severity"`
-	Priority   string `form:"priority"`
-	AssigneeID *uint  `form:"assignee_id"`
-}
-
 func (h *BugHandler) ListProjectBugs(c *gin.Context) {
 	projectID, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	actor, ok := h.actor(c)
+	actor, ok := h.actorWithPATPermission(c, "project_bugs:view")
 	if !ok {
 		return
 	}
-	var query projectBugQuery
+	var query bugListQuery
 	q := pkg.BindList(c, &query)
-	filter := repository.BugFilter{
-		Keyword:    query.Keyword,
-		Status:     query.Status,
-		Severity:   query.Severity,
-		Priority:   query.Priority,
-		AssigneeID: query.AssigneeID,
+	// The endpoint is already project-scoped by the path id: ignore the
+	// project_id query param, which is only meaningful on GET /projects/bugs.
+	query.ProjectID = nil
+	filter, ok := h.bugListFilter(c, query)
+	if !ok {
+		return
 	}
 	items, total, err := h.svc.ListProjectBugs(actor, projectID, filter, q)
 	if err != nil {
@@ -152,7 +189,7 @@ func (h *BugHandler) CreateBug(c *gin.Context) {
 	if !ok {
 		return
 	}
-	actor, ok := h.actor(c)
+	actor, ok := h.actorWithPATPermission(c, "project_bugs:create")
 	if !ok {
 		return
 	}
@@ -170,7 +207,7 @@ func (h *BugHandler) CreateBug(c *gin.Context) {
 }
 
 func (h *BugHandler) GetBug(c *gin.Context) {
-	projectID, bugID, actor, ok := h.bugActor(c)
+	projectID, bugID, actor, ok := h.bugActor(c, "project_bugs:view")
 	if !ok {
 		return
 	}
@@ -213,7 +250,7 @@ func (h *BugHandler) DeleteBug(c *gin.Context) {
 }
 
 func (h *BugHandler) UpdateBugStatus(c *gin.Context) {
-	projectID, bugID, actor, ok := h.bugActor(c)
+	projectID, bugID, actor, ok := h.bugActor(c, "project_bugs:update")
 	if !ok {
 		return
 	}
@@ -231,7 +268,7 @@ func (h *BugHandler) UpdateBugStatus(c *gin.Context) {
 }
 
 func (h *BugHandler) ListBugActivities(c *gin.Context) {
-	projectID, bugID, actor, ok := h.bugActor(c)
+	projectID, bugID, actor, ok := h.bugActor(c, "project_bugs:view")
 	if !ok {
 		return
 	}
@@ -244,7 +281,7 @@ func (h *BugHandler) ListBugActivities(c *gin.Context) {
 }
 
 func (h *BugHandler) ListComments(c *gin.Context) {
-	projectID, bugID, actor, ok := h.bugActor(c)
+	projectID, bugID, actor, ok := h.bugActor(c, "project_bugs:view")
 	if !ok {
 		return
 	}
@@ -261,7 +298,7 @@ type bugCommentRequest struct {
 }
 
 func (h *BugHandler) CreateComment(c *gin.Context) {
-	projectID, bugID, actor, ok := h.bugActor(c)
+	projectID, bugID, actor, ok := h.bugActor(c, "project_bugs:create")
 	if !ok {
 		return
 	}
@@ -317,7 +354,7 @@ func (h *BugHandler) DeleteComment(c *gin.Context) {
 }
 
 func (h *BugHandler) ListAttachments(c *gin.Context) {
-	projectID, bugID, actor, ok := h.bugActor(c)
+	projectID, bugID, actor, ok := h.bugActor(c, "project_bugs:view")
 	if !ok {
 		return
 	}
@@ -330,7 +367,7 @@ func (h *BugHandler) ListAttachments(c *gin.Context) {
 }
 
 func (h *BugHandler) UploadAttachment(c *gin.Context) {
-	projectID, bugID, actor, ok := h.bugActor(c)
+	projectID, bugID, actor, ok := h.bugActor(c, "project_bugs:update")
 	if !ok {
 		return
 	}
@@ -371,7 +408,7 @@ func (h *BugHandler) DeleteAttachment(c *gin.Context) {
 }
 
 func (h *BugHandler) DownloadAttachment(c *gin.Context) {
-	projectID, bugID, actor, ok := h.bugActor(c)
+	projectID, bugID, actor, ok := h.bugActor(c, "project_bugs:view")
 	if !ok {
 		return
 	}

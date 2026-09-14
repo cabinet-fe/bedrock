@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"bedrock/internal/pkg"
@@ -73,6 +74,24 @@ func (s *BugService) CheckBugProject(actor AccessContext, projectID, bugID uint,
 		return nil, err
 	}
 	return bug, nil
+}
+
+// ResolveAssigneeRef resolves an assignee query value (username or numeric user ID)
+// to a user ID; empty input yields nil (no filter).
+func (s *BugService) ResolveAssigneeRef(ref string) (*uint, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, nil
+	}
+	if id, err := strconv.ParseUint(ref, 10, 64); err == nil && id > 0 {
+		resolved := uint(id)
+		return &resolved, nil
+	}
+	id, err := s.projectRepo.FindUserIDByUsername(ref)
+	if err != nil {
+		return nil, NewBadRequest("assignee 用户不存在")
+	}
+	return &id, nil
 }
 
 // ListAcrossProjects queries bugs across projects with data scope enforcement.

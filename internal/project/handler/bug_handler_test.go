@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -118,6 +119,13 @@ func setupBugHandlerTest(t *testing.T) (*gin.Engine, *BugHandler, *ProjectHandle
 		uid, _ := strconv.ParseUint(uidStr, 10, 64)
 		c.Set("user_id", uint(uid))
 		c.Set("is_super_admin", c.GetHeader("X-Super-Admin") == "true")
+		// Simulate a PAT request when X-PAT-Scopes is present (comma-separated).
+		if scopes := c.GetHeader("X-PAT-Scopes"); scopes != "" {
+			c.Set("is_pat", true)
+			c.Set("pat_scopes", strings.Split(scopes, ","))
+		} else {
+			c.Set("is_pat", false)
+		}
 		c.Next()
 	}
 
@@ -133,6 +141,19 @@ func doRequest(r *gin.Engine, method, url string, body []byte, userID uint, isSu
 	req.Header.Set("X-User-ID", strconv.FormatUint(uint64(userID), 10))
 	if isSuper {
 		req.Header.Set("X-Super-Admin", "true")
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+// doPATRequest simulates a PAT bearer request carrying the given scopes.
+func doPATRequest(r *gin.Engine, method, url string, body []byte, userID uint, scopes string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, url, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", strconv.FormatUint(uint64(userID), 10))
+	if scopes != "" {
+		req.Header.Set("X-PAT-Scopes", scopes)
 	}
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -411,6 +432,277 @@ func TestBugHandlerAttachments(t *testing.T) {
 	// 4. Delete attachment (200)
 	resp = doRequest(router, http.MethodDelete, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/attachments/"+attIDStr, nil, 1, false)
 	if resp.Code != http.StatusOK {
-		t.Fatalf("delete attachment expected 200, got %d: %s", resp.Code, resp.Body.String())
+		t.Fatalf("delete attachment expected 200, got %d: %s", resp.Code, rec.Body.String())
+	}
+}
+
+func TestBugHandlerPATScopeAccess(t *testing.T) {
+	router, _, _, _, projectSvc, _ := setupBugHandlerTest(t)
+
+	// Super admin creates a project; user 4 (no RBAC role) joins as member.
+	owner := projectservice.NewAccessContext(1, true, nil)
+	project, err := projectSvc.CreateProject(owner, projectservice.CreateProjectInput{
+		Name: "PAT Bug Project",
+		Slug: "pat-bug-project",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := projectSvc.AddMember(owner, project.ID, projectservice.MemberInput{
+		UserID: 4,
+		Role:   projectmodel.ProjectRoleMember,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	projIDStr := strconv.FormatUint(uint64(project.ID), 10)
+
+	// Seed one bug + attachment as the JWT owner for read-path assertions.
+	resp := doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs", jsonBytes(map[string]any{
+		"title": "Seed bug",
+	}), 1, true)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("seed bug expected 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var seedResp struct {
+		Data projectmodel.ProjectBug `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &seedResp); err != nil {
+		t.Fatal(err)
+	}
+	bugIDStr := strconv.FormatUint(uint64(seedResp.Data.ID), 10)
+
+	bodyBuf := &bytes.Buffer{}
+	mw := multipart.NewWriter(bodyBuf)
+	fw, err := mw.CreateFormFile("file", "pat_log.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = fw.Write([]byte("pat attachment\n"))
+	_ = mw.Close()
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/attachments", bodyBuf)
+	uploadReq.Header.Set("Content-Type", mw.FormDataContentType())
+	uploadReq.Header.Set("X-User-ID", "1")
+	uploadRec := httptest.NewRecorder()
+	router.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusCreated {
+		t.Fatalf("seed attachment expected 201, got %d: %s", uploadRec.Code, uploadRec.Body.String())
+	}
+	var attResp struct {
+		Data projectmodel.ProjectBugAttachment `json:"data"`
+	}
+	_ = json.Unmarshal(uploadRec.Body.Bytes(), &attResp)
+	attIDStr := strconv.FormatUint(uint64(attResp.Data.ID), 10)
+
+	readPaths := []string{
+		"/api/v1/projects/bugs?page=1&page_size=10",
+		"/api/v1/projects/" + projIDStr + "/bugs?page=1&page_size=10",
+		"/api/v1/projects/" + projIDStr + "/bugs/" + bugIDStr,
+		"/api/v1/projects/" + projIDStr + "/bugs/" + bugIDStr + "/activities",
+		"/api/v1/projects/" + projIDStr + "/bugs/" + bugIDStr + "/comments",
+		"/api/v1/projects/" + projIDStr + "/bugs/" + bugIDStr + "/attachments",
+		"/api/v1/projects/" + projIDStr + "/bugs/" + bugIDStr + "/attachments/" + attIDStr + "/download",
+	}
+
+	// 1. PAT with bugs:read can read the whole bug domain.
+	for _, path := range readPaths {
+		resp := doPATRequest(router, http.MethodGet, path, nil, 4, "bugs:read")
+		if resp.Code != http.StatusOK {
+			t.Fatalf("PAT bugs:read GET %s expected 200, got %d: %s", path, resp.Code, resp.Body.String())
+		}
+	}
+
+	// 2. PAT with bugs:read lists projects with the minimal id/name/slug shape.
+	resp = doPATRequest(router, http.MethodGet, "/api/v1/projects?page=1&page_size=10", nil, 4, "bugs:read")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("PAT bugs:read list projects expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	body := resp.Body.String()
+	for _, leaked := range []string{"my_role", "permissions", "description"} {
+		if strings.Contains(body, leaked) {
+			t.Fatalf("PAT project list must not expose %q: %s", leaked, body)
+		}
+	}
+	var projectPage struct {
+		Data struct {
+			Items []struct {
+				ID   uint   `json:"id"`
+				Name string `json:"name"`
+				Slug string `json:"slug"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &projectPage); err != nil {
+		t.Fatal(err)
+	}
+	if len(projectPage.Data.Items) != 1 || projectPage.Data.Items[0].Slug != "pat-bug-project" {
+		t.Fatalf("PAT project list must contain the member project only, got %+v", projectPage.Data.Items)
+	}
+
+	// 3. PAT without bugs:read gets 403 on reads and project list.
+	for _, path := range readPaths {
+		resp := doPATRequest(router, http.MethodGet, path, nil, 4, "docs:read")
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("PAT wrong scope GET %s expected 403, got %d", path, resp.Code)
+		}
+	}
+	resp = doPATRequest(router, http.MethodGet, "/api/v1/projects?page=1&page_size=10", nil, 4, "docs:read")
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("PAT wrong scope list projects expected 403, got %d", resp.Code)
+	}
+
+	// 4. PAT with bugs:read cannot write.
+	writeChecks := []struct {
+		method string
+		path   string
+		body   []byte
+	}{
+		{http.MethodPost, "/api/v1/projects/" + projIDStr + "/bugs", jsonBytes(map[string]any{"title": "PAT bug"})},
+		{http.MethodPut, "/api/v1/projects/" + projIDStr + "/bugs/" + bugIDStr + "/status", jsonBytes(map[string]any{"status": "in_progress"})},
+		{http.MethodPost, "/api/v1/projects/" + projIDStr + "/bugs/" + bugIDStr + "/comments", jsonBytes(map[string]any{"content": "pat comment"})},
+	}
+	for _, check := range writeChecks {
+		resp := doPATRequest(router, check.method, check.path, check.body, 4, "bugs:read")
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("PAT bugs:read %s %s expected 403, got %d: %s", check.method, check.path, resp.Code, resp.Body.String())
+		}
+	}
+
+	// 5. PAT with bugs:write can create, transition, and comment.
+	for _, check := range writeChecks {
+		resp := doPATRequest(router, check.method, check.path, check.body, 4, "bugs:write")
+		want := http.StatusOK
+		if check.method == http.MethodPost {
+			want = http.StatusCreated
+		}
+		if resp.Code != want {
+			t.Fatalf("PAT bugs:write %s %s expected %d, got %d: %s", check.method, check.path, want, resp.Code, resp.Body.String())
+		}
+	}
+
+	// 6. PAT with bugs:write can upload an attachment.
+	patBuf := &bytes.Buffer{}
+	patMW := multipart.NewWriter(patBuf)
+	patFW, err := patMW.CreateFormFile("file", "screenshot.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = patFW.Write([]byte("png bytes"))
+	_ = patMW.Close()
+	patReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/attachments", patBuf)
+	patReq.Header.Set("Content-Type", patMW.FormDataContentType())
+	patReq.Header.Set("X-User-ID", "4")
+	patReq.Header.Set("X-PAT-Scopes", "bugs:write")
+	patRec := httptest.NewRecorder()
+	router.ServeHTTP(patRec, patReq)
+	if patRec.Code != http.StatusCreated {
+		t.Fatalf("PAT bugs:write upload expected 201, got %d: %s", patRec.Code, patRec.Body.String())
+	}
+
+	// 7. JWT behavior unchanged: member without RBAC bug permissions gets 403.
+	resp = doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs?page=1&page_size=10", nil, 4, false)
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("JWT member without RBAC expected 403, got %d: %s", resp.Code, resp.Body.String())
+	}
+	resp = doRequest(router, http.MethodGet, "/api/v1/projects?page=1&page_size=10", nil, 4, false)
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("JWT member without project_projects:view expected 403, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestBugHandlerListFilters(t *testing.T) {
+	router, _, _, _, projectSvc, _ := setupBugHandlerTest(t)
+
+	owner := projectservice.NewAccessContext(1, true, nil)
+	project, err := projectSvc.CreateProject(owner, projectservice.CreateProjectInput{
+		Name: "Filter Bug Project",
+		Slug: "filter-bug-project",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projIDStr := strconv.FormatUint(uint64(project.ID), 10)
+
+	createBug := func(title string, assigneeID uint) uint {
+		resp := doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs", jsonBytes(map[string]any{
+			"title": title, "assignee_id": assigneeID,
+		}), 1, true)
+		if resp.Code != http.StatusCreated {
+			t.Fatalf("create bug %s expected 201, got %d: %s", title, resp.Code, resp.Body.String())
+		}
+		var createResp struct {
+			Data projectmodel.ProjectBug `json:"data"`
+		}
+		_ = json.Unmarshal(resp.Body.Bytes(), &createResp)
+		return createResp.Data.ID
+	}
+	bugOpen := createBug("open for user2", 2)
+	bugClosed := createBug("closed for user2", 2)
+	bugProgress := createBug("in progress for user3", 3)
+
+	// Close one bug.
+	resp := doRequest(router, http.MethodPut, "/api/v1/projects/"+projIDStr+"/bugs/"+strconv.FormatUint(uint64(bugClosed), 10)+"/status",
+		jsonBytes(map[string]any{"status": "closed"}), 1, true)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("close bug expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	_ = bugProgress
+
+	listBugs := func(query string) []projectmodel.ProjectBug {
+		resp := doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs?"+query, nil, 1, true)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("list %q expected 200, got %d: %s", query, resp.Code, resp.Body.String())
+		}
+		var page struct {
+			Data struct {
+				Items []projectmodel.ProjectBug `json:"items"`
+				Total int64                     `json:"total"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(resp.Body.Bytes(), &page)
+		return page.Data.Items
+	}
+
+	// Filter by assignee username and by numeric user ID.
+	for _, query := range []string{"assignee=user2", "assignee=2", "assignee_id=2"} {
+		items := listBugs(query)
+		if len(items) != 2 {
+			t.Fatalf("%s expected 2 bugs, got %d", query, len(items))
+		}
+	}
+
+	// Unclosed scope excludes closed bugs.
+	if items := listBugs("assignee=user2&exclude_closed=true"); len(items) != 1 || items[0].ID != bugOpen {
+		t.Fatalf("assignee=user2&exclude_closed=true expected only bug %d, got %+v", bugOpen, items)
+	}
+	if items := listBugs("exclude_closed=true"); len(items) != 2 {
+		t.Fatalf("exclude_closed=true expected 2 bugs, got %d", len(items))
+	}
+	if items := listBugs(""); len(items) != 3 {
+		t.Fatalf("no filter expected 3 bugs, got %d", len(items))
+	}
+
+	// project_id is only honored by the cross-project list; the
+	// project-scoped endpoint ignores it (path id already fixes the project).
+	if items := listBugs("project_id=999"); len(items) != 3 {
+		t.Fatalf("project_id on project list expected to be ignored, got %d items", len(items))
+	}
+	resp = doRequest(router, http.MethodGet, "/api/v1/projects/bugs?project_id=999&page=1&page_size=10", nil, 1, true)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("across list expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var acrossPage struct {
+		Data struct {
+			Total int64 `json:"total"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(resp.Body.Bytes(), &acrossPage)
+	if acrossPage.Data.Total != 0 {
+		t.Fatalf("across list project_id=999 expected 0 bugs, got %d", acrossPage.Data.Total)
+	}
+
+	// Unknown username resolves to 400.
+	resp = doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs?assignee=ghost", nil, 1, true)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("unknown assignee expected 400, got %d: %s", resp.Code, resp.Body.String())
 	}
 }

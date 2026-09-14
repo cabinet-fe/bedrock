@@ -244,6 +244,18 @@ func (r *ProjectRepository) ListUserOptions(keyword string, limit int) ([]model.
 	return items, err
 }
 
+// FindUserIDByUsername resolves an exact username to the user ID (any active state).
+func (r *ProjectRepository) FindUserIDByUsername(username string) (uint, error) {
+	var row struct {
+		ID uint
+	}
+	err := r.db.Table("users").Select("id").Where("username = ?", username).Take(&row).Error
+	if err != nil {
+		return 0, err
+	}
+	return row.ID, nil
+}
+
 func (r *ProjectRepository) UpdateMember(member *model.ProjectMember) error {
 	return r.db.Save(member).Error
 }

@@ -19,7 +19,7 @@ import (
 var (
 	ErrPATInvalid     = errors.New("invalid or expired token")
 	ErrPATWrongScope  = errors.New("token scope insufficient")
-	ErrPATBadScope    = errors.New("scope 仅允许 skills:read、agents:run、docs:read、docs:write、dev_docs:read、dev_docs:write、builds:run、pipelines:run、scripts:run")
+	ErrPATBadScope    = errors.New("scope 仅允许 skills:read、agents:run、docs:read、docs:write、dev_docs:read、dev_docs:write、builds:run、pipelines:run、scripts:run、bugs:read、bugs:write")
 	ErrPATNotCopyable = errors.New("该令牌创建于加密存储启用前，无法复制明文，请删除后重建")
 )
 
@@ -281,7 +281,8 @@ func normalizeScopes(scopes []string) ([]string, error) {
 		switch sc {
 		case model.ScopeSkillsRead, model.ScopeAgentsRun, model.ScopeDocsRead, model.ScopeDocsWrite,
 			model.ScopeDevDocsRead, model.ScopeDevDocsWrite,
-			model.ScopeBuildsRun, model.ScopePipelinesRun, model.ScopeScriptsRun:
+			model.ScopeBuildsRun, model.ScopePipelinesRun, model.ScopeScriptsRun,
+			model.ScopeBugsRead, model.ScopeBugsWrite:
 		default:
 			return nil, ErrPATBadScope
 		}

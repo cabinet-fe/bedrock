@@ -348,3 +348,31 @@ func TestPATUpdateRejects(t *testing.T) {
 		t.Fatal("past expires_at must fail")
 	}
 }
+
+func TestPATBugsScopesAllowed(t *testing.T) {
+	pats := setupPAT(t)
+	created, err := pats.Create(1, service.CreatePATInput{
+		Name: "bug workflow", Scopes: []string{model.ScopeBugsRead, model.ScopeBugsWrite},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, scopes, err := pats.ValidateBearer(created.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pats.RequireScope(scopes, model.ScopeBugsRead); err != nil {
+		t.Fatalf("bugs:read must be granted: %v", err)
+	}
+	if err := pats.RequireScope(scopes, model.ScopeBugsWrite); err != nil {
+		t.Fatalf("bugs:write must be granted: %v", err)
+	}
+	if err := pats.RequireScope(scopes, model.ScopeDocsRead); err == nil {
+		t.Fatal("bugs scopes must not imply docs:read")
+	}
+	if _, err := pats.Create(2, service.CreatePATInput{
+		Name: "bad", Scopes: []string{"bugs:admin"},
+	}); !errors.Is(err, service.ErrPATBadScope) {
+		t.Fatalf("unknown bugs scope must be rejected: %v", err)
+	}
+}

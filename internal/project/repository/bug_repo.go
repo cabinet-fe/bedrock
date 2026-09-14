@@ -19,12 +19,13 @@ func NewBugRepository(db *gorm.DB) *BugRepository {
 
 // BugFilter encapsulates query parameters for bug searches.
 type BugFilter struct {
-	Keyword    string
-	ProjectID  *uint
-	Status     string
-	Severity   string
-	Priority   string
-	AssigneeID *uint
+	Keyword       string
+	ProjectID     *uint
+	Status        string
+	Severity      string
+	Priority      string
+	AssigneeID    *uint
+	ExcludeClosed bool
 }
 
 func (r *BugRepository) Create(bug *model.ProjectBug) error {
@@ -133,6 +134,9 @@ func applyBugFilter(db *gorm.DB, filter BugFilter) *gorm.DB {
 	}
 	if filter.AssigneeID != nil {
 		db = db.Where("project_bugs.assignee_id = ?", *filter.AssigneeID)
+	}
+	if filter.ExcludeClosed {
+		db = db.Where("project_bugs.status <> ?", model.BugStatusClosed)
 	}
 	return db
 }

@@ -354,6 +354,54 @@ func TestBugCountByStatus(t *testing.T) {
 	}
 }
 
+func TestBugListAssigneeAndExcludeClosedFilters(t *testing.T) {
+	bugSvc, projectSvc, _, _, _ := newTestEnv(t)
+	owner := actor(1, allBugPermissions()...)
+	project := createProject(t, projectSvc, owner, "bug-filter-project")
+
+	// ResolveAssigneeRef: empty → nil; numeric ID passthrough; username lookup; unknown → bad request.
+	if ref, err := bugSvc.ResolveAssigneeRef("  "); err != nil || ref != nil {
+		t.Fatalf("empty assignee ref must yield nil, got %v %v", ref, err)
+	}
+	if ref, err := bugSvc.ResolveAssigneeRef("2"); err != nil || ref == nil || *ref != 2 {
+		t.Fatalf("numeric assignee ref must pass through, got %v %v", ref, err)
+	}
+	if ref, err := bugSvc.ResolveAssigneeRef("user3"); err != nil || ref == nil || *ref != 3 {
+		t.Fatalf("username assignee ref must resolve, got %v %v", ref, err)
+	}
+	if _, err := bugSvc.ResolveAssigneeRef("ghost"); !IsBadRequest(err) {
+		t.Fatalf("unknown assignee must be bad request, got %v", err)
+	}
+
+	assignee2 := uint(2)
+	assignee3 := uint(3)
+	bugOpen, _ := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "open", AssigneeID: &assignee2})
+	bugClosed, _ := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "closed", AssigneeID: &assignee2})
+	_, _ = bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "progress", AssigneeID: &assignee3})
+	if _, err := bugSvc.TransitionBugStatus(owner, project.ID, bugClosed.ID, TransitionBugStatusInput{Status: projectmodel.BugStatusClosed}); err != nil {
+		t.Fatal(err)
+	}
+
+	assertTotal := func(filter projectrepo.BugFilter, want int64, label string) {
+		t.Helper()
+		items, total, err := bugSvc.ListProjectBugs(owner, project.ID, filter, pkg.ListQuery{Page: 1, PageSize: 10})
+		if err != nil {
+			t.Fatalf("%s: %v", label, err)
+		}
+		if total != want || int64(len(items)) != want {
+			t.Fatalf("%s: expected %d bugs, got total=%d len=%d", label, want, total, len(items))
+		}
+	}
+	assertTotal(projectrepo.BugFilter{AssigneeID: &assignee2}, 2, "assignee=user2")
+	assertTotal(projectrepo.BugFilter{AssigneeID: &assignee3}, 1, "assignee=user3")
+	assertTotal(projectrepo.BugFilter{AssigneeID: &assignee2, ExcludeClosed: true}, 1, "assignee=user2 unclosed")
+	assertTotal(projectrepo.BugFilter{ExcludeClosed: true}, 2, "unclosed only")
+	assertTotal(projectrepo.BugFilter{}, 3, "no filter")
+	if items, _, err := bugSvc.ListProjectBugs(owner, project.ID, projectrepo.BugFilter{AssigneeID: &assignee2, ExcludeClosed: true}, pkg.ListQuery{Page: 1, PageSize: 10}); err != nil || len(items) != 1 || items[0].ID != bugOpen.ID {
+		t.Fatalf("unclosed assignee filter must keep only bug %d, got %+v err=%v", bugOpen.ID, items, err)
+	}
+}
+
 func TestBugComments(t *testing.T) {
 	bugSvc, projectSvc, _, _, _ := newTestEnv(t)
 	owner := actor(1, allBugPermissions()...)

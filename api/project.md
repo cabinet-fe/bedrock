@@ -11,11 +11,11 @@
 
 ### GET /projects — 列出项目
 
-权限：`project_projects:view`
+鉴权：JWT 需 `project_projects:view`；或 PAT scope `bugs:read`
 查询参数：page: integer, page_size: integer, keyword: string, status: 'active' | 'archived', sort: string
 响应 200：data = ProductProjectPage
 错误：403
-说明：`data_scope=self` 时仅列出本人为成员或创建人的项目；`data_scope=all`、超管或 `manage_all` 可列出全部。写能力由每条 `permissions` / `my_role` 表达。
+说明：`data_scope=self` 时仅列出本人为成员或创建人的项目；`data_scope=all`、超管或 `manage_all` 可列出全部。写能力由每条 `permissions` / `my_role` 表达。PAT 请求返回精简 `items`（仅 `id` / `name` / `slug`，供插件项目下拉与技能 slug 解析，不含能力位等其余字段），数据范围规则同 JWT；JWT 响应不变。
 
 ### POST /projects — 创建项目（创建者成为 Owner）
 
@@ -195,23 +195,24 @@
 
 ### GET /projects/bugs — 列出跨项目缺陷
 
-权限：`project_bugs:view`
-查询参数：page: integer, page_size: integer, keyword: string, project_id: integer, status: 'open' | 'in_progress' | 'resolved' | 'closed' | 'rejected', severity: 'low' | 'normal' | 'high' | 'critical', priority: 'low' | 'normal' | 'high' | 'urgent', assignee_id: integer, sort: string
+鉴权：JWT 需 `project_bugs:view` + 项目 ACL；或 PAT scope `bugs:read` + 项目 ACL
+查询参数：page: integer, page_size: integer, keyword: string, project_id: integer, status: 'open' | 'in_progress' | 'resolved' | 'closed' | 'rejected', severity: 'low' | 'normal' | 'high' | 'critical', priority: 'low' | 'normal' | 'high' | 'urgent', assignee_id: integer, assignee: string, exclude_closed: boolean, sort: string
 响应 200：data = ProjectBugPage
-错误：403
-说明：跨项目聚合查询，按用户项目访问权限及 `project_bugs:view` 权限过滤数据。`data_scope=self` 且非超管时仅列出本人为成员或创建人的项目的缺陷；`data_scope=all`、超管或 `manage_all` 可列出全部。
+错误：400 / 403
+说明：跨项目聚合查询，按用户项目访问权限及 `project_bugs:view` 权限过滤数据。`data_scope=self` 且非超管时仅列出本人为成员或创建人的项目的缺陷；`data_scope=all`、超管或 `manage_all` 可列出全部。`assignee` 为用户名或用户 ID（解析失败返回 400），与 `assignee_id` 同时传时以 `assignee` 为准。`exclude_closed=true` 一次拉取「未关闭」口径（排除 `closed`）。
 
 ### GET /projects/{id}/bugs — 列出项目缺陷
 
-权限：`project_bugs:view`
+鉴权：JWT 需 `project_bugs:view` + 项目 ACL；或 PAT scope `bugs:read` + 项目 ACL
 路径参数：id*: integer
-查询参数：page: integer, page_size: integer, keyword: string, status: 'open' | 'in_progress' | 'resolved' | 'closed' | 'rejected', severity: 'low' | 'normal' | 'high' | 'critical', priority: 'low' | 'normal' | 'high' | 'urgent', assignee_id: integer, sort: string
+查询参数：page: integer, page_size: integer, keyword: string, status: 'open' | 'in_progress' | 'resolved' | 'closed' | 'rejected', severity: 'low' | 'normal' | 'high' | 'critical', priority: 'low' | 'normal' | 'high' | 'urgent', assignee_id: integer, assignee: string, exclude_closed: boolean, sort: string
 响应 200：data = ProjectBugPage
-错误：403 / 404
+错误：400 / 403 / 404
+说明：`assignee` 为用户名或用户 ID（解析失败返回 400），与 `assignee_id` 同时传时以 `assignee` 为准。`exclude_closed=true` 一次拉取「未关闭」口径（排除 `closed`）。
 
 ### POST /projects/{id}/bugs — 创建缺陷
 
-权限：`project_bugs:create`
+鉴权：JWT 需 `project_bugs:create` + 项目 ACL；或 PAT scope `bugs:write` + 项目 ACL
 路径参数：id*: integer
 请求：ProjectBugCreateRequest
 响应 201：data = ProjectBug
@@ -219,7 +220,7 @@
 
 ### GET /projects/{id}/bugs/{bugID} — 获取缺陷详情
 
-权限：`project_bugs:view`
+鉴权：JWT 需 `project_bugs:view` + 项目 ACL；或 PAT scope `bugs:read` + 项目 ACL
 路径参数：id*: integer, bugID*: integer
 响应 200：data = ProjectBug
 错误：403 / 404
@@ -241,7 +242,7 @@
 
 ### PUT /projects/{id}/bugs/{bugID}/status — 流转缺陷状态
 
-权限：`project_bugs:update`
+鉴权：JWT 需 `project_bugs:update` + 项目 ACL；或 PAT scope `bugs:write` + 项目 ACL
 路径参数：id*: integer, bugID*: integer
 请求：BugStatusTransitionRequest
 响应 200：data = ProjectBug
@@ -250,21 +251,21 @@
 
 ### GET /projects/{id}/bugs/{bugID}/activities — 列出缺陷活动记录
 
-权限：`project_bugs:view`
+鉴权：JWT 需 `project_bugs:view` + 项目 ACL；或 PAT scope `bugs:read` + 项目 ACL
 路径参数：id*: integer, bugID*: integer
 响应 200：data = ProjectBugActivity[]
 错误：403 / 404
 
 ### GET /projects/{id}/bugs/{bugID}/comments — 列出缺陷评论
 
-权限：`project_bugs:view`
+鉴权：JWT 需 `project_bugs:view` + 项目 ACL；或 PAT scope `bugs:read` + 项目 ACL
 路径参数：id*: integer, bugID*: integer
 响应 200：data = ProjectBugComment[]
 错误：403 / 404
 
 ### POST /projects/{id}/bugs/{bugID}/comments — 添加缺陷评论
 
-权限：`project_bugs:create`
+鉴权：JWT 需 `project_bugs:create` + 项目 ACL；或 PAT scope `bugs:write` + 项目 ACL
 路径参数：id*: integer, bugID*: integer
 请求：ProjectBugCommentRequest
 响应 201：data = ProjectBugComment
@@ -287,14 +288,14 @@
 
 ### GET /projects/{id}/bugs/{bugID}/attachments — 列出缺陷附件
 
-权限：`project_bugs:view`
+鉴权：JWT 需 `project_bugs:view` + 项目 ACL；或 PAT scope `bugs:read` + 项目 ACL
 路径参数：id*: integer, bugID*: integer
 响应 200：data = ProjectBugAttachment[]
 错误：403 / 404
 
 ### POST /projects/{id}/bugs/{bugID}/attachments — 上传缺陷附件（默认限额 20MB）
 
-权限：`project_bugs:update`
+鉴权：JWT 需 `project_bugs:update` + 项目 ACL；或 PAT scope `bugs:write` + 项目 ACL
 路径参数：id*: integer, bugID*: integer
 请求：multipart: { file* }
 响应 201：data = ProjectBugAttachment
@@ -309,7 +310,7 @@
 
 ### GET /projects/{id}/bugs/{bugID}/attachments/{attachmentID}/download — 下载缺陷附件
 
-权限：`project_bugs:view`
+鉴权：JWT 需 `project_bugs:view` + 项目 ACL；或 PAT scope `bugs:read` + 项目 ACL
 路径参数：id*: integer, bugID*: integer, attachmentID*: integer
 响应 200：data = binary
 错误：403 / 404

@@ -16,6 +16,7 @@ import (
 	projectservice "bedrock/internal/project/service"
 	rbacmw "bedrock/internal/rbac/middleware"
 	rbacservice "bedrock/internal/rbac/service"
+	resourcemodel "bedrock/internal/resource/model"
 	storageservice "bedrock/internal/storage/service"
 )
 
@@ -36,7 +37,8 @@ func (h *ProjectHandler) SetBugHandler(bh *BugHandler) {
 func (h *ProjectHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	g := rg.Group("/projects", authMW)
 
-	g.GET("", rbacmw.RequirePermission(h.perm, "project_projects:view"), h.ListProjects)
+	// PAT bugs:read may list projects (minimal fields) for plugin dropdowns and slug resolution.
+	g.GET("", rbacmw.RequirePermissionOrPATScope(h.perm, "project_projects:view", resourcemodel.ScopeBugsRead), h.ListProjects)
 	g.POST("", rbacmw.RequirePermission(h.perm, "project_projects:create"), h.CreateProject)
 	g.GET("/meta/requirement-statuses", rbacmw.RequirePermission(h.perm, "project_requirements:view"), h.ListRequirementStatuses)
 	g.GET("/meta/user-options", rbacmw.RequirePermission(h.perm, "project_projects:update"), h.ListUserOptions)
@@ -99,16 +101,37 @@ func (h *ProjectHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerF
 	}
 }
 
+// patProjectOption is the minimal project shape returned to bugs:read PATs
+// (plugin project picker / skill slug resolution).
+type patProjectOption struct {
+	ID   uint   `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
 func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	actor, ok := h.actor(c)
 	if !ok {
 		return
+	}
+	if authmiddleware.IsPAT(c) {
+		// The route already gated the PAT on bugs:read; that scope substitutes
+		// the global RBAC permission. Project ACL/data-scope filtering below still applies.
+		actor.Permissions["project_projects:view"] = struct{}{}
 	}
 	var filter projectservice.ProjectListFilter
 	q := pkg.BindList(c, &filter)
 	items, total, err := h.svc.ListProjects(actor, filter)
 	if err != nil {
 		writeServiceError(c, err)
+		return
+	}
+	if authmiddleware.IsPAT(c) {
+		options := make([]patProjectOption, len(items))
+		for i, item := range items {
+			options[i] = patProjectOption{ID: item.ID, Name: item.Name, Slug: item.Slug}
+		}
+		pkg.PageSuccess(c, options, total, q)
 		return
 	}
 	pkg.PageSuccess(c, items, total, q)

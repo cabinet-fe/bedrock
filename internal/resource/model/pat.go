@@ -13,6 +13,8 @@ const (
 	ScopeBuildsRun    = "builds:run"
 	ScopePipelinesRun = "pipelines:run"
 	ScopeScriptsRun   = "scripts:run"
+	ScopeBugsRead     = "bugs:read"
+	ScopeBugsWrite    = "bugs:write"
 )
 
 // PersonalAccessToken stores SHA-256 hash for auth plus AES-GCM ciphertext for owner reveal.

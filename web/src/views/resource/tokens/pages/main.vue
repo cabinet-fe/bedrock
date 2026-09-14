@@ -47,6 +47,8 @@ const form = reactive({
   scopeBuilds: false,
   scopePipelines: false,
   scopeScripts: false,
+  scopeBugsRead: false,
+  scopeBugsWrite: false,
   expireMode: "days" as ExpireMode,
   expireDays: 30,
   expires_at: "",
@@ -132,6 +134,8 @@ function openCreate() {
     scopeBuilds: false,
     scopePipelines: false,
     scopeScripts: false,
+    scopeBugsRead: false,
+    scopeBugsWrite: false,
     expireMode: "days",
     expireDays: 30,
     expires_at: "",
@@ -155,6 +159,8 @@ function openEdit(row: PersonalAccessToken) {
     scopeBuilds: scopes.has("builds:run"),
     scopePipelines: scopes.has("pipelines:run"),
     scopeScripts: scopes.has("scripts:run"),
+    scopeBugsRead: scopes.has("bugs:read"),
+    scopeBugsWrite: scopes.has("bugs:write"),
     expireMode: row.expires_at ? "date" : "never",
     expireDays: 30,
     expires_at: row.expires_at ? date(row.expires_at).format("YYYY-MM-DD") : "",
@@ -174,6 +180,8 @@ function collectScopes(): string[] {
   if (form.scopeBuilds) scopes.push("builds:run");
   if (form.scopePipelines) scopes.push("pipelines:run");
   if (form.scopeScripts) scopes.push("scripts:run");
+  if (form.scopeBugsRead) scopes.push("bugs:read");
+  if (form.scopeBugsWrite) scopes.push("bugs:write");
   return scopes;
 }
 
@@ -349,7 +357,7 @@ function onDialogClosed() {
         <u-switch v-if="editingId" label="启用" field="enabled" />
         <u-form-item
           label="Scope"
-          tips="skills:read 读技能；agents:run 触发 Agent；docs:* 接口文档；dev_docs:* 开发文档；builds:run 构建执行；pipelines:run 流水线执行；scripts:run 脚本执行"
+          tips="skills:read 读技能；agents:run 触发 Agent；docs:* 接口文档；dev_docs:* 开发文档；builds:run 构建执行；pipelines:run 流水线执行；scripts:run 脚本执行；bugs:* 缺陷读写"
         >
           <div class="scope-row">
             <u-checkbox v-model="form.scopeSkills">skills:read</u-checkbox>
@@ -361,6 +369,8 @@ function onDialogClosed() {
             <u-checkbox v-model="form.scopeBuilds">builds:run 构建执行</u-checkbox>
             <u-checkbox v-model="form.scopePipelines">pipelines:run 流水线执行</u-checkbox>
             <u-checkbox v-model="form.scopeScripts">scripts:run 脚本执行</u-checkbox>
+            <u-checkbox v-model="form.scopeBugsRead">bugs:read 缺陷读取</u-checkbox>
+            <u-checkbox v-model="form.scopeBugsWrite">bugs:write 缺陷写入</u-checkbox>
           </div>
         </u-form-item>
       </template>
