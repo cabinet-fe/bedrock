@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	authmw "bedrock/internal/auth/middleware"
 	"bedrock/internal/pkg"
 	rbacmw "bedrock/internal/rbac/middleware"
 	rbacservice "bedrock/internal/rbac/service"
@@ -28,6 +29,11 @@ func (h *UserHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc
 	g.POST("", rbacmw.RequirePermission(h.perm, "system_users:create"), h.Create)
 	g.PUT("/:id", rbacmw.RequirePermission(h.perm, "system_users:update"), h.Update)
 	g.DELETE("/:id", rbacmw.RequirePermission(h.perm, "system_users:delete"), h.Delete)
+
+	// Self-service profile routes: act on the authenticated user only, no permission code.
+	me := rg.Group("/users/me", authMW)
+	me.PUT("/email", h.UpdateMyEmail)
+	me.PUT("/password", h.ChangeMyPassword)
 }
 
 func (h *UserHandler) List(c *gin.Context) {
@@ -94,6 +100,33 @@ func (h *UserHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.users.Delete(uint(id)); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	pkg.Success(c, nil)
+}
+
+func (h *UserHandler) UpdateMyEmail(c *gin.Context) {
+	var req service.UpdateMyEmailInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	u, err := h.users.UpdateMyEmail(authmw.GetUserID(c), req)
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	pkg.Success(c, u)
+}
+
+func (h *UserHandler) ChangeMyPassword(c *gin.Context) {
+	var req service.ChangeMyPasswordInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	if err := h.users.ChangeMyPassword(authmw.GetUserID(c), req); err != nil {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}

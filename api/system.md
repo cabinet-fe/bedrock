@@ -1,6 +1,6 @@
 # 系统管理
 
-用户、角色、RBAC 资源、菜单、字典、操作日志、通知、系统备份。
+用户、角色、RBAC 资源、菜单、字典、操作日志、通知、系统备份、邮件 SMTP 配置。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
 业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
@@ -44,6 +44,22 @@
 路径参数：id*: integer
 响应 200
 错误：400 / 403
+
+### PUT /users/me/email — 更新本人邮箱
+
+认证：登录用户（本人自助操作，不挂权限码）
+请求：UserEmailUpdateRequest
+响应 200：data = User
+错误：400 / 401
+说明：只操作当前认证用户，不接收路径用户 ID；服务端校验邮箱格式与全库唯一（本人除外），格式错误或已被占用返回 400。
+
+### PUT /users/me/password — 修改本人密码
+
+认证：登录用户（本人自助操作，不挂权限码）
+请求：UserPasswordChangeRequest
+响应 200
+错误：400 / 401
+说明：只操作当前认证用户，不接收路径用户 ID；先验证原密码，原密码错误返回 400；成功后旧密码登录失败、新密码登录成功。
 
 ## 角色
 
@@ -323,6 +339,33 @@
 错误：400 / 401 / 403 / 404
 说明：支持指定已有的 `backup_id` 或预检获得的 `upload_token` 执行覆盖还原。必须传入当前登录管理员的登录密码 `admin_password` 进行身份二次核验。`auto_snapshot` 默认为 true，勾选后在覆盖还原前自动对现有数据生成安全前置快照。
 
+## 邮件 SMTP 配置
+
+系统级发件邮箱（SMTP）配置，单行配置；密码以 pkg.Encrypt（AES-GCM）密文落库，接口响应只返回掩码，不出明文与密文。
+
+### GET /system/mail/smtp — 获取 SMTP 配置
+
+权限：`system_settings:view`
+响应 200：data = MailSMTPConfig
+错误：401 / 403
+说明：未配置时无 `data`；`password` 恒为掩码 `******`（已设置密码）或空字符串（未设置）。
+
+### PUT /system/mail/smtp — 保存 SMTP 配置
+
+权限：`system_settings:update`
+请求：MailSMTPConfigSaveRequest
+响应 200：data = MailSMTPConfig
+错误：400 / 401 / 403
+说明：`port` 取值 1-65535；`from_address` 必须是合法邮箱；`password` 传空且已有配置时保留原密码密文，非空时以明文接收并加密落库。
+
+### POST /system/mail/smtp/test — 发送测试邮件
+
+权限：`system_settings:update`
+请求：MailSMTPTestRequest
+响应 200：data = MailSMTPTestResult
+错误：400 / 401 / 403
+说明：向 `to` 同步发送一封测试邮件；发送失败时 HTTP 仍为 200，`success=false`，`message` 携带失败原因。SMTP 未配置或 `to` 格式非法返回 400。
+
 ## 对象形状
 
 ### BackupInspectResult
@@ -397,6 +440,42 @@
 | `name` | `string` |  |  |
 | `description` | `string` |  |  |
 | `items` | `DictItem[]` |  |  |
+
+### MailSMTPConfig
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `host` | `string` | 是 | SMTP 服务器地址 |
+| `port` | `integer` | 是 | 端口，1-65535；465 走隐式 TLS，其余走 STARTTLS |
+| `username` | `string` |  | 认证账号；为空时不做 SMTP 认证 |
+| `password` | `string` |  | 掩码；已设置密码时固定 `******`，未设置为空 |
+| `from_address` | `string` | 是 | 发件人邮箱 |
+| `created_at` | `string(date-time)` |  |  |
+| `updated_at` | `string(date-time)` |  |  |
+
+### MailSMTPConfigSaveRequest
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `host` | `string` | 是 | SMTP 服务器地址 |
+| `port` | `integer` | 是 | 端口，1-65535 |
+| `username` | `string` |  | 认证账号；为空时不做 SMTP 认证 |
+| `password` | `string` |  | 登录密码；空且已有配置时保留原密码密文 |
+| `from_address` | `string` | 是 | 发件人邮箱，格式合法 |
+
+### MailSMTPTestRequest
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `to` | `string` | 是 | 测试收件邮箱 |
+
+### MailSMTPTestResult
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `success` | `boolean` | 是 | 是否发送成功 |
+| `message` | `string` |  | 成功提示或失败原因 |
 
 ### MenuGroup
 
@@ -674,6 +753,19 @@
 | `email` | `string` |  |  |
 | `is_active` | `boolean` |  |  |
 | `role_ids` | `integer[]` |  |  |
+
+### UserEmailUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `email` | `string` | 是 | 新邮箱，格式合法且未被其他用户占用 |
+
+### UserPasswordChangeRequest
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `old_password` | `string` | 是 | 当前密码，验证失败返回 400 |
+| `new_password` | `string` | 是 | 新密码，成功后旧密码立即失效 |
 
 ### UserPage
 

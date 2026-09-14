@@ -130,6 +130,7 @@ func main() {
 	dictRepo := systemrepo.NewDictionaryRepository(gdb)
 	logRepo := systemrepo.NewOperationLogRepository(gdb)
 	backupRepo := systemrepo.NewBackupRepository(gdb)
+	mailRepo := systemrepo.NewMailRepository(gdb)
 
 	permSvc := rbacservice.NewPermissionService(roleRepo, resourceRepo, menuGroupRepo)
 	roleSvc := rbacservice.NewRoleService(roleRepo, resourceRepo)
@@ -145,6 +146,7 @@ func main() {
 		ConfigPath: *configPath,
 	})
 	backupSvc := systemservice.NewBackupService(backupRepo, backupEngine, userRepo)
+	mailSvc := systemservice.NewMailService(mailRepo)
 
 	authSvc, err := authservice.NewAuthService(cfg, userRepo, permSvc)
 	if err != nil {
@@ -158,6 +160,7 @@ func main() {
 	dictHandler := systemhandler.NewDictionaryHandler(dictSvc, permSvc)
 	logHandler := systemhandler.NewOperationLogHandler(auditSvc, permSvc)
 	backupHandler := systemhandler.NewBackupHandler(backupSvc, permSvc)
+	mailHandler := systemhandler.NewMailHandler(mailSvc, permSvc)
 
 	credRepo := resourcerepo.NewCredentialRepository(gdb)
 	repoRepo := resourcerepo.NewRepositoryRepository(gdb)
@@ -325,6 +328,7 @@ func main() {
 	aiHandler.RegisterRoutes(api, authMW)
 	notifHandler.RegisterRoutes(api, authMW)
 	backupHandler.RegisterRoutes(api, authMW)
+	mailHandler.RegisterRoutes(api, authMW)
 
 	api.GET("/health", func(c *gin.Context) {
 		pkg.Success(c, gin.H{

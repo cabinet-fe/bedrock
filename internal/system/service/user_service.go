@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
 
 	authmodel "bedrock/internal/auth/model"
@@ -155,4 +156,70 @@ func (s *UserService) Delete(id uint) error {
 		return err
 	}
 	return s.users.Delete(id)
+}
+
+// UpdateMyEmailInput carries the new email for the authenticated user.
+type UpdateMyEmailInput struct {
+	Email string `json:"email"`
+}
+
+// UpdateMyEmail lets the authenticated user change only their own email.
+func (s *UserService) UpdateMyEmail(userID uint, in UpdateMyEmailInput) (*UserDTO, error) {
+	email := strings.TrimSpace(in.Email)
+	if err := validateEmail(email); err != nil {
+		return nil, err
+	}
+	taken, err := s.users.CountByEmail(email, userID)
+	if err != nil {
+		return nil, err
+	}
+	if taken > 0 {
+		return nil, errors.New("邮箱已被使用")
+	}
+	u, err := s.users.FindByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	u.Email = email
+	if err := s.users.Update(u); err != nil {
+		return nil, fmt.Errorf("更新邮箱失败: %w", err)
+	}
+	return s.Get(userID)
+}
+
+// ChangeMyPasswordInput carries old/new passwords for self-service change.
+type ChangeMyPasswordInput struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
+// ChangeMyPassword verifies the old password, then rotates the hash for the authenticated user.
+func (s *UserService) ChangeMyPassword(userID uint, in ChangeMyPasswordInput) error {
+	if in.OldPassword == "" || in.NewPassword == "" {
+		return errors.New("原密码与新密码不能为空")
+	}
+	u, err := s.users.FindByID(userID)
+	if err != nil {
+		return err
+	}
+	if !pkg.CheckPassword(in.OldPassword, u.PasswordHash) {
+		return errors.New("原密码错误")
+	}
+	hash, err := pkg.HashPassword(in.NewPassword)
+	if err != nil {
+		return err
+	}
+	u.PasswordHash = hash
+	return s.users.Update(u)
+}
+
+func validateEmail(email string) error {
+	if email == "" {
+		return errors.New("邮箱不能为空")
+	}
+	addr, err := mail.ParseAddress(email)
+	if err != nil || addr.Address != email {
+		return errors.New("邮箱格式不正确")
+	}
+	return nil
 }

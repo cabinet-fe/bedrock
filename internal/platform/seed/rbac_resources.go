@@ -135,6 +135,10 @@ func EnsureRBACResources(db *gorm.DB) error {
 					Code: "system_backup", Title: "系统备份", Route: "/system/backup", SortKey: 60,
 					Actions: []string{"view", "create", "restore", "download", "delete"},
 				},
+				{
+					Code: "system_settings", Title: "邮件设置", Route: "/system/mail-settings", SortKey: 70,
+					Actions: []string{"view", "update"},
+				},
 			},
 		},
 	}

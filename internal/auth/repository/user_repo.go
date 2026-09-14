@@ -31,6 +31,17 @@ func (r *UserRepository) FindByUsername(username string) (*model.User, error) {
 	return &user, err
 }
 
+// CountByEmail counts users holding email, excluding excludeUserID (0 keeps everyone).
+func (r *UserRepository) CountByEmail(email string, excludeUserID uint) (int64, error) {
+	var total int64
+	q := r.db.Model(&model.User{}).Where("email = ?", email)
+	if excludeUserID != 0 {
+		q = q.Where("id <> ?", excludeUserID)
+	}
+	err := q.Count(&total).Error
+	return total, err
+}
+
 func (r *UserRepository) List(q pkg.ListQuery) ([]model.User, int64, error) {
 	var users []model.User
 	var total int64
