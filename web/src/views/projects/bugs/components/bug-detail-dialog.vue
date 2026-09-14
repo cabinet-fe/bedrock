@@ -38,6 +38,7 @@ import {
 } from "@/lib/tag";
 import { useAuthStore } from "@/stores/auth";
 import { useRepositoryStore } from "@/stores/repositories";
+import BugAttachmentPreview from "./bug-attachment-preview.vue";
 
 const open = defineModel<boolean>({ required: true });
 
@@ -115,13 +116,6 @@ const submittingComment = ref(false);
 const editingCommentId = ref<number | undefined>(undefined);
 const editingCommentContent = ref("");
 const savingComment = ref(false);
-
-function formatBytes(bytes?: number): string {
-  if (!bytes || bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
 
 function formatActivityAction(act: BugActivity): string {
   if (act.from_status && act.to_status) {
@@ -493,27 +487,16 @@ watch(
             <u-file-picker v-if="canUpdateBug" accept="*/*" @pick="handleUploadAttachment" />
           </div>
           <div v-if="attachments.length" class="attachments-list">
-            <div v-for="att in attachments" :key="att.id" class="attachment-row">
-              <div class="attachment-details">
-                <span class="attachment-title">{{ att.filename }}</span>
-                <span class="attachment-meta">
-                  {{ formatBytes(att.file_size) }} ·
-                  {{ att.creator_name || att.creator_username || "—" }} ·
-                  {{ formatDateTime(att.created_at) }}
-                </span>
-              </div>
-              <div class="attachment-actions">
-                <u-action @run="handleDownloadAttachment(att)">下载</u-action>
-                <u-action
-                  v-if="canUpdateBug || canDeleteBug"
-                  type="danger"
-                  need-confirm
-                  @run="handleDeleteAttachment(att)"
-                >
-                  删除
-                </u-action>
-              </div>
-            </div>
+            <BugAttachmentPreview
+              v-for="att in attachments"
+              :key="att.id"
+              :attachment="att"
+              :project-id="bug.project_id"
+              :bug-id="bug.id"
+              :can-manage="canUpdateBug || canDeleteBug"
+              @download="handleDownloadAttachment"
+              @delete="handleDeleteAttachment"
+            />
           </div>
           <u-empty v-else text="暂无附件文件" />
         </div>
@@ -822,38 +805,6 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.attachment-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border: fn.use-var(border, muted);
-  border-radius: fn.use-var(radius, default);
-  background: fn.use-var(bg-color, top);
-}
-
-.attachment-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.attachment-title {
-  font-size: 13px;
-  color: fn.use-var(text-color, title);
-}
-
-.attachment-meta {
-  font-size: 12px;
-  color: fn.use-var(text-color, secondary);
-}
-
-.attachment-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .transition-dialog-body {
