@@ -38,6 +38,12 @@ type TerminalNotifier interface {
 	NotifyAgentRun(userID uint, agentRunID, agentID uint, status string)
 }
 
+// AgentFailureMailer fans failed/interrupted AgentRun notices out to mail
+// channels (implemented by system MailDispatcher, wired in cmd/server).
+type AgentFailureMailer interface {
+	DispatchAgentRunFailure(triggeredBy, agentCreatedBy, runID uint, status, message string)
+}
+
 // RunTerminalHook is invoked for every AgentRun terminal status
 // (success|failed|cancelled|interrupted). Used by PipelineOrchestrator to
 // advance in-pipeline agent stages (graph_json v2 allows sync agent nodes).
@@ -72,6 +78,7 @@ type AgentService struct {
 	gitCheckout GitCheckoutFunc
 	audit       AuditWriter
 	notifier    TerminalNotifier
+	mailer      AgentFailureMailer
 	termHook    RunTerminalHook
 	cliRunner   CLIRunner
 	wsInitSync  bool
@@ -101,6 +108,11 @@ type AgentService struct {
 // SetTerminalNotifier wires DESIGN §12 in-app notifications for agent terminal states.
 func (s *AgentService) SetTerminalNotifier(n TerminalNotifier) {
 	s.notifier = n
+}
+
+// SetFailureMailer wires failure-notice mail dispatch for agent terminal states.
+func (s *AgentService) SetFailureMailer(m AgentFailureMailer) {
+	s.mailer = m
 }
 
 // SetTerminalHook wires PipelineOrchestrator on AgentRun terminal.
@@ -1035,6 +1047,13 @@ func (s *AgentService) failRun(run *model.AgentRun, err error) {
 func (s *AgentService) notifyTerminal(run *model.AgentRun, status string) {
 	if run == nil {
 		return
+	}
+	if s.mailer != nil {
+		agentCreatedBy := uint(0)
+		if agent, err := s.repo.FindAgent(run.AgentID); err == nil && agent != nil {
+			agentCreatedBy = agent.CreatedBy
+		}
+		s.mailer.DispatchAgentRunFailure(run.TriggeredBy, agentCreatedBy, run.ID, status, run.ErrorMessage)
 	}
 	if s.termHook != nil {
 		s.termHook.OnAgentRunTerminal(run, status)

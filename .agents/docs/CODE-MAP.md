@@ -39,12 +39,13 @@ bedrock
 │       ├── stores/             # Pinia 状态
 │       ├── theme/              # 主题 token
 │       └── views/              # 业务页面（按域）
-│           ├── system/         # 用户、角色、权限资源、字典、操作日志
+│           ├── system/         # 用户、角色、权限资源、字典、操作日志、备份、邮件设置
 │           ├── resource/       # 仓库、服务器、凭证、令牌
 │           ├── cicd/           # 构建任务 / 脚本任务 / 运行 / 流水线
 │           ├── ops/            # 进程、开发环境
 │           ├── projects/       # 项目、需求、文档
 │           ├── ai/             # Agent / Skill / Run / 服务商与模型
+│           ├── profile/        # 个人设置（自助改邮箱、改密码）
 │           └── help/           # 帮助手册
 ├── extension/                   # Chrome MV3 报单插件（popup 报单弹窗、options 设置页、shared、icons）
 ├── .agents/                     # 工程底座：docs 文档（.agents/docs/）、scripts 脚本、cooking

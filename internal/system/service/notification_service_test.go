@@ -121,3 +121,29 @@ func TestNotificationService_ListByUserIsReadFilter(t *testing.T) {
 		t.Fatalf("unfiltered list: total=%d err=%v", allTotal, err)
 	}
 }
+
+// In-app notifications must keep firing for every terminal status, independent
+// of the failure-mail filter (which only covers failed/interrupted).
+func TestNotificationService_TerminalStatesAlwaysPush(t *testing.T) {
+	db := setupNotifDB(t)
+	hub := ws.NewHub()
+	defer hub.Shutdown()
+	svc := service.NewNotificationService(repository.NewNotificationRepository(db), hub)
+
+	for _, status := range []string{"success", "failed", "cancelled", "interrupted"} {
+		svc.NotifyBuildRun(7, 42, 3, status, "")
+		svc.NotifyAgentRun(7, 11, 5, status)
+	}
+	// TriggeredBy=0 stays silenced (automatic cron/webhook runs).
+	svc.NotifyBuildRun(0, 42, 3, "failed", "")
+	svc.NotifyAgentRun(0, 11, 5, "failed")
+
+	_, total, err := svc.ListByUser(7, nil, pkg.ListQuery{Page: 1, PageSize: 20})
+	if err != nil || total != 8 {
+		t.Fatalf("expected 8 inbox rows (4 build + 4 agent), got total=%d err=%v", total, err)
+	}
+	_, other, err := svc.ListByUser(0, nil, pkg.ListQuery{Page: 1, PageSize: 20})
+	if err != nil || other != 0 {
+		t.Fatalf("userID=0 must not push, got total=%d err=%v", other, err)
+	}
+}

@@ -1108,3 +1108,44 @@ export interface SystemBackupRestoreResult {
 }
 
 export type RestoreBackupResult = SystemBackupRestoreResult;
+
+// Mail SMTP settings & profile self-service
+
+export interface MailSMTPConfig {
+  id: number;
+  host: string;
+  port: number;
+  username: string;
+  /** Masked: "******" when set, empty string when unset. */
+  password: string;
+  from_address: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MailSMTPConfigSaveRequest {
+  host: string;
+  port: number;
+  username?: string;
+  /** Plain password; empty keeps the stored cipher when a config exists. */
+  password?: string;
+  from_address: string;
+}
+
+export interface MailSMTPTestRequest {
+  to: string;
+}
+
+export interface MailSMTPTestResult {
+  success: boolean;
+  message?: string;
+}
+
+export interface UserEmailUpdateRequest {
+  email: string;
+}
+
+export interface UserPasswordChangeRequest {
+  old_password: string;
+  new_password: string;
+}

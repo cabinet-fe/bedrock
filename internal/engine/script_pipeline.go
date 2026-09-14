@@ -44,6 +44,12 @@ type ScriptRunTerminalHook interface {
 	OnScriptRunTerminal(run *model.ScriptRun, status string)
 }
 
+// ScriptFailureMailer fans failed/interrupted ScriptRun notices out to mail
+// channels (implemented by system MailDispatcher, wired in cmd/server).
+type ScriptFailureMailer interface {
+	DispatchScriptRunFailure(triggeredBy, jobCreatedBy, runID uint, runNumber int, status, message string)
+}
+
 // ScriptPipeline executes ScriptRuns: workspace → template expand → run script → terminal.
 type ScriptPipeline struct {
 	runs         ScriptRunStore
@@ -53,6 +59,7 @@ type ScriptPipeline struct {
 	workspaceDir string
 	logDir       string
 	termHook     ScriptRunTerminalHook
+	mailer       ScriptFailureMailer
 }
 
 func NewScriptPipeline(
@@ -75,6 +82,11 @@ func NewScriptPipeline(
 // SetTerminalHook wires PipelineOrchestrator (or tests) on ScriptRun terminal.
 func (p *ScriptPipeline) SetTerminalHook(h ScriptRunTerminalHook) {
 	p.termHook = h
+}
+
+// SetFailureMailer wires failure-notice mail dispatch for script terminal states.
+func (p *ScriptPipeline) SetFailureMailer(m ScriptFailureMailer) {
+	p.mailer = m
 }
 
 // Execute runs a ScriptRun to completion (or cancellation).
@@ -262,6 +274,7 @@ func (p *ScriptPipeline) broadcastRefresh(runID uint, status string) {
 
 func (p *ScriptPipeline) failRun(run *model.ScriptRun, errMsg string) {
 	finished := time.Now()
+	run.ErrorMessage = errMsg
 	fields := map[string]interface{}{
 		"status":        "failed",
 		"error_message": errMsg,
@@ -292,7 +305,17 @@ func (p *ScriptPipeline) cancelRun(run *model.ScriptRun) {
 }
 
 func (p *ScriptPipeline) notifyTerminal(run *model.ScriptRun, status string) {
-	if p.termHook == nil || run == nil {
+	if run == nil {
+		return
+	}
+	if p.mailer != nil {
+		jobCreatedBy := uint(0)
+		if job, err := p.jobs.FindByID(run.ScriptJobID); err == nil && job != nil {
+			jobCreatedBy = job.CreatedBy
+		}
+		p.mailer.DispatchScriptRunFailure(run.TriggeredBy, jobCreatedBy, run.ID, run.RunNumber, status, run.ErrorMessage)
+	}
+	if p.termHook == nil {
 		return
 	}
 	run.Status = status

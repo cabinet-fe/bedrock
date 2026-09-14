@@ -32,6 +32,12 @@ type TerminalNotifier interface {
 	NotifyBuildRun(userID uint, buildRunID uint, buildNumber int, status, message string)
 }
 
+// BuildFailureMailer fans failed/interrupted BuildRun notices out to mail
+// channels (implemented by system MailDispatcher, wired in cmd/server).
+type BuildFailureMailer interface {
+	DispatchBuildRunFailure(triggeredBy, jobCreatedBy, runID uint, runNumber int, status, message string)
+}
+
 // BuildRunTerminalHook is invoked for every BuildRun terminal status
 // (success|failed|cancelled|interrupted), including cron/webhook (TriggeredBy=0).
 // Used by PipelineOrchestrator to unlock DAG stages.
@@ -57,6 +63,7 @@ type Pipeline struct {
 	cacheDir  string
 	agentHook AgentEventHook
 	notifier  TerminalNotifier
+	mailer    BuildFailureMailer
 	termHook  BuildRunTerminalHook
 }
 
@@ -68,6 +75,11 @@ func (p *Pipeline) SetAgentEventHook(h AgentEventHook) {
 // SetTerminalNotifier wires DESIGN §12 in-app notifications for build terminal states.
 func (p *Pipeline) SetTerminalNotifier(n TerminalNotifier) {
 	p.notifier = n
+}
+
+// SetFailureMailer wires failure-notice mail dispatch for build terminal states.
+func (p *Pipeline) SetFailureMailer(m BuildFailureMailer) {
+	p.mailer = m
 }
 
 // SetBuildRunTerminalHook wires PipelineOrchestrator (or tests) on BuildRun terminal.
@@ -540,6 +552,7 @@ func (p *Pipeline) notifyTerminal(run *model.BuildRun, status, message string) {
 		}
 		p.termHook.OnBuildRunTerminal(run, status)
 	}
+	p.dispatchFailureMail(run, status, message)
 	if run.TriggeredBy == 0 {
 		return
 	}
@@ -560,6 +573,19 @@ func (p *Pipeline) notifyTerminal(run *model.BuildRun, status, message string) {
 		"message":      message,
 	})
 	p.hub.BroadcastToChannel(fmt.Sprintf("notifications:%d", run.TriggeredBy), payload)
+}
+
+// dispatchFailureMail forwards the terminal event to the mail dispatcher,
+// which filters to failed/interrupted and delivers asynchronously.
+func (p *Pipeline) dispatchFailureMail(run *model.BuildRun, status, message string) {
+	if p.mailer == nil {
+		return
+	}
+	jobCreatedBy := uint(0)
+	if job, err := p.jobs.FindByID(run.BuildJobID); err == nil && job != nil {
+		jobCreatedBy = job.CreatedBy
+	}
+	p.mailer.DispatchBuildRunFailure(run.TriggeredBy, jobCreatedBy, run.ID, run.BuildNumber, status, message)
 }
 
 func (p *Pipeline) cleanupArtifacts(job *model.BuildJob) {

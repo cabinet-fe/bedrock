@@ -86,6 +86,23 @@ const router = createRouter({
           },
         },
         {
+          path: "system/mail-settings",
+          name: "system-mail-settings",
+          component: () => import("@/views/system/mail-settings/pages/main.vue"),
+          meta: {
+            permission: "system_settings:view",
+            title: "邮件设置",
+          },
+        },
+        {
+          path: "profile",
+          name: "profile",
+          component: () => import("@/views/profile/pages/main.vue"),
+          meta: {
+            title: "个人设置",
+          },
+        },
+        {
           path: "resource/repositories",
           name: "resource-repositories",
           component: () => import("@/views/resource/repositories/pages/main.vue"),

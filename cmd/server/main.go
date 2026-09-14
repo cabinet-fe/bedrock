@@ -147,6 +147,7 @@ func main() {
 	})
 	backupSvc := systemservice.NewBackupService(backupRepo, backupEngine, userRepo)
 	mailSvc := systemservice.NewMailService(mailRepo)
+	mailDispatcher := systemservice.NewMailDispatcher(mailSvc, userRepo, logger)
 
 	authSvc, err := authservice.NewAuthService(cfg, userRepo, permSvc)
 	if err != nil {
@@ -235,6 +236,7 @@ func main() {
 	agentSvc.SetDocDraftWriter(projectSvc)
 	agentSvc.SetRepoCheckoutDeps(repoRepo, resourceservice.NewCredentialSecretResolver(credSvc))
 	agentSvc.SetTerminalNotifier(notifSvc)
+	agentSvc.SetFailureMailer(mailDispatcher)
 	docsBridge := aiservice.NewDocsBridge(agentSvc)
 	projectSvc.SetDocsAIBridge(docsBridge)
 	providerRepo := airepo.NewProviderRepository(gdb)
@@ -253,12 +255,14 @@ func main() {
 	)
 	pipeline.SetAgentEventHook(agentSvc)
 	pipeline.SetTerminalNotifier(notifSvc)
+	pipeline.SetFailureMailer(mailDispatcher)
 	sched := engine.NewScheduler(cfg.Build.MaxConcurrent, pipeline, runRepo, logger)
 	runSvc.SetScheduler(sched)
 	cronSched := engine.NewCronScheduler(jobRepo, runRepo, runSvc, sched, logger)
 	jobSvc.SetCron(cronSched)
 
 	scriptPipeline := engine.NewScriptPipeline(scriptRunRepo, scriptJobRepo, hub, logger, cfg.Build.WorkspaceDir, cfg.Build.LogDir)
+	scriptPipeline.SetFailureMailer(mailDispatcher)
 	scriptSched := engine.NewScriptScheduler(cfg.Build.MaxConcurrent, scriptPipeline, scriptRunRepo, logger)
 	scriptRunSvc.SetScheduler(scriptSched)
 	scriptCronSched := engine.NewScriptCronScheduler(scriptJobRepo, scriptRunRepo, scriptRunSvc, scriptSched, logger)
@@ -268,6 +272,7 @@ func main() {
 		pipelineRepo, pipelineRunRepo, jobRepo, scriptJobRepo, runSvc, scriptRunSvc, agentSvc, logger,
 	)
 	pipelineOrch.SetHub(hub)
+	pipelineOrch.SetFailureMailer(mailDispatcher)
 	pipeline.SetBuildRunTerminalHook(pipelineOrch)
 	runSvc.SetTerminalHook(pipelineOrch)
 	scriptPipeline.SetTerminalHook(pipelineOrch)

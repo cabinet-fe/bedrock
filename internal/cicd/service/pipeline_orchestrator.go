@@ -26,6 +26,12 @@ type AgentRunLauncher interface {
 	CancelRun(id uint) error
 }
 
+// PipelineFailureMailer fans failed pipeline-run notices out to mail channels
+// (implemented by system MailDispatcher, wired in cmd/server).
+type PipelineFailureMailer interface {
+	DispatchPipelineRunFailure(triggeredBy, pipelineCreatedBy, runID uint, runNumber int, status, message string)
+}
+
 // PipelineOrchestrator starts PipelineRuns and advances stages on run terminal.
 // Semantics (graph_json v2): exactly one start node; a node fires when every
 // predecessor terminal-matches ≥1 incoming edge condition; skipped propagates
@@ -41,6 +47,7 @@ type PipelineOrchestrator struct {
 	agents     AgentRunLauncher
 	logger     *zap.Logger
 	hub        *ws.Hub
+	mailer     PipelineFailureMailer
 
 	mu    sync.Mutex
 	locks map[uint]*sync.Mutex
@@ -82,6 +89,11 @@ func (o *PipelineOrchestrator) runLock(pipelineRunID uint) *sync.Mutex {
 
 func (o *PipelineOrchestrator) SetHub(hub *ws.Hub) {
 	o.hub = hub
+}
+
+// SetFailureMailer wires failure-notice mail dispatch for pipeline terminal states.
+func (o *PipelineOrchestrator) SetFailureMailer(m PipelineFailureMailer) {
+	o.mailer = m
 }
 
 func (o *PipelineOrchestrator) broadcastPipelineRunChanged(runID uint, status string) {
@@ -623,6 +635,13 @@ func (o *PipelineOrchestrator) finalizePipelineLocked(pipelineRunID uint, status
 			zap.String("status", status),
 			zap.String("msg", msg),
 		)
+	}
+	if o.mailer != nil {
+		pipelineCreatedBy := uint(0)
+		if pipeline, err := o.pipelines.FindByID(pr.BuildPipelineID); err == nil && pipeline != nil {
+			pipelineCreatedBy = pipeline.CreatedBy
+		}
+		o.mailer.DispatchPipelineRunFailure(pr.TriggeredBy, pipelineCreatedBy, pr.ID, pr.RunNumber, status, msg)
 	}
 	o.broadcastPipelineRunChanged(pipelineRunID, status)
 	return nil

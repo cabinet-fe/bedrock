@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/wneessen/go-mail"
+	"go.uber.org/zap"
 
+	authmodel "bedrock/internal/auth/model"
 	"bedrock/internal/pkg"
 	"bedrock/internal/system/model"
 	"bedrock/internal/system/repository"
@@ -16,6 +18,10 @@ import (
 
 // maskedPassword is what the API returns instead of the stored password.
 const maskedPassword = "******"
+
+// errSMTPNotConfigured marks a skip (not a delivery failure): nothing is sent
+// until an admin saves the system SMTP config.
+var errSMTPNotConfigured = errors.New("SMTP 未配置")
 
 // MailService manages the system-level SMTP sending config and test sends.
 type MailService struct {
@@ -125,7 +131,7 @@ func (s *MailService) SendTest(to string) (*MailTestResult, error) {
 		return nil, err
 	}
 	if cfg == nil || cfg.Host == "" || cfg.FromAddress == "" {
-		return nil, errors.New("SMTP 未配置")
+		return nil, errSMTPNotConfigured
 	}
 	password, err := pkg.Decrypt(cfg.PasswordCipher)
 	if err != nil {
@@ -136,6 +142,22 @@ func (s *MailService) SendTest(to string) (*MailTestResult, error) {
 		return &MailTestResult{Success: false, Message: err.Error()}, nil
 	}
 	return &MailTestResult{Success: true, Message: "测试邮件已发送"}, nil
+}
+
+// sendNotification delivers one notice over the stored SMTP config.
+func (s *MailService) sendNotification(to, subject, body string) error {
+	cfg, err := s.repo.Find()
+	if err != nil {
+		return err
+	}
+	if cfg == nil || cfg.Host == "" || cfg.FromAddress == "" {
+		return errSMTPNotConfigured
+	}
+	password, err := pkg.Decrypt(cfg.PasswordCipher)
+	if err != nil {
+		return fmt.Errorf("读取 SMTP 密码失败: %w", err)
+	}
+	return s.sender(*cfg, password, to, subject, body)
 }
 
 func toConfigView(cfg *model.MailSMTPConfig) *MailSMTPConfigView {
@@ -190,4 +212,191 @@ func sendViaSMTP(cfg model.MailSMTPConfig, password, to, subject, body string) e
 		return err
 	}
 	return cl.DialAndSend(msg)
+}
+
+// ---------- Failure notice dispatch ----------
+
+// RunFailureNotice describes one run terminal event to fan out. The dispatcher
+// drops everything but failed/interrupted (spec: failure notice only).
+type RunFailureNotice struct {
+	Kind        string // build_run|script_run|pipeline_run|agent_run
+	Status      string // failed or interrupted
+	RunID       uint
+	RunNumber   int // 0 for runs addressed by ID (agent runs)
+	TriggeredBy uint
+	FallbackTo  uint   // job/pipeline/agent creator used when TriggeredBy is 0
+	Detail      string // error message shown in the mail body
+}
+
+// NotificationChannel is one outbound failure-notice delivery channel
+// (mail today; room for IM channels later).
+type NotificationChannel interface {
+	Name() string
+	SendRunFailure(n RunFailureNotice, userIDs []uint) error
+}
+
+// UserEmailFinder loads users for recipient resolution.
+type UserEmailFinder interface {
+	FindByID(id uint) (*authmodel.User, error)
+}
+
+// MailChannel delivers failure notices through the system SMTP config,
+// skipping recipients without an email address.
+type MailChannel struct {
+	mail  *MailService
+	users UserEmailFinder
+}
+
+func NewMailChannel(mail *MailService, users UserEmailFinder) *MailChannel {
+	return &MailChannel{mail: mail, users: users}
+}
+
+func (c *MailChannel) Name() string { return "mail" }
+
+// SendRunFailure sends one mail per recipient and returns the first delivery
+// error; with no usable address it is a no-op.
+func (c *MailChannel) SendRunFailure(n RunFailureNotice, userIDs []uint) error {
+	addrs := make([]string, 0, len(userIDs))
+	for _, id := range userIDs {
+		user, err := c.users.FindByID(id)
+		if err != nil || user == nil || strings.TrimSpace(user.Email) == "" {
+			continue // recipient without an email: skip
+		}
+		addrs = append(addrs, strings.TrimSpace(user.Email))
+	}
+	if len(addrs) == 0 {
+		return nil
+	}
+	subject, body := failureMailContent(n)
+	for _, addr := range addrs {
+		if err := c.mail.sendNotification(addr, subject, body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// MailDispatcher resolves failure-notice recipients and fans the notice out
+// over every channel asynchronously. Delivery failures are only logged:
+// no retry, no send records, no error to the caller.
+type MailDispatcher struct {
+	channels     []NotificationChannel
+	logger       *zap.Logger
+	syncDispatch bool // deliver inline instead of in a goroutine (tests)
+}
+
+func NewMailDispatcher(mail *MailService, users UserEmailFinder, logger *zap.Logger) *MailDispatcher {
+	return &MailDispatcher{
+		channels: []NotificationChannel{NewMailChannel(mail, users)},
+		logger:   logger,
+	}
+}
+
+// SetSyncDispatch delivers inline instead of in a goroutine (tests).
+func (d *MailDispatcher) SetSyncDispatch(v bool) { d.syncDispatch = v }
+
+// DispatchBuildRunFailure fans a BuildRun terminal notice out.
+func (d *MailDispatcher) DispatchBuildRunFailure(triggeredBy, jobCreatedBy, runID uint, runNumber int, status, message string) {
+	d.dispatch(RunFailureNotice{
+		Kind: "build_run", Status: status, RunID: runID, RunNumber: runNumber,
+		TriggeredBy: triggeredBy, FallbackTo: jobCreatedBy, Detail: message,
+	})
+}
+
+// DispatchScriptRunFailure fans a ScriptRun terminal notice out.
+func (d *MailDispatcher) DispatchScriptRunFailure(triggeredBy, jobCreatedBy, runID uint, runNumber int, status, message string) {
+	d.dispatch(RunFailureNotice{
+		Kind: "script_run", Status: status, RunID: runID, RunNumber: runNumber,
+		TriggeredBy: triggeredBy, FallbackTo: jobCreatedBy, Detail: message,
+	})
+}
+
+// DispatchPipelineRunFailure fans a PipelineRun terminal notice out.
+func (d *MailDispatcher) DispatchPipelineRunFailure(triggeredBy, pipelineCreatedBy, runID uint, runNumber int, status, message string) {
+	d.dispatch(RunFailureNotice{
+		Kind: "pipeline_run", Status: status, RunID: runID, RunNumber: runNumber,
+		TriggeredBy: triggeredBy, FallbackTo: pipelineCreatedBy, Detail: message,
+	})
+}
+
+// DispatchAgentRunFailure fans an AgentRun terminal notice out.
+func (d *MailDispatcher) DispatchAgentRunFailure(triggeredBy, agentCreatedBy, runID uint, status, message string) {
+	d.dispatch(RunFailureNotice{
+		Kind: "agent_run", Status: status, RunID: runID,
+		TriggeredBy: triggeredBy, FallbackTo: agentCreatedBy, Detail: message,
+	})
+}
+
+func (d *MailDispatcher) dispatch(n RunFailureNotice) {
+	switch n.Status {
+	case "failed", "interrupted":
+	default:
+		return // success/cancelled never mail
+	}
+	ids := recipientIDs(n)
+	if len(ids) == 0 {
+		return
+	}
+	if d.syncDispatch {
+		d.deliver(n, ids)
+		return
+	}
+	go d.deliver(n, ids)
+}
+
+// recipientIDs prefers the triggering user and falls back to the creator, so
+// the same person always resolves to a single recipient.
+func recipientIDs(n RunFailureNotice) []uint {
+	if n.TriggeredBy != 0 {
+		return []uint{n.TriggeredBy}
+	}
+	if n.FallbackTo != 0 {
+		return []uint{n.FallbackTo}
+	}
+	return nil
+}
+
+func (d *MailDispatcher) deliver(n RunFailureNotice, userIDs []uint) {
+	for _, ch := range d.channels {
+		err := ch.SendRunFailure(n, userIDs)
+		if err == nil || d.logger == nil {
+			continue
+		}
+		if errors.Is(err, errSMTPNotConfigured) {
+			d.logger.Info("failure mail skipped: SMTP not configured",
+				zap.String("channel", ch.Name()), zap.String("kind", n.Kind), zap.Uint("run_id", n.RunID))
+			continue
+		}
+		d.logger.Warn("failure mail delivery failed",
+			zap.String("channel", ch.Name()), zap.String("kind", n.Kind), zap.Uint("run_id", n.RunID), zap.Error(err))
+	}
+}
+
+// failureMailContent renders the subject and body for a failure notice.
+func failureMailContent(n RunFailureNotice) (string, string) {
+	number := n.RunNumber
+	if number == 0 {
+		number = int(n.RunID)
+	}
+	subject := fmt.Sprintf("Bedrock %s #%d %s", kindLabel(n.Kind), number, statusLabel(n.Status))
+	body := subject
+	if n.Detail != "" {
+		body += "\n\n" + n.Detail
+	}
+	return subject, body
+}
+
+func kindLabel(kind string) string {
+	switch kind {
+	case "build_run":
+		return "构建"
+	case "script_run":
+		return "脚本任务"
+	case "pipeline_run":
+		return "流水线"
+	case "agent_run":
+		return "智能体运行"
+	default:
+		return "运行"
+	}
 }

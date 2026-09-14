@@ -3,6 +3,10 @@ import type {
   BackupInspectResult,
   CreateBackupParams,
   Dictionary,
+  MailSMTPConfig,
+  MailSMTPConfigSaveRequest,
+  MailSMTPTestRequest,
+  MailSMTPTestResult,
   MenuGroup,
   NotificationItem,
   PageResult,
@@ -13,6 +17,8 @@ import type {
   Role,
   SystemBackup,
   User,
+  UserEmailUpdateRequest,
+  UserPasswordChangeRequest,
 } from "./types";
 
 export type ListQuery = Record<string, string | number | boolean | undefined | null>;
@@ -229,4 +235,29 @@ export async function inspectBackupFile(file: File | FormData): Promise<BackupIn
 export async function restoreBackup(body: RestoreBackupParams): Promise<RestoreBackupResult> {
   const { body: data } = await http.post<RestoreBackupResult>("/system/backups/restore", body);
   return data;
+}
+
+/** Returns null when SMTP is not configured yet. */
+export async function getMailSMTPConfig(): Promise<MailSMTPConfig | null> {
+  const { body } = await http.get<MailSMTPConfig | null>("/system/mail/smtp");
+  return body;
+}
+
+export async function saveMailSMTPConfig(body: MailSMTPConfigSaveRequest): Promise<MailSMTPConfig> {
+  const { body: data } = await http.put<MailSMTPConfig>("/system/mail/smtp", body);
+  return data;
+}
+
+export async function sendMailSMTPTest(body: MailSMTPTestRequest): Promise<MailSMTPTestResult> {
+  const { body: data } = await http.post<MailSMTPTestResult>("/system/mail/smtp/test", body);
+  return data;
+}
+
+export async function updateMyEmail(body: UserEmailUpdateRequest): Promise<User> {
+  const { body: data } = await http.put<User>("/users/me/email", body);
+  return data;
+}
+
+export async function updateMyPassword(body: UserPasswordChangeRequest): Promise<void> {
+  await http.put("/users/me/password", body);
 }
