@@ -1,0 +1,47 @@
+@import '../shared/ui.css';
+
+/* Options page layout. */
+
+body {
+  padding: 40px 16px;
+  background: var(--bg);
+  font-size: 14px;
+}
+
+.card {
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px 28px;
+}
+
+h1 {
+  margin: 0 0 20px;
+  font-size: 18px;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.field small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.field code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#save-btn {
+  padding: 8px 22px;
+}

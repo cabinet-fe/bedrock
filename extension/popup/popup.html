@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>磐石报单</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <!-- Setup guidance when settings are missing or incomplete -->
+    <section id="setup-view" class="hidden">
+      <p class="hint">尚未完成配置：请先在设置页填写平台地址与 br_ 令牌。</p>
+      <button id="open-options" class="primary">打开设置</button>
+    </section>
+
+    <!-- Report form -->
+    <form id="report-form" class="hidden">
+      <label class="field">
+        <span>标题 <em>*</em></span>
+        <input id="bug-title" type="text" maxlength="200" placeholder="一句话描述问题" required />
+      </label>
+      <label class="field">
+        <span>所属项目 <em>*</em></span>
+        <select id="project-select" required>
+          <option value="">加载中…</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>描述</span>
+        <textarea id="bug-description" rows="4" placeholder="复现步骤…（来源网址已自动填入，可编辑）"></textarea>
+      </label>
+      <div class="field">
+        <span>页面截图</span>
+        <div id="shot-box" class="shot-box">正在截取当前页…</div>
+        <div class="shot-actions">
+          <button type="button" id="re-shot" class="ghost">重截</button>
+          <button type="button" id="remove-shot" class="ghost">删除</button>
+        </div>
+      </div>
+      <button id="submit-btn" type="submit" class="primary" disabled>提交缺陷</button>
+      <p id="status-line" class="status" role="status"></p>
+    </form>
+
+    <!-- Full-size screenshot preview -->
+    <div id="preview-overlay" class="overlay hidden">
+      <img id="preview-img" alt="截图预览" />
+    </div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

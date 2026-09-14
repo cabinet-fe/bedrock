@@ -1,0 +1,66 @@
+@import '../shared/ui.css';
+
+/* Popup-specific layout. */
+
+body {
+  width: 360px;
+  padding: 14px;
+  box-sizing: border-box;
+  background: var(--card);
+}
+
+.hint {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.shot-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 96px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  overflow: hidden;
+}
+
+.shot-box img {
+  max-width: 100%;
+  max-height: 100%;
+  cursor: zoom-in;
+  object-fit: contain;
+}
+
+.shot-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+#submit-btn {
+  width: 100%;
+}
+
+#status-line {
+  min-height: 18px;
+  margin: 8px 0 0;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  cursor: zoom-out;
+}
+
+.overlay img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}

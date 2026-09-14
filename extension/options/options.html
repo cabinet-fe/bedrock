@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>磐石报单 · 设置</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>磐石报单设置</h1>
+      <form id="options-form">
+        <label class="field">
+          <span>平台地址</span>
+          <input id="base-url" type="url" placeholder="http://localhost:8080" required />
+          <small>平台站点根地址，插件将调用 <code>{平台地址}/api/v1</code></small>
+        </label>
+        <label class="field">
+          <span>br_ 令牌</span>
+          <input id="pat-token" type="password" placeholder="br_…" required spellcheck="false" autocomplete="off" />
+          <small>在平台「资源管理 → 令牌」创建，scope 至少勾选 bugs:read 与 bugs:write</small>
+        </label>
+        <div class="actions">
+          <button id="save-btn" type="submit" class="primary">保存</button>
+          <span id="status-line" role="status"></span>
+        </div>
+      </form>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
