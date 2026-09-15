@@ -73,7 +73,10 @@ type AiAgent struct {
 	Name            string        `json:"name" gorm:"size:100;not null"`
 	Description     string        `json:"description" gorm:"size:500"`
 	Enabled         bool          `json:"enabled" gorm:"not null;default:true"`
-	CliKey          string        `json:"cli_key" gorm:"size:40;not null;index"`
+	CliKey          string        `json:"cli_key" gorm:"size:40;not null;index"` // legacy column, deprecated by the harness session backend
+	ModelProvider   string        `json:"model_provider,omitempty" gorm:"column:model_provider;size:100"`
+	ModelID         string        `json:"model_id,omitempty" gorm:"column:model_id;size:200"`
+	ApprovalMode    string        `json:"approval_mode" gorm:"column:approval_mode;size:20;not null;default:manual"`
 	SystemPrompt    string        `json:"system_prompt" gorm:"type:text"`
 	SkillIDsJSON    string        `json:"-" gorm:"type:text"`
 	SkillIDs        []uint        `json:"skill_ids" gorm:"-"`
@@ -110,28 +113,34 @@ func (AgentTrigger) TableName() string { return "agent_triggers" }
 
 // AgentRun is an independent async execution (DESIGN §5.3).
 type AgentRun struct {
-	ID              uint       `json:"id" gorm:"primaryKey"`
-	AgentID         uint       `json:"agent_id" gorm:"not null;index"`
-	TriggerType     string     `json:"trigger_type" gorm:"size:40;not null"`
-	TriggerID       *uint      `json:"trigger_id" gorm:"index"`
-	Status          string     `json:"status" gorm:"size:20;not null;default:queued;index"`
-	TriggeredBy     uint       `json:"triggered_by" gorm:"index"`
-	BuildRunID      *uint      `json:"build_run_id" gorm:"index"`
-	ProjectID       *uint      `json:"project_id" gorm:"index"`
-	DocNodeID       *uint      `json:"doc_node_id" gorm:"index"`
-	UserPrompt      string     `json:"user_prompt,omitempty" gorm:"type:text"`
-	SnapshotJSON    string     `json:"snapshot_json,omitempty" gorm:"type:text"`
-	SkillDigestJSON string     `json:"skill_digest_json,omitempty" gorm:"type:text"`
-	WorkDir         string     `json:"work_dir" gorm:"size:500"`
-	ArtifactPath    string     `json:"artifact_path,omitempty" gorm:"size:500"`
-	ArtifactKind    string     `json:"artifact_kind,omitempty" gorm:"size:20"` // archive
-	LogPath         string     `json:"log_path" gorm:"size:500"`
-	OutputText      string     `json:"output_text,omitempty" gorm:"type:text"`
-	ErrorMessage    string     `json:"error_message" gorm:"type:text"`
-	DurationMs      int64      `json:"duration_ms"`
-	StartedAt       *time.Time `json:"started_at"`
-	FinishedAt      *time.Time `json:"finished_at"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID              uint   `json:"id" gorm:"primaryKey"`
+	AgentID         uint   `json:"agent_id" gorm:"not null;index"`
+	TriggerType     string `json:"trigger_type" gorm:"size:40;not null"`
+	TriggerID       *uint  `json:"trigger_id" gorm:"index"`
+	Status          string `json:"status" gorm:"size:20;not null;default:queued;index"`
+	TriggeredBy     uint   `json:"triggered_by" gorm:"index"`
+	BuildRunID      *uint  `json:"build_run_id" gorm:"index"`
+	ProjectID       *uint  `json:"project_id" gorm:"index"`
+	DocNodeID       *uint  `json:"doc_node_id" gorm:"index"`
+	UserPrompt      string `json:"user_prompt,omitempty" gorm:"type:text"`
+	SnapshotJSON    string `json:"snapshot_json,omitempty" gorm:"type:text"`
+	SkillDigestJSON string `json:"skill_digest_json,omitempty" gorm:"type:text"`
+	WorkDir         string `json:"work_dir" gorm:"size:500"`
+	ArtifactPath    string `json:"artifact_path,omitempty" gorm:"size:500"`
+	ArtifactKind    string `json:"artifact_kind,omitempty" gorm:"size:20"` // archive
+	LogPath         string `json:"log_path" gorm:"size:500"`
+	OutputText      string `json:"output_text,omitempty" gorm:"type:text"`
+	FinalOutput     string `json:"final_output,omitempty" gorm:"column:final_output;type:text"`
+	ErrorMessage    string `json:"error_message" gorm:"type:text"`
+	// HarnessSessionID binds the run to a harness session (NULL on legacy
+	// runs rendered from OutputText). HarnessSessionStatus mirrors the
+	// session-side state for list queries.
+	HarnessSessionID     *string    `json:"harness_session_id,omitempty" gorm:"column:harness_session_id;size:100;uniqueIndex:uidx_agent_runs_harness_session_id"`
+	HarnessSessionStatus string     `json:"harness_session_status,omitempty" gorm:"column:harness_session_status;size:40"`
+	DurationMs           int64      `json:"duration_ms"`
+	StartedAt            *time.Time `json:"started_at"`
+	FinishedAt           *time.Time `json:"finished_at"`
+	CreatedAt            time.Time  `json:"created_at"`
 
 	Agent *AiAgent `json:"agent,omitempty" gorm:"foreignKey:AgentID"`
 }

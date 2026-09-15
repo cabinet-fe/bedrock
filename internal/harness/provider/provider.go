@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 // Delivery selects how a prompt joins a busy session.
@@ -54,6 +55,19 @@ type Session struct {
 	Title     string    `json:"title,omitempty"`
 	Agent     string    `json:"agent,omitempty"`
 	Model     *ModelRef `json:"model,omitempty"`
+}
+
+// SessionInfo is one session-inventory entry as listed or fetched by the
+// backend (persisted server-side; survives backend restarts).
+type SessionInfo struct {
+	ID         string     `json:"id"`
+	Title      string     `json:"title,omitempty"`
+	Directory  string     `json:"directory,omitempty"`
+	Agent      string     `json:"agent,omitempty"`
+	Model      *ModelRef  `json:"model,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 }
 
 // PromptInput sends one user message.
@@ -231,6 +245,14 @@ type Stream interface {
 type Provider interface {
 	// CreateSession creates a session bound to input.Directory.
 	CreateSession(ctx context.Context, input CreateSessionInput) (*Session, error)
+	// ListSessions lists the persisted sessions of a workspace directory,
+	// newest first (archived entries included).
+	ListSessions(ctx context.Context, directory string) ([]SessionInfo, error)
+	// GetSession fetches one session-inventory entry by id.
+	GetSession(ctx context.Context, sessionID string) (*SessionInfo, error)
+	// ArchiveSession marks a session archived (kept in storage, excluded from
+	// active use).
+	ArchiveSession(ctx context.Context, sessionID string) error
 	// Prompt sends one user message with the given delivery mode.
 	Prompt(ctx context.Context, sessionID string, input PromptInput) (*PromptAck, error)
 	// SelectModel switches the model of an existing session.

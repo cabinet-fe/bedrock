@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -130,11 +131,125 @@ func (c *Client) CreateSession(ctx context.Context, input provider.CreateSession
 		Model:    input.Model,
 		Location: LocationRef{Directory: input.Directory},
 	}
-	var resp envelope[provider.Session]
+	// The response echoes the session-inventory shape: the directory is
+	// nested under location, not a top-level field.
+	var resp envelope[sessionV2Info]
 	if err := c.post(ctx, "/api/session", body, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	session := &provider.Session{
+		ID:    resp.Data.ID,
+		Title: resp.Data.Title,
+		Agent: resp.Data.Agent,
+		Model: resp.Data.Model,
+	}
+	if resp.Data.Location != nil {
+		session.Directory = resp.Data.Location.Directory
+	}
+	return session, nil
+}
+
+// sessionV2Info is the session-inventory entry shape (GET /api/session and
+// GET /api/session/{id}); time values are epoch milliseconds.
+type sessionV2Info struct {
+	ID       string             `json:"id"`
+	Title    string             `json:"title"`
+	Agent    string             `json:"agent,omitempty"`
+	Model    *provider.ModelRef `json:"model,omitempty"`
+	Location *LocationRef       `json:"location,omitempty"`
+	Time     sessionV2Times     `json:"time"`
+}
+
+type sessionV2Times struct {
+	Created  float64  `json:"created"`
+	Updated  float64  `json:"updated"`
+	Archived *float64 `json:"archived"`
+}
+
+func epochMilli(ms float64) time.Time { return time.UnixMilli(int64(ms)).UTC() }
+
+func sessionInfoFromV2(v sessionV2Info) provider.SessionInfo {
+	info := provider.SessionInfo{
+		ID:        v.ID,
+		Title:     v.Title,
+		Agent:     v.Agent,
+		Model:     v.Model,
+		CreatedAt: epochMilli(v.Time.Created),
+		UpdatedAt: epochMilli(v.Time.Updated),
+	}
+	if v.Location != nil {
+		info.Directory = v.Location.Directory
+	}
+	if v.Time.Archived != nil {
+		info.ArchivedAt = new(epochMilli(*v.Time.Archived))
+	}
+	return info
+}
+
+const (
+	// sessionListPageSize is the page size requested per /api/session call.
+	sessionListPageSize = 100
+	// sessionListMaxPages bounds the cursor walk so a misbehaving serve
+	// cannot loop the listing forever.
+	sessionListMaxPages = 100
+)
+
+// ListSessions lists the persisted sessions of a directory, newest first
+// (the serve default order); archived entries are included.
+func (c *Client) ListSessions(ctx context.Context, directory string) ([]provider.SessionInfo, error) {
+	var out []provider.SessionInfo
+	cursor := ""
+	for page := 0; page < sessionListMaxPages; page++ {
+		q := url.Values{}
+		q.Set("directory", directory)
+		q.Set("limit", strconv.Itoa(sessionListPageSize))
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		var resp struct {
+			Data   []sessionV2Info `json:"data"`
+			Cursor struct {
+				Next string `json:"next"`
+			} `json:"cursor"`
+		}
+		if err := c.get(ctx, "/api/session", q, &resp); err != nil {
+			return nil, err
+		}
+		for _, v := range resp.Data {
+			out = append(out, sessionInfoFromV2(v))
+		}
+		if cursor = resp.Cursor.Next; cursor == "" || len(resp.Data) == 0 {
+			return out, nil
+		}
+	}
+	return out, nil
+}
+
+// GetSession fetches one session-inventory entry by id.
+func (c *Client) GetSession(ctx context.Context, sessionID string) (*provider.SessionInfo, error) {
+	var resp envelope[sessionV2Info]
+	if err := c.get(ctx, "/api/session/"+sessionID, nil, &resp); err != nil {
+		return nil, err
+	}
+	info := sessionInfoFromV2(resp.Data)
+	return &info, nil
+}
+
+// sessionPatch is the PATCH /session/{id} body. The archive flag lives only
+// on the unprefixed route group (not under /api) per the 1.18.29 spec
+// snapshot; it is not an /experimental endpoint.
+type sessionPatch struct {
+	Time sessionPatchTime `json:"time"`
+}
+
+type sessionPatchTime struct {
+	Archived float64 `json:"archived"`
+}
+
+// ArchiveSession marks a session archived at the current time.
+func (c *Client) ArchiveSession(ctx context.Context, sessionID string) error {
+	body := sessionPatch{Time: sessionPatchTime{Archived: float64(time.Now().UnixMilli())}}
+	return c.patch(ctx, "/session/"+sessionID, body, nil)
 }
 
 // Prompt sends one user message. Empty delivery defaults to queue.
@@ -355,6 +470,17 @@ func (c *Client) getRaw(ctx context.Context, path string) ([]byte, error) {
 // post performs a POST with a JSON body and decodes the JSON response into
 // out (nil out ignores the body).
 func (c *Client) post(ctx context.Context, path string, body, out any) error {
+	return c.send(ctx, http.MethodPost, path, body, out)
+}
+
+// patch performs a PATCH with a JSON body (nil out ignores the response).
+func (c *Client) patch(ctx context.Context, path string, body, out any) error {
+	return c.send(ctx, http.MethodPatch, path, body, out)
+}
+
+// send marshals body to JSON, performs the request and decodes the JSON
+// response into out (nil out ignores the body).
+func (c *Client) send(ctx context.Context, method, path string, body, out any) error {
 	var payload []byte
 	if body != nil {
 		var err error
@@ -363,7 +489,7 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 			return fmt.Errorf("oc encode %s: %w", path, err)
 		}
 	}
-	raw, err := c.request(ctx, http.MethodPost, path, nil, payload)
+	raw, err := c.request(ctx, method, path, nil, payload)
 	if err != nil {
 		return err
 	}
@@ -430,6 +556,21 @@ func (a *Adapter) Client() *Client { return a.client }
 // CreateSession implements provider.Provider.
 func (a *Adapter) CreateSession(ctx context.Context, input provider.CreateSessionInput) (*provider.Session, error) {
 	return a.client.CreateSession(ctx, input)
+}
+
+// ListSessions implements provider.Provider.
+func (a *Adapter) ListSessions(ctx context.Context, directory string) ([]provider.SessionInfo, error) {
+	return a.client.ListSessions(ctx, directory)
+}
+
+// GetSession implements provider.Provider.
+func (a *Adapter) GetSession(ctx context.Context, sessionID string) (*provider.SessionInfo, error) {
+	return a.client.GetSession(ctx, sessionID)
+}
+
+// ArchiveSession implements provider.Provider.
+func (a *Adapter) ArchiveSession(ctx context.Context, sessionID string) error {
+	return a.client.ArchiveSession(ctx, sessionID)
 }
 
 // Prompt implements provider.Provider.
