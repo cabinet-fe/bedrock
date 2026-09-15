@@ -16,7 +16,6 @@ declare module 'vue' {
     AppBreadcrumb: typeof import('./src/components/app-breadcrumb/app-breadcrumb.vue')['default']
     AppWorkspaceTabs: typeof import('./src/components/app-workspace-tabs/app-workspace-tabs.vue')['default']
     BrandLogo: typeof import('./src/components/brand-logo/brand-logo.vue')['default']
-    BugAttachmentPreview: typeof import('./src/views/projects/bugs/components/bug-attachment-preview.vue')['default']
     BuildDetailPanel: typeof import('./src/components/ai-chat/panels/build-detail-panel.vue')['default']
     BuildLogViewer: typeof import('./src/components/build-log-viewer/build-log-viewer.vue')['default']
     BuildTriggerCard: typeof import('./src/components/ai-chat/cards/build-trigger-card.vue')['default']
