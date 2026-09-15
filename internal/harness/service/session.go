@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"bedrock/internal/harness/provider"
+	"bedrock/internal/harness/provider/oc"
 )
 
 // DefaultMaxSessionsPerDir is the default cap of non-archived sessions kept
@@ -35,10 +36,13 @@ type SessionConfig struct {
 // maps its persisted agent onto it; the harness domain must not depend on ai.
 type AgentSpec struct {
 	ID            uint
+	Name          string
+	Description   string
 	SystemPrompt  string
 	SkillIDs      []uint
 	ModelProvider string
 	ModelID       string
+	ApprovalMode  string // manual | auto (see provider/oc compile modes)
 }
 
 // AgentSessionDirectory returns the workspace directory an agent's sessions
@@ -47,14 +51,32 @@ func AgentSessionDirectory(workspaceRoot string, agentID uint) string {
 	return filepath.Join(workspaceRoot, "agents", fmt.Sprintf("agent-%d", agentID))
 }
 
+// AgentDefKey returns the compiled-artifact key of an agent
+// (e.g. "agent-3" -> file bedrock-agent-3.md).
+func AgentDefKey(agentID uint) string {
+	return fmt.Sprintf("agent-%d", agentID)
+}
+
+// hasCustomization reports whether the agent needs a compiled definition;
+// the predicate lives in one place (oc.NeedsAgentDef) and is shared with the
+// compiler.
+func (a AgentSpec) hasCustomization() bool {
+	return oc.NeedsAgentDef(oc.AgentDefInput{
+		SystemPrompt:  a.SystemPrompt,
+		HasSkills:     len(a.SkillIDs) > 0,
+		ModelProvider: a.ModelProvider,
+		ModelID:       a.ModelID,
+	})
+}
+
 // AgentDefName returns the opencode agent definition an agent's sessions
 // use: the compiled bedrock-<key> artifact, or the builtin build agent when
 // the agent has no customization (no prompt, no skills, no model override).
 func AgentDefName(agent AgentSpec) string {
-	if agent.SystemPrompt == "" && len(agent.SkillIDs) == 0 && agent.ModelID == "" {
+	if !agent.hasCustomization() {
 		return "build"
 	}
-	return fmt.Sprintf("bedrock-agent-%d", agent.ID)
+	return oc.AgentDefPrefix + AgentDefKey(agent.ID)
 }
 
 // SessionService is the provider-facing session facade with bedrock policy:

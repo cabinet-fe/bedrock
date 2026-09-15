@@ -13,6 +13,7 @@ import (
 
 	"bedrock/internal/ai/model"
 	"bedrock/internal/ai/repository"
+	harnessservice "bedrock/internal/harness/service"
 	rbacmodel "bedrock/internal/rbac/model"
 	storagemodel "bedrock/internal/storage/model"
 	storageservice "bedrock/internal/storage/service"
@@ -207,49 +208,32 @@ func (s *SkillService) OpenPackage(id, userID uint, isSuperAdmin bool, dataScope
 	return skill, f, skill.Name + ".zip", nil
 }
 
-// InjectSkills extracts bound skills into workspaceDir/.agents/skills/<name>/ for agent runs.
-// Prefers the on-disk working copy when present so file edits are visible to runs;
-// otherwise extracts from the stored ZIP (wrapping folders and __MACOSX stripped).
-func (s *SkillService) InjectSkills(workspaceDir string, skillIDs []uint, userID uint, isSuperAdmin bool) (map[uint]string, error) {
+// SkillSources resolves bound skills into injectable workspace sources: the
+// on-disk working copy dir per skill (extracted from the stored ZIP on
+// demand, wrapping folders and __MACOSX stripped) plus the package digest
+// keyed by skill id. Copy/normalization is done by the harness skill sync.
+func (s *SkillService) SkillSources(skillIDs []uint, userID uint, isSuperAdmin bool) ([]harnessservice.SkillSource, map[uint]string, error) {
+	sources := []harnessservice.SkillSource{}
 	digests := map[uint]string{}
 	if len(skillIDs) == 0 {
-		return digests, nil
-	}
-	skillsRoot := filepath.Join(workspaceDir, ".agents", "skills")
-	if err := os.MkdirAll(skillsRoot, 0o755); err != nil {
-		return nil, err
+		return sources, digests, nil
 	}
 	for _, id := range skillIDs {
 		skill, err := s.repo.FindSkill(id)
 		if err != nil {
-			return nil, fmt.Errorf("skill %d: %w", id, ErrSkillNotFound)
+			return nil, nil, fmt.Errorf("skill %d: %w", id, ErrSkillNotFound)
 		}
 		if !canViewSkill(skill, userID, isSuperAdmin, rbacmodel.DataScopeSelf) {
-			return nil, fmt.Errorf("skill %d: %w", id, ErrSkillForbidden)
-		}
-		dest := filepath.Join(skillsRoot, skillDirName(skill.Name))
-		if err := os.RemoveAll(dest); err != nil {
-			return nil, err
+			return nil, nil, fmt.Errorf("skill %d: %w", id, ErrSkillForbidden)
 		}
 		workDir, err := s.ensureWorkingCopy(skill)
-		if err == nil {
-			if err := copySkillDir(workDir, dest); err != nil {
-				return nil, err
-			}
-		} else {
-			f, obj, openErr := s.storage.Open(skill.StorageObjectID)
-			if openErr != nil {
-				return nil, openErr
-			}
-			extractErr := extractSkillZIP(f, obj.Size, dest)
-			f.Close()
-			if extractErr != nil {
-				return nil, extractErr
-			}
+		if err != nil {
+			return nil, nil, fmt.Errorf("skill %d: %w", id, err)
 		}
+		sources = append(sources, harnessservice.SkillSource{Name: skill.Name, Dir: workDir})
 		digests[id] = skill.PackageDigest
 	}
-	return digests, nil
+	return sources, digests, nil
 }
 
 func (s *SkillService) putValidatedZIP(in SkillUploadInput) (*storagemodel.StorageObject, error) {
@@ -426,17 +410,6 @@ func isJunkZIPPath(clean string) bool {
 	}
 	base := path.Base(clean)
 	return strings.HasPrefix(base, "._")
-}
-
-func skillDirName(name string) string {
-	name = strings.TrimSpace(name)
-	name = strings.ReplaceAll(name, "/", "-")
-	name = strings.ReplaceAll(name, "\\", "-")
-	name = strings.Trim(name, ". ")
-	if name == "" || name == "." || name == ".." {
-		return "skill"
-	}
-	return name
 }
 
 func validateZIPEntry(entry *zip.File) error {

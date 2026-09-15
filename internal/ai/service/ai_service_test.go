@@ -16,6 +16,7 @@ import (
 	"bedrock/internal/ai/repository"
 	"bedrock/internal/ai/service"
 	cicdmodel "bedrock/internal/cicd/model"
+	harnessservice "bedrock/internal/harness/service"
 	projectmodel "bedrock/internal/project/model"
 	projectrepo "bedrock/internal/project/repository"
 	projectservice "bedrock/internal/project/service"
@@ -214,7 +215,7 @@ func TestPrivateSkillIsolation(t *testing.T) {
 	}
 }
 
-func TestInjectSkillsUsesNameAndStripsWrapper(t *testing.T) {
+func TestSkillSourcesInjectUsesNameAndStripsWrapper(t *testing.T) {
 	_, _, skills, _ := setupAI(t)
 	z := zipBytes(t, map[string]string{
 		"java-api-docs/SKILL.md":            "# nested-skill",
@@ -229,10 +230,17 @@ func TestInjectSkillsUsesNameAndStripsWrapper(t *testing.T) {
 		t.Fatal(err)
 	}
 	tmp := t.TempDir()
-	if _, err := skills.InjectSkills(tmp, []uint{s.ID}, 1, true); err != nil {
+	sources, digests, err := skills.SkillSources([]uint{s.ID}, 1, true)
+	if err != nil {
 		t.Fatal(err)
 	}
-	skillMD := filepath.Join(tmp, ".agents", "skills", "java-api-docs", "SKILL.md")
+	if len(sources) != 1 || sources[0].Name != "java-api-docs" || digests[s.ID] != s.PackageDigest {
+		t.Fatalf("sources=%v digests=%v", sources, digests)
+	}
+	if err := harnessservice.SyncAgentSkills(tmp, sources); err != nil {
+		t.Fatal(err)
+	}
+	skillMD := filepath.Join(tmp, ".opencode", "skills", "java-api-docs", "SKILL.md")
 	data, err := os.ReadFile(skillMD)
 	if err != nil {
 		t.Fatalf("expected skill at name path: %v", err)
@@ -240,16 +248,16 @@ func TestInjectSkillsUsesNameAndStripsWrapper(t *testing.T) {
 	if !strings.Contains(string(data), "nested-skill") {
 		t.Fatalf("unexpected SKILL.md body: %q", data)
 	}
-	if _, err := os.Stat(filepath.Join(tmp, ".agents", "skills", "java-api-docs", "references", "notes.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(tmp, ".opencode", "skills", "java-api-docs", "references", "notes.md")); err != nil {
 		t.Fatalf("nested references missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(tmp, ".agents", "skills", fmt.Sprintf("%d", s.ID))); err == nil {
+	if _, err := os.Stat(filepath.Join(tmp, ".opencode", "skills", fmt.Sprintf("%d", s.ID))); err == nil {
 		t.Fatal("must not create id-named skill folder")
 	}
-	if _, err := os.Stat(filepath.Join(tmp, ".agents", "skills", "java-api-docs", "java-api-docs")); err == nil {
+	if _, err := os.Stat(filepath.Join(tmp, ".opencode", "skills", "java-api-docs", "java-api-docs")); err == nil {
 		t.Fatal("must not keep ZIP wrapper directory under skill name")
 	}
-	if _, err := os.Stat(filepath.Join(tmp, ".agents", "skills", "java-api-docs", "__MACOSX")); err == nil {
+	if _, err := os.Stat(filepath.Join(tmp, ".opencode", "skills", "java-api-docs", "__MACOSX")); err == nil {
 		t.Fatal("__MACOSX must be skipped")
 	}
 }

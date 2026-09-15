@@ -262,6 +262,10 @@ type Provider interface {
 	// EventStream subscribes to a session, replaying durable events after
 	// the given sequence (0 replays everything) then streaming live.
 	EventStream(ctx context.Context, sessionID string, after int64) (Stream, error)
+	// BusStream subscribes to the backend-wide live event bus: transient
+	// frames (deltas, permission and question requests) of every session,
+	// without replay. The stream bridge is the intended consumer.
+	BusStream(ctx context.Context) (Stream, error)
 	// Wait blocks until the session agent loop becomes idle.
 	Wait(ctx context.Context, sessionID string) error
 	// Interrupt cancels the running agent loop.
@@ -270,6 +274,9 @@ type Provider interface {
 	ReplyPermission(ctx context.Context, sessionID, requestID string, reply PermissionReply) error
 	// ReplyQuestion answers a pending question request.
 	ReplyQuestion(ctx context.Context, sessionID, requestID string, answers QuestionAnswers) error
+	// RejectQuestion dismisses a pending question request without answering
+	// (pending-TTL fallback).
+	RejectQuestion(ctx context.Context, sessionID, requestID string) error
 	// ListModels lists available models for a workspace directory.
 	ListModels(ctx context.Context, directory string) ([]ModelInfo, error)
 	// ListAgents lists agent definitions visible in a workspace directory.

@@ -148,7 +148,7 @@ func envVarKeys(agent *model.AiAgent) []string {
 	return keys
 }
 
-// writeAgentEnvFile 解密环境变量，写入 {agentRoot}/.env，返回绝对路径与明文 map。
+// writeAgentEnvFile 解密环境变量，写入 {agentRoot}/.env（权限固定 0600，纠正历史残留的宽权限），返回绝对路径与明文 map。
 func (s *AgentService) writeAgentEnvFile(agent *model.AiAgent, agentRoot string) (envFile string, vars map[string]string, err error) {
 	vars, err = decryptAgentEnvVars(agent.EnvVarsCipher)
 	if err != nil {
@@ -157,6 +157,10 @@ func (s *AgentService) writeAgentEnvFile(agent *model.AiAgent, agentRoot string)
 	content := formatDotEnv(vars)
 	path := filepath.Join(agentRoot, ".env")
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return "", nil, err
+	}
+	// WriteFile keeps the mode of an existing file; enforce 0600 explicitly.
+	if err := os.Chmod(path, 0o600); err != nil {
 		return "", nil, err
 	}
 	abs, absErr := filepath.Abs(path)

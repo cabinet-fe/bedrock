@@ -11,6 +11,7 @@ import (
 
 	"bedrock/internal/ai/model"
 	"bedrock/internal/engine"
+	harnessservice "bedrock/internal/harness/service"
 	resourcemodel "bedrock/internal/resource/model"
 )
 
@@ -139,7 +140,7 @@ func sanitizeBranchForDir(branch string) string {
 }
 
 // SyncAgentWorkspace ensures the persistent agent directory layout:
-// skills under .agents/skills, repo-{id}-{branch} checkouts for bindings, SYSTEM_PROMPT.md.
+// skills under .opencode/skill (opencode native discovery), repo-{id}-{branch} checkouts for bindings, SYSTEM_PROMPT.md.
 // repoDirs are absolute paths of successfully synced repository checkouts (for run logs).
 func (s *AgentService) SyncAgentWorkspace(ctx context.Context, agent *model.AiAgent, userID uint, isSuperAdmin bool) (digests map[uint]string, repoDirs []string, err error) {
 	if err := ctx.Err(); err != nil {
@@ -158,14 +159,9 @@ func (s *AgentService) SyncAgentWorkspace(ctx context.Context, agent *model.AiAg
 		return nil, nil, err
 	}
 
-	skillsRoot := filepath.Join(root, ".agents", "skills")
-	_ = os.RemoveAll(skillsRoot)
-	digests = map[uint]string{}
-	if s.skills != nil {
-		digests, err = s.skills.InjectSkills(root, agent.SkillIDs, userID, isSuperAdmin)
-		if err != nil {
-			return nil, nil, err
-		}
+	digests, err = s.syncAgentSkills(agent, userID, isSuperAdmin)
+	if err != nil {
+		return nil, nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
@@ -187,6 +183,26 @@ func (s *AgentService) SyncAgentWorkspace(ctx context.Context, agent *model.AiAg
 		return nil, nil, err
 	}
 	return digests, repoDirs, nil
+}
+
+// syncAgentSkills resolves the agent's bound skills and injects them into
+// {agentWorkspace}/.opencode/skill/<name>/ via the harness skill sync: names
+// normalized to lowercase hyphens, SKILL.md frontmatter aligned with the
+// directory, stale dirs dropped. Returns the skill digests keyed by skill id.
+func (s *AgentService) syncAgentSkills(agent *model.AiAgent, userID uint, isSuperAdmin bool) (map[uint]string, error) {
+	sources := []harnessservice.SkillSource{}
+	digests := map[uint]string{}
+	if s.skills != nil {
+		var err error
+		sources, digests, err = s.skills.SkillSources(agent.SkillIDs, userID, isSuperAdmin)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := harnessservice.SyncAgentSkills(s.agentRoot(agent.ID), sources); err != nil {
+		return nil, err
+	}
+	return digests, nil
 }
 
 func (s *AgentService) syncRepoCheckouts(ctx context.Context, agentRoot string, bindings []model.RepoBinding) ([]string, error) {

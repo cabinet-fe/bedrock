@@ -414,28 +414,97 @@ func (c *Client) ListProviders(ctx context.Context, directory string) ([]Provide
 // agent is the agent-catalog entry shape (GET /api/agent); the identifier
 // lives in "id" (e.g. build, plan, bedrock-<key>).
 type agent struct {
-	ID          string `json:"id"`
-	Description string `json:"description,omitempty"`
-	Mode        string `json:"mode,omitempty"`
-	Hidden      bool   `json:"hidden"`
+	ID          string                `json:"id"`
+	Description string                `json:"description,omitempty"`
+	Mode        string                `json:"mode,omitempty"`
+	Hidden      bool                  `json:"hidden"`
+	Permissions []AgentPermissionRule `json:"permissions,omitempty"`
+}
+
+// AgentPermissionRule is one resolved per-tool permission rule of an agent
+// definition (action=tool, resource=pattern, effect=allow|ask|deny).
+type AgentPermissionRule struct {
+	Action   string `json:"action"`
+	Resource string `json:"resource"`
+	Effect   string `json:"effect"`
+}
+
+// AgentCatalogEntry is one agent definition plus its resolved permission
+// rules; the provider-neutral AgentInfo drops the rules.
+type AgentCatalogEntry struct {
+	provider.AgentInfo
+	Permissions []AgentPermissionRule
 }
 
 // ListAgents lists agent definitions visible in a directory. A freshly
 // queried directory may briefly return an empty or incomplete list while the
 // project instance loads.
 func (c *Client) ListAgents(ctx context.Context, directory string) ([]provider.AgentInfo, error) {
+	entries, err := c.ListAgentCatalog(ctx, directory)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]provider.AgentInfo, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.AgentInfo)
+	}
+	return out, nil
+}
+
+// ListAgentCatalog lists agent definitions with their resolved permission
+// rules (e.g. the compiled bedrock-* skill allow rules).
+func (c *Client) ListAgentCatalog(ctx context.Context, directory string) ([]AgentCatalogEntry, error) {
 	var resp envelope[[]agent]
 	if err := c.get(ctx, "/api/agent", locationQuery(directory), &resp); err != nil {
 		return nil, err
 	}
-	out := make([]provider.AgentInfo, 0, len(resp.Data))
+	out := make([]AgentCatalogEntry, 0, len(resp.Data))
 	for _, a := range resp.Data {
-		out = append(out, provider.AgentInfo{
-			Name:        a.ID,
-			Description: a.Description,
-			Mode:        a.Mode,
-			Native:      !strings.HasPrefix(a.ID, "bedrock-"),
-			Hidden:      a.Hidden,
+		out = append(out, AgentCatalogEntry{
+			AgentInfo: provider.AgentInfo{
+				Name:        a.ID,
+				Description: a.Description,
+				Mode:        a.Mode,
+				Native:      !strings.HasPrefix(a.ID, "bedrock-"),
+				Hidden:      a.Hidden,
+			},
+			Permissions: a.Permissions,
+		})
+	}
+	return out, nil
+}
+
+// skill is the skill-catalog entry shape (GET /api/skill).
+type skill struct {
+	Name        string `json:"name"`
+	Location    string `json:"location"`
+	Description string `json:"description,omitempty"`
+	Slash       bool   `json:"slash,omitempty"`
+}
+
+// SkillInfo describes one registered skill in a workspace directory.
+type SkillInfo struct {
+	Name        string
+	Location    string
+	Description string
+	Slash       bool
+}
+
+// ListSkills lists the skills opencode discovered in a directory (GET
+// /api/skill). Like the agent catalog, a fresh directory may briefly return
+// an incomplete list while the project instance loads.
+func (c *Client) ListSkills(ctx context.Context, directory string) ([]SkillInfo, error) {
+	var resp envelope[[]skill]
+	if err := c.get(ctx, "/api/skill", locationQuery(directory), &resp); err != nil {
+		return nil, err
+	}
+	out := make([]SkillInfo, 0, len(resp.Data))
+	for _, s := range resp.Data {
+		out = append(out, SkillInfo{
+			Name:        s.Name,
+			Location:    s.Location,
+			Description: s.Description,
+			Slash:       s.Slash,
 		})
 	}
 	return out, nil
@@ -594,6 +663,12 @@ func (a *Adapter) EventStream(ctx context.Context, sessionID string, after int64
 	return a.client.SessionStream(ctx, sessionID, after)
 }
 
+// BusStream implements provider.Provider: the backend-wide live event bus
+// (transient frames of every session, no replay).
+func (a *Adapter) BusStream(ctx context.Context) (provider.Stream, error) {
+	return a.client.BusStream(ctx)
+}
+
 // Wait implements provider.Provider.
 func (a *Adapter) Wait(ctx context.Context, sessionID string) error {
 	return a.client.Wait(ctx, sessionID)
@@ -612,6 +687,11 @@ func (a *Adapter) ReplyPermission(ctx context.Context, sessionID, requestID stri
 // ReplyQuestion implements provider.Provider.
 func (a *Adapter) ReplyQuestion(ctx context.Context, sessionID, requestID string, answers provider.QuestionAnswers) error {
 	return a.client.ReplyQuestion(ctx, sessionID, requestID, answers)
+}
+
+// RejectQuestion implements provider.Provider.
+func (a *Adapter) RejectQuestion(ctx context.Context, sessionID, requestID string) error {
+	return a.client.RejectQuestion(ctx, sessionID, requestID)
 }
 
 // ListModels implements provider.Provider.

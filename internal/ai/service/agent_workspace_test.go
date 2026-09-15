@@ -13,6 +13,7 @@ import (
 
 	"bedrock/internal/ai/model"
 	"bedrock/internal/ai/service"
+	"bedrock/internal/pkg"
 	resourcemodel "bedrock/internal/resource/model"
 )
 
@@ -106,11 +107,11 @@ func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
 	agent = requireWorkspaceReady(t, agents, agent.ID)
 
 	root := filepath.Join(work, "agents", fmt.Sprintf("agent-%d", agent.ID))
-	skillMD := filepath.Join(root, ".agents", "skills", skill.Name, "SKILL.md")
+	skillMD := filepath.Join(root, ".opencode", "skills", skill.Name, "SKILL.md")
 	if _, err := os.Stat(skillMD); err != nil {
 		t.Fatalf("skill not extracted: %v", err)
 	}
-	nestedByID := filepath.Join(root, ".agents", "skills", fmt.Sprintf("%d", skill.ID), "SKILL.md")
+	nestedByID := filepath.Join(root, ".opencode", "skills", fmt.Sprintf("%d", skill.ID), "SKILL.md")
 	if _, err := os.Stat(nestedByID); err == nil {
 		t.Fatalf("skill must not be nested under id folder %q", nestedByID)
 	}
@@ -129,6 +130,67 @@ func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(root, "job-1")); !os.IsNotExist(err) {
 		t.Fatalf("legacy job softlink must not exist, err=%v", err)
+	}
+}
+
+// TestSyncAgentWorkspaceSkillNormalizationAndEnvPermissions covers the P4
+// harness integration acceptance on the ai side: bound skills land in
+// normalized lowercase-hyphen dirs with aligned SKILL.md frontmatter, and
+// the decrypted .env is written 0600.
+func TestSyncAgentWorkspaceSkillNormalizationAndEnvPermissions(t *testing.T) {
+	if err := pkg.InitEncryption(strings.Repeat("ab", 32)); err != nil {
+		t.Fatal(err)
+	}
+	agents, skills, _, work, _ := setupAgentWorkspace(t)
+
+	z := zipBytes(t, map[string]string{"SKILL.md": "---\nname: Old Name\n---\n\n# deploy body\n"})
+	skill, err := skills.Create(service.SkillUploadInput{
+		Name: "Deploy Helper", Visibility: model.SkillPublic, Filename: "deploy.zip",
+		Size: int64(len(z)), Source: bytes.NewReader(z), UserID: 1, IsSuperAdmin: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := "secret-token"
+	agent, err := agents.CreateAgent(1, service.AgentInput{
+		Name: "norm-agent", CliKey: "claude_code", SystemPrompt: "sp",
+		SkillIDs:   []uint{skill.ID},
+		EnvVars:    []service.EnvVarInput{{Key: "DEPLOY_TOKEN", Value: &token}},
+		TimeoutSec: 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent = requireWorkspaceReady(t, agents, agent.ID)
+
+	root := filepath.Join(work, "agents", fmt.Sprintf("agent-%d", agent.ID))
+
+	skillMD := filepath.Join(root, ".opencode", "skills", "deploy-helper", "SKILL.md")
+	data, err := os.ReadFile(skillMD)
+	if err != nil {
+		t.Fatalf("normalized skill dir missing: %v", err)
+	}
+	if !strings.HasPrefix(string(data), "---\nname: deploy-helper\n") {
+		t.Fatalf("SKILL.md frontmatter not aligned:\n%s", data)
+	}
+	if !strings.Contains(string(data), "deploy body") {
+		t.Fatalf("SKILL.md body lost:\n%s", data)
+	}
+
+	envPath := filepath.Join(root, ".env")
+	info, err := os.Stat(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf(".env mode = %o, want 600", perm)
+	}
+	envData, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(envData)) != "DEPLOY_TOKEN=secret-token" {
+		t.Fatalf(".env content = %q", envData)
 	}
 }
 

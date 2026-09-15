@@ -506,38 +506,3 @@ func containsSkillMD(root string) bool {
 	})
 	return found
 }
-
-func copySkillDir(src, dest string) error {
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dest, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		in, err := os.Open(p)
-		if err != nil {
-			return err
-		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-		if err != nil {
-			in.Close()
-			return err
-		}
-		_, copyErr := io.Copy(out, in)
-		in.Close()
-		closeErr := out.Close()
-		if copyErr != nil {
-			return copyErr
-		}
-		return closeErr
-	})
-}
