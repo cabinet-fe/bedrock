@@ -129,13 +129,6 @@ jobs:
             else
               git log -20 --pretty=format:'- %s (%h)' --no-merges --reverse
             fi
-            echo
-            echo
-            echo "## 重要说明"
-            echo
-            echo "- 产物前缀为 \`bedrock-*\`（不再使用 \`buildflow-*\`）。"
-            echo "- Server 与 Deploy Agent 须使用**同一版本**。"
-            echo "- 校验：各平台 \`*.sha256\`，或汇总文件 \`SHA256SUMS\`。"
           } > release-notes.md
       - name: Create release
         uses: softprops/action-gh-release@v3.0.1
