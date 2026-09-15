@@ -67,10 +67,27 @@
 
 ### 2.2 待核实清单（M0/M2 集成时落实）
 
-- SSE 事件 payload 细名与形状（消息分片/工具调用/权限请求/消息终态的确切 type）。
-- `POST permission/{requestID}/reply` 请求体形状（`{response, remember?}` 按文档，spec 未展开）。
-- agent 定义/技能的发现时机（会话创建时读盘 vs 进程启动时缓存）→ 决定「配置变更是否即时生效」。
-- `.opencode/agents/`（复数）路径的最终确认（文档口径，快照测试钉死）。
+> **M0 已落档（2026-09-15，v1.18.29 本机实测 + 集成测试 `internal/harness/provider/oc`）**，结论如下：
+
+- **SSE 事件 payload 细名与形状（已钉死）**：
+  - 信封：per-session 流 `{"id":"evt_*","type":"<name>","durable":{"aggregateID":"ses_*","seq":N,"version":V},"data":{...}}`；服务级总线 `/api/event` 同形另加 `"location":{"directory":...}`。`after=<seq>` 引用 `durable.seq`；prompt 响应带 `admittedSeq`（排队基线）。
+  - durable 类型（可回放，per-session 流全集）：`session.next.prompt.admitted` / `prompted` / `step.started|ended|failed` / `text.started|ended` / `tool.input.started|ended` / `tool.called` / `tool.success|failed` / `reasoning.started|ended` / `compaction.*` / `revert.*`。
+  - **瞬态类型（仅总线、不可回放）**：`text.delta`、`reasoning.delta`、`tool.input.delta`、`permission.v2.asked|replied`、`question.v2.asked|replied|rejected`、`session.idle`、`session.status`、`session.error`。→ 流桥（M3）实时分片必须走总线；回放用 `text.ended.text` 全文兜底（`step.ended` 带 `finish`/`cost`/`tokens`）。
+  - steer 语义：立即 `prompt.admitted`（占 seq），当前 step 结束后才 `prompted`。
+  - **无事件时 SSE 不发响应头**（新会话先订阅后 prompt 会让 HTTP 客户端阻塞至首事件）；回放语义下先 prompt 再订阅（`after=0`）等价，客户端已按此设计并在集成测试固化。
+- **permission reply 体（已钉死）**：`POST /api/session/{id}/permission/{requestID}/reply`，体 `{"reply":"once"|"always"|"reject","message?":string}`，成功 204。question：`{"answers":[[label,...],...]}`（每题一个选中 label 数组）→ 204；`reject` 无请求体。实测 once 应答后工具立即执行、durable 流出 `tool.success`。
+- **agent 定义/技能发现时机（实测有异步延迟，M2 需轮询对账）**：目录（`/api/agent`、`/api/skill`、`/api/model`）按 location 惰性加载；新目录首次查询可能返回空列表（含内置 agent 全缺），秒级后填充；项目实例已加载后再写入的 `.md` 不保证即时可见（观察到 >5 分钟未拾取）。→ M2 编译 `bedrock-*.md` 后必须轮询 `GET /api/agent?location=` 直到出现（带超时兜底）。`/api/model` 对新目录冷启动同样可能短暂为空（已实测：显式指定 model 仍可正常 prompt）。
+- **`.opencode/agents/`（复数）路径（已确认可用）**：单复数均可（内置技能文档表：`.opencode/agent/<name>.md` 或 `.opencode/agents/<name>.md`，全局 `~/.config/opencode/agent(s)/`）。**修正 §3.3**：项目级技能目录是 `.opencode/skills/<name>/SKILL.md`（或单数 `skill/`），**`.agents/skills/` 项目级不发现**——实测仅 HOME 级 `~/.agents/skills/`、`~/.claude/skills/` 自动加载。技能同步目标目录改为 `{agentWorkspace}/.opencode/skills/<name>/`，v4 §3.3 的 `.agents/skills/` 假设作废。
+- **补充实测**（契约适配已按此实现）：
+  - `POST /api/session/{id}/wait` 在 v1.18.29 恒 503（`"Session wait is not available yet"`，busy/idle 皆然）→ 终态判定改事件驱动（`step.ended` + 队列排空）；客户端 `Wait` 返回 `ErrWaitUnavailable` 供识别。
+  - 目录端点 `location` 查询参数是**对象**，bracket 编码 `?location[directory]=/path`（JSON 字符串与 dot 形式均被拒）。
+  - 列表响应统一 `{"location":{...},"data":[...]}` 信封；`GET /api/session/{id}/message` **最新在前**（含 user 消息，content 为分片数组）。
+  - 事件流解析：SSE `data:` 行、`:` 注释心跳可忽略（与 DSH 相同）。
+
+### 2.2.1 遗留（M2 处理）
+
+- agent 发现延迟的兜底策略（轮询超时后是否重建项目实例/重启 serve）在 M2 编译器落地时定型。
+- `permission.v2.*` 事件与 REST 拉取（`GET /api/permission/request?location[...]=`）双通道以谁为准（事件先行 + REST 对账）在 M3 流桥定型。
 
 ### 2.3 契约漂移警示
 
