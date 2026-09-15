@@ -904,7 +904,7 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	if !agent.StreamOutput {
 		args = appendNonStreamingOutputArgs(agent.CliKey, args)
 	}
-	hint := agentWorkspaceScopeHint()
+	hint := agentWorkspaceScopeHint() + agentEvidenceGateHint(agent.CliKey)
 	if run.TriggerType == model.TriggerDocsGen {
 		args = append(args, "Generate API documentation based on the workspace. Output Markdown only. "+hint)
 	} else {

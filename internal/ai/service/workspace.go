@@ -322,6 +322,20 @@ func agentWorkspaceScopeHint() string {
 		" Write deliverable files into $BEDROCK_AGENT_OUTPUT (this agent's fixed output directory; preserved across runs)."
 }
 
+// agentEvidenceGateHint teaches reasonix how to clear its read-evidence gate
+// in one step instead of burning tool rounds retrying blocked bash calls.
+// Other CLIs have no such gate and get no hint.
+func agentEvidenceGateHint(cliKey string) string {
+	if cliKey != "reasonix" {
+		return ""
+	}
+	return " reasonix 会对 bash 声明要修改的文件做读取证据校验。" +
+		"遇到 [evidence required] 阻塞时，立即用 read_file 逐个读取列出的路径，再用 edit_file / multi_edit 修改这些文件；" +
+		"不要重试同一条 bash，也不要用 sed/awk/patch 修改尚未读过的文件；批量改码优先使用文件工具而非 shell 脚本。" +
+		" If a bash call is blocked with [evidence required], read_file each listed path right away and apply the change with edit_file / multi_edit;" +
+		" never retry the same bash command or modify unread files via sed/awk/patch — prefer file tools over shell scripts for bulk edits."
+}
+
 // composeRunPrompt joins system prompt, optional user prompt, and workspace hint.
 func composeRunPrompt(systemPrompt, userPrompt, hint string) string {
 	parts := make([]string, 0, 3)

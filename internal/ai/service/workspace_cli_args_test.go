@@ -62,6 +62,27 @@ func TestAgentWorkspaceScopeHint(t *testing.T) {
 	}
 }
 
+func TestAgentEvidenceGateHint(t *testing.T) {
+	hint := agentEvidenceGateHint("reasonix")
+	for _, want := range []string{
+		"[evidence required]",
+		"read_file",
+		"edit_file / multi_edit",
+		"不要重试同一条 bash",
+		"never retry the same bash command",
+	} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("reasonix hint missing %q; got:\n%s", want, hint)
+		}
+	}
+	if got := agentEvidenceGateHint("claude_code"); got != "" {
+		t.Fatalf("claude should get no evidence hint, got %q", got)
+	}
+	if got := agentEvidenceGateHint(""); got != "" {
+		t.Fatalf("empty cli key should get no evidence hint, got %q", got)
+	}
+}
+
 func TestComposeRunPrompt(t *testing.T) {
 	got := composeRunPrompt("sys", "user", "hint")
 	if got != "sys\n\nuser\n\nhint" {

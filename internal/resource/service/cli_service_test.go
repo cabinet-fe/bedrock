@@ -66,7 +66,7 @@ func TestCLIListSeeded(t *testing.T) {
 		"claude_code": "--print",
 		"codex":       "exec",
 		"opencode":    "run",
-		"reasonix":    "run",
+		"reasonix":    "run --max-steps 400",
 	}
 	for _, item := range items {
 		got := strings.TrimSpace(item.DefaultArgs)
