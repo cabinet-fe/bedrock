@@ -51,6 +51,12 @@ func AgentSessionDirectory(workspaceRoot string, agentID uint) string {
 	return filepath.Join(workspaceRoot, "agents", fmt.Sprintf("agent-%d", agentID))
 }
 
+// ChatSessionDirectory returns the workspace directory a user's interactive
+// harness sessions are bound to.
+func ChatSessionDirectory(workspaceRoot string, userID uint) string {
+	return filepath.Join(workspaceRoot, "harness", "users", fmt.Sprintf("user-%d", userID))
+}
+
 // AgentDefKey returns the compiled-artifact key of an agent
 // (e.g. "agent-3" -> file bedrock-agent-3.md).
 func AgentDefKey(agentID uint) string {
@@ -150,6 +156,63 @@ func (s *SessionService) ListActiveSessions(ctx context.Context, directory strin
 		return nil, err
 	}
 	return activeSessions(sessions), nil
+}
+
+// CreateChatSession creates an interactive session for a user in the user's
+// chat directory. The directory is always server-derived; any
+// caller-supplied Directory input is overwritten.
+func (s *SessionService) CreateChatSession(ctx context.Context, userID uint, input provider.CreateSessionInput) (*provider.Session, error) {
+	input.Directory = ChatSessionDirectory(s.cfg.WorkspaceRoot, userID)
+	if err := os.MkdirAll(input.Directory, 0o755); err != nil {
+		return nil, fmt.Errorf("harness session dir: %w", err)
+	}
+	session, err := s.CreateSession(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	s.log.Info("harness chat session created",
+		zap.Uint("user_id", userID),
+		zap.String("session_id", session.ID),
+	)
+	return session, nil
+}
+
+// ListChatSessions lists the non-archived sessions of the calling user's
+// chat directory, newest first.
+func (s *SessionService) ListChatSessions(ctx context.Context, userID uint) ([]provider.SessionInfo, error) {
+	return s.ListActiveSessions(ctx, ChatSessionDirectory(s.cfg.WorkspaceRoot, userID))
+}
+
+// Prompt sends one user message to a session.
+func (s *SessionService) Prompt(ctx context.Context, sessionID string, input provider.PromptInput) (*provider.PromptAck, error) {
+	return s.provider.Prompt(ctx, sessionID, input)
+}
+
+// History lists the messages of a session, oldest first.
+func (s *SessionService) History(ctx context.Context, sessionID string) ([]provider.Message, error) {
+	return s.provider.History(ctx, sessionID)
+}
+
+// Interrupt cancels the running agent loop of a session.
+func (s *SessionService) Interrupt(ctx context.Context, sessionID string) error {
+	return s.provider.Interrupt(ctx, sessionID)
+}
+
+// Export returns the session transcript as JSONL.
+func (s *SessionService) Export(ctx context.Context, sessionID string) ([]byte, error) {
+	return s.provider.Export(ctx, sessionID)
+}
+
+// ListChatModels lists the model catalog visible in the calling user's chat
+// directory.
+func (s *SessionService) ListChatModels(ctx context.Context, userID uint) ([]provider.ModelInfo, error) {
+	return s.provider.ListModels(ctx, ChatSessionDirectory(s.cfg.WorkspaceRoot, userID))
+}
+
+// ListChatAgents lists the agent definitions visible in the calling user's
+// chat directory.
+func (s *SessionService) ListChatAgents(ctx context.Context, userID uint) ([]provider.AgentInfo, error) {
+	return s.provider.ListAgents(ctx, ChatSessionDirectory(s.cfg.WorkspaceRoot, userID))
 }
 
 // GetSession fetches one session by id. This is also the lazy-recovery path:

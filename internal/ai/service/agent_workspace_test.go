@@ -13,6 +13,8 @@ import (
 
 	"bedrock/internal/ai/model"
 	"bedrock/internal/ai/service"
+	"bedrock/internal/harness/harnesstest"
+	"bedrock/internal/harness/provider"
 	"bedrock/internal/pkg"
 	resourcemodel "bedrock/internal/resource/model"
 )
@@ -72,7 +74,7 @@ func waitWorkspaceAsync(t *testing.T, agents *service.AgentService, agentID uint
 }
 
 func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
-	agents, skills, _, work, _ := setupAgentWorkspace(t)
+	agents, _, skills, work, _ := setupAgentWorkspace(t)
 
 	z := zipBytes(t, map[string]string{"SKILL.md": "# workspace-skill"})
 	skill, err := skills.Create(service.SkillUploadInput{
@@ -90,7 +92,7 @@ func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
 	}, nil)
 
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "ws-agent", CliKey: "claude_code", SystemPrompt: "hello workspace",
+		Name: "ws-agent", SystemPrompt: "hello workspace",
 		SkillIDs:     []uint{skill.ID},
 		RepoBindings: []model.RepoBinding{{RepositoryID: repoID, Branch: "develop"}},
 		TimeoutSec:   30,
@@ -110,6 +112,12 @@ func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
 	skillMD := filepath.Join(root, ".opencode", "skills", skill.Name, "SKILL.md")
 	if _, err := os.Stat(skillMD); err != nil {
 		t.Fatalf("skill not extracted: %v", err)
+	}
+	// The harness agent definition compiles into the workspace (customized
+	// agent → bedrock-agent-{id}.md under .opencode/agents/).
+	defMD := filepath.Join(root, ".opencode", "agents", fmt.Sprintf("bedrock-agent-%d.md", agent.ID))
+	if _, err := os.Stat(defMD); err != nil {
+		t.Fatalf("compiled agent definition missing: %v", err)
 	}
 	nestedByID := filepath.Join(root, ".opencode", "skills", fmt.Sprintf("%d", skill.ID), "SKILL.md")
 	if _, err := os.Stat(nestedByID); err == nil {
@@ -141,7 +149,7 @@ func TestSyncAgentWorkspaceSkillNormalizationAndEnvPermissions(t *testing.T) {
 	if err := pkg.InitEncryption(strings.Repeat("ab", 32)); err != nil {
 		t.Fatal(err)
 	}
-	agents, skills, _, work, _ := setupAgentWorkspace(t)
+	agents, _, skills, work, _ := setupAgentWorkspace(t)
 
 	z := zipBytes(t, map[string]string{"SKILL.md": "---\nname: Old Name\n---\n\n# deploy body\n"})
 	skill, err := skills.Create(service.SkillUploadInput{
@@ -153,7 +161,7 @@ func TestSyncAgentWorkspaceSkillNormalizationAndEnvPermissions(t *testing.T) {
 	}
 	token := "secret-token"
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "norm-agent", CliKey: "claude_code", SystemPrompt: "sp",
+		Name: "norm-agent", SystemPrompt: "sp",
 		SkillIDs:   []uint{skill.ID},
 		EnvVars:    []service.EnvVarInput{{Key: "DEPLOY_TOKEN", Value: &token}},
 		TimeoutSec: 30,
@@ -204,7 +212,7 @@ func TestAgentWorkspaceDefaultBranchAndDuplicateRejected(t *testing.T) {
 	}, nil)
 
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "defaults", CliKey: "claude_code",
+		Name:         "defaults",
 		RepoBindings: []model.RepoBinding{{RepositoryID: repoID}},
 		TimeoutSec:   10,
 	})
@@ -221,7 +229,7 @@ func TestAgentWorkspaceDefaultBranchAndDuplicateRejected(t *testing.T) {
 	}
 
 	multi, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "multi-branch", CliKey: "claude_code",
+		Name: "multi-branch",
 		RepoBindings: []model.RepoBinding{
 			{RepositoryID: repoID, Branch: "a"},
 			{RepositoryID: repoID, Branch: "b"},
@@ -249,7 +257,7 @@ func TestAgentWorkspaceDefaultBranchAndDuplicateRejected(t *testing.T) {
 	}
 
 	_, err = agents.CreateAgent(1, service.AgentInput{
-		Name: "dup", CliKey: "claude_code",
+		Name: "dup",
 		RepoBindings: []model.RepoBinding{
 			{RepositoryID: repoID, Branch: "main"},
 			{RepositoryID: repoID, Branch: "main"},
@@ -273,7 +281,7 @@ func TestAgentWorkspaceRemovesStaleJobLinksAndUnboundRepos(t *testing.T) {
 	}, nil)
 
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "cleanup", CliKey: "claude_code",
+		Name: "cleanup",
 		RepoBindings: []model.RepoBinding{
 			{RepositoryID: repoKeep, Branch: "main"},
 			{RepositoryID: repoDrop, Branch: "main"},
@@ -320,7 +328,7 @@ func TestAgentWorkspaceRemovesStaleJobLinksAndUnboundRepos(t *testing.T) {
 func TestAgentWorkspaceDeleteRemovesDir(t *testing.T) {
 	agents, _, _, work, arts := setupAgentWorkspace(t)
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "del", CliKey: "claude_code", TimeoutSec: 10,
+		Name: "del", TimeoutSec: 10,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -349,44 +357,10 @@ func TestAgentWorkspaceDeleteRemovesDir(t *testing.T) {
 }
 
 func TestAgentRunsReusePersistentWorkspace(t *testing.T) {
-	agents, _, repo, work, arts := setupAgentWorkspace(t)
-	t.Setenv("BEDROCK_AGENT_OUTPUT", "/must-not-leak")
-	markCLIInstalled(t, repo, "claude_code", "")
-
-	agents.SetCLIRunner(func(_ context.Context, req service.CLIRunRequest) (string, error) {
-		output := envValue(req.Env, "BEDROCK_AGENT_OUTPUT")
-		workdir := envValue(req.Env, "BEDROCK_AGENT_WORKDIR")
-		if output == "" {
-			return "", fmt.Errorf("BEDROCK_AGENT_OUTPUT missing")
-		}
-		if output == "/must-not-leak" {
-			return "", fmt.Errorf("parent BEDROCK_AGENT_OUTPUT leaked")
-		}
-		if st, err := os.Stat(output); err != nil || !st.IsDir() {
-			return "", fmt.Errorf("output dir missing")
-		}
-		note := filepath.Join(workdir, "note.txt")
-		result := filepath.Join(output, "result.txt")
-		if _, err := os.Stat(note); err == nil {
-			if _, err := os.Stat(result); err != nil {
-				return "", fmt.Errorf("output dir was cleared")
-			}
-			if err := os.WriteFile(result, []byte("second"), 0o644); err != nil {
-				return "", err
-			}
-		} else {
-			if err := os.WriteFile(result, []byte("first"), 0o644); err != nil {
-				return "", err
-			}
-			if err := os.WriteFile(note, []byte("workspace-note"), 0o644); err != nil {
-				return "", err
-			}
-		}
-		return "persistent output\n", nil
-	})
+	agents, fake, _, work, arts := setupAgentWorkspace(t)
 
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "persistent", CliKey: "claude_code", SystemPrompt: "x",
+		Name: "persistent", SystemPrompt: "x",
 		OutputDir: "deliverables", TimeoutSec: 30,
 	})
 	if err != nil {
@@ -402,6 +376,27 @@ func TestAgentRunsReusePersistentWorkspace(t *testing.T) {
 	if err := os.WriteFile(keepPath, []byte("keep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The session script plays the agent: deliverables go into the fixed
+	// output directory, the workspace note persists across runs.
+	fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, _ string) {
+		note := filepath.Join(sess.Directory, "note.txt")
+		result := filepath.Join(wantOutput, "result.txt")
+		if _, err := os.Stat(note); err == nil {
+			if _, err := os.Stat(result); err != nil {
+				_ = f.Emit(provider.Frame{
+					SessionID: sess.ID, Kind: provider.FrameStatus,
+					Status: &provider.StatusFrame{Name: provider.StatusError, Error: "output dir was cleared"},
+				})
+				return
+			}
+			_ = os.WriteFile(result, []byte("second"), 0o644)
+		} else {
+			_ = os.WriteFile(result, []byte("first"), 0o644)
+			_ = os.WriteFile(note, []byte("workspace-note"), 0o644)
+		}
+		f.Complete(sess.ID, "persistent output")
+	})
+
 	var finishedRuns []*model.AgentRun
 	for range 2 {
 		run, err := agents.ManualRun(agent.ID, 1, "")
@@ -414,7 +409,7 @@ func TestAgentRunsReusePersistentWorkspace(t *testing.T) {
 		if !strings.Contains(run.SnapshotJSON, `"repo_bindings"`) {
 			t.Fatalf("snapshot missing repo_bindings: %s", run.SnapshotJSON)
 		}
-		for _, removed := range []string{"artifact_format", "max_artifacts", "artifact_path", "build_job_ids"} {
+		for _, removed := range []string{"artifact_format", "max_artifacts", "artifact_path", "build_job_ids", "cli_key"} {
 			if strings.Contains(run.SnapshotJSON, removed) {
 				t.Fatalf("snapshot contains removed field %q: %s", removed, run.SnapshotJSON)
 			}
@@ -424,6 +419,12 @@ func TestAgentRunsReusePersistentWorkspace(t *testing.T) {
 	for _, finished := range finishedRuns {
 		if finished.WorkDir != wantWork {
 			t.Fatalf("work_dir=%q want=%q", finished.WorkDir, wantWork)
+		}
+		if finished.HarnessSessionID == nil || *finished.HarnessSessionID == "" {
+			t.Fatalf("harness_session_id missing: %+v", finished)
+		}
+		if !strings.Contains(finished.FinalOutput, "persistent output") {
+			t.Fatalf("final_output=%q log=%s", finished.FinalOutput, readRunLog(t, finished.LogPath))
 		}
 		if !strings.Contains(finished.OutputText, "persistent output") {
 			t.Fatalf("output_text=%q log=%s", finished.OutputText, readRunLog(t, finished.LogPath))
@@ -442,6 +443,10 @@ func TestAgentRunsReusePersistentWorkspace(t *testing.T) {
 		if err != nil || path != wantArt || name != filepath.Base(wantArt) {
 			t.Fatalf("ArtifactPath=%q name=%q err=%v", path, name, err)
 		}
+	}
+	// One run maps to exactly one harness session; two runs, two sessions.
+	if n := len(fake.Sessions()); n != 2 {
+		t.Fatalf("sessions=%d want 2", n)
 	}
 	for _, path := range []string{keepPath, filepath.Join(wantWork, "note.txt"), filepath.Join(wantOutput, "result.txt")} {
 		if _, err := os.Stat(path); err != nil {
@@ -469,7 +474,7 @@ func TestAgentWorkspaceNoOpenCodeExternalDirs(t *testing.T) {
 		},
 	}, nil)
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "oc", CliKey: "opencode",
+		Name:         "oc",
 		RepoBindings: []model.RepoBinding{{RepositoryID: repoID, Branch: "main"}},
 		TimeoutSec:   10,
 	})
@@ -499,7 +504,7 @@ func TestAgentManualRunRejectedWhileWorkspacePending(t *testing.T) {
 	}, nil)
 
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "pending-run", CliKey: "claude_code",
+		Name:         "pending-run",
 		RepoBindings: []model.RepoBinding{{RepositoryID: repoID, Branch: "main"}},
 		TimeoutSec:   10,
 	})
@@ -517,21 +522,17 @@ func TestAgentManualRunRejectedWhileWorkspacePending(t *testing.T) {
 	waitWorkspaceAsync(t, agents, agent.ID, model.WorkspaceReady)
 }
 
-func TestAgentRunPassesFullPermissionFlagsAndScopeHint(t *testing.T) {
-	agents, _, repo, _, _ := setupAgentWorkspace(t)
+func TestAgentRunPromptCarriesWorkspaceScope(t *testing.T) {
+	agents, fake, _, work, _ := setupAgentWorkspace(t)
 	repoID := uint(9)
 	agents.SetRepoCheckoutDeps(&stubRepoFinder{
 		repos: map[uint]*resourcemodel.Repository{
 			repoID: {ID: repoID, Name: "r", RepoURL: "https://example.com/r.git", AuthType: "none"},
 		},
 	}, nil)
-	markCLIInstalled(t, repo, "claude_code", "--print")
-
-	var last service.CLIRunRequest
-	agents.SetCLIRunner(recordingCLIRunner(&last))
 
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "fullperm", CliKey: "claude_code", SystemPrompt: "do work",
+		Name: "scope", SystemPrompt: "do work",
 		RepoBindings: []model.RepoBinding{{RepositoryID: repoID, Branch: "main"}},
 		TimeoutSec:   30,
 	})
@@ -543,172 +544,25 @@ func TestAgentRunPassesFullPermissionFlagsAndScopeHint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requireRunStatus(t, agents, run.ID, model.JobSuccess)
-	joined := strings.Join(last.Args, "\n")
+	finished := requireRunStatus(t, agents, run.ID, model.JobSuccess)
+	prompt := waitRunPrompt(t, agents, fake, run.ID)
+	wantRoot := filepath.Join(work, "agents", fmt.Sprintf("agent-%d", agent.ID))
 	for _, want := range []string{
-		"--print",
-		"--dangerously-skip-permissions",
-		"$BEDROCK_AGENT_WORKDIR",
+		wantRoot,
+		filepath.Join(wantRoot, "output"),
+		"do work",
 		"./repo-{id}-{branch}",
 		"禁止访问该目录之外的任意路径",
 	} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("argv missing %q; got:\n%s", want, joined)
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q; got:\n%s", want, prompt)
 		}
 	}
-	if strings.Contains(joined, "--add-dir") {
-		t.Fatalf("argv should not include --add-dir; got:\n%s", joined)
+	if finished.HarnessSessionID == nil {
+		t.Fatal("harness_session_id missing on finished run")
 	}
-}
-
-func TestAgentRunNonInteractiveCLIArgs(t *testing.T) {
-	cases := []struct {
-		cliKey     string
-		defaultArg string
-		wantParts  []string
-	}{
-		{
-			cliKey: "claude_code", defaultArg: "--print",
-			wantParts: []string{"--print", "--dangerously-skip-permissions"},
-		},
-		{
-			cliKey: "codex", defaultArg: "exec",
-			wantParts: []string{"exec", "--dangerously-bypass-approvals-and-sandbox"},
-		},
-		{
-			cliKey: "opencode", defaultArg: "run",
-			wantParts: []string{"run", "--dangerously-skip-permissions"},
-		},
-		{
-			cliKey: "reasonix", defaultArg: "run",
-			wantParts: []string{"run", "--permission-mode", "bypassPermissions"},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.cliKey, func(t *testing.T) {
-			agents, _, repo, _, _ := setupAgentWorkspace(t)
-			markCLIInstalled(t, repo, tc.cliKey, tc.defaultArg)
-			var last service.CLIRunRequest
-			agents.SetCLIRunner(recordingCLIRunner(&last))
-			agent, err := agents.CreateAgent(1, service.AgentInput{
-				Name: "args-" + tc.cliKey, CliKey: tc.cliKey, SystemPrompt: "do work", TimeoutSec: 30,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			agent = requireWorkspaceReady(t, agents, agent.ID)
-			run, err := agents.ManualRun(agent.ID, 1, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			requireRunStatus(t, agents, run.ID, model.JobSuccess)
-			joined := strings.Join(last.Args, "\n")
-			for _, want := range tc.wantParts {
-				if !strings.Contains(joined, want) {
-					t.Fatalf("argv missing %q; got:\n%s", want, joined)
-				}
-			}
-		})
-	}
-}
-
-func TestAgentRunStreamOutputCLIArgs(t *testing.T) {
-	cases := []struct {
-		cliKey     string
-		defaultArg string
-		forbidden  []string
-	}{
-		{
-			cliKey: "claude_code", defaultArg: "--print",
-			forbidden: []string{"stream-json", "--json", "--format", "json"},
-		},
-		{cliKey: "codex", defaultArg: "exec", forbidden: []string{"--json", "stream-json"}},
-		{cliKey: "opencode", defaultArg: "run", forbidden: []string{"--format", "json", "stream-json"}},
-		{cliKey: "reasonix", defaultArg: "run", forbidden: []string{"stream-json", "--json", "-p"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.cliKey, func(t *testing.T) {
-			agents, _, repo, _, _ := setupAgentWorkspace(t)
-			markCLIInstalled(t, repo, tc.cliKey, tc.defaultArg)
-			var last service.CLIRunRequest
-			agents.SetCLIRunner(recordingCLIRunner(&last))
-			stream := true
-			agent, err := agents.CreateAgent(1, service.AgentInput{
-				Name: "stream-" + tc.cliKey, CliKey: tc.cliKey, SystemPrompt: "do work",
-				StreamOutput: &stream, TimeoutSec: 30,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			agent = requireWorkspaceReady(t, agents, agent.ID)
-			run, err := agents.ManualRun(agent.ID, 1, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			requireRunStatus(t, agents, run.ID, model.JobSuccess)
-			joined := strings.Join(last.Args, "\n")
-			hasArg := func(flag string) bool {
-				for _, line := range last.Args {
-					if strings.TrimSpace(line) == flag {
-						return true
-					}
-				}
-				return false
-			}
-			for _, bad := range tc.forbidden {
-				switch bad {
-				case "-p", "--print":
-					if hasArg(bad) {
-						t.Fatalf("argv should not contain %q; got:\n%s", bad, joined)
-					}
-				case "stream-json", "--json":
-					if strings.Contains(joined, bad) {
-						t.Fatalf("argv should not contain %q; got:\n%s", bad, joined)
-					}
-				case "--format":
-					if hasArg("--format") || strings.Contains(joined, "--format json") {
-						t.Fatalf("argv should not contain json format flag; got:\n%s", joined)
-					}
-				case "json":
-					// covered by --format / --json cases
-				default:
-					if strings.Contains(joined, bad) {
-						t.Fatalf("argv should not contain %q; got:\n%s", bad, joined)
-					}
-				}
-			}
-		})
-	}
-}
-
-func TestAgentRunNonStreamOutputCLIArgs(t *testing.T) {
-	agents, _, repo, _, _ := setupAgentWorkspace(t)
-	markCLIInstalled(t, repo, "reasonix", "run")
-	var last service.CLIRunRequest
-	agents.SetCLIRunner(recordingCLIRunner(&last))
-	stream := false
-	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "non-stream-rx", CliKey: "reasonix", SystemPrompt: "do work",
-		StreamOutput: &stream, TimeoutSec: 30,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	agent = requireWorkspaceReady(t, agents, agent.ID)
-	run, err := agents.ManualRun(agent.ID, 1, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	requireRunStatus(t, agents, run.ID, model.JobSuccess)
-	hasArg := false
-	for _, arg := range last.Args {
-		if strings.TrimSpace(arg) == "-p" {
-			hasArg = true
-			break
-		}
-	}
-	if !hasArg {
-		t.Fatalf("reasonix non-stream should pass -p; got:\n%s", strings.Join(last.Args, "\n"))
+	if fake.Delivery(*finished.HarnessSessionID) != provider.DeliveryQueue {
+		t.Fatalf("delivery=%q want queue", fake.Delivery(*finished.HarnessSessionID))
 	}
 }
 
@@ -721,7 +575,7 @@ func TestCancelRunAbortsWorkspaceSync(t *testing.T) {
 		},
 	}, nil)
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "cancel-sync", CliKey: "claude_code",
+		Name:         "cancel-sync",
 		RepoBindings: []model.RepoBinding{{RepositoryID: repoID, Branch: "main"}},
 		TimeoutSec:   30,
 	})

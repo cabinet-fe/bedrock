@@ -119,6 +119,10 @@ func EnsureRBACResources(db *gorm.DB) error {
 			Menus: []seedMenu{
 				{Code: "ai_agents", Title: "智能体", Route: "/ai/agents", SortKey: 10, Actions: append(append([]string{}, standardCRUD...), "execute")},
 				{Code: "ai_runs", Title: "运行记录", Route: "/ai/runs", SortKey: 20, Actions: []string{"view"}},
+				// Hidden from nav: mounts the harness chat API permissions
+				// (api/harness.md) without a dedicated page. The menu code is
+				// the prefix the handlers enforce (harness_chat:view/send/approve).
+				{Code: "harness_chat", Title: "智能体会话", Route: "/ai/sessions", SortKey: 25, Hidden: true, Actions: []string{"view", "send", "approve"}},
 				{Code: "ai_skills", Title: "技能", Route: "/ai/skills", SortKey: 30, Actions: append(append([]string{}, standardCRUD...), "download")},
 				{Code: "ai_providers", Title: "服务商", Route: "/ai/providers", SortKey: 40, Actions: standardCRUD},
 			},
@@ -150,7 +154,7 @@ func EnsureRBACResources(db *gorm.DB) error {
 				return err
 			}
 		}
-		if err := hideMenus(tx, "project_requirements", "project_docs", "project_dev_docs"); err != nil {
+		if err := hideMenus(tx, "project_requirements", "project_docs", "project_dev_docs", "harness_chat"); err != nil {
 			return err
 		}
 		return removeRetiredMenus(tx, "dashboard_system_info", "dashboard_system_status", "resource_clis")
@@ -275,6 +279,7 @@ func actionTitle(code string) string {
 		"view": "查看", "create": "创建", "update": "更新", "delete": "删除",
 		"execute": "执行", "use": "使用", "view_all": "查看全部", "manage_all": "管理全部",
 		"download": "下载", "clear": "清空", "restore": "恢复",
+		"send": "发送", "approve": "审批",
 	}
 	if t, ok := titles[code]; ok {
 		return t

@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,14 +15,14 @@ import (
 	"bedrock/internal/ai/model"
 	"bedrock/internal/ai/repository"
 	"bedrock/internal/ai/service"
+	"bedrock/internal/harness/harnesstest"
+	harnessservice "bedrock/internal/harness/service"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
 	_ "bedrock/internal/platform/migration/migrations"
 	projectrepo "bedrock/internal/project/repository"
 	projectservice "bedrock/internal/project/service"
-	resourcerepo "bedrock/internal/resource/repository"
-	resourceservice "bedrock/internal/resource/service"
 	storagerepo "bedrock/internal/storage/repository"
 	storageservice "bedrock/internal/storage/service"
 )
@@ -95,22 +94,31 @@ func openAITestDB(t *testing.T) *gorm.DB {
 	return gdb
 }
 
-func defaultStubCLIRunner(_ context.Context, _ service.CLIRunRequest) (string, error) {
-	return "stub-cli-ok\n", nil
+// wireTestHarness builds a fake harness backend (session + stream services
+// over a scriptable fake provider) and wires it into the agent service. The
+// fake defaults to a successful session script.
+func wireTestHarness(t *testing.T, agents *service.AgentService, workspaceRoot string) (*harnesstest.Fake, *harnessservice.StreamService) {
+	t.Helper()
+	fake := harnesstest.New()
+	sessions := harnessservice.NewSessionService(fake, harnessservice.SessionConfig{
+		WorkspaceRoot: workspaceRoot,
+	}, nil)
+	streams := harnessservice.NewStreamService(fake, harnessservice.StreamConfig{
+		ApprovalMode: harnessservice.ApprovalManual,
+	}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go streams.Run(ctx)
+	agents.SetHarnessBackend(sessions, streams, fake)
+	agents.SetHarnessTimers(200*time.Millisecond, 2*time.Second)
+	return fake, streams
 }
 
-func configureTestAgentService(agents *service.AgentService) {
-	agents.SetCLIRunner(defaultStubCLIRunner)
-	agents.SetSyncWorkspaceInit(true)
-	agents.SetInlineExec(true)
-}
-
-func setupAI(t *testing.T) (*gorm.DB, *service.AgentService, *service.SkillService, *projectservice.ProjectService) {
+func setupAI(t *testing.T) (*gorm.DB, *service.AgentService, *harnesstest.Fake, *service.SkillService, *projectservice.ProjectService) {
 	t.Helper()
 	root := t.TempDir()
 	gdb := openAITestDB(t)
 	repo := repository.NewAIRepository(gdb)
-	cli := resourceservice.NewCLIService(resourcerepo.NewCLIRepository(gdb))
 
 	storageRoot := filepath.Join(root, "storage")
 	storageSvc, err := storageservice.NewStorageService(storagerepo.NewStorageRepository(gdb), storageRoot, storageservice.Limits{})
@@ -121,8 +129,10 @@ func setupAI(t *testing.T) (*gorm.DB, *service.AgentService, *service.SkillServi
 	work := filepath.Join(root, "work")
 	arts := filepath.Join(root, "artifacts")
 	logs := filepath.Join(root, "logs")
-	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, arts, logs)
-	configureTestAgentService(agents)
+	agents := service.NewAgentService(repo, skills, nil, zap.NewNop(), work, arts, logs)
+	fake, _ := wireTestHarness(t, agents, work)
+	agents.SetSyncWorkspaceInit(true)
+	agents.SetInlineExec(true)
 	agents.Start()
 	t.Cleanup(agents.Shutdown)
 
@@ -130,16 +140,14 @@ func setupAI(t *testing.T) (*gorm.DB, *service.AgentService, *service.SkillServi
 	projectSvc := projectservice.NewProjectService(projectRepo, storageSvc)
 	agents.SetDocDraftWriter(projectSvc)
 	projectSvc.SetDocsAIBridge(service.NewDocsBridge(agents))
-	return gdb, agents, skills, projectSvc
+	return gdb, agents, fake, skills, projectSvc
 }
 
-func setupAgentWorkspace(t *testing.T) (*service.AgentService, *service.SkillService, *resourcerepo.CLIRepository, string, string) {
+func setupAgentWorkspace(t *testing.T) (*service.AgentService, *harnesstest.Fake, *service.SkillService, string, string) {
 	t.Helper()
 	root := t.TempDir()
 	gdb := openAITestDB(t)
 	repo := repository.NewAIRepository(gdb)
-	cliRepo := resourcerepo.NewCLIRepository(gdb)
-	cli := resourceservice.NewCLIService(cliRepo)
 	storageRoot := filepath.Join(root, "storage")
 	storageSvc, err := storageservice.NewStorageService(storagerepo.NewStorageRepository(gdb), storageRoot, storageservice.Limits{})
 	if err != nil {
@@ -149,27 +157,14 @@ func setupAgentWorkspace(t *testing.T) (*service.AgentService, *service.SkillSer
 	work := filepath.Join(root, "work")
 	arts := filepath.Join(root, "artifacts")
 	logs := filepath.Join(root, "logs")
-	agents := service.NewAgentService(repo, cli, skills, nil, zap.NewNop(), work, arts, logs)
+	agents := service.NewAgentService(repo, skills, nil, zap.NewNop(), work, arts, logs)
 	agents.SetGitCheckout(stubGitCheckout)
-	configureTestAgentService(agents)
+	fake, _ := wireTestHarness(t, agents, work)
+	agents.SetSyncWorkspaceInit(true)
+	agents.SetInlineExec(true)
 	agents.Start()
 	t.Cleanup(agents.Shutdown)
-	return agents, skills, cliRepo, work, arts
-}
-
-func markCLIInstalled(t *testing.T, repo *resourcerepo.CLIRepository, key, defaultArgs string) {
-	t.Helper()
-	cli, err := repo.FindByKey(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cli.InstalledPath = filepath.Join(t.TempDir(), key+"-stub")
-	cli.DefaultArgs = defaultArgs
-	cli.InstallStatus = "installed"
-	cli.Healthy = true
-	if err := repo.Update(cli); err != nil {
-		t.Fatal(err)
-	}
+	return agents, fake, skills, work, arts
 }
 
 func requireWorkspaceReady(t *testing.T, agents *service.AgentService, agentID uint) *model.AiAgent {
@@ -216,22 +211,32 @@ func waitRunStatus(t *testing.T, agents *service.AgentService, runID uint, want 
 	return last
 }
 
-func envValue(env []string, key string) string {
-	prefix := key + "="
-	for i := len(env) - 1; i >= 0; i-- {
-		if strings.HasPrefix(env[i], prefix) {
-			return strings.TrimPrefix(env[i], prefix)
+// waitRunPrompt blocks until the run's harness session received its prompt
+// and returns it (runs on the async worker).
+func waitRunPrompt(t *testing.T, agents *service.AgentService, fake *harnesstest.Fake, runID uint) string {
+	t.Helper()
+	var sessionID string
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		run, err := agents.GetRun(runID)
+		if err != nil {
+			t.Fatal(err)
 		}
+		if run.HarnessSessionID != nil && *run.HarnessSessionID != "" {
+			sessionID = *run.HarnessSessionID
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
+	if sessionID == "" {
+		t.Fatalf("run %d never got a harness session", runID)
+	}
+	for time.Now().Before(deadline) {
+		if prompts := fake.Prompts(sessionID); len(prompts) > 0 {
+			return prompts[0]
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("run %d session %s never received a prompt", runID, sessionID)
 	return ""
-}
-
-func recordingCLIRunner(last *service.CLIRunRequest) service.CLIRunner {
-	return func(_ context.Context, req service.CLIRunRequest) (string, error) {
-		cp := req
-		cp.Args = append([]string{}, req.Args...)
-		cp.Env = append([]string{}, req.Env...)
-		*last = cp
-		return "stub-cli-ok\n", nil
-	}
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,11 +13,19 @@ import (
 
 	"bedrock/internal/ai/service"
 	authmiddleware "bedrock/internal/auth/middleware"
+	"bedrock/internal/harness/provider"
 	"bedrock/internal/pkg"
 	rbacmw "bedrock/internal/rbac/middleware"
 	rbacservice "bedrock/internal/rbac/service"
 	storageservice "bedrock/internal/storage/service"
 )
+
+// HarnessCatalog is the harness directory surface the ai handler passes
+// through (satisfied by the harness Provider).
+type HarnessCatalog interface {
+	ListModels(ctx context.Context, directory string) ([]provider.ModelInfo, error)
+	ListAgents(ctx context.Context, directory string) ([]provider.AgentInfo, error)
+}
 
 type Handler struct {
 	agents    *service.AgentService
@@ -24,6 +33,7 @@ type Handler struct {
 	perm      *rbacservice.PermissionService
 	providers *service.ProviderService
 	chat      *ChatHandler
+	harness   HarnessCatalog
 }
 
 func NewHandler(
@@ -39,6 +49,10 @@ func NewHandler(
 	}
 	return h
 }
+
+// SetHarnessCatalog wires the harness directory passthrough
+// (harness.enabled=false leaves it unset: the endpoints answer 503).
+func (h *Handler) SetHarnessCatalog(c HarnessCatalog) { h.harness = c }
 
 func (h *Handler) SetChatHandler(chat *ChatHandler) {
 	h.chat = chat
@@ -58,6 +72,9 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	ai.POST("/agents/:id/runs", rbacmw.RequirePermission(h.perm, "ai_agents:execute"), h.ManualRun)
 	// API trigger also accepts PAT scope agents:run (checked in middleware/handler).
 	ai.POST("/agents/:id/api-runs", h.APIRun)
+
+	ai.GET("/models", rbacmw.RequirePermission(h.perm, "ai_agents:view"), h.ListHarnessModels)
+	ai.GET("/agents-defs", rbacmw.RequirePermission(h.perm, "ai_agents:view"), h.ListHarnessAgentDefs)
 
 	ai.GET("/runs", rbacmw.RequirePermission(h.perm, "ai_runs:view"), h.ListRuns)
 	ai.GET("/runs/:id", rbacmw.RequirePermission(h.perm, "ai_runs:view"), h.GetRun)
@@ -211,6 +228,10 @@ func (h *Handler) DeleteTrigger(c *gin.Context) {
 }
 
 func (h *Handler) ManualRun(c *gin.Context) {
+	if !h.agents.HarnessEnabled() {
+		pkg.Error(c, http.StatusServiceUnavailable, "会话底座未启用，无法执行智能体运行")
+		return
+	}
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var input struct {
 		UserPrompt string `json:"user_prompt"`
@@ -235,6 +256,10 @@ func (h *Handler) APIRun(c *gin.Context) {
 		pkg.Error(c, http.StatusForbidden, "forbidden")
 		return
 	}
+	if !h.agents.HarnessEnabled() {
+		pkg.Error(c, http.StatusServiceUnavailable, "会话底座未启用，无法执行智能体运行")
+		return
+	}
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var input struct {
 		UserPrompt string `json:"user_prompt"`
@@ -246,6 +271,62 @@ func (h *Handler) APIRun(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusAccepted, pkg.Response{Code: 0, Message: "accepted", Data: run})
+}
+
+// ListHarnessModels passes the harness model catalog through (agent config
+// page model selector). 503 when the session backend is not enabled or the
+// managed serve is unavailable.
+func (h *Handler) ListHarnessModels(c *gin.Context) {
+	if h.harness == nil {
+		pkg.Error(c, http.StatusServiceUnavailable, "会话底座未启用")
+		return
+	}
+	models, err := h.harness.ListModels(c.Request.Context(), "")
+	if err != nil {
+		writeHarnessErr(c, err)
+		return
+	}
+	pkg.Success(c, models)
+}
+
+// ListHarnessAgentDefs passes the harness agent-definition catalog through:
+// built-in definitions plus, with ?agent_id=, the compiled bedrock-* artifacts
+// of that agent's workspace.
+func (h *Handler) ListHarnessAgentDefs(c *gin.Context) {
+	if h.harness == nil {
+		pkg.Error(c, http.StatusServiceUnavailable, "会话底座未启用")
+		return
+	}
+	directory := ""
+	if raw := c.Query("agent_id"); raw != "" {
+		agentID, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || agentID == 0 {
+			pkg.Error(c, http.StatusBadRequest, "无效 agent_id")
+			return
+		}
+		dir, err := h.agents.AgentWorkspaceDir(uint(agentID))
+		if err != nil {
+			writeErr(c, err)
+			return
+		}
+		directory = dir
+	}
+	defs, err := h.harness.ListAgents(c.Request.Context(), directory)
+	if err != nil {
+		writeHarnessErr(c, err)
+		return
+	}
+	pkg.Success(c, defs)
+}
+
+// writeHarnessErr maps harness passthrough failures: an unavailable backend
+// is a 503, anything else a 502.
+func writeHarnessErr(c *gin.Context, err error) {
+	if errors.Is(err, provider.ErrUnavailable) {
+		pkg.Error(c, http.StatusServiceUnavailable, "会话底座不可用: "+err.Error())
+		return
+	}
+	pkg.Error(c, http.StatusBadGateway, err.Error())
 }
 
 func (h *Handler) ListRuns(c *gin.Context) {

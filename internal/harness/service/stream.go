@@ -62,6 +62,9 @@ type StreamConfig struct {
 	ApprovalMode string
 	// PendingTTL overrides DefaultPendingTTL (0 = default).
 	PendingTTL time.Duration
+	// SweepInterval overrides the pending-TTL sweep cadence (0 = default;
+	// tests with short PendingTTL tighten it for determinism).
+	SweepInterval time.Duration
 	// RingSize overrides DefaultRingSize (0 = default).
 	RingSize int
 }
@@ -466,7 +469,11 @@ func (s *StreamService) autoApprove(req PendingRequest) {
 }
 
 func (s *StreamService) sweepLoop(ctx context.Context) {
-	ticker := time.NewTicker(pendingSweepInterval)
+	interval := s.cfg.SweepInterval
+	if interval <= 0 {
+		interval = pendingSweepInterval
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {

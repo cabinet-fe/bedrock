@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -19,6 +20,8 @@ import (
 	aiservice "bedrock/internal/ai/service"
 	authmodel "bedrock/internal/auth/model"
 	authrepo "bedrock/internal/auth/repository"
+	"bedrock/internal/harness/harnesstest"
+	harnessservice "bedrock/internal/harness/service"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
@@ -28,8 +31,6 @@ import (
 	projectservice "bedrock/internal/project/service"
 	rbacrepo "bedrock/internal/rbac/repository"
 	rbacservice "bedrock/internal/rbac/service"
-	resourcerepo "bedrock/internal/resource/repository"
-	resourceservice "bedrock/internal/resource/service"
 	storagerepo "bedrock/internal/storage/repository"
 	storageservice "bedrock/internal/storage/service"
 )
@@ -292,11 +293,16 @@ func TestGenerateDocsWiredReturnsAccepted(t *testing.T) {
 	}
 
 	aiRepo := airepository.NewAIRepository(gdb)
-	cli := resourceservice.NewCLIService(resourcerepo.NewCLIRepository(gdb))
-	agents := aiservice.NewAgentService(aiRepo, cli, nil, nil, zap.NewNop(), t.TempDir(), t.TempDir(), t.TempDir())
-	agents.SetCLIRunner(func(context.Context, aiservice.CLIRunRequest) (string, error) {
-		return "docs stub\n", nil
-	})
+	work := t.TempDir()
+	agents := aiservice.NewAgentService(aiRepo, nil, nil, zap.NewNop(), work, t.TempDir(), t.TempDir())
+	fake := harnesstest.New()
+	harnessSessions := harnessservice.NewSessionService(fake, harnessservice.SessionConfig{WorkspaceRoot: work}, nil)
+	harnessStreams := harnessservice.NewStreamService(fake, harnessservice.StreamConfig{ApprovalMode: harnessservice.ApprovalManual}, nil)
+	streamCtx, cancelStreams := context.WithCancel(context.Background())
+	t.Cleanup(cancelStreams)
+	go harnessStreams.Run(streamCtx)
+	agents.SetHarnessBackend(harnessSessions, harnessStreams, fake)
+	agents.SetHarnessTimers(200*time.Millisecond, 2*time.Second)
 	agents.SetSyncWorkspaceInit(true)
 	agents.SetInlineExec(true)
 	agents.Start()
@@ -305,7 +311,7 @@ func TestGenerateDocsWiredReturnsAccepted(t *testing.T) {
 	projectSvc.SetDocsAIBridge(aiservice.NewDocsBridge(agents))
 
 	agent, err := agents.CreateAgent(1, aiservice.AgentInput{
-		Name: "docs", CliKey: "claude_code", SystemPrompt: "generate", TimeoutSec: 5,
+		Name: "docs", SystemPrompt: "generate", TimeoutSec: 5,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	authmodel "bedrock/internal/auth/model"
+	authrepo "bedrock/internal/auth/repository"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
@@ -230,6 +232,87 @@ func TestEnsureRBACResources_ProjectBugs(t *testing.T) {
 	for fullCode := range expectedActions {
 		if !permSet[fullCode] {
 			t.Errorf("super admin missing permission: %s", fullCode)
+		}
+	}
+}
+
+// The harness chat handlers enforce harness_chat:view/send/approve, so the
+// seed must expose exactly those feature codes under a hidden menu.
+func TestEnsureRBACResources_HarnessChat(t *testing.T) {
+	gdb, err := db.Open(&config.DatabaseConfig{
+		Driver: "sqlite",
+		Path:   filepath.Join(t.TempDir(), "seed_harness_chat.sqlite"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migration.Up(context.Background(), gdb, migration.Driver("sqlite")); err != nil {
+		t.Fatalf("migration.Up failed: %v", err)
+	}
+
+	if err := seed.EnsureRBACResources(gdb); err != nil {
+		t.Fatalf("EnsureRBACResources failed: %v", err)
+	}
+
+	var menu rbacmodel.RbacResource
+	if err := gdb.Where("full_code = ? AND type = ?", "harness_chat", rbacmodel.ResourceTypeMenu).First(&menu).Error; err != nil {
+		t.Fatalf("expected harness_chat hidden menu: %v", err)
+	}
+	if !menu.Hidden || menu.SuperAdminOnly {
+		t.Errorf("harness_chat menu should be hidden and grantable, hidden=%v super_admin_only=%v", menu.Hidden, menu.SuperAdminOnly)
+	}
+
+	expectedActions := map[string]string{
+		"harness_chat:view":    "查看",
+		"harness_chat:send":    "发送",
+		"harness_chat:approve": "审批",
+	}
+	for fullCode, expectedTitle := range expectedActions {
+		var feat rbacmodel.RbacResource
+		if err := gdb.Where("full_code = ? AND type = ?", fullCode, rbacmodel.ResourceTypeAction).First(&feat).Error; err != nil {
+			t.Errorf("expected feature %s: %v", fullCode, err)
+			continue
+		}
+		if feat.Title != expectedTitle {
+			t.Errorf("feature %s title = %q, want %q", fullCode, feat.Title, expectedTitle)
+		}
+		if feat.SuperAdminOnly {
+			t.Errorf("feature %s should be grantable to custom roles", fullCode)
+		}
+	}
+
+	// A custom role carrying the codes must be creatable (permission codes must
+	// exist as features) and must keep them after super-admin-only filtering,
+	// i.e. non-super-admin holders can pass CheckAccess.
+	roles := rbacrepo.NewRoleRepository(gdb)
+	resources := rbacrepo.NewResourceRepository(gdb)
+	groups := rbacrepo.NewMenuGroupRepository(gdb)
+	permSvc := rbacservice.NewPermissionService(roles, resources, groups)
+	roleSvc := rbacservice.NewRoleService(roles, resources)
+	user := &authmodel.User{Username: "harness_user", PasswordHash: "hash", IsActive: true}
+	if err := authrepo.NewUserRepository(gdb).Create(user); err != nil {
+		t.Fatal(err)
+	}
+	granted := []string{"harness_chat:view", "harness_chat:send", "harness_chat:approve"}
+	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "", granted)
+	if err != nil {
+		t.Fatalf("create role with harness_chat permissions: %v", err)
+	}
+	if err := roleSvc.SetUserRoles(user.ID, []uint{role.ID}); err != nil {
+		t.Fatal(err)
+	}
+	codes, err := permSvc.ResolvePermissions(user.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permSet := make(map[string]bool)
+	for _, p := range codes {
+		permSet[p] = true
+	}
+	for _, fullCode := range granted {
+		if !permSet[fullCode] {
+			t.Errorf("granted role lost permission after filtering: %s", fullCode)
 		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -89,6 +90,37 @@ type Message struct {
 	Agent   string          `json:"agent,omitempty"`
 	Model   *ModelRef       `json:"model,omitempty"`
 	Content json.RawMessage `json:"content,omitempty"`
+}
+
+// Text returns the concatenated text of the message's text parts. It
+// best-effort parses the common content shapes — a parts array carrying
+// {"type":"text","text":...} entries, or a plain JSON string — and yields ""
+// for anything else (tool-only parts, missing content).
+func (m Message) Text() string {
+	if len(m.Content) == 0 {
+		return ""
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(m.Content, &parts); err == nil && parts != nil {
+		var b strings.Builder
+		for _, p := range parts {
+			if p.Type == "text" && p.Text != "" {
+				if b.Len() > 0 {
+					b.WriteByte('\n')
+				}
+				b.WriteString(p.Text)
+			}
+		}
+		return b.String()
+	}
+	var plain string
+	if err := json.Unmarshal(m.Content, &plain); err == nil {
+		return plain
+	}
+	return ""
 }
 
 // FrameKind classifies a unified frame.
@@ -305,3 +337,12 @@ type AgentInfo struct {
 // ErrWaitUnavailable reports that the backend cannot serve Wait in the
 // current version (observed on opencode 1.18.29).
 var ErrWaitUnavailable = errors.New("provider: session wait is not available")
+
+// ErrNotFound reports that the backend holds no such session. Adapters wrap
+// their transport-level 404 into this sentinel so callers stay adapter-free.
+var ErrNotFound = errors.New("provider: session not found")
+
+// ErrUnavailable reports that the backend is unreachable or failing. Adapters
+// wrap transport errors and 5xx responses into this sentinel; the REST/WS
+// layer maps it to HTTP 503 harness-unavailable.
+var ErrUnavailable = errors.New("provider: backend unavailable")

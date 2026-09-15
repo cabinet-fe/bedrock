@@ -10,7 +10,7 @@ import (
 )
 
 func TestSkillFileCRUDAndBuiltinReadOnly(t *testing.T) {
-	gdb, _, skills, _ := setupAI(t)
+	gdb, _, _, skills, _ := setupAI(t)
 	z := zipBytes(t, map[string]string{
 		"SKILL.md":        "# hello\n",
 		"scripts/run.sh":  "echo hi\n",

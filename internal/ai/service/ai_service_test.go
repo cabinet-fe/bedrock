@@ -3,12 +3,10 @@ package service_test
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +14,8 @@ import (
 	"bedrock/internal/ai/repository"
 	"bedrock/internal/ai/service"
 	cicdmodel "bedrock/internal/cicd/model"
+	"bedrock/internal/harness/harnesstest"
+	"bedrock/internal/harness/provider"
 	harnessservice "bedrock/internal/harness/service"
 	projectmodel "bedrock/internal/project/model"
 	projectrepo "bedrock/internal/project/repository"
@@ -24,14 +24,14 @@ import (
 )
 
 func TestAgentRunKeepsExplicitProjectID(t *testing.T) {
-	_, agents, _, projectSvc := setupAI(t)
+	_, agents, _, _, projectSvc := setupAI(t)
 	owner := projectservice.NewAccessContext(1, true, []string{"project_projects:create"})
 	project, err := projectSvc.CreateProject(owner, projectservice.CreateProjectInput{Name: "A", Slug: "a-run"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "shared", CliKey: "codex", SystemPrompt: "x", TimeoutSec: 2,
+		Name: "shared", SystemPrompt: "x", TimeoutSec: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -62,9 +62,9 @@ func TestAgentRunKeepsExplicitProjectID(t *testing.T) {
 }
 
 func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
-	_, agents, _, _ := setupAI(t)
+	_, agents, _, _, _ := setupAI(t)
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "t", CliKey: "claude_code", SystemPrompt: "hello", TimeoutSec: 5,
+		Name: "t", SystemPrompt: "hello", TimeoutSec: 5,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -111,12 +111,12 @@ func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
 }
 
 func TestAgentFailureDoesNotChangeBuildRun(t *testing.T) {
-	_, agents, _, _ := setupAI(t)
-	agents.SetCLIRunner(func(context.Context, service.CLIRunRequest) (string, error) {
-		return "", fmt.Errorf("cli boom")
+	_, agents, fake, _, _ := setupAI(t)
+	fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, _ string) {
+		f.FailSession(sess.ID, "model boom")
 	})
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "fail", CliKey: "reasonix", SystemPrompt: "x", TimeoutSec: 3,
+		Name: "fail", SystemPrompt: "x", TimeoutSec: 3,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func TestAgentFailureDoesNotChangeBuildRun(t *testing.T) {
 }
 
 func TestSkillUploadRejectMissingSKILLMDAndOverwrite(t *testing.T) {
-	_, _, skills, _ := setupAI(t)
+	_, _, _, skills, _ := setupAI(t)
 	bad := zipBytes(t, map[string]string{"README.md": "nope"})
 	_, err := skills.Create(service.SkillUploadInput{
 		Name: "bad", Visibility: model.SkillPrivate, Filename: "bad.zip",
@@ -175,7 +175,7 @@ func TestSkillUploadRejectMissingSKILLMDAndOverwrite(t *testing.T) {
 }
 
 func TestPrivateSkillIsolation(t *testing.T) {
-	_, _, skills, _ := setupAI(t)
+	_, _, _, skills, _ := setupAI(t)
 	z := zipBytes(t, map[string]string{"SKILL.md": "# priv"})
 	s, err := skills.Create(service.SkillUploadInput{
 		Name: "priv", Visibility: model.SkillPrivate, Filename: "p.zip",
@@ -216,7 +216,7 @@ func TestPrivateSkillIsolation(t *testing.T) {
 }
 
 func TestSkillSourcesInjectUsesNameAndStripsWrapper(t *testing.T) {
-	_, _, skills, _ := setupAI(t)
+	_, _, _, skills, _ := setupAI(t)
 	z := zipBytes(t, map[string]string{
 		"java-api-docs/SKILL.md":            "# nested-skill",
 		"java-api-docs/references/notes.md": "refs",
@@ -263,14 +263,14 @@ func TestSkillSourcesInjectUsesNameAndStripsWrapper(t *testing.T) {
 }
 
 func TestDocsGenerateWritesDraftOnly(t *testing.T) {
-	gdb, agents, _, projectSvc := setupAI(t)
+	gdb, agents, _, _, projectSvc := setupAI(t)
 	owner := projectservice.NewAccessContext(1, true, []string{"project_projects:create", "project_docs:execute", "project_docs:view"})
 	project, err := projectSvc.CreateProject(owner, projectservice.CreateProjectInput{Name: "P", Slug: "p-ai"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "doc", CliKey: "codex", SystemPrompt: "Generate docs", TimeoutSec: 2,
+		Name: "doc", SystemPrompt: "Generate docs", TimeoutSec: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -329,9 +329,9 @@ func zipBytes(t *testing.T, files map[string]string) []byte {
 }
 
 func TestShutdownWaitsForWorkspaceInit(t *testing.T) {
-	_, agents, _, _ := setupAI(t)
+	_, agents, _, _, _ := setupAI(t)
 	if _, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "async", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 5,
+		Name: "async", SystemPrompt: "x", TimeoutSec: 5,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -340,9 +340,9 @@ func TestShutdownWaitsForWorkspaceInit(t *testing.T) {
 }
 
 func TestCronReloadAppliesTimezone(t *testing.T) {
-	_, agents, _, _ := setupAI(t)
+	_, agents, _, _, _ := setupAI(t)
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "tz", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 5,
+		Name: "tz", SystemPrompt: "x", TimeoutSec: 5,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -376,7 +376,7 @@ func TestCronReloadAppliesTimezone(t *testing.T) {
 }
 
 func TestAgentRunRecovery_QueuedAndInterrupted(t *testing.T) {
-	gdb, agents, _, _ := setupAI(t)
+	gdb, agents, _, _, _ := setupAI(t)
 	repo := repository.NewAIRepository(gdb)
 	cliDef := &resourcemodel.CliRuntimeDefinition{
 		Key: "claude_code", Name: "Claude", BinaryName: "claude",
@@ -387,7 +387,7 @@ func TestAgentRunRecovery_QueuedAndInterrupted(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := &model.AiAgent{
-		Name: "recover", CliKey: "claude_code", Enabled: true, SystemPrompt: "x", TimeoutSec: 30, CreatedBy: 1,
+		Name: "recover", Enabled: true, SystemPrompt: "x", TimeoutSec: 30, CreatedBy: 1,
 	}
 	if err := repo.CreateAgent(agent); err != nil {
 		t.Fatal(err)
@@ -423,22 +423,22 @@ func TestAgentRunRecovery_QueuedAndInterrupted(t *testing.T) {
 }
 
 func TestCancelRunReleasesWorkerQueue(t *testing.T) {
-	_, agents, _, _ := setupAI(t)
+	_, agents, fake, _, _ := setupAI(t)
 	agents.SetInlineExec(false)
-
-	var calls atomic.Int32
-	started := make(chan struct{})
-	agents.SetCLIRunner(func(ctx context.Context, _ service.CLIRunRequest) (string, error) {
-		if calls.Add(1) == 1 {
-			close(started)
-			<-ctx.Done()
-			return "", ctx.Err()
+	// Hang the session while the prompt carries "hang"; settle normally otherwise.
+	fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, prompt string) {
+		if strings.Contains(prompt, "hang") {
+			_ = f.Emit(provider.Frame{
+				SessionID: sess.ID, Kind: provider.FrameStatus,
+				Status: &provider.StatusFrame{Name: provider.StatusStepStarted},
+			})
+			return // never completes: the run cancels via interrupt
 		}
-		return "ok\n", nil
+		f.Complete(sess.ID, "ok")
 	})
 
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "cancel-queue", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 30,
+		Name: "cancel-queue", SystemPrompt: "x", TimeoutSec: 30,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -449,11 +449,7 @@ func TestCancelRunReleasesWorkerQueue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first run never entered CLI")
-	}
+	waitRunPrompt(t, agents, fake, hung.ID)
 
 	queued, err := agents.ManualRun(agent.ID, 1, "next")
 	if err != nil {
@@ -471,18 +467,14 @@ func TestCancelRunReleasesWorkerQueue(t *testing.T) {
 }
 
 func TestCancelQueuedRunWhileWorkerBusy(t *testing.T) {
-	_, agents, _, _ := setupAI(t)
+	_, agents, fake, _, _ := setupAI(t)
 	agents.SetInlineExec(false)
-
-	started := make(chan struct{})
-	agents.SetCLIRunner(func(ctx context.Context, _ service.CLIRunRequest) (string, error) {
-		close(started)
-		<-ctx.Done()
-		return "", ctx.Err()
+	fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, _ string) {
+		// Hang: settle only via cancel/interrupt.
 	})
 
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "cancel-queued", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 30,
+		Name: "cancel-queued", SystemPrompt: "x", TimeoutSec: 30,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -493,11 +485,7 @@ func TestCancelQueuedRunWhileWorkerBusy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first run never entered CLI")
-	}
+	waitRunPrompt(t, agents, fake, hung.ID)
 
 	queued, err := agents.ManualRun(agent.ID, 1, "queued")
 	if err != nil {
@@ -514,22 +502,16 @@ func TestCancelQueuedRunWhileWorkerBusy(t *testing.T) {
 	waitRunStatus(t, agents, hung.ID, model.JobCancelled)
 }
 
-func TestCancelDuringSuccessfulCLIKeepsCancelled(t *testing.T) {
-	_, agents, _, _ := setupAI(t)
+func TestCancelDuringInFlightSessionKeepsCancelled(t *testing.T) {
+	_, agents, fake, _, _ := setupAI(t)
 	agents.SetInlineExec(false)
-
-	started := make(chan struct{})
-	agents.SetCLIRunner(func(ctx context.Context, _ service.CLIRunRequest) (string, error) {
-		close(started)
-		select {
-		case <-ctx.Done():
-		case <-time.After(80 * time.Millisecond):
-		}
-		return "ok\n", nil
+	fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, _ string) {
+		time.Sleep(80 * time.Millisecond)
+		f.Complete(sess.ID, "ok")
 	})
 
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "cancel-success", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 30,
+		Name: "cancel-success", SystemPrompt: "x", TimeoutSec: 30,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -540,11 +522,7 @@ func TestCancelDuringSuccessfulCLIKeepsCancelled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("run never entered CLI")
-	}
+	waitRunPrompt(t, agents, fake, run.ID)
 	if err := agents.CancelRun(run.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -552,37 +530,25 @@ func TestCancelDuringSuccessfulCLIKeepsCancelled(t *testing.T) {
 }
 
 func TestShutdownDoesNotStartQueuedRun(t *testing.T) {
-	_, agents, _, _ := setupAI(t)
+	_, agents, fake, _, _ := setupAI(t)
 	agents.SetInlineExec(false)
-
-	var calls atomic.Int32
-	started := make(chan struct{})
-	agents.SetCLIRunner(func(ctx context.Context, _ service.CLIRunRequest) (string, error) {
-		n := calls.Add(1)
-		if n == 1 {
-			close(started)
-			<-ctx.Done()
-			return "", ctx.Err()
-		}
-		return "should-not-run\n", nil
+	fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, _ string) {
+		// Hang: the shutdown interrupt path resolves the first run.
 	})
 
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "shutdown-queue", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 30,
+		Name: "shutdown-queue", SystemPrompt: "x", TimeoutSec: 30,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	agent = requireWorkspaceReady(t, agents, agent.ID)
 
-	if _, err := agents.ManualRun(agent.ID, 1, "hang"); err != nil {
+	hung, err := agents.ManualRun(agent.ID, 1, "hang")
+	if err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first run never entered CLI")
-	}
+	waitRunPrompt(t, agents, fake, hung.ID)
 	queued, err := agents.ManualRun(agent.ID, 1, "queued")
 	if err != nil {
 		t.Fatal(err)
@@ -606,16 +572,16 @@ func TestShutdownDoesNotStartQueuedRun(t *testing.T) {
 	if got.Status != model.JobQueued {
 		t.Fatalf("queued run status=%s want queued", got.Status)
 	}
-	if calls.Load() != 1 {
-		t.Fatalf("CLI calls=%d want 1", calls.Load())
+	if n := len(fake.Sessions()); n != 1 {
+		t.Fatalf("sessions=%d want 1 (queued run must not start)", n)
 	}
 }
 
 func TestUpdateRunFieldsIfStatusSkipsCancelled(t *testing.T) {
-	gdb, agents, _, _ := setupAI(t)
+	gdb, agents, _, _, _ := setupAI(t)
 	repo := repository.NewAIRepository(gdb)
 	agent, err := agents.CreateAgent(1, service.AgentInput{
-		Name: "status-cas", CliKey: "claude_code", SystemPrompt: "x", TimeoutSec: 5,
+		Name: "status-cas", SystemPrompt: "x", TimeoutSec: 5,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -590,7 +590,7 @@ func (c *Client) request(ctx context.Context, method, path string, query url.Val
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("oc %s %s: %w", method, path, err)
+		return nil, fmt.Errorf("oc %s %s: %w: %w", method, path, provider.ErrUnavailable, err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
@@ -600,6 +600,12 @@ func (c *Client) request(ctx context.Context, method, path string, query url.Val
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		apiErr := &APIError{Status: resp.StatusCode}
 		_ = json.Unmarshal(raw, apiErr)
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("oc %s %s: %w: %w", method, path, provider.ErrNotFound, apiErr)
+		}
+		if resp.StatusCode >= http.StatusInternalServerError {
+			return nil, fmt.Errorf("oc %s %s: %w: %w", method, path, provider.ErrUnavailable, apiErr)
+		}
 		return nil, apiErr
 	}
 	return raw, nil

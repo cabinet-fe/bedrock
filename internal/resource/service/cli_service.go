@@ -45,7 +45,7 @@ func (s *CLIService) ListCLIs() ([]model.CliRuntimeDefinition, error) {
 	return items, nil
 }
 
-// FindByKey satisfies the AI-domain CLILookup interface (agent CLI resolution).
+// FindByKey resolves a CLI runtime definition by key (versions, installs).
 func (s *CLIService) FindByKey(key string) (*model.CliRuntimeDefinition, error) {
 	return s.repo.FindByKey(key)
 }

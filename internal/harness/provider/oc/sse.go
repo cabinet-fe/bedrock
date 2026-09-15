@@ -78,14 +78,17 @@ func (c *Client) openStream(ctx context.Context, path string, query url.Values) 
 	req.Header.Set("Accept", "text/event-stream")
 	resp, err := c.streamHTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("oc stream %s: %w", path, err)
+		return nil, fmt.Errorf("oc stream %s: %w: %w", path, provider.ErrUnavailable, err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
 		apiErr := &APIError{Status: resp.StatusCode}
 		_ = json.Unmarshal(raw, apiErr)
-		return nil, fmt.Errorf("oc stream %s: %w", path, apiErr)
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("oc stream %s: %w: %w", path, provider.ErrNotFound, apiErr)
+		}
+		return nil, fmt.Errorf("oc stream %s: %w: %w", path, provider.ErrUnavailable, apiErr)
 	}
 
 	s := &frameStream{

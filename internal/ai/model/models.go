@@ -84,7 +84,7 @@ type AiAgent struct {
 	EnvVarsCipher   string        `json:"-" gorm:"type:text"`
 	EnvVars         []EnvVarView  `json:"env_vars" gorm:"-"`
 	OutputDir       string        `json:"output_dir" gorm:"size:200;not null;default:output"`
-	StreamOutput    bool          `json:"stream_output" gorm:"not null;default:false"`
+	StreamOutput    bool          `json:"-" gorm:"not null;default:false"` // legacy column, unused by the session backend
 	TimeoutSec      int           `json:"timeout_sec" gorm:"not null;default:600"`
 	WorkspaceStatus string        `json:"workspace_status" gorm:"size:20;not null;default:ready"`
 	WorkspaceError  string        `json:"workspace_error" gorm:"type:text"`

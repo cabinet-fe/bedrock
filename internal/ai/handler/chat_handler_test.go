@@ -65,7 +65,7 @@ func setupChatHandlerTestRouter(t *testing.T) (*gin.Engine, *aiservice.ProviderS
 	chatSvc := aiservice.NewChatService(chatRepository)
 	chatProxy := aiservice.NewChatProxy(providerSvc, chatSvc)
 
-	agents := aiservice.NewAgentService(aiRepository, nil, nil, nil, nil, t.TempDir(), t.TempDir(), t.TempDir())
+	agents := aiservice.NewAgentService(aiRepository, nil, nil, nil, t.TempDir(), t.TempDir(), t.TempDir())
 	skills := aiservice.NewSkillService(aiRepository, nil, t.TempDir())
 
 	chatHandler := aihandler.NewChatHandler(chatSvc, chatProxy, providerSvc)

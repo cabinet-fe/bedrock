@@ -43,6 +43,15 @@ func (s *AgentService) agentRoot(agentID uint) string {
 	return filepath.Join(s.workDir, "agents", fmt.Sprintf("agent-%d", agentID))
 }
 
+// AgentWorkspaceDir returns the persistent workspace directory of an agent
+// (the harness session directory), failing when the agent does not exist.
+func (s *AgentService) AgentWorkspaceDir(agentID uint) (string, error) {
+	if _, err := s.repo.FindAgent(agentID); err != nil {
+		return "", err
+	}
+	return s.agentRoot(agentID), nil
+}
+
 // enqueueWorkspaceInit starts async SyncAgentWorkspace for an agent.
 // Concurrent inits for the same agent are serialized by generation: only the
 // latest completion may write ready/failed status.
@@ -171,6 +180,11 @@ func (s *AgentService) SyncAgentWorkspace(ctx context.Context, agent *model.AiAg
 	if err != nil {
 		return nil, nil, err
 	}
+	// Compile the harness agent definition (bedrock-<agentKey>.md) and drop
+	// stale artifacts; no-op for agents without customization.
+	if err := harnessservice.SyncAgentDefinition(root, harnessAgentSpec(agent)); err != nil {
+		return nil, nil, fmt.Errorf("编译智能体定义失败: %w", err)
+	}
 	// Drop legacy per-job OpenCode external_directory configs from the prior approach.
 	_ = os.Remove(filepath.Join(root, "opencode.json"))
 
@@ -294,62 +308,21 @@ func (s *AgentService) resolveRepoGitAuth(repo *resourcemodel.Repository) (authT
 	}
 }
 
-// appendNonStreamingOutputArgs prefers final/summary output for CLIs that support it.
-// Human-readable incremental streaming is the default for non-interactive runs; do not
-// add JSON/NDJSON flags here — those are machine-oriented and look ugly in log UIs.
-func appendNonStreamingOutputArgs(cliKey string, args []string) []string {
-	switch cliKey {
-	case "reasonix":
-		return append(args, "-p")
-	default:
-		return args
-	}
-}
-
-// appendFullPermissionArgs enables each CLI's broad / bypass-sandbox mode so
-// nested repo-* checkouts under the agent workspace are fully usable. Scope is
-// enforced via prompt splicing (agentWorkspaceScopeHint), not per-directory allow lists.
-func appendFullPermissionArgs(cliKey string, args []string) []string {
-	switch cliKey {
-	case "claude_code", "opencode":
-		return append(args, "--dangerously-skip-permissions")
-	case "reasonix":
-		// reasonix run accepts --permission-mode, not --dangerously-skip-permissions.
-		return append(args, "--permission-mode", "bypassPermissions")
-	case "codex":
-		return append(args, "--dangerously-bypass-approvals-and-sandbox")
-	default:
-		return args
-	}
-}
-
-// agentWorkspaceScopeHint asks the CLI to stay inside the persistent
-// BEDROCK_AGENT_WORKDIR and write deliverables into BEDROCK_AGENT_OUTPUT.
-func agentWorkspaceScopeHint() string {
-	return "你的工作目录是 $BEDROCK_AGENT_WORKDIR（agents 下本智能体目录）。" +
+// agentWorkspaceScopeHint keeps the harness session inside the persistent
+// agent workspace and points deliverables at the fixed output directory.
+// The session process has no injected env vars, so the hint carries the
+// concrete paths.
+func agentWorkspaceScopeHint(agentRoot, outputDir string) string {
+	return "你的工作目录是 " + agentRoot + "（agents 下本智能体目录）。" +
 		"该目录是跨 Run 复用的持久工作区；不要删除其中已有文件，除非明确需要。" +
 		"只能在该目录内读写；通过 ./repo-{id}-{branch} 访问绑定仓库代码。" +
 		"禁止访问该目录之外的任意路径。" +
-		"请将需交付的文件写入 $BEDROCK_AGENT_OUTPUT（本智能体固定产出目录，默认 ./output；跨 Run 保留，不清空）。" +
-		" Your working directory is $BEDROCK_AGENT_WORKDIR (this agent under agents/)." +
+		"请将需交付的文件写入 " + outputDir + "（本智能体固定产出目录，默认 ./output；跨 Run 保留，不清空）。" +
+		" Your working directory is " + agentRoot + " (this agent under agents/)." +
 		" This persistent workspace is reused across runs; do not delete existing files unless required." +
 		" Read/write only inside it; access bound repository code via ./repo-{id}-{branch}." +
 		" Do not access any path outside this directory." +
-		" Write deliverable files into $BEDROCK_AGENT_OUTPUT (this agent's fixed output directory; preserved across runs)."
-}
-
-// agentEvidenceGateHint teaches reasonix how to clear its read-evidence gate
-// in one step instead of burning tool rounds retrying blocked bash calls.
-// Other CLIs have no such gate and get no hint.
-func agentEvidenceGateHint(cliKey string) string {
-	if cliKey != "reasonix" {
-		return ""
-	}
-	return " reasonix 会对 bash 声明要修改的文件做读取证据校验。" +
-		"遇到 [evidence required] 阻塞时，立即用 read_file 逐个读取列出的路径，再用 edit_file / multi_edit 修改这些文件；" +
-		"不要重试同一条 bash，也不要用 sed/awk/patch 修改尚未读过的文件；批量改码优先使用文件工具而非 shell 脚本。" +
-		" If a bash call is blocked with [evidence required], read_file each listed path right away and apply the change with edit_file / multi_edit;" +
-		" never retry the same bash command or modify unread files via sed/awk/patch — prefer file tools over shell scripts for bulk edits."
+		" Write deliverable files into " + outputDir + " (this agent's fixed output directory; preserved across runs)."
 }
 
 // composeRunPrompt joins system prompt, optional user prompt, and workspace hint.

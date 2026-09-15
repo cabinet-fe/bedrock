@@ -37,6 +37,7 @@ const DOMAIN_DOCS = {
   dashboard: ['api/ops.md'],
   project: ['api/project.md'],
   ai: ['api/ai.md'],
+  harness: ['api/harness.md'],
   dsh: ['api/dsh.md'],
 };
 

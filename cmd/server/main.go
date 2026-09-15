@@ -30,6 +30,9 @@ import (
 	dashboardservice "bedrock/internal/dashboard/service"
 	"bedrock/internal/engine"
 	"bedrock/internal/harness"
+	harnesshandler "bedrock/internal/harness/handler"
+	"bedrock/internal/harness/provider/oc"
+	harnessservice "bedrock/internal/harness/service"
 	"bedrock/internal/middleware"
 	opshandler "bedrock/internal/ops/handler"
 	opsrepo "bedrock/internal/ops/repository"
@@ -233,7 +236,7 @@ func main() {
 	notifSvc := systemservice.NewNotificationService(notifRepo, hub)
 	notifHandler := systemhandler.NewNotificationHandler(notifSvc)
 
-	agentSvc := aiservice.NewAgentService(aiRepo, cliSvc, skillSvc, hub, logger, agentWorkDir, agentArtifactDir, cfg.Build.LogDir, auditSvc)
+	agentSvc := aiservice.NewAgentService(aiRepo, skillSvc, hub, logger, agentWorkDir, agentArtifactDir, cfg.Build.LogDir, auditSvc)
 	agentSvc.SetDocDraftWriter(projectSvc)
 	agentSvc.SetRepoCheckoutDeps(repoRepo, resourceservice.NewCredentialSecretResolver(credSvc))
 	agentSvc.SetTerminalNotifier(notifSvc)
@@ -307,6 +310,35 @@ func main() {
 		cancelHarnessStart()
 	}
 
+	// Harness domain services: the provider adapter targets the supervised
+	// serve process; when disabled they stay nil and handlers answer 503.
+	var harnessSessions *harnessservice.SessionService
+	var harnessStreams *harnessservice.StreamService
+	var harnessProv *oc.Adapter
+	stopHarnessStreams := func() {}
+	if harnessProc != nil {
+		harnessProv = oc.New(oc.Config{BaseURL: harnessProc.BaseURL(), Password: harnessProc.Password()})
+		harnessSessions = harnessservice.NewSessionService(harnessProv, harnessservice.SessionConfig{
+			WorkspaceRoot: agentWorkDir,
+		}, logger)
+		harnessStreams = harnessservice.NewStreamService(harnessProv, harnessservice.StreamConfig{
+			ApprovalMode: cfg.Harness.ApprovalMode,
+		}, logger)
+		streamCtx, cancelStreams := context.WithCancel(context.Background())
+		defer cancelStreams()
+		stopHarnessStreams = cancelStreams
+		go harnessStreams.Run(streamCtx)
+	}
+	// Agent run execution rides the harness session backend (P7): nil-set
+	// keeps run creation and the catalog passthrough answering 503 (no CLI
+	// fallback).
+	if harnessSessions != nil {
+		agentSvc.SetHarnessBackend(harnessSessions, harnessStreams, harnessProv)
+		aiHandler.SetHarnessCatalog(harnessProv)
+	}
+	harnessCfg := harnesshandler.HandlerConfig{Enabled: harnessSessions != nil}
+	harnessHandler := harnesshandler.NewHandler(harnessSessions, harnessStreams, permSvc, auditSvc, harnessCfg, logger)
+
 	credHandler := resourcehandler.NewCredentialHandler(credSvc, permSvc)
 	repoHandler := resourcehandler.NewRepositoryHandler(repoSvc, permSvc)
 	serverHandler := resourcehandler.NewServerHandler(serverSvc, permSvc)
@@ -326,6 +358,7 @@ func main() {
 	r.Use(gzip.Gzip(gzip.DefaultCompression))
 	corsCfg := middleware.DefaultCORSConfig()
 	r.Use(middleware.CORSGin(corsCfg))
+	harnessWSHandler := harnesshandler.NewWSHandler(authSvc, permSvc, harnessSessions, harnessStreams, harnessCfg, corsCfg, logger)
 
 	api := r.Group("/api/v1")
 	api.Use(systemmw.AuditWrite(auditSvc))
@@ -352,6 +385,7 @@ func main() {
 	opsHandler.RegisterRoutes(api, authMW)
 	projectHandler.RegisterRoutes(api, authMW)
 	aiHandler.RegisterRoutes(api, authMW)
+	harnessHandler.RegisterRoutes(api, authMW)
 	notifHandler.RegisterRoutes(api, authMW)
 	backupHandler.RegisterRoutes(api, authMW)
 	mailHandler.RegisterRoutes(api, authMW)
@@ -373,6 +407,7 @@ func main() {
 	notifWSHandler.RegisterRoutes(r)
 	dashboardWSHandler := dashboardhandler.NewDashboardWSHandler(authSvc, patSvc, permSvc, hub, corsCfg)
 	dashboardWSHandler.RegisterRoutes(r)
+	harnessWSHandler.RegisterRoutes(r)
 
 	statusBroadcasterCtx, cancelStatusBroadcaster := context.WithCancel(context.Background())
 	dashboardSvc.StartStatusBroadcaster(statusBroadcasterCtx, hub, 3*time.Second)
@@ -430,6 +465,7 @@ func main() {
 	logger.Info("Shutting down...")
 
 	cancelStatusBroadcaster()
+	stopHarnessStreams()
 	cronSched.Stop()
 	scriptCronSched.Stop()
 	pipelineCronSched.Stop()

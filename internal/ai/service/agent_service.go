@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +18,8 @@ import (
 	"bedrock/internal/ai/repository"
 	cicdmodel "bedrock/internal/cicd/model"
 	"bedrock/internal/engine"
+	"bedrock/internal/harness/provider"
+	harnessservice "bedrock/internal/harness/service"
 	resourcemodel "bedrock/internal/resource/model"
 	"bedrock/internal/ws"
 )
@@ -51,21 +52,8 @@ type RunTerminalHook interface {
 	OnAgentRunTerminal(run *model.AgentRun, status string)
 }
 
-// CLIRunRequest is the resolved CLI invocation passed to CLIRunner.
-type CLIRunRequest struct {
-	Binary string
-	Args   []string
-	Dir    string
-	Env    []string
-}
-
-// CLIRunner executes an agent CLI. Production uses os/exec; tests inject fakes
-// so suites never spawn real model CLIs.
-type CLIRunner func(ctx context.Context, req CLIRunRequest) (output string, err error)
-
 type AgentService struct {
 	repo        *repository.AIRepository
-	cli         CLILookup
 	skills      *SkillService
 	hub         *ws.Hub
 	logger      *zap.Logger
@@ -80,9 +68,15 @@ type AgentService struct {
 	notifier    TerminalNotifier
 	mailer      AgentFailureMailer
 	termHook    RunTerminalHook
-	cliRunner   CLIRunner
 	wsInitSync  bool
 	inlineExec  bool
+
+	// Harness session backend (nil-set = disabled, see SetHarnessBackend).
+	harnessSessions    *harnessservice.SessionService
+	harnessStreams     *harnessservice.StreamService
+	harnessProvider    provider.Provider
+	harnessIdleConfirm time.Duration
+	harnessNoTerminal  time.Duration
 
 	runs    chan uint
 	stop    chan struct{}
@@ -120,9 +114,6 @@ func (s *AgentService) SetTerminalHook(h RunTerminalHook) {
 	s.termHook = h
 }
 
-// SetCLIRunner replaces os/exec for agent CLI invocation (tests).
-func (s *AgentService) SetCLIRunner(r CLIRunner) { s.cliRunner = r }
-
 // SetSyncWorkspaceInit runs workspace init inline instead of a goroutine (tests).
 func (s *AgentService) SetSyncWorkspaceInit(v bool) { s.wsInitSync = v }
 
@@ -148,7 +139,6 @@ var (
 
 func NewAgentService(
 	repo *repository.AIRepository,
-	cli CLILookup,
 	skills *SkillService,
 	hub *ws.Hub,
 	logger *zap.Logger,
@@ -156,7 +146,7 @@ func NewAgentService(
 	audit ...AuditWriter,
 ) *AgentService {
 	svc := &AgentService{
-		repo: repo, cli: cli, skills: skills, hub: hub, logger: logger,
+		repo: repo, skills: skills, hub: hub, logger: logger,
 		workDir: workDir, artifactDir: artifactDir, logDir: logDir,
 		runs: make(chan uint, 128), stop: make(chan struct{}),
 		cronIDs:   make(map[uint]cron.EntryID),
@@ -224,31 +214,53 @@ type AgentInput struct {
 	Name         string              `json:"name"`
 	Description  string              `json:"description"`
 	Enabled      *bool               `json:"enabled"`
-	CliKey       string              `json:"cli_key"`
 	SystemPrompt string              `json:"system_prompt"`
 	SkillIDs     []uint              `json:"skill_ids"`
 	RepoBindings []model.RepoBinding `json:"repo_bindings"`
 	EnvVars      []EnvVarInput       `json:"env_vars"`
 	OutputDir    string              `json:"output_dir"`
-	StreamOutput *bool               `json:"stream_output"`
 	TimeoutSec   int                 `json:"timeout_sec"`
+	// Session-model override and bridge approval mode (manual | auto).
+	ModelProvider string `json:"model_provider"`
+	ModelID       string `json:"model_id"`
+	ApprovalMode  string `json:"approval_mode"`
+}
+
+// validateAgentModelConfig checks the model override pair and the approval
+// mode enum. Catalog membership is validated client-side against
+// GET /ai/models (the backend create path must also work while serve is
+// restarting).
+func validateAgentModelConfig(modelProvider, modelID, approvalMode string) error {
+	switch approvalMode {
+	case "", harnessservice.ApprovalManual, harnessservice.ApprovalAuto:
+	default:
+		return errors.New("approval_mode 必须为 manual 或 auto")
+	}
+	hasProvider := strings.TrimSpace(modelProvider) != ""
+	hasID := strings.TrimSpace(modelID) != ""
+	if hasProvider != hasID {
+		return errors.New("model_provider 与 model_id 必须同时提供")
+	}
+	return nil
 }
 
 func (s *AgentService) CreateAgent(createdBy uint, in AgentInput) (*model.AiAgent, error) {
 	name := strings.TrimSpace(in.Name)
-	if name == "" || strings.TrimSpace(in.CliKey) == "" {
-		return nil, errors.New("名称与 cli_key 不能为空")
+	if name == "" {
+		return nil, errors.New("名称不能为空")
 	}
-	if _, err := s.cli.FindByKey(in.CliKey); err != nil {
-		return nil, errors.New("CLI 不存在")
+	if err := validateAgentModelConfig(in.ModelProvider, in.ModelID, in.ApprovalMode); err != nil {
+		return nil, err
 	}
 	agent := &model.AiAgent{
 		Name: name, Description: strings.TrimSpace(in.Description),
-		Enabled: boolOr(in.Enabled, true), CliKey: in.CliKey,
-		SystemPrompt: in.SystemPrompt,
-		OutputDir:    stringOr(in.OutputDir, "output"),
-		StreamOutput: boolOr(in.StreamOutput, false),
-		TimeoutSec:   intOr(in.TimeoutSec, 600), CreatedBy: createdBy,
+		Enabled:       boolOr(in.Enabled, true),
+		ModelProvider: strings.TrimSpace(in.ModelProvider),
+		ModelID:       strings.TrimSpace(in.ModelID),
+		ApprovalMode:  stringOr(in.ApprovalMode, harnessservice.ApprovalManual),
+		SystemPrompt:  in.SystemPrompt,
+		OutputDir:     stringOr(in.OutputDir, "output"),
+		TimeoutSec:    intOr(in.TimeoutSec, 600), CreatedBy: createdBy,
 		WorkspaceStatus: model.WorkspacePending,
 		WorkspaceError:  "",
 	}
@@ -286,6 +298,9 @@ func (s *AgentService) UpdateAgent(id, userID uint, in AgentInput) (*model.AiAge
 	if err != nil {
 		return nil, err
 	}
+	if err := validateAgentModelConfig(in.ModelProvider, in.ModelID, in.ApprovalMode); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(in.Name) != "" {
 		agent.Name = strings.TrimSpace(in.Name)
 	}
@@ -295,11 +310,12 @@ func (s *AgentService) UpdateAgent(id, userID uint, in AgentInput) (*model.AiAge
 	if in.Enabled != nil {
 		agent.Enabled = *in.Enabled
 	}
-	if strings.TrimSpace(in.CliKey) != "" {
-		if _, err := s.cli.FindByKey(in.CliKey); err != nil {
-			return nil, errors.New("CLI 不存在")
-		}
-		agent.CliKey = in.CliKey
+	if strings.TrimSpace(in.ModelProvider) != "" || strings.TrimSpace(in.ModelID) != "" {
+		agent.ModelProvider = strings.TrimSpace(in.ModelProvider)
+		agent.ModelID = strings.TrimSpace(in.ModelID)
+	}
+	if strings.TrimSpace(in.ApprovalMode) != "" {
+		agent.ApprovalMode = strings.TrimSpace(in.ApprovalMode)
 	}
 	if in.SystemPrompt != "" || in.SystemPrompt == "" && in.Name != "" {
 		agent.SystemPrompt = in.SystemPrompt
@@ -325,9 +341,6 @@ func (s *AgentService) UpdateAgent(id, userID uint, in AgentInput) (*model.AiAge
 	}
 	if strings.TrimSpace(in.OutputDir) != "" {
 		agent.OutputDir = strings.TrimSpace(in.OutputDir)
-	}
-	if in.StreamOutput != nil {
-		agent.StreamOutput = *in.StreamOutput
 	}
 	if in.TimeoutSec > 0 {
 		agent.TimeoutSec = in.TimeoutSec
@@ -502,24 +515,28 @@ func (s *AgentService) CreateRun(agentID uint, in CreateRunInput) (*model.AgentR
 	if agent.WorkspaceStatus != model.WorkspaceReady {
 		return nil, errors.New("智能体工作区未初始化完成")
 	}
+	if !s.HarnessEnabled() {
+		return nil, ErrHarnessDisabled
+	}
 	decodeSkillIDs(agent)
 	if err := s.attachRepoBindings(agent); err != nil {
 		return nil, err
 	}
 	userPrompt := strings.TrimSpace(in.UserPrompt)
 	snapshot, _ := json.Marshal(map[string]any{
-		"agent_id":      agent.ID,
-		"cli_key":       agent.CliKey,
-		"system_prompt": agent.SystemPrompt,
-		"user_prompt":   userPrompt,
-		"skill_ids":     agent.SkillIDs,
-		"repo_bindings": agent.RepoBindings,
-		"env_var_keys":  envVarKeys(agent),
-		"output_dir":    agent.OutputDir,
-		"stream_output": agent.StreamOutput,
-		"timeout_sec":   agent.TimeoutSec,
-		"context_note":  "persistent agent workspace + fixed output_dir + skills + repo checkouts",
-		"risk_notice":   resourcemodel.RiskNoticeSameUID,
+		"agent_id":       agent.ID,
+		"model_provider": agent.ModelProvider,
+		"model_id":       agent.ModelID,
+		"approval_mode":  agent.ApprovalMode,
+		"system_prompt":  agent.SystemPrompt,
+		"user_prompt":    userPrompt,
+		"skill_ids":      agent.SkillIDs,
+		"repo_bindings":  agent.RepoBindings,
+		"env_var_keys":   envVarKeys(agent),
+		"output_dir":     agent.OutputDir,
+		"timeout_sec":    agent.TimeoutSec,
+		"context_note":   "persistent agent workspace + harness session + fixed output_dir + skills + repo checkouts",
+		"risk_notice":    resourcemodel.RiskNoticeSameUID,
 	})
 	run := &model.AgentRun{
 		AgentID: agentID, TriggerType: in.TriggerType, TriggerID: in.TriggerID,
@@ -707,14 +724,16 @@ func (s *AgentService) finishIfCancelled(run *model.AgentRun, writeLog func(stri
 
 func (s *AgentService) persistTerminal(run *model.AgentRun) bool {
 	n, err := s.repo.UpdateRunFieldsIfStatus(run.ID, liveRunStatuses, map[string]any{
-		"status":            run.Status,
-		"finished_at":       run.FinishedAt,
-		"duration_ms":       run.DurationMs,
-		"output_text":       run.OutputText,
-		"error_message":     run.ErrorMessage,
-		"artifact_path":     run.ArtifactPath,
-		"artifact_kind":     run.ArtifactKind,
-		"skill_digest_json": run.SkillDigestJSON,
+		"status":                 run.Status,
+		"finished_at":            run.FinishedAt,
+		"duration_ms":            run.DurationMs,
+		"output_text":            run.OutputText,
+		"final_output":           run.FinalOutput,
+		"error_message":          run.ErrorMessage,
+		"artifact_path":          run.ArtifactPath,
+		"artifact_kind":          run.ArtifactKind,
+		"skill_digest_json":      run.SkillDigestJSON,
+		"harness_session_status": run.Status,
 	})
 	if err != nil {
 		if s.logger != nil {
@@ -797,9 +816,9 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		s.failRun(run, err)
 		return
 	}
-	cli, err := s.cli.FindByKey(agent.CliKey)
-	if err != nil {
-		s.failRun(run, err)
+	if !s.HarnessEnabled() {
+		// Recovered queued runs on a harness-disabled deployment.
+		s.failRun(run, ErrHarnessDisabled)
 		return
 	}
 
@@ -874,68 +893,32 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		return
 	}
 	absOutput, _ := filepath.Abs(outputDir)
-	envFile, agentEnv, err := s.writeAgentEnvFile(agent, agentRoot)
+
+	// Harness session: compile (already synced above) → create session →
+	// prompt (delivery=queue) → event-driven state machine.
+	sessionID, err := s.ensureHarnessSession(runCtx, run, agent, run.TriggeredBy, writeLog)
 	if err != nil {
+		if s.finishIfCancelled(run, writeLog) {
+			return
+		}
 		s.failRun(run, err)
 		return
 	}
+	agentDef := harnessservice.AgentDefName(harnessAgentSpec(agent))
+	writeHarnessRunIntro(writeLog, agent, run, agentDef, absRoot, absOutput,
+		len(digests), len(repoDirs), timeout, approvalModeForRun(agent, run.TriggerType))
 
-	var binary string
-	if s.cliRunner != nil {
-		if strings.TrimSpace(cli.InstalledPath) != "" {
-			binary = cli.InstalledPath
-		} else {
-			binary = cli.BinaryName
-		}
-	} else {
-		resolved, lookErr := ResolveBinary(cli)
-		if lookErr != nil {
-			writeLog("未找到 CLI: " + lookErr.Error())
-			s.failRun(run, fmt.Errorf("CLI %s 未安装或不可用: %w", agent.CliKey, lookErr))
-			return
-		}
-		binary = resolved
-	}
-
-	writeRunIntro(writeLog, agent, run, absRoot, absOutput, binary, len(digests), len(repoDirs), timeout)
-
-	args := strings.Fields(cli.DefaultArgs)
-	args = appendFullPermissionArgs(agent.CliKey, args)
-	if !agent.StreamOutput {
-		args = appendNonStreamingOutputArgs(agent.CliKey, args)
-	}
-	hint := agentWorkspaceScopeHint() + agentEvidenceGateHint(agent.CliKey)
+	hint := agentWorkspaceScopeHint(absRoot, absOutput)
+	var promptText string
 	if run.TriggerType == model.TriggerDocsGen {
-		args = append(args, "Generate API documentation based on the workspace. Output Markdown only. "+hint)
+		promptText = "Generate API documentation based on the workspace. Output Markdown only. " + hint
 	} else {
-		args = append(args, composeRunPrompt(agent.SystemPrompt, run.UserPrompt, hint))
+		promptText = composeRunPrompt(agent.SystemPrompt, run.UserPrompt, hint)
 	}
 
-	runtimeExtra := map[string]string{
-		"BEDROCK_AGENT_WORKDIR":  absRoot,
-		"BEDROCK_AGENT_ENV_FILE": envFile,
-	}
-	maps.Copy(runtimeExtra, agentEnv)
-	cmdEnv := append(removeEnv(BuildRuntimeEnv(cli, "", runtimeExtra), "BEDROCK_AGENT_OUTPUT"), "BEDROCK_AGENT_OUTPUT="+absOutput)
-
-	cliCtx, timeoutCancel := context.WithTimeout(runCtx, timeout)
-	defer timeoutCancel()
-
-	var outputText string
-	if s.cliRunner != nil {
-		outputText, err = s.cliRunner(cliCtx, CLIRunRequest{
-			Binary: binary, Args: args, Dir: agentRoot, Env: cmdEnv,
-		})
-		if outputText != "" {
-			for line := range strings.SplitSeq(strings.TrimSuffix(outputText, "\n"), "\n") {
-				writeLog(line)
-			}
-		}
-	} else {
-		outputText, err = runAgentCLI(cliCtx, binary, args, agentRoot, cmdEnv, writeLog)
-	}
-
-	if s.finishIfCancelled(run, writeLog) {
+	outcome := s.runHarnessSession(runCtx, agent, run, sessionID, promptText, timeout, writeLog)
+	if outcome.status == model.JobCancelled {
+		// CancelRun already persisted the terminal status.
 		return
 	}
 
@@ -944,11 +927,12 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	if run.StartedAt != nil {
 		run.DurationMs = finished.Sub(*run.StartedAt).Milliseconds()
 	}
-	run.OutputText = outputText
-	if err != nil {
-		run.Status = model.JobFailed
-		run.ErrorMessage = formatCLIFailure(err, cliCtx)
-		writeLog(run.ErrorMessage)
+	run.FinalOutput = outcome.final
+	run.OutputText = outcome.final
+	run.Status = outcome.status
+	run.ErrorMessage = outcome.errMsg
+	if outcome.status == model.JobFailed {
+		writeLog(outcome.errMsg)
 		if !s.persistTerminal(run) {
 			s.finishIfCancelled(run, writeLog)
 			return
@@ -957,9 +941,12 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		return
 	}
 
-	run.Status = model.JobSuccess
-	run.ErrorMessage = ""
-	writeLog("执行成功")
+	if outcome.status == model.JobSuccess {
+		run.ErrorMessage = ""
+		writeLog("执行成功")
+	} else {
+		writeLog(outcome.errMsg)
+	}
 	if err := s.archiveRunOutput(run, agent, absOutput, writeLog); err != nil {
 		writeLog("制品归档失败: " + err.Error())
 		if s.logger != nil {
@@ -972,10 +959,11 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 		return
 	}
 
-	if run.TriggerType == model.TriggerDocsGen && s.docs != nil && run.ProjectID != nil && run.DocNodeID != nil {
-		content := strings.TrimSpace(run.OutputText)
+	if run.TriggerType == model.TriggerDocsGen && run.Status == model.JobSuccess &&
+		s.docs != nil && run.ProjectID != nil && run.DocNodeID != nil {
+		content := strings.TrimSpace(run.FinalOutput)
 		if content == "" {
-			content = "# Generated Draft\n\n(empty CLI output)\n"
+			content = "# Generated Draft\n\n(empty session output)\n"
 		}
 		if err := s.docs.WriteDraftFromAgentRun(*run.ProjectID, *run.DocNodeID, run.ID, content, run.TriggeredBy); err != nil {
 			writeLog("文档草稿写入失败: " + err.Error())
@@ -983,7 +971,7 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 			writeLog("文档内容已写入")
 		}
 	}
-	s.notifyTerminal(run, model.JobSuccess)
+	s.notifyTerminal(run, run.Status)
 }
 
 // archiveRunOutput snapshots the agent fixed output_dir into a per-run zip.
@@ -1207,15 +1195,4 @@ func stringOr(v, def string) string {
 		return def
 	}
 	return strings.TrimSpace(v)
-}
-
-func removeEnv(env []string, key string) []string {
-	prefix := key + "="
-	filtered := env[:0]
-	for _, item := range env {
-		if !strings.HasPrefix(item, prefix) {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
 }
