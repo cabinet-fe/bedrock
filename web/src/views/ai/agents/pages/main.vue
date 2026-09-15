@@ -12,6 +12,7 @@ import {
   deleteAgent,
   deleteTrigger,
   getAgent,
+  listHarnessModels,
   listSkills,
   listTriggers,
   manualRunAgent,
@@ -24,6 +25,7 @@ import type {
   AiAgentEnvVarInput,
   AiAgentRepoBinding,
   BuildJob,
+  HarnessModelInfo,
   SkillPackage,
 } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
@@ -45,13 +47,6 @@ function queryFlag(raw: unknown): boolean {
   const value = Array.isArray(raw) ? raw[0] : raw;
   return value === "1" || value === "true";
 }
-
-const CLI_KEY_TAG: Record<string, TagType> = {
-  claude_code: "primary",
-  opencode: "info",
-  reasonix: "success",
-  codex: "warning",
-};
 
 const WORKSPACE_STATUS_TAG: Record<string, TagType> = {
   ready: "success",
@@ -97,6 +92,7 @@ const historyOpen = ref(false);
 const historyAgent = ref<AiAgent | null>(null);
 const editing = ref<AiAgent | null>(null);
 const skills = ref<SkillPackage[]>([]);
+const harnessModels = ref<HarnessModelInfo[]>([]);
 const buildJobs = ref<BuildJob[]>([]);
 const branchOptionsByRepo = ref<Record<number, { label: string; value: string }[]>>({});
 const branchesLoadingByRepo = ref<Record<number, boolean>>({});
@@ -109,13 +105,14 @@ const form = reactive({
   name: "",
   description: "",
   enabled: true,
-  cli_key: "claude_code",
+  /** Composite `provider|id` of the selected harness catalog model; empty = default. */
+  model: "",
+  approval_mode: "manual" as "manual" | "auto",
   system_prompt: "",
   skill_ids: [] as number[],
   repo_bindings: [] as RepoBindingDraft[],
   env_vars: [] as EnvVarDraft[],
   output_dir: "output",
-  stream_output: false,
   timeout_sec: 600,
 });
 
@@ -144,6 +141,34 @@ const skillOptions = computed(() =>
   })),
 );
 
+function modelValue(m: HarnessModelInfo): string {
+  return `${m.providerID}|${m.id}`;
+}
+
+/** Catalog models sorted by provider so options of one provider stay contiguous. */
+const modelOptions = computed(() => {
+  const sorted = [...harnessModels.value].sort(
+    (a, b) => a.providerID.localeCompare(b.providerID) || a.id.localeCompare(b.id),
+  );
+  const options = sorted.map((m) => ({
+    label: `${m.providerID} · ${m.name || m.id}`,
+    value: modelValue(m),
+  }));
+  // Keep an out-of-catalog saved selection visible; save() rejects it.
+  if (form.model && !options.some((o) => o.value === form.model)) {
+    options.unshift({
+      label: `${form.model.replace("|", " / ")}（不在模型目录）`,
+      value: form.model,
+    });
+  }
+  return options;
+});
+
+function modelLabel(agent: AiAgent): string {
+  if (!agent.model_provider || !agent.model_id) return "默认";
+  return `${agent.model_provider}/${agent.model_id}`;
+}
+
 const buildJobOptions = computed(() =>
   buildJobs.value.map((j) => ({
     label: `${j.name} (job-${j.id})`,
@@ -154,7 +179,7 @@ const buildJobOptions = computed(() =>
 const columns = defineProTableColumns([
   { key: "id", name: "ID", width: 70, align: "center" },
   { key: "name", name: "名称" },
-  { key: "cli_key", name: "CLI", width: 120, align: "center" },
+  { key: "model", name: "模型", width: 220, align: "center" },
   { key: "workspace_status", name: "工作区", width: 110, align: "center" },
   { key: "enabled", name: "启用", width: 80, align: "center" },
   { key: "action", name: "操作", width: 320, align: "center", fixed: "right" },
@@ -178,6 +203,15 @@ onMounted(async () => {
         }),
     );
   }
+  tasks.push(
+    listHarnessModels()
+      .then((models) => {
+        harnessModels.value = models ?? [];
+      })
+      .catch(() => {
+        harnessModels.value = [];
+      }),
+  );
   if (hasPermission("cicd_build_jobs:view")) {
     tasks.push(
       listBuildJobs({ page: 1, page_size: 200 })
@@ -262,6 +296,8 @@ function openCreate() {
   form.skill_ids = [];
   form.repo_bindings = [];
   form.env_vars = [];
+  form.model = "";
+  form.approval_mode = "manual";
   formTriggers.value = [];
   initialTriggerIDs.value = [];
   resetTriggerDraft();
@@ -271,6 +307,8 @@ function openCreate() {
 async function openEdit(row: AiAgent) {
   editing.value = row;
   o(form).extend(row);
+  form.model = row.model_provider && row.model_id ? `${row.model_provider}|${row.model_id}` : "";
+  form.approval_mode = row.approval_mode ?? "manual";
   form.skill_ids = [...(row.skill_ids ?? [])];
   form.repo_bindings = (row.repo_bindings ?? []).map((b: AiAgentRepoBinding) => ({
     repository_id: b.repository_id,
@@ -420,12 +458,30 @@ async function save() {
     }
     envVars.push(row);
   }
-  const body = {
-    ...form,
-    output_dir: form.output_dir || "output",
+  let model: HarnessModelInfo | undefined;
+  if (form.model) {
+    model = harnessModels.value.find((m) => modelValue(m) === form.model);
+    if (!model) {
+      message.error("所选模型不在当前模型目录中，请重新选择或留空使用默认模型");
+      return;
+    }
+  }
+  const body: Record<string, unknown> = {
+    name: form.name,
+    description: form.description,
+    enabled: form.enabled,
+    approval_mode: form.approval_mode,
+    system_prompt: form.system_prompt,
+    skill_ids: form.skill_ids,
     repo_bindings: bindings,
     env_vars: envVars,
+    output_dir: form.output_dir || "output",
+    timeout_sec: form.timeout_sec,
   };
+  if (model) {
+    body.model_provider = model.providerID;
+    body.model_id = model.id;
+  }
   try {
     let agentID: number;
     if (editing.value) {
@@ -486,10 +542,8 @@ const remove = bind(async (row: AiAgent) => {
           新建
         </u-button>
       </template>
-      <template #column:cli_key="{ rowData }">
-        <u-tag size="small" :type="tagType((rowData as AiAgent).cli_key, CLI_KEY_TAG)">
-          {{ (rowData as AiAgent).cli_key }}
-        </u-tag>
+      <template #column:model="{ rowData }">
+        <span :title="modelLabel(rowData as AiAgent)">{{ modelLabel(rowData as AiAgent) }}</span>
       </template>
       <template #column:workspace_status="{ rowData }">
         <u-tag
@@ -549,15 +603,12 @@ const remove = bind(async (row: AiAgent) => {
         <u-input label="名称" field="name" :rules="{ required: '必填' }" />
         <u-input label="描述" field="description" />
         <u-select
-          label="CLI"
-          field="cli_key"
-          :options="[
-            { label: 'Claude Code', value: 'claude_code' },
-            { label: 'OpenCode', value: 'opencode' },
-            { label: 'Reasonix', value: 'reasonix' },
-            { label: 'Codex', value: 'codex' },
-          ]"
-          :rules="{ required: '必填' }"
+          label="模型"
+          field="model"
+          :options="modelOptions"
+          clearable
+          filterable
+          placeholder="留空使用默认模型"
         />
         <u-switch label="启用" field="enabled" />
         <u-textarea
@@ -631,7 +682,14 @@ const remove = bind(async (row: AiAgent) => {
       <template #group:runtime>
         <u-input label="产出目录名" field="output_dir" placeholder="默认 output" />
         <u-number-input label="超时(秒)" field="timeout_sec" :min="30" />
-        <u-switch label="流式输出" field="stream_output" />
+        <u-select
+          label="审批模式"
+          field="approval_mode"
+          :options="[
+            { label: '手动（每次审批）', value: 'manual' },
+            { label: '自动（无人值守时强制）', value: 'auto' },
+          ]"
+        />
       </template>
 
       <template #group:triggers>

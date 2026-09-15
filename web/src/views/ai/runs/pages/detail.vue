@@ -1,15 +1,17 @@
 <script setup lang="ts">
 defineOptions({ name: "AiRunDetail" });
 
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onScopeDispose, ref, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { saveBlob } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
+import { createServerTransport, UAiChat, type ChatSessionTransport } from "@veltra/ai";
+import "@veltra/ai/style";
 
-import { agentRunArtifactURL, agentRunLogsWSURL, cancelRun, getAgent, getRun } from "@/api/ai";
+import { createHarnessSessionAdapter } from "@/api/harness";
+import { agentRunArtifactURL, cancelRun, getAgent, getRun } from "@/api/ai";
 import { getAccessToken } from "@/api/http";
 import type { AgentRun } from "@/api/types";
-import BuildLogViewer, { resolveBuildLogStatus } from "@/components/build-log-viewer";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime, formatDurationMs } from "@/lib/datetime";
 import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
@@ -30,6 +32,8 @@ function parseRouteId(raw: unknown): number | null {
 }
 
 const canExecute = computed(() => hasPermission("ai_agents:execute"));
+const canChat = computed(() => hasPermission("harness_chat:view"));
+const canSend = computed(() => hasPermission("harness_chat:send"));
 // Pages are keyed by route.path, so path/id are fixed for this instance.
 const detailPath = route.path;
 const runId = parseRouteId(route.params.id);
@@ -39,19 +43,25 @@ const isLive = computed(() => {
   return s === "queued" || s === "running";
 });
 
-const logViewerStatus = computed(() => resolveBuildLogStatus(run.value?.status));
-
 const canCancel = computed(() => {
   if (!canExecute.value || !run.value) return false;
   return run.value.status === "queued" || run.value.status === "running";
 });
 
-const logsWsURL = computed(() => {
-  if (runId == null) return undefined;
-  const token = getAccessToken();
-  if (!token) return undefined;
-  return agentRunLogsWSURL(runId, token);
-});
+/** UAiChat session transport bound to the run's harness session, if any. */
+const sessionTransport = shallowRef<ChatSessionTransport | null>(null);
+
+watch(
+  () => (canChat.value ? run.value?.harness_session_id : undefined),
+  (sessionId) => {
+    sessionTransport.value = sessionId
+      ? createServerTransport(createHarnessSessionAdapter(sessionId))
+      : null;
+  },
+);
+
+/** Legacy runs (no harness session) render the final output text instead. */
+const legacyOutput = computed(() => run.value?.output_text ?? run.value?.final_output ?? "");
 
 async function syncTabTitle(r: AgentRun) {
   let title = `运行 #${r.id}`;
@@ -77,15 +87,6 @@ async function load() {
     message.error(err instanceof Error ? err.message : "加载失败");
   } finally {
     loading.value = false;
-  }
-}
-
-async function onLogRefresh() {
-  if (runId == null) return;
-  try {
-    run.value = await getRun(runId);
-  } catch {
-    /* ignore */
   }
 }
 
@@ -123,8 +124,27 @@ async function onDownloadArtifact() {
   }
 }
 
+function onChatError(error: Error) {
+  message.error(error.message || "会话流异常");
+}
+
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+
 onMounted(async () => {
   await load();
+  // Refresh the run status while it is live (the session view itself streams).
+  pollTimer = setInterval(async () => {
+    if (!isLive.value || runId == null) return;
+    try {
+      run.value = await getRun(runId);
+    } catch {
+      /* keep the last known status */
+    }
+  }, 5000);
+});
+
+onScopeDispose(() => {
+  if (pollTimer) clearInterval(pollTimer);
 });
 </script>
 
@@ -204,16 +224,28 @@ onMounted(async () => {
           <p v-if="run.error_message" class="error-msg">{{ run.error_message }}</p>
         </section>
 
-        <section class="section">
-          <h3 class="section__title">运行日志</h3>
-          <BuildLogViewer
-            :run-id="run.id"
-            :live="isLive"
-            :status="logViewerStatus"
-            :ws-url="logsWsURL"
-            :hydrate-http="false"
-            @refresh="onLogRefresh"
-          />
+        <section v-if="sessionTransport" class="section">
+          <h3 class="section__title">会话</h3>
+          <div class="session-panel">
+            <u-ai-chat
+              class="session-panel__chat"
+              :transport="sessionTransport"
+              :readonly="!canSend"
+              placeholder="输入消息继续会话，Enter 发送，Shift+Enter 换行..."
+              @error="onChatError"
+            />
+          </div>
+        </section>
+        <section v-else class="section">
+          <h3 class="section__title">输出</h3>
+          <div class="panel output-panel">
+            <pre v-if="legacyOutput" class="output-panel__text">{{ legacyOutput }}</pre>
+            <p v-else class="output-panel__empty">
+              {{
+                run.harness_session_id ? "无查看会话权限，无法加载会话视图" : "旧运行记录无会话输出"
+              }}
+            </p>
+          </div>
         </section>
       </template>
       <div v-else class="page-empty">
@@ -354,6 +386,37 @@ onMounted(async () => {
 
 .state {
   opacity: 0.7;
+}
+
+.session-panel {
+  height: min(72vh, 720px);
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  border: fn.use-var(border);
+  border-radius: fn.use-var(radius, default);
+  background: fn.use-var(bg-color, top);
+  overflow: hidden;
+}
+
+.session-panel__chat {
+  height: 100%;
+  width: 100%;
+}
+
+.output-panel__text {
+  margin: 0;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.output-panel__empty {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.65;
 }
 
 .page-empty {

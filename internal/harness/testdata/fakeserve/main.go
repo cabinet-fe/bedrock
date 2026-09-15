@@ -1,7 +1,9 @@
-// Command fakeserve imitates the process surface of `opencode serve` used
-// by the ProcessManager integration tests: it serves a Basic-Auth
-// /global/health on the requested host:port, reports the address it actually
-// bound via FAKE_SERVE_ADDR_FILE, and crashes on demand via /global/crash.
+// Command fakeserve imitates the process and HTTP surface of `opencode serve`
+// used by bedrock tests and smoke runs: it serves a Basic-Auth /global/health
+// on the requested host:port, reports the address it actually bound via
+// FAKE_SERVE_ADDR_FILE, crashes on demand via /global/crash, and implements
+// the scripted opencode REST/SSE surface bedrock talks to (see backend.go and
+// events.go).
 package main
 
 import (
@@ -40,21 +42,14 @@ func main() {
 		_ = os.WriteFile(addrFile, []byte(ln.Addr().String()), 0o600)
 	}
 
+	b := newBackend(password)
 	mux := http.NewServeMux()
-	mux.HandleFunc("/global/health", func(w http.ResponseWriter, r *http.Request) {
-		user, pass, ok := r.BasicAuth()
-		if !ok || user != "opencode" || pass != password {
-			w.Header().Set("WWW-Authenticate", `Basic realm="opencode"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"healthy":true,"version":"fake-1.0.0"}`))
-	})
+	mux.HandleFunc("/global/health", b.auth(b.handleHealth))
 	// /global/crash simulates a serve crash (exit without cleanup) so tests
 	// can exercise the supervisor restart path.
 	mux.HandleFunc("/global/crash", func(http.ResponseWriter, *http.Request) {
 		os.Exit(1)
 	})
+	b.register(mux)
 	_ = http.Serve(ln, mux)
 }

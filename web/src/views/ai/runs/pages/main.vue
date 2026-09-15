@@ -48,6 +48,7 @@ const columns = defineProTableColumns([
   { key: "agent_id", name: "智能体" },
   { key: "trigger_type", name: "触发", width: 110, align: "center" },
   { key: "status", name: "状态", width: 100, align: "center" },
+  { key: "session", name: "会话", width: 130, align: "center" },
   {
     key: "duration_ms",
     name: "运行时间",
@@ -135,6 +136,19 @@ watch(
         <u-tag size="small" :type="tagType((rowData as AgentRun).status, JOB_STATUS_TAG)">
           {{ (rowData as AgentRun).status }}
         </u-tag>
+      </template>
+      <template #column:session="{ rowData }">
+        <u-button
+          v-if="(rowData as AgentRun).harness_session_id"
+          text
+          type="primary"
+          size="small"
+          :title="(rowData as AgentRun).harness_session_id"
+          @click="openDetail(rowData as AgentRun)"
+        >
+          {{ (rowData as AgentRun).harness_session_id!.slice(0, 8) }}
+        </u-button>
+        <span v-else>—</span>
       </template>
       <template #column:action="{ rowData }">
         <u-action @run="openDetail(rowData as AgentRun)">详情</u-action>

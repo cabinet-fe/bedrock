@@ -65,7 +65,7 @@
 路径参数：id*: string
 响应 200：data = HarnessMessagePage
 错误：401 / 403 / 404 / 503（`harness-unavailable`）
-说明：服务端按时间序返回（旧→新）后分页；`content` 为后端原始消息部件数组，透传不做改写。
+说明：服务端按时间序返回（旧→新）后分页；`content` 为后端原始消息部件数组，透传不做改写（user 消息顶层 `text` 归一化为单条 `{type: text}` 部件）。
 
 ### POST /harness/sessions/{id}/messages — 发送消息
 
@@ -246,7 +246,7 @@
 | `role` | `string` | 是 | `user` / `assistant` |
 | `agent` | `string` |  |  |
 | `model` | `HarnessModelRef` |  |  |
-| `content` | `any[]` |  | 后端原始消息部件数组，透传 |
+| `content` | `any[]` |  | 后端原始消息部件数组，透传；user 消息顶层 `text` 归一化为单条 `{type: text}` 部件 |
 
 ### HarnessModel
 

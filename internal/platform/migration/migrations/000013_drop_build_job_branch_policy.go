@@ -18,7 +18,9 @@ func upDropBuildJobBranchPolicy(ctx context.Context, db *gorm.DB, driver migrati
 
 	job := &buildJobBranchPolicyDropModel{}
 	if db.Migrator().HasColumn(job, "branch_policy") {
-		if err := db.Migrator().DropColumn(job, "BranchPolicy"); err != nil {
+		// Drop by column name: the model carries no matching field, and the
+		// Go field spelling would not resolve on MySQL/Postgres.
+		if err := db.Migrator().DropColumn(job, "branch_policy"); err != nil {
 			return err
 		}
 	}

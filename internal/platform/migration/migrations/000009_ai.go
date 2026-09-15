@@ -250,7 +250,8 @@ func seedAICLIDefinitions(db *gorm.DB) error {
 	}
 	for _, def := range defs {
 		var existing cliRuntimeDefinitionMigrationModel
-		err := db.Where("key = ?", def.Key).First(&existing).Error
+		// Map condition: `key` is a MySQL reserved word and must stay driver-quoted.
+		err := db.Where(map[string]interface{}{"key": def.Key}).First(&existing).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if err := db.Create(&def).Error; err != nil {
 				return err

@@ -1,0 +1,508 @@
+import type { ChatSessionAdapter, ChatSessionEvent } from "@veltra/ai";
+
+import { getAccessToken, http } from "./http";
+import type { PageResult } from "./types";
+
+/**
+ * Harness session domain client (api/harness.md): REST endpoints plus the
+ * /ws/harness/sessions/:id/events unified-frame stream, and a
+ * ChatSessionAdapter that feeds bedrock frames into @veltra/ai session mode.
+ */
+
+// --- REST shapes ---
+
+export interface HarnessModelRef {
+  provider: string;
+  id: string;
+}
+
+export interface HarnessPromptAck {
+  id: string;
+  admitted_seq: number;
+}
+
+/** Content part of GET /harness/sessions/:id/messages (provider passthrough). */
+export type HarnessMessagePart =
+  | { type: "text"; id?: string; text: string }
+  | { type: "reasoning"; id?: string; text: string }
+  | {
+      type: "tool";
+      id?: string;
+      callID: string;
+      name?: string;
+      state: {
+        status: "pending" | "running" | "completed" | "error";
+        input?: unknown;
+        output?: string;
+        error?: string;
+      };
+    };
+
+export interface HarnessMessage {
+  id: string;
+  role: string;
+  agent?: string;
+  model?: HarnessModelRef;
+  content?: HarnessMessagePart[];
+}
+
+// --- WS unified frame (api/harness.md HarnessFrame) ---
+
+export type HarnessFrameKind =
+  | "status"
+  | "message_delta"
+  | "message_text"
+  | "reasoning_delta"
+  | "tool_call"
+  | "tool_result"
+  | "permission"
+  | "question";
+
+export interface HarnessFrame {
+  seq: number;
+  eventId?: string;
+  sessionId: string;
+  kind: HarnessFrameKind;
+  status?: {
+    name:
+      | "prompt_admitted"
+      | "prompted"
+      | "step_started"
+      | "step_ended"
+      | "step_failed"
+      | "error"
+      | "idle";
+    messageId?: string;
+    error?: string;
+  };
+  messageDelta?: { assistantMessageId: string; textId: string; delta: string };
+  messageText?: { assistantMessageId: string; textId: string; text: string };
+  reasoningDelta?: { assistantMessageId: string; delta: string };
+  toolCall?: {
+    assistantMessageId: string;
+    callId: string;
+    tool: string;
+    input?: unknown;
+  };
+  toolResult?: {
+    assistantMessageId: string;
+    callId: string;
+    output?: unknown;
+    error?: string;
+  };
+  permission?: { requestId: string; action: string; resources?: string[] };
+  question?: {
+    requestId: string;
+    questions: { question: string; options?: string[] }[];
+  };
+}
+
+const MESSAGES_PAGE_SIZE = 100;
+/** Bounds the history page loop against a misbehaving server. */
+const MAX_HISTORY_PAGES = 100;
+
+export async function listSessionMessages(sessionId: string): Promise<HarnessMessage[]> {
+  const items: HarnessMessage[] = [];
+  let page = 1;
+  for (let i = 0; i < MAX_HISTORY_PAGES; i++) {
+    const { body } = await http.get<PageResult<HarnessMessage>>(
+      `/harness/sessions/${sessionId}/messages`,
+      { query: { page, page_size: MESSAGES_PAGE_SIZE } },
+    );
+    items.push(...(body.items ?? []));
+    if (page >= (body.total_pages ?? 1)) break;
+    page++;
+  }
+  return items;
+}
+
+export async function sendSessionMessage(
+  sessionId: string,
+  text: string,
+  delivery: "queue" | "steer" = "queue",
+): Promise<HarnessPromptAck> {
+  const { body } = await http.post<HarnessPromptAck>(`/harness/sessions/${sessionId}/messages`, {
+    text,
+    delivery,
+  });
+  return body;
+}
+
+export async function interruptSession(sessionId: string): Promise<void> {
+  await http.post(`/harness/sessions/${sessionId}/interrupt`, {});
+}
+
+export async function replySessionPermission(
+  sessionId: string,
+  requestId: string,
+  reply: "once" | "always" | "reject",
+): Promise<void> {
+  await http.post(`/harness/sessions/${sessionId}/permissions/${requestId}`, { reply });
+}
+
+export async function replySessionQuestion(
+  sessionId: string,
+  requestId: string,
+  answers: string[][],
+): Promise<void> {
+  await http.post(`/harness/sessions/${sessionId}/questions/${requestId}`, { answers });
+}
+
+export function harnessSessionEventsWSURL(sessionId: string, token: string, after = 0): string {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/ws/harness/sessions/${encodeURIComponent(sessionId)}/events?token=${encodeURIComponent(token)}&after=${after}`;
+}
+
+// --- ChatSessionAdapter ---
+
+function stringifyArg(value: unknown): string {
+  if (value == null) return "";
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+type HarnessTextPart = Extract<HarnessMessagePart, { type: "text" | "reasoning" }>;
+
+function isTextPart(part: HarnessMessagePart): part is HarnessTextPart {
+  return part.type === "text" || part.type === "reasoning";
+}
+
+function textOfParts(parts: HarnessMessagePart[] | undefined, type: "text" | "reasoning"): string {
+  return (parts ?? [])
+    .filter(isTextPart)
+    .filter((part) => part.type === type)
+    .map((part) => part.text)
+    .join("");
+}
+
+/*
+ * Transient frames (deltas) and history-derived events omit the `seq` field
+ * on purpose: the transport-level seq gate drops any event whose seq does
+ * not advance the cursor, and transient frames carry seq 0. History messages
+ * have no seq at all, so the objects are cast at the emission sites.
+ */
+
+/**
+ * Bedrock harness session adapter for @veltra/ai session mode.
+ *
+ * History replay (REST messages) and the WS unified-frame stream fold through
+ * one runtime (createServerTransport); the seam between them is deduplicated
+ * here by message id / text part id / tool call id, and pending asks are
+ * idempotent by requestId (the WS handler re-sends them on connect).
+ */
+export function createHarnessSessionAdapter(sessionId: string): ChatSessionAdapter {
+  let handlers: { onEvent(event: ChatSessionEvent): void; onDisconnect?(): void } | null = null;
+  let ws: WebSocket | null = null;
+  let disposed = true;
+  /** WS frames are buffered until the initial history replay has been applied. */
+  let synced = false;
+  const buffer: HarnessFrame[] = [];
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let reconnectDelay = 1000;
+  /** Highest durable seq delivered; reconnects resume the stream after it. */
+  let lastDurableSeq = 0;
+
+  const seenUserIds = new Set<string>();
+  const knownTextKeys = new Set<string>();
+  const knownCallIds = new Set<string>();
+  const finalCallIds = new Set<string>();
+  const activePermissions = new Set<string>();
+  let activeQuestionId: string | null = null;
+  /** message id -> finished text parts in arrival order. */
+  const textParts = new Map<string, { id: string; text: string }[]>();
+
+  function emit(event: ChatSessionEvent): void {
+    handlers?.onEvent(event);
+  }
+
+  function onMessageText(messageId: string, textId: string, text: string, seq: number): void {
+    const key = `${messageId}:${textId}`;
+    if (knownTextKeys.has(key)) return;
+    knownTextKeys.add(key);
+    const parts = textParts.get(messageId) ?? [];
+    const index = parts.findIndex((part) => part.id === textId);
+    if (index >= 0) parts[index] = { id: textId, text };
+    else parts.push({ id: textId, text });
+    textParts.set(messageId, parts);
+    emit({
+      type: "assistant/message",
+      messageId,
+      seq,
+      content: parts.map((part) => part.text).join(""),
+    });
+  }
+
+  function onFrame(frame: HarnessFrame): void {
+    if (!synced) {
+      buffer.push(frame);
+      return;
+    }
+    deliverFrame(frame);
+  }
+
+  function deliverFrame(frame: HarnessFrame): void {
+    if (frame.seq > lastDurableSeq) lastDurableSeq = frame.seq;
+    switch (frame.kind) {
+      case "status": {
+        const status = frame.status;
+        if (!status) return;
+        switch (status.name) {
+          case "prompted":
+          case "step_started":
+            emit({ type: "running", running: true });
+            return;
+          case "step_failed":
+            emit({ type: "error", code: "step_failed", message: status.error || "step failed" });
+            return;
+          case "error":
+            emit({
+              type: "error",
+              code: "harness_error",
+              message: status.error || "harness error",
+            });
+            return;
+          case "idle":
+            emit({ type: "finish" });
+            return;
+          default:
+            return;
+        }
+      }
+      case "message_delta": {
+        const delta = frame.messageDelta;
+        if (!delta) return;
+        emit({
+          type: "assistant/chunk",
+          messageId: delta.assistantMessageId,
+          delta: delta.delta,
+        } as ChatSessionEvent);
+        return;
+      }
+      case "reasoning_delta": {
+        const delta = frame.reasoningDelta;
+        if (!delta) return;
+        emit({
+          type: "assistant/chunk",
+          messageId: delta.assistantMessageId,
+          delta: "",
+          reasoningDelta: delta.delta,
+        } as ChatSessionEvent);
+        return;
+      }
+      case "message_text": {
+        const text = frame.messageText;
+        if (!text) return;
+        onMessageText(text.assistantMessageId, text.textId, text.text, frame.seq);
+        return;
+      }
+      case "tool_call": {
+        const call = frame.toolCall;
+        if (!call || knownCallIds.has(call.callId)) return;
+        knownCallIds.add(call.callId);
+        emit({
+          type: "tool/call",
+          callId: call.callId,
+          name: call.tool,
+          arguments: stringifyArg(call.input),
+          seq: frame.seq,
+        });
+        return;
+      }
+      case "tool_result": {
+        const result = frame.toolResult;
+        if (!result || finalCallIds.has(result.callId)) return;
+        finalCallIds.add(result.callId);
+        emit({
+          type: "tool/result",
+          callId: result.callId,
+          status: result.error ? "error" : "success",
+          result: result.output == null ? undefined : stringifyArg(result.output),
+          error: result.error || undefined,
+          seq: frame.seq,
+        });
+        return;
+      }
+      case "permission": {
+        const permission = frame.permission;
+        if (!permission || activePermissions.has(permission.requestId)) return;
+        activePermissions.add(permission.requestId);
+        emit({
+          type: "approval/requested",
+          approvalId: permission.requestId,
+          toolName: permission.action,
+          reason: permission.resources?.join(", ") || undefined,
+          rpcId: permission.requestId,
+        });
+        return;
+      }
+      case "question": {
+        const question = frame.question;
+        if (!question || activeQuestionId === question.requestId) return;
+        activeQuestionId = question.requestId;
+        emit({
+          type: "question/requested",
+          questions: question.questions.map((item) => ({
+            question: item.question,
+            options: item.options?.length ? item.options : undefined,
+          })),
+          rpcId: question.requestId,
+        });
+        return;
+      }
+    }
+  }
+
+  function openWS(): void {
+    if (disposed) return;
+    const token = getAccessToken();
+    if (!token) {
+      handlers?.onDisconnect?.();
+      return;
+    }
+    const socket = new WebSocket(harnessSessionEventsWSURL(sessionId, token, lastDurableSeq));
+    ws = socket;
+    socket.onmessage = (event) => {
+      try {
+        onFrame(JSON.parse(String(event.data)) as HarnessFrame);
+      } catch {
+        /* skip malformed frames */
+      }
+    };
+    socket.onclose = () => {
+      if (disposed || ws !== socket) return;
+      ws = null;
+      handlers?.onDisconnect?.();
+      reconnectDelay = Math.min(reconnectDelay * 2, 15_000);
+      reconnectTimer = setTimeout(openWS, reconnectDelay);
+    };
+    socket.onerror = () => {
+      socket.close();
+    };
+  }
+
+  function flushBuffer(): void {
+    synced = true;
+    for (const frame of buffer.splice(0)) {
+      deliverFrame(frame);
+    }
+  }
+
+  async function fetchHistory(): Promise<{ events: ChatSessionEvent[]; hasMore: boolean }> {
+    const messages = await listSessionMessages(sessionId);
+    const events: ChatSessionEvent[] = [];
+    for (const message of messages) {
+      if (message.role === "user") {
+        if (seenUserIds.has(message.id)) continue;
+        seenUserIds.add(message.id);
+        events.push({
+          type: "user/message",
+          messageId: message.id,
+          content: textOfParts(message.content, "text"),
+        } as ChatSessionEvent);
+        continue;
+      }
+      if (message.role !== "assistant") continue;
+      const toolCalls: {
+        id: string;
+        name: string;
+        arguments: string;
+        status: "running" | "success" | "error";
+        result?: string;
+        error?: string;
+      }[] = [];
+      for (const part of message.content ?? []) {
+        if (part.type === "text" || part.type === "reasoning") {
+          if (part.id) knownTextKeys.add(`${message.id}:${part.id}`);
+          continue;
+        }
+        knownCallIds.add(part.callID);
+        const status =
+          part.state?.status === "completed"
+            ? "success"
+            : part.state?.status === "error"
+              ? "error"
+              : "running";
+        if (status !== "running") finalCallIds.add(part.callID);
+        toolCalls.push({
+          id: part.callID,
+          name: part.name ?? "",
+          arguments: stringifyArg(part.state?.input),
+          status,
+          result: part.state?.output,
+          error: part.state?.error || undefined,
+        });
+      }
+      const reasoning = textOfParts(message.content, "reasoning");
+      events.push({
+        type: "assistant/message",
+        messageId: message.id,
+        content: textOfParts(message.content, "text"),
+        reasoning: reasoning || undefined,
+        toolCalls: toolCalls.length ? toolCalls : undefined,
+      } as ChatSessionEvent);
+    }
+    return { events, hasMore: false };
+  }
+
+  return {
+    subscribe(registrant) {
+      handlers = registrant;
+      disposed = false;
+      openWS();
+      // The adapter owns the initial history replay: emit its events first,
+      // then flush the buffered WS frames so the seam order is deterministic
+      // (old -> new) and deduplicated. The runtime's own fetchHistory call
+      // reuses the same dedup state and converges to no-op.
+      fetchHistory().then(
+        ({ events }) => {
+          for (const event of events) emit(event);
+          flushBuffer();
+        },
+        () => {
+          flushBuffer();
+          handlers?.onDisconnect?.();
+        },
+      );
+      return () => {
+        disposed = true;
+        handlers = null;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        ws?.close();
+        ws = null;
+        buffer.length = 0;
+        synced = false;
+      };
+    },
+    async send(content) {
+      const ack = await sendSessionMessage(sessionId, content);
+      if (disposed || seenUserIds.has(ack.id)) return;
+      seenUserIds.add(ack.id);
+      emit({ type: "user/message", messageId: ack.id, content } as ChatSessionEvent);
+    },
+    cancel() {
+      return interruptSession(sessionId);
+    },
+    async respond(rpcId, ok, value) {
+      if (activePermissions.has(rpcId)) {
+        await replySessionPermission(sessionId, rpcId, ok ? "once" : "reject");
+        activePermissions.delete(rpcId);
+        emit({ type: "approval/resolved", approvalId: rpcId, outcome: ok ? "once" : "rejected" });
+        return;
+      }
+      if (activeQuestionId === rpcId) {
+        const list = (
+          Array.isArray(value) ? value : (value as { answers?: unknown } | undefined)?.answers
+        ) as { answer?: string }[] | undefined;
+        const answers = (list ?? []).map((item) => [item?.answer ?? ""]);
+        await replySessionQuestion(sessionId, rpcId, answers);
+        activeQuestionId = null;
+        emit({ type: "question/resolved", questionRpcId: rpcId, outcome: "answered" });
+      }
+    },
+    fetchHistory,
+    // No mid-session model switch exists in the contract and the chat shows
+    // no model picker, so this is never invoked.
+    async selectModel() {
+      /* not supported */
+    },
+  };
+}

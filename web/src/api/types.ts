@@ -873,13 +873,16 @@ export interface AiAgent {
   name: string;
   description: string;
   enabled: boolean;
+  /** Legacy CLI column, deprecated by the harness session backend. */
   cli_key: string;
+  model_provider?: string;
+  model_id?: string;
+  approval_mode?: "manual" | "auto";
   system_prompt: string;
   skill_ids: number[];
   repo_bindings: AiAgentRepoBinding[];
   env_vars: AiAgentEnvVar[];
   output_dir: string;
-  stream_output: boolean;
   timeout_sec: number;
   workspace_status: "pending" | "ready" | "failed";
   workspace_error?: string;
@@ -913,6 +916,9 @@ export interface AgentRun {
   user_prompt?: string;
   error_message?: string;
   output_text?: string;
+  final_output?: string;
+  harness_session_id?: string;
+  harness_session_status?: string;
   duration_ms?: number;
   started_at?: string | null;
   finished_at?: string | null;
@@ -1011,6 +1017,14 @@ export interface AiModelInput {
   reasoning_efforts?: ReasoningEffortOption[];
   default_params?: Record<string, unknown>;
   notes?: string;
+}
+
+/** Harness session-backend model catalog entry (GET /ai/models). */
+export interface HarnessModelInfo {
+  id: string;
+  providerID: string;
+  name?: string;
+  family?: string;
 }
 
 export interface ChatSession {

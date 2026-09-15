@@ -344,7 +344,21 @@ type message struct {
 	Role    string             `json:"type"`
 	Agent   string             `json:"agent,omitempty"`
 	Model   *provider.ModelRef `json:"model,omitempty"`
+	Text    string             `json:"text,omitempty"`
 	Content json.RawMessage    `json:"content,omitempty"`
+}
+
+// userTextContent wraps the top-level text of a v2 user message as a single
+// text part: projected user messages carry no content array, only "text".
+func userTextContent(text string) json.RawMessage {
+	if text == "" {
+		return nil
+	}
+	raw, err := json.Marshal([]map[string]string{{"type": "text", "text": text}})
+	if err != nil {
+		return nil
+	}
+	return raw
 }
 
 // History returns the transcript messages, oldest first (serve answers the
@@ -357,12 +371,16 @@ func (c *Client) History(ctx context.Context, sessionID string) ([]provider.Mess
 	out := make([]provider.Message, 0, len(resp.Data))
 	for i := len(resp.Data) - 1; i >= 0; i-- {
 		m := resp.Data[i]
+		content := m.Content
+		if m.Role == "user" && len(content) == 0 {
+			content = userTextContent(m.Text)
+		}
 		out = append(out, provider.Message{
 			ID:      m.ID,
 			Role:    m.Role,
 			Agent:   m.Agent,
 			Model:   m.Model,
-			Content: m.Content,
+			Content: content,
 		})
 	}
 	return out, nil

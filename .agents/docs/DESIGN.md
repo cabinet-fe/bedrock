@@ -360,7 +360,7 @@ database:
 
 ### 6.2 Migration 机制
 
-- 表 `schema_migrations(version TEXT PRIMARY KEY, applied_at TIMESTAMP)`。
+- 表 `schema_migrations(version VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP)`（MySQL 不允许 TEXT 列做主键）。
 - Go 注册表：`migrations.Register(version, up func(ctx, db, driver))`。
 - 启动时事务顺序执行未应用版本；失败拒绝启动。
 - 公共 GORM/SQL 操作 + **少量驱动分支**（如部分索引类型）。

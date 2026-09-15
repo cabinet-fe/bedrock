@@ -11,6 +11,7 @@ import type {
   ChatSessionInput,
   ChatSessionMessage,
   ChatSessionMessageInput,
+  HarnessModelInfo,
   PageResult,
   SkillFileContent,
   SkillFileNode,
@@ -96,12 +97,6 @@ export async function cancelRun(id: number): Promise<void> {
 
 export function agentRunArtifactURL(id: number): string {
   return `/api/v1/ai/runs/${id}/artifact`;
-}
-
-/** Agent run log WebSocket URL (Bearer via query token). */
-export function agentRunLogsWSURL(id: number, token: string): string {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/ws/ai/runs/${id}/logs?token=${encodeURIComponent(token)}`;
 }
 
 export async function listSkills(query?: Query): Promise<PageResult<SkillPackage>> {
@@ -286,5 +281,11 @@ export async function createChatMessage(
 
 export async function listAvailableModels(): Promise<AiModel[]> {
   const { body } = await http.get<AiModel[]>("/ai/chat/models");
+  return body;
+}
+
+/** Harness session-backend model catalog (GET /ai/models), grouped by provider. */
+export async function listHarnessModels(): Promise<HarnessModelInfo[]> {
+  const { body } = await http.get<HarnessModelInfo[]>("/ai/models");
   return body;
 }
