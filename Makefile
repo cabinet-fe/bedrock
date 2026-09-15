@@ -4,7 +4,7 @@
 	clean \
 	smoke-fresh-install smoke-api-e2e smoke-three-db smoke-linux-package smoke-restart-recovery smoke \
 	checksums \
-	install-hooks check-api-contracts
+	install-hooks check-api-contracts check-harness-bin
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 FRONTEND_DIR ?= web
@@ -15,9 +15,23 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 
 dev:
 	@trap 'kill 0' INT TERM; \
+	$(MAKE) --no-print-directory check-harness-bin; \
 	(cd cmd/server && go run -tags dev . --config ../../config.yaml) & \
 	(cd $(FRONTEND_DIR) && vp dev) & \
 	wait
+
+# The server supervises `opencode serve` itself when harness.enabled=true;
+# print a hint when the configured binary is missing.
+check-harness-bin:
+	@enabled=$$(awk '/^harness:/{h=1;next} h&&/^[^ ]/{h=0} h&&/enabled:/{sub(/^[ \t]*enabled:[ \t]*/,"");print;exit}' config.yaml); \
+	bin=$$(awk '/^harness:/{h=1;next} h&&/^[^ ]/{h=0} h&&/bin:/{sub(/^[ \t]*bin:[ \t]*/,"");print;exit}' config.yaml | tr -d '"'); \
+	if [ "$$enabled" = "true" ]; then \
+		if [ -z "$$bin" ]; then bin=opencode; fi; \
+		if ! command -v $$bin >/dev/null 2>&1 && [ ! -x "$$bin" ]; then \
+			echo "warning: config.yaml 已启用 harness（harness.enabled=true）但未找到 harness.bin（$$bin）。"; \
+			echo "         请安装 opencode 或将 harness.bin 配置为绝对路径；服务将以降级模式启动。"; \
+		fi; \
+	fi
 
 build-frontend:
 	cd $(FRONTEND_DIR) && vp install && vp build

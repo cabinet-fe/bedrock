@@ -78,6 +78,16 @@ type DshConfig struct {
 	MaxSessions    int    `mapstructure:"max_sessions"`
 }
 
+// HarnessConfig is the agent session backend (opencode serve). The listen
+// address is always 127.0.0.1 (not configurable).
+type HarnessConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	Backend      string `mapstructure:"backend"`
+	Bin          string `mapstructure:"bin"`
+	Port         int    `mapstructure:"port"`
+	ApprovalMode string `mapstructure:"approval_mode"`
+}
+
 type Config struct {
 	Server     ServerConfig     `mapstructure:"server"`
 	Database   DatabaseConfig   `mapstructure:"database"`
@@ -87,6 +97,7 @@ type Config struct {
 	Encryption EncryptionConfig `mapstructure:"encryption"`
 	Admin      AdminConfig      `mapstructure:"admin"`
 	Dsh        DshConfig        `mapstructure:"dsh"`
+	Harness    HarnessConfig    `mapstructure:"harness"`
 }
 
 // C is the process-wide config after Load (nil until Load succeeds).
@@ -130,6 +141,11 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("dsh.pending_ttl", "10m")
 	v.SetDefault("dsh.session_idle_ttl", "72h")
 	v.SetDefault("dsh.max_sessions", 64)
+	v.SetDefault("harness.enabled", false)
+	v.SetDefault("harness.backend", "opencode")
+	v.SetDefault("harness.bin", "opencode")
+	v.SetDefault("harness.port", 4096)
+	v.SetDefault("harness.approval_mode", "manual")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
@@ -237,6 +253,20 @@ func (c *Config) Validate() error {
 	} {
 		if _, err := time.ParseDuration(item.value); err != nil {
 			return fmt.Errorf("invalid %s: %w", item.name, err)
+		}
+	}
+	if c.Harness.Enabled {
+		if c.Harness.Backend != "opencode" {
+			return fmt.Errorf("unsupported harness.backend %q (want opencode)", c.Harness.Backend)
+		}
+		if c.Harness.Bin == "" {
+			return fmt.Errorf("harness.bin is required when harness.enabled")
+		}
+		if c.Harness.Port <= 0 || c.Harness.Port > 65535 {
+			return fmt.Errorf("harness.port must be in 1..65535")
+		}
+		if c.Harness.ApprovalMode != "manual" && c.Harness.ApprovalMode != "auto" {
+			return fmt.Errorf("invalid harness.approval_mode %q (want manual|auto)", c.Harness.ApprovalMode)
 		}
 	}
 	return nil

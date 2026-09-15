@@ -29,6 +29,7 @@ import (
 	dashboardrepo "bedrock/internal/dashboard/repository"
 	dashboardservice "bedrock/internal/dashboard/service"
 	"bedrock/internal/engine"
+	"bedrock/internal/harness"
 	"bedrock/internal/middleware"
 	opshandler "bedrock/internal/ops/handler"
 	opsrepo "bedrock/internal/ops/repository"
@@ -286,6 +287,26 @@ func main() {
 	pipelineCronSched := cicdservice.NewPipelineCronScheduler(pipelineRepo, pipelineRunRepo, pipelineOrch, logger)
 	pipelineSvc.SetCron(pipelineCronSched)
 
+	// Harness session backend: bedrock supervises `opencode serve` on
+	// 127.0.0.1 with a persisted random Basic Auth password. Startup failure
+	// keeps the server running in degraded mode (the manager keeps retrying).
+	var harnessProc *harness.ProcessManager
+	if cfg.Harness.Enabled {
+		harnessProc = harness.NewProcessManager(harness.ProcessConfig{
+			Bin:          cfg.Harness.Bin,
+			Port:         cfg.Harness.Port,
+			PasswordFile: filepath.Join(filepath.Dir(cfg.Storage.Root), "harness", "server-password"),
+		}, logger)
+		startCtx, cancelHarnessStart := context.WithTimeout(context.Background(), 60*time.Second)
+		if err := harnessProc.Start(startCtx); err != nil {
+			logger.Error("harness serve not healthy; running degraded (agent execution unavailable until it recovers)",
+				zap.Error(err),
+				zap.String("hint", fmt.Sprintf("check that harness.bin %q is installed and on PATH", cfg.Harness.Bin)),
+			)
+		}
+		cancelHarnessStart()
+	}
+
 	credHandler := resourcehandler.NewCredentialHandler(credSvc, permSvc)
 	repoHandler := resourcehandler.NewRepositoryHandler(repoSvc, permSvc)
 	serverHandler := resourcehandler.NewServerHandler(serverSvc, permSvc)
@@ -422,6 +443,9 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("HTTP server forced shutdown", zap.Error(err))
+	}
+	if harnessProc != nil {
+		harnessProc.Stop()
 	}
 	if sqlDB, err := gdb.DB(); err == nil {
 		_ = sqlDB.Close()

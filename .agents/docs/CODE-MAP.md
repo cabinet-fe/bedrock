@@ -20,7 +20,7 @@ bedrock
 │   ├── ops/                    # 运维：进程、开发环境等
 │   ├── project/                # 项目、需求、缺陷、文档
 │   ├── ai/                     # AI Agent / Skill / Run
-│   ├── harness/                # 会话底座：Provider 抽象 + opencode 适配器（REST/SSE）
+│   ├── harness/                # 会话底座：Provider 抽象 + opencode 适配器（REST/SSE）+ serve 进程托管
 │   ├── dsh/                    # DSH 交互会话（JSON-RPC / SSE 客户端）
 │   ├── dashboard/              # 仪表盘聚合数据
 │   ├── storage/                # 制品与文件存储
@@ -74,7 +74,7 @@ bedrock
 | ops | `internal/ops` | 进程管理、开发环境 | ops handler |
 | project | `internal/project` | 项目、需求、缺陷、文档 | `project/handler.RegisterRoutes` |
 | ai | `internal/ai` | AI Agent / Skill / Run / 服务商与模型 / 对话 | `ai/handler.RegisterRoutes` |
-| harness | `internal/harness` | 会话底座：Provider 接口与统一帧模型、opencode 适配器（REST + SSE 回放续流） | `harness/provider`、`harness/provider/oc` |
+| harness | `internal/harness` | 会话底座：Provider 接口与统一帧模型、opencode 适配器（REST + SSE 回放续流）、serve 进程托管（127.0.0.1 / 随机密码持久化 / 探活重启 / degraded） | `harness/process.go`、`harness/provider`、`harness/provider/oc` |
 | dsh | `internal/dsh` | DSH 交互会话：进程内 JSON-RPC / SSE 客户端 | `dsh/service` |
 | dashboard | `internal/dashboard` | 仪表盘聚合数据 | `dashboard/handler.RegisterRoutes` |
 | storage | `internal/storage` | 制品与文件存储 | storage 包 |

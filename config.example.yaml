@@ -61,3 +61,11 @@ dsh:
   session_idle_ttl: "72h" # idle archive
   log_dir: "" # empty inherits build.log_dir
   max_sessions: 64
+
+# Agent session backend, supervised by bedrock. Listen address is always 127.0.0.1 (not configurable).
+harness:
+  enabled: false # true = bedrock starts and supervises the serve process
+  backend: "opencode" # reserved; only opencode for now
+  bin: "opencode" # executable name or absolute path
+  port: 4096 # listen on 127.0.0.1 only; keep clear of other services
+  approval_mode: "manual" # manual | auto (unattended triggers override per agent)

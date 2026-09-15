@@ -53,6 +53,12 @@ build:
 	if !cfg.Dsh.AutoRestart || cfg.Dsh.ApprovalMode != "manual" || cfg.Dsh.LogDir != "" {
 		t.Fatalf("dsh other defaults: %+v", cfg.Dsh)
 	}
+	if cfg.Harness.Enabled {
+		t.Fatal("harness.enabled should be false when harness section is omitted")
+	}
+	if cfg.Harness.Backend != "opencode" || cfg.Harness.Bin != "opencode" || cfg.Harness.Port != 4096 || cfg.Harness.ApprovalMode != "manual" {
+		t.Fatalf("harness defaults: %+v", cfg.Harness)
+	}
 }
 
 func TestLoad_rejectsBadDriver(t *testing.T) {
@@ -178,6 +184,62 @@ dsh:
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected invalid duration error")
+	}
+}
+
+func TestLoad_harnessEnabledReadsKeys(t *testing.T) {
+	_, path := writeConfig(t, `
+harness:
+  enabled: true
+  backend: "opencode"
+  bin: "/usr/local/bin/opencode"
+  port: 14096
+  approval_mode: "auto"
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Harness.Enabled || cfg.Harness.Backend != "opencode" || cfg.Harness.Bin != "/usr/local/bin/opencode" ||
+		cfg.Harness.Port != 14096 || cfg.Harness.ApprovalMode != "auto" {
+		t.Fatalf("harness: %+v", cfg.Harness)
+	}
+}
+
+func TestLoad_harnessEnvOverrides(t *testing.T) {
+	_, path := writeConfig(t, `
+harness:
+  enabled: false
+  port: 4096
+`)
+	t.Setenv("BEDROCK_HARNESS_ENABLED", "true")
+	t.Setenv("BEDROCK_HARNESS_PORT", "14097")
+	t.Setenv("BEDROCK_HARNESS_BIN", "/opt/opencode/bin/opencode")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Harness.Enabled || cfg.Harness.Port != 14097 || cfg.Harness.Bin != "/opt/opencode/bin/opencode" {
+		t.Fatalf("harness env overrides: %+v", cfg.Harness)
+	}
+}
+
+func TestLoad_harnessInvalidSettings(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+	}{
+		{"backend", "harness:\n  enabled: true\n  backend: \"dsh\"\n"},
+		{"approval_mode", "harness:\n  enabled: true\n  approval_mode: \"always\"\n"},
+		{"port", "harness:\n  enabled: true\n  port: 70000\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, path := writeConfig(t, tt.yaml)
+			if _, err := Load(path); err == nil {
+				t.Fatal("expected invalid harness setting error")
+			}
+		})
 	}
 }
 
