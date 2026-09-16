@@ -31,6 +31,7 @@ import (
 	"bedrock/internal/engine"
 	"bedrock/internal/harness"
 	harnesshandler "bedrock/internal/harness/handler"
+	"bedrock/internal/harness/provider"
 	"bedrock/internal/harness/provider/oc"
 	harnessservice "bedrock/internal/harness/service"
 	"bedrock/internal/middleware"
@@ -245,6 +246,20 @@ func main() {
 	projectSvc.SetDocsAIBridge(docsBridge)
 	providerRepo := airepo.NewProviderRepository(gdb)
 	providerSvc := aiservice.NewProviderService(providerRepo)
+	// BYOK provider config: render enabled providers/models into the harness
+	// workspace configs (root anchor at boot + CRUD sync, agent/chat
+	// directories before sessions). Keys are written into the per-directory
+	// opencode.json (0600) because opencode does not expand key references.
+	harnessConfigSvc := aiservice.NewHarnessConfigService(providerSvc, agentWorkDir, logger)
+	providerSvc.SetHarnessConfigSyncer(func() {
+		if err := harnessConfigSvc.Refresh(); err != nil {
+			logger.Warn("harness provider config refresh failed", zap.Error(err))
+		}
+	})
+	agentSvc.SetHarnessConfig(harnessConfigSvc)
+	if err := harnessConfigSvc.Refresh(); err != nil {
+		logger.Warn("harness provider config initial refresh failed", zap.Error(err))
+	}
 	chatRepo := airepo.NewChatRepository(gdb)
 	chatSvc := aiservice.NewChatService(chatRepo)
 	chatProxy := aiservice.NewChatProxy(providerSvc, chatSvc)
@@ -321,6 +336,16 @@ func main() {
 		harnessSessions = harnessservice.NewSessionService(harnessProv, harnessservice.SessionConfig{
 			WorkspaceRoot: agentWorkDir,
 		}, logger)
+		harnessSessions.SetDirectoryPrep(func(dir string) error {
+			return harnessConfigSvc.EnsureDirectoryConfig(dir)
+		})
+		harnessSessions.SetDefaultModel(func() *provider.ModelRef {
+			p, m := harnessConfigSvc.DefaultModelRef()
+			if p == "" || m == "" {
+				return nil
+			}
+			return &provider.ModelRef{ProviderID: p, ID: m}
+		})
 		harnessStreams = harnessservice.NewStreamService(harnessProv, harnessservice.StreamConfig{
 			ApprovalMode: cfg.Harness.ApprovalMode,
 		}, logger)

@@ -171,6 +171,41 @@ func (r *ProviderRepository) FindEnabledModelWithProvider(modelID string) (*mode
 	return nil, nil, gorm.ErrRecordNotFound
 }
 
+// ListEnabledProvidersWithModels returns enabled providers with their enabled
+// models preloaded (models ordered by sort_order), for the harness BYOK
+// config renderer.
+func (r *ProviderRepository) ListEnabledProvidersWithModels() ([]model.AiProvider, error) {
+	var providers []model.AiProvider
+	if err := r.db.Where("enabled = ?", true).Order("id ASC").Find(&providers).Error; err != nil {
+		return nil, err
+	}
+	if len(providers) == 0 {
+		return []model.AiProvider{}, nil
+	}
+	providerIDs := make([]uint, len(providers))
+	for i, p := range providers {
+		providerIDs[i] = p.ID
+	}
+	var models []model.AiModel
+	if err := r.db.Where("provider_id IN ? AND enabled = ?", providerIDs, true).
+		Order("sort_order ASC, id ASC").
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	for i := range providers {
+		providers[i].Models = nil
+	}
+	for _, m := range models {
+		for i := range providers {
+			if providers[i].ID == m.ProviderID {
+				providers[i].Models = append(providers[i].Models, m)
+				break
+			}
+		}
+	}
+	return providers, nil
+}
+
 // ListEnabledModelsWithProviders returns all enabled models whose providers are also enabled.
 func (r *ProviderRepository) ListEnabledModelsWithProviders() ([]model.AiModel, error) {
 	var providers []model.AiProvider

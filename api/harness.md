@@ -7,6 +7,15 @@
 
 本域契约是 Bedrock 对外形状，**不是** opencode 原始 REST/SSE 信封。会话以 harness 后端存储为唯一登记处（Bedrock 重启后按需懒恢复）。
 
+## BYOK 提供商配置注入
+
+平台「AI 服务商」中启用的提供商/模型（`api/ai.md` Providers 节）自动渲染为 opencode 的 BYOK 提供商，**无需在服务器上手工配置 opencode**：
+
+- 渲染目标为各会话目录的 `opencode.json`（opencode 按 `location.directory` 逐目录加载）：工作区根（`GET /ai/models` 目录锚点）、每个智能体工作区（Run 前由工作区同步刷新）、每个聊天用户目录（会话/目录读取前刷新）。
+- 提供商 id 为 `bedrock-p{providerID}`（稳定，不随改名漂移）；默认模型取目录排序第一的启用模型，写入配置 `model`/`small_model`，并同时作为无显式模型会话的建会话默认（防 opencode 冷启动回退到宿主机用户的第三方 provider）。
+- 模型默认推理强度：`ai_agents.reasoning_effort` 渲染为该智能体工作区里所选模型的 `options.reasoningEffort`（opencode 以 `reasoning_effort` 进入每次请求）；聊天目录不设。
+- 已对 opencode 1.18.x 实测的行为边界：自定义提供商的 `apiKey` **不支持** `{file:}`/`{env:}` 引用（原样发送），因此密钥以明文写入目录配置（0600，同 UID 可见 —— 与工作区 `.env` 同一威胁模型，平台无 OS 沙箱）；opencode 内置的免费模型（provider `opencode`）无法通过 `enabled_providers`/`disabled_providers` 过滤，会与 `bedrock-*` 一并列出；agent 定义 frontmatter 的模型参数不透传，故推理强度走模型级 options。
+
 ## 模块可用性
 
 需登录。`harness.enabled=false` 时本域全部 REST 与 WS 端点（含查看类，后端不存在）返回 HTTP 503，信封 `code=503`，`message` 整串为 `harness-unavailable`；执行类端点（建会话 / 发消息 / 应答 / 打断 / WS）同样 503，**不回退** CLI 子进程执行。
@@ -115,7 +124,7 @@
 权限：`harness_chat:view`
 响应 200：data = HarnessModel[]
 错误：401 / 403 / 503（`harness-unavailable`）
-说明：透传 harness 后端模型目录（agent 配置页模型选择器同源，P7 起经 `/ai/models` 复用）。
+说明：透传当前用户聊天目录的模型目录（`bedrock-p*` 平台提供商 + opencode 内置免费模型，见「BYOK 提供商配置注入」）。
 
 ### GET /harness/agents — agent 目录
 

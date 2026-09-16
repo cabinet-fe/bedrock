@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"bedrock/internal/ai/model"
 	"bedrock/internal/ai/service"
 	authmiddleware "bedrock/internal/auth/middleware"
 	"bedrock/internal/harness/provider"
@@ -274,19 +275,54 @@ func (h *Handler) APIRun(c *gin.Context) {
 }
 
 // ListHarnessModels passes the harness model catalog through (agent config
-// page model selector). 503 when the session backend is not enabled or the
-// managed serve is unavailable.
+// page model selector). The catalog is anchored at the workspace root, whose
+// opencode.json carries the platform BYOK providers; entries mapping to a
+// bedrock provider model are enriched with its reasoning options. 503 when
+// the session backend is not enabled or the managed serve is unavailable.
 func (h *Handler) ListHarnessModels(c *gin.Context) {
 	if h.harness == nil {
 		pkg.Error(c, http.StatusServiceUnavailable, "会话底座未启用")
 		return
 	}
-	models, err := h.harness.ListModels(c.Request.Context(), "")
+	models, err := h.harness.ListModels(c.Request.Context(), h.agents.WorkspaceRoot())
 	if err != nil {
 		writeHarnessErr(c, err)
 		return
 	}
-	pkg.Success(c, models)
+	efforts := map[string][]model.ReasoningEffortOption{}
+	if h.providers != nil {
+		if providers, perr := h.providers.ListEnabledProvidersWithModels(); perr == nil {
+			for _, p := range providers {
+				for _, m := range p.Models {
+					if len(m.ReasoningEfforts) == 0 {
+						continue
+					}
+					efforts[service.HarnessProviderKey(p.ID)+"|"+m.ModelID] = m.ReasoningEfforts
+				}
+			}
+		}
+	}
+	items := make([]harnessModelResponse, 0, len(models))
+	for _, m := range models {
+		item := harnessModelResponse{
+			ID: m.ID, ProviderID: m.ProviderID, Name: m.Name, Family: m.Family,
+		}
+		if opts, ok := efforts[m.ProviderID+"|"+m.ID]; ok {
+			item.ReasoningEfforts = opts
+		}
+		items = append(items, item)
+	}
+	pkg.Success(c, items)
+}
+
+// harnessModelResponse mirrors provider.ModelInfo plus the reasoning options
+// of the underlying ai model (bedrock BYOK entries only).
+type harnessModelResponse struct {
+	ID               string                        `json:"id"`
+	ProviderID       string                        `json:"providerID"`
+	Name             string                        `json:"name,omitempty"`
+	Family           string                        `json:"family,omitempty"`
+	ReasoningEfforts []model.ReasoningEffortOption `json:"reasoning_efforts,omitempty"`
 }
 
 // ListHarnessAgentDefs passes the harness agent-definition catalog through:

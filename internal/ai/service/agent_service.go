@@ -77,6 +77,9 @@ type AgentService struct {
 	harnessProvider    provider.Provider
 	harnessIdleConfirm time.Duration
 	harnessNoTerminal  time.Duration
+	// harnessConfig renders the BYOK provider config into agent workspaces
+	// (nil in tests: SyncAgentWorkspace then only drops stale config files).
+	harnessConfig *HarnessConfigService
 
 	runs    chan uint
 	stop    chan struct{}
@@ -112,6 +115,18 @@ func (s *AgentService) SetFailureMailer(m AgentFailureMailer) {
 // SetTerminalHook wires PipelineOrchestrator on AgentRun terminal.
 func (s *AgentService) SetTerminalHook(h RunTerminalHook) {
 	s.termHook = h
+}
+
+// SetHarnessConfig wires the BYOK provider config renderer used by
+// SyncAgentWorkspace (see harness_config.go).
+func (s *AgentService) SetHarnessConfig(c *HarnessConfigService) {
+	s.harnessConfig = c
+}
+
+// WorkspaceRoot returns the bedrock workspace root backing the agent-form
+// harness model catalog (GET /ai/models).
+func (s *AgentService) WorkspaceRoot() string {
+	return s.workDir
 }
 
 // SetSyncWorkspaceInit runs workspace init inline instead of a goroutine (tests).
@@ -223,14 +238,17 @@ type AgentInput struct {
 	// Session-model override and bridge approval mode (manual | auto).
 	ModelProvider string `json:"model_provider"`
 	ModelID       string `json:"model_id"`
-	ApprovalMode  string `json:"approval_mode"`
+	// ReasoningEffort is the default reasoning effort passed to the model
+	// (valid values come from the chosen model's reasoning_efforts options).
+	ReasoningEffort string `json:"reasoning_effort"`
+	ApprovalMode    string `json:"approval_mode"`
 }
 
-// validateAgentModelConfig checks the model override pair and the approval
-// mode enum. Catalog membership is validated client-side against
-// GET /ai/models (the backend create path must also work while serve is
-// restarting).
-func validateAgentModelConfig(modelProvider, modelID, approvalMode string) error {
+// validateAgentModelConfig checks the model override pair, the reasoning
+// effort and the approval mode enum. Catalog membership is validated
+// client-side against GET /ai/models (the backend create path must also work
+// while serve is restarting).
+func validateAgentModelConfig(modelProvider, modelID, reasoningEffort, approvalMode string) error {
 	switch approvalMode {
 	case "", harnessservice.ApprovalManual, harnessservice.ApprovalAuto:
 	default:
@@ -241,6 +259,13 @@ func validateAgentModelConfig(modelProvider, modelID, approvalMode string) error
 	if hasProvider != hasID {
 		return errors.New("model_provider 与 model_id 必须同时提供")
 	}
+	effort := strings.TrimSpace(reasoningEffort)
+	if effort != "" && !hasID {
+		return errors.New("reasoning_effort 需要同时配置模型")
+	}
+	if strings.ContainsAny(effort, " \t\r\n") || len(effort) > 40 {
+		return errors.New("reasoning_effort 必须为不超过 40 字符的非空格值")
+	}
 	return nil
 }
 
@@ -249,7 +274,7 @@ func (s *AgentService) CreateAgent(createdBy uint, in AgentInput) (*model.AiAgen
 	if name == "" {
 		return nil, errors.New("名称不能为空")
 	}
-	if err := validateAgentModelConfig(in.ModelProvider, in.ModelID, in.ApprovalMode); err != nil {
+	if err := validateAgentModelConfig(in.ModelProvider, in.ModelID, in.ReasoningEffort, in.ApprovalMode); err != nil {
 		return nil, err
 	}
 	agent := &model.AiAgent{
@@ -257,6 +282,7 @@ func (s *AgentService) CreateAgent(createdBy uint, in AgentInput) (*model.AiAgen
 		Enabled:       boolOr(in.Enabled, true),
 		ModelProvider: strings.TrimSpace(in.ModelProvider),
 		ModelID:       strings.TrimSpace(in.ModelID),
+		ReasoningEffort: strings.TrimSpace(in.ReasoningEffort),
 		ApprovalMode:  stringOr(in.ApprovalMode, harnessservice.ApprovalManual),
 		SystemPrompt:  in.SystemPrompt,
 		OutputDir:     stringOr(in.OutputDir, "output"),
@@ -298,7 +324,7 @@ func (s *AgentService) UpdateAgent(id, userID uint, in AgentInput) (*model.AiAge
 	if err != nil {
 		return nil, err
 	}
-	if err := validateAgentModelConfig(in.ModelProvider, in.ModelID, in.ApprovalMode); err != nil {
+	if err := validateAgentModelConfig(in.ModelProvider, in.ModelID, in.ReasoningEffort, in.ApprovalMode); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(in.Name) != "" {
@@ -314,6 +340,9 @@ func (s *AgentService) UpdateAgent(id, userID uint, in AgentInput) (*model.AiAge
 		agent.ModelProvider = strings.TrimSpace(in.ModelProvider)
 		agent.ModelID = strings.TrimSpace(in.ModelID)
 	}
+	// Effort always follows the request ("" = model default) so the form can
+	// clear it; validation above rejects it without a model override.
+	agent.ReasoningEffort = strings.TrimSpace(in.ReasoningEffort)
 	if strings.TrimSpace(in.ApprovalMode) != "" {
 		agent.ApprovalMode = strings.TrimSpace(in.ApprovalMode)
 	}

@@ -185,8 +185,16 @@ func (s *AgentService) SyncAgentWorkspace(ctx context.Context, agent *model.AiAg
 	if err := harnessservice.SyncAgentDefinition(root, harnessAgentSpec(agent)); err != nil {
 		return nil, nil, fmt.Errorf("编译智能体定义失败: %w", err)
 	}
-	// Drop legacy per-job OpenCode external_directory configs from the prior approach.
-	_ = os.Remove(filepath.Join(root, "opencode.json"))
+	// BYOK provider config: check and fix the workspace opencode.json before
+	// sessions run here, applying the agent's default reasoning effort to its
+	// model (also drops stale files when no providers remain).
+	if s.harnessConfig != nil {
+		if err := s.harnessConfig.EnsureAgentDirectoryConfig(root, agent.ModelProvider, agent.ModelID, agent.ReasoningEffort); err != nil {
+			return nil, nil, fmt.Errorf("注入 harness 提供商配置失败: %w", err)
+		}
+	} else {
+		_ = os.Remove(filepath.Join(root, "opencode.json"))
+	}
 
 	promptPath := filepath.Join(root, "SYSTEM_PROMPT.md")
 	if err := os.WriteFile(promptPath, []byte(agent.SystemPrompt), 0o644); err != nil {

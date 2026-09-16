@@ -13,10 +13,42 @@ import (
 
 type ProviderService struct {
 	repo *repository.ProviderRepository
+	// harnessConfigSync regenerates the harness BYOK workspace configs after
+	// provider/model changes (wired in main; nil in tests).
+	harnessConfigSync func()
 }
 
 func NewProviderService(repo *repository.ProviderRepository) *ProviderService {
 	return &ProviderService{repo: repo}
+}
+
+// SetHarnessConfigSyncer registers the harness config refresh callback.
+func (s *ProviderService) SetHarnessConfigSyncer(fn func()) {
+	s.harnessConfigSync = fn
+}
+
+// notifyHarnessConfigSync fires the registered refresh; failures never fail
+// the CRUD that triggered them.
+func (s *ProviderService) notifyHarnessConfigSync() {
+	if s.harnessConfigSync != nil {
+		s.harnessConfigSync()
+	}
+}
+
+// ListEnabledProvidersWithModels returns enabled providers with their enabled
+// models preloaded (for the harness BYOK config renderer and the enriched
+// harness model catalog).
+func (s *ProviderService) ListEnabledProvidersWithModels() ([]model.AiProvider, error) {
+	providers, err := s.repo.ListEnabledProvidersWithModels()
+	if err != nil {
+		return nil, err
+	}
+	for i := range providers {
+		for j := range providers[i].Models {
+			projectModel(&providers[i].Models[j])
+		}
+	}
+	return providers, nil
 }
 
 // CreateProvider handles creating a new provider with AES-GCM encrypted API key.
@@ -62,6 +94,7 @@ func (s *ProviderService) CreateProvider(userID uint, in model.ProviderInput) (*
 		return nil, err
 	}
 
+	s.notifyHarnessConfigSync()
 	maskProvider(provider)
 	return provider, nil
 }
@@ -107,13 +140,18 @@ func (s *ProviderService) UpdateProvider(id uint, in model.ProviderInput) (*mode
 		return nil, err
 	}
 
+	s.notifyHarnessConfigSync()
 	maskProvider(existing)
 	return existing, nil
 }
 
 // DeleteProvider deletes a provider and cascades all associated models.
 func (s *ProviderService) DeleteProvider(id uint) error {
-	return s.repo.DeleteProvider(id)
+	if err := s.repo.DeleteProvider(id); err != nil {
+		return err
+	}
+	s.notifyHarnessConfigSync()
+	return nil
 }
 
 // GetProvider retrieves a provider by ID with masked API key.
@@ -203,6 +241,7 @@ func (s *ProviderService) CreateModel(providerID uint, in model.ModelInput) (*mo
 		return nil, err
 	}
 
+	s.notifyHarnessConfigSync()
 	projectModel(aiModel)
 	return aiModel, nil
 }
@@ -257,13 +296,18 @@ func (s *ProviderService) UpdateModel(id uint, in model.ModelInput) (*model.AiMo
 		return nil, err
 	}
 
+	s.notifyHarnessConfigSync()
 	projectModel(existing)
 	return existing, nil
 }
 
 // DeleteModel deletes a model by ID.
 func (s *ProviderService) DeleteModel(id uint) error {
-	return s.repo.DeleteModel(id)
+	if err := s.repo.DeleteModel(id); err != nil {
+		return err
+	}
+	s.notifyHarnessConfigSync()
+	return nil
 }
 
 // GetModel retrieves a model by ID.

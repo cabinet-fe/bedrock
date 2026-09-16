@@ -91,6 +91,17 @@ type SessionService struct {
 	provider provider.Provider
 	cfg      SessionConfig
 	log      *zap.Logger
+	// dirPrep prepares a chat directory before provider calls (BYOK provider
+	// config injection); attached after construction because the
+	// implementation lives in the ai domain. Failures log, never block: a
+	// stale config still allows the session against the global catalog.
+	// Agent workspaces are NOT prepped here: their config carries per-agent
+	// model options and is written by the ai domain right before runs.
+	dirPrep func(directory string) error
+	// defaultModel pins sessions without an explicit model to a bedrock
+	// provider; attached with dirPrep. Without it a cold opencode instance
+	// may fall back to a foreign host-level authenticated provider.
+	defaultModel func() *provider.ModelRef
 }
 
 // NewSessionService builds a session service. A nil logger is replaced by a
@@ -100,6 +111,34 @@ func NewSessionService(prov provider.Provider, cfg SessionConfig, log *zap.Logge
 		log = zap.NewNop()
 	}
 	return &SessionService{provider: prov, cfg: cfg, log: log}
+}
+
+// SetDirectoryPrep wires the per-directory config preparation (BYOK).
+func (s *SessionService) SetDirectoryPrep(fn func(directory string) error) {
+	s.dirPrep = fn
+}
+
+// SetDefaultModel wires the default model resolver.
+func (s *SessionService) SetDefaultModel(fn func() *provider.ModelRef) {
+	s.defaultModel = fn
+}
+
+func (s *SessionService) prepDirectory(directory string) {
+	if s.dirPrep == nil {
+		return
+	}
+	if err := s.dirPrep(directory); err != nil {
+		s.log.Warn("harness session directory prep failed",
+			zap.String("directory", directory), zap.Error(err))
+	}
+}
+
+// resolveDefaultModel returns the wired default model ref, or nil.
+func (s *SessionService) resolveDefaultModel() *provider.ModelRef {
+	if s.defaultModel == nil {
+		return nil
+	}
+	return s.defaultModel()
 }
 
 func (s *SessionService) maxSessionsPerDir() int {
@@ -134,6 +173,8 @@ func (s *SessionService) CreateAgentSession(ctx context.Context, agent AgentSpec
 	}
 	if agent.ModelProvider != "" && agent.ModelID != "" {
 		input.Model = &provider.ModelRef{ProviderID: agent.ModelProvider, ID: agent.ModelID}
+	} else if m := s.resolveDefaultModel(); m != nil {
+		input.Model = m
 	}
 	session, err := s.CreateSession(ctx, input)
 	if err != nil {
@@ -165,6 +206,10 @@ func (s *SessionService) CreateChatSession(ctx context.Context, userID uint, inp
 	input.Directory = ChatSessionDirectory(s.cfg.WorkspaceRoot, userID)
 	if err := os.MkdirAll(input.Directory, 0o755); err != nil {
 		return nil, fmt.Errorf("harness session dir: %w", err)
+	}
+	s.prepDirectory(input.Directory)
+	if input.Model == nil {
+		input.Model = s.resolveDefaultModel()
 	}
 	session, err := s.CreateSession(ctx, input)
 	if err != nil {
@@ -206,13 +251,17 @@ func (s *SessionService) Export(ctx context.Context, sessionID string) ([]byte, 
 // ListChatModels lists the model catalog visible in the calling user's chat
 // directory.
 func (s *SessionService) ListChatModels(ctx context.Context, userID uint) ([]provider.ModelInfo, error) {
-	return s.provider.ListModels(ctx, ChatSessionDirectory(s.cfg.WorkspaceRoot, userID))
+	directory := ChatSessionDirectory(s.cfg.WorkspaceRoot, userID)
+	s.prepDirectory(directory)
+	return s.provider.ListModels(ctx, directory)
 }
 
 // ListChatAgents lists the agent definitions visible in the calling user's
 // chat directory.
 func (s *SessionService) ListChatAgents(ctx context.Context, userID uint) ([]provider.AgentInfo, error) {
-	return s.provider.ListAgents(ctx, ChatSessionDirectory(s.cfg.WorkspaceRoot, userID))
+	directory := ChatSessionDirectory(s.cfg.WorkspaceRoot, userID)
+	s.prepDirectory(directory)
+	return s.provider.ListAgents(ctx, directory)
 }
 
 // GetSession fetches one session by id. This is also the lazy-recovery path:

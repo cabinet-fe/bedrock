@@ -12,8 +12,8 @@ Agents、运行记录、Skills。
 
 - 每个 Agent 唯一对应持久根工作区 `{workspace}/agents/agent-{id}/`；所有 Run 直接在该根目录执行，跨 Run 复用，启动新 Run 时不清空根目录已有文件。
 - 绑定仓库以 `{agentRoot}/repo-{repositoryID}-{sanitizedBranch}/` 目录存在（分支名中的 `/`、空格等不安全字符归一为 `-`）；创建/更新 Agent 后**异步**初始化工作区（`workspace_status`：`pending` → `ready` / `failed`），每次 Run 执行前再增量同步；不再软链构建任务工作区。仅 `workspace_status=ready` 时可创建 Run。
-- 工作区同步内容：技能注入 `{agentRoot}/.opencode/skills/<name>/`、agent 定义编译 `{agentRoot}/.opencode/agents/bedrock-agent-{id}.md`（无定制项时不编译，会话用内置 `build` agent）、绑定仓库 checkout、`SYSTEM_PROMPT.md` 与 `.env`（0600）。
-- 每个 Agent 另有一个固定产出目录 `{agentRoot}/{output_dir}`（`output_dir` 默认为相对名 `output`）。Run 提示词携带工作目录与产出目录的具体路径约束；不创建 `runs/run-{id}/output` 或任何 per-run 输出子目录；后续 Run 复用同一产出目录且不清空既有内容（便于缓存与增量写入），由 Agent 自行覆盖需要更新的文件。
+- 工作区同步内容：技能注入 `{agentRoot}/.agents/skills/<name>/`（同步时清除旧 `.opencode/skills/` 残留）、agent 定义编译 `{agentRoot}/.opencode/agents/bedrock-agent-{id}.md`（无定制项时不编译，会话用内置 `build` agent）、绑定仓库 checkout、`SYSTEM_PROMPT.md` 与 `.env`（0600）、BYOK 提供商配置 `opencode.json`（0600，含所选模型的默认推理强度，见 harness.md）。
+- 每个 Agent 另有一个固定产出目录 `{agentRoot}/{output_dir}`（`output_dir` 默认为相对名 `output`）。Run 提示词携带产出目录的具体路径约束（工作目录由 opencode 原生告知会话，系统提示词经编译的 agent 定义注入，均不在 Run 提示词中重复）；不创建 `runs/run-{id}/output` 或任何 per-run 输出子目录；后续 Run 复用同一产出目录且不清空既有内容（便于缓存与增量写入），由 Agent 自行覆盖需要更新的文件。
 - AgentRun 执行 = 在 Agent 工作区上创建一个 harness 会话（一个 Run 对应一个 `harness_session_id`），提交提示词（delivery=queue）并按事件驱动状态机收敛终态（`running` / `success` / `failed` / `interrupted` / `cancelled`）；取消与超时走会话 `interrupt` → `interrupted`；会话底座不可用 → `failed`（harness-unavailable）。终态写回 `final_output`（消息尾页最后一条 assistant 文本；`output_text` 同值镜像，存量旧 run 详情页降级渲染用）。
 - Agent 可配置任意键值环境变量：AES-GCM 加密存于 `env_vars_cipher`；API 仅回显 `{key, has_value}`；同步/执行时解密写入 `{agentRoot}/.env`（工作区 `.env` 同 UID 可见，0600）。
 - AgentRun **成功**时将产出目录快照归档为 `{artifact_dir}/agent-{id}/run-{runID}.zip`，并写入 `artifact_path`（`artifact_kind=archive`）；空目录不归档；归档失败只记日志、不阻断成功态。可通过 `GET /ai/runs/:id/artifact` 下载。此能力与 CI/CD BuildRun 制品相互独立。
@@ -29,10 +29,10 @@ Agents、运行记录、Skills。
 ### POST /ai/agents — 创建 Agent
 
 权限：`ai_agents:create`
-请求：{ name, description, enabled, system_prompt, skill_ids, repo_bindings, env_vars, output_dir, timeout_sec, model_provider, model_id, approval_mode }
+请求：{ name, description, enabled, system_prompt, skill_ids, repo_bindings, env_vars, output_dir, timeout_sec, model_provider, model_id, reasoning_effort, approval_mode }
 响应 201
-错误：400（含 `model_provider` 与 `model_id` 未同时提供、`approval_mode` 非 `manual|auto`）
-说明：持久化元数据与 bindings 后立即返回，`workspace_status=pending`；后台异步初始化持久根工作区 `{workspace}/agents/agent-{id}/`（技能解压到 `.opencode/skills`，agent 定义编译到 `.opencode/agents/bedrock-agent-{id}.md`，每个 `repo_bindings` 项 checkout 到 `repo-{repository_id}-{sanitizedBranch}/`，环境变量写入 `.env`）。成功 → `ready`，失败 → `failed` 并写入 `workspace_error`（不回滚删除 Agent）。`output_dir` 为相对产出目录名，默认 `output`。同一 Agent 内 `(repository_id, branch)` 唯一；`branch` 缺省为 `main`。保存时不校验远程分支是否存在。`env_vars` 为全量键列表：`[{key, value?}]`，带 `value` 则写入；响应不回显明文。`model_provider`/`model_id` 为可选的会话模型覆写（取值查 `GET /ai/models`），`approval_mode` 默认 `manual`。
+错误：400（含 `model_provider` 与 `model_id` 未同时提供、`reasoning_effort` 未配模型、`approval_mode` 非 `manual|auto`）
+说明：持久化元数据与 bindings 后立即返回，`workspace_status=pending`；后台异步初始化持久根工作区 `{workspace}/agents/agent-{id}/`（技能解压到 `.agents/skills`，agent 定义编译到 `.opencode/agents/bedrock-agent-{id}.md`，每个 `repo_bindings` 项 checkout 到 `repo-{repository_id}-{sanitizedBranch}/`，环境变量写入 `.env`）。成功 → `ready`，失败 → `failed` 并写入 `workspace_error`（不回滚删除 Agent）。`output_dir` 为相对产出目录名，默认 `output`。同一 Agent 内 `(repository_id, branch)` 唯一；`branch` 缺省为 `main`。保存时不校验远程分支是否存在。`env_vars` 为全量键列表：`[{key, value?}]`，带 `value` 则写入；响应不回显明文。`model_provider`/`model_id` 为可选的会话模型覆写（取值查 `GET /ai/models`），`approval_mode` 默认 `manual`。
 
 ### GET /ai/agents/{id} — 获取 Agent
 
@@ -45,9 +45,9 @@ Agents、运行记录、Skills。
 
 权限：`ai_agents:update`
 路径参数：id*: integer
-请求：{ name, description, enabled, system_prompt, skill_ids, repo_bindings, env_vars, output_dir, timeout_sec, model_provider, model_id, approval_mode }
+请求：{ name, description, enabled, system_prompt, skill_ids, repo_bindings, env_vars, output_dir, timeout_sec, model_provider, model_id, reasoning_effort, approval_mode }
 响应 200
-说明：更新元数据后立即返回并将 `workspace_status` 置为 `pending`，后台重新异步初始化工作区（含仓库 checkout 与 `.env`、agent 定义重编译），不清空其中已有非绑定文件。`model_provider`/`model_id`/`approval_mode` 留空表示保留原值。`env_vars` 若提交则为全量键列表：带 `value` 则更新/新建；已有键未带 `value` 则保留旧密文；请求中消失的键删除；省略该字段则不改环境变量。
+说明：更新元数据后立即返回并将 `workspace_status` 置为 `pending`，后台重新异步初始化工作区（含仓库 checkout 与 `.env`、agent 定义重编译），不清空其中已有非绑定文件。`model_provider`/`model_id`/`approval_mode` 留空表示保留原值；`reasoning_effort` 始终跟随请求（空串 = 恢复模型默认）。`env_vars` 若提交则为全量键列表：带 `value` 则更新/新建；已有键未带 `value` 则保留旧密文；请求中消失的键删除；省略该字段则不改环境变量。
 
 ### DELETE /ai/agents/{id} — 删除 Agent
 
@@ -106,7 +106,7 @@ Agents、运行记录、Skills。
 权限：`ai_agents:view`
 响应 200：`ModelInfo[]`
 错误：503（`harness.enabled=false` 或会话底座不可用）/ 502（其它上游错误）
-说明：透传 harness 会话底座的模型目录（`[{id, providerID, name?, family?}]`，按 provider 分组供 Agent 配置页模型选择器使用）。`model_provider`/`model_id` 保存校验以此目录为准。
+说明：透传 harness 会话底座的模型目录（`[{id, providerID, name?, family?, reasoning_efforts?}]`，按 provider 分组供 Agent 配置页模型选择器使用）。目录锚定在工作区根目录的 `opencode.json`：由启用的「服务商/模型」自动渲染为 `bedrock-p{providerID}` BYOK 提供商（详见 harness.md），opencode 内置的免费模型也会一并列出。`model_provider`/`model_id` 保存校验以此目录为准；映射到平台模型的条目附带 `reasoning_efforts`（供 `reasoning_effort` 下拉）。
 
 ### GET /ai/agents-defs — 列出 harness agent 定义目录
 
@@ -512,6 +512,7 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 | `enabled` | `boolean` |  |  |
 | `model_provider` | `string` |  | 会话模型覆写 provider（查 `GET /ai/models`）；空 = 用默认 |
 | `model_id` | `string` |  | 会话模型覆写 id；与 `model_provider` 同时提供 |
+| `reasoning_effort` | `string` |  | 默认推理强度；空 = 模型默认 |
 | `approval_mode` | `'manual' \| 'auto'` |  | 审批模式，默认 `manual`；无人值守触发运行时强制 `auto` |
 | `system_prompt` | `string` |  |  |
 | `skill_ids` | `integer[]` |  |  |
@@ -533,13 +534,14 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 | `description` | `string` |  |  |
 | `enabled` | `boolean` |  |  |
 | `system_prompt` | `string` |  |  |
-| `skill_ids` | `integer[]` |  | 解压到工作区 `.opencode/skills/{name}/`（按 Skill 名称；ZIP 内含 SKILL.md 的包装目录与 `__MACOSX` 会剥离） |
+| `skill_ids` | `integer[]` |  | 解压到工作区 `.agents/skills/{name}/`（按 Skill 名称；ZIP 内含 SKILL.md 的包装目录与 `__MACOSX` 会剥离） |
 | `repo_bindings` | `{ repository_id: integer, branch: string }[]` |  | 在 `{agentRoot}/repo-{repository_id}-{sanitizedBranch}/` checkout 指定分支；同 Agent 内 `(repository_id, branch)` 唯一；`branch` 默认 `main` |
 | `env_vars` | `{ key: string, value?: string }[]` |  | 全量键列表；带 `value` 则设置/更新；已有键未带 `value` 则保留；请求中消失的键删除；key 非空且不得含 `=` / 换行 |
 | `output_dir` | `string` |  | 相对产出目录名；默认 `output`；路径为 `{agentRoot}/{output_dir}`，跨 Run 固定复用 |
 | `timeout_sec` | `integer` |  | 会话执行超时；到期走 `interrupt` → `interrupted` |
 | `model_provider` | `string` |  | 会话模型覆写 provider；与 `model_id` 同时提供 |
 | `model_id` | `string` |  | 会话模型覆写 id |
+| `reasoning_effort` | `string` |  | 默认推理强度，写入工作区 `opencode.json` 的模型请求参数（`reasoning_effort`）；须配模型；取值以所选模型的 `reasoning_efforts` 为准，空 = 模型默认 |
 | `approval_mode` | `'manual' \| 'auto'` |  | 默认 `manual` |
 
 ### AgentRun

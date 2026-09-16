@@ -112,6 +112,19 @@
 | 传输 | WS（events.mux/host） | SSE（`/api/event`、per-session `/event`） |
 | 导出 | 原生 `session.export` | 无（bedrock 自拼） |
 
+### 2.3 BYOK 提供商配置注入（2026-09-16，v1.18.31 本机实测）
+
+平台「AI 服务商」（`ai_providers`/`ai_models`）自动渲染为 opencode BYOK 提供商，免去服务器端手工配置 opencode。实测硬事实：
+
+1. **目录级配置加载成立**：`{dir}/opencode.json` 按 `location.directory` 逐目录生效（provider 注册、模型目录、建会话全链路验证通过）。首启后 models.dev 目录异步加载，最初几次 `GET /api/model` 可能返回空（自愈）。
+2. **自定义 provider 走 `@ai-sdk/openai-compatible`**：`provider.<key>.options.{baseURL, apiKey}` + `models` 字典，端到端（建会话→prompt→上游收到 `POST {baseURL}/chat/completions`）验证通过。
+3. **`apiKey` 不支持引用语法**：`{file:...}`/`{env:...}` 在自定义 provider 的 options 里**原样发送**（Authorization 头可观测到字面量 `{file:...}`）。官方文档的引用语法只适用于其它配置路径。因此 bedrock 把解密后的 key 明文写入目录 `opencode.json`（0600，同 UID 可见——与工作区 `.env` 同一威胁模型；平台构建脚本/CLI 本就同 UID 无沙箱执行）。
+4. **模型级 `options.reasoningEffort` 生效**：`models.<id>.options.reasoningEffort` 会以 `reasoning_effort` 进入每次上游请求体（无需 `reasoning: true` 声明）。**agent 定义 frontmatter 的 `reasoningEffort` 不透传**（1.18.x 实测），故 `ai_agents.reasoning_effort` 渲染进智能体工作区目录配置的模型 options，而非 agent 定义。
+5. **内置免费模型无法过滤**：opencode Zen 内置 provider（id `opencode`，~31 个免费模型）不受 `enabled_providers` 白名单 / `disabled_providers` 黑名单约束（项目级与 OPENCODE_CONFIG 全局级均实测无效），会与 `bedrock-p*` 一同出现在模型目录。
+6. **冷启动回退风险**：serve 刚启动后在某目录创建**不带显式 model** 的会话，可能回退到宿主机用户 opencode 凭证里的第三方 provider（实测回退到用户的 llmgateway）。对策：bedrock 建会话时无模型覆写也显式携带目录配置默认模型（`SessionService.SetDefaultModel`）。
+
+渲染时机：启动与服务商 CRUD 后刷新工作区根（`GET /ai/models` 锚点）；每次 Run 前由 `SyncAgentWorkspace` 刷新该智能体目录（含其模型推理强度）；聊天会话/目录读取前刷新用户目录。无启用服务商时删除目录配置（回落 opencode 全局配置）。
+
 ---
 
 ## 3. 核心映射：智能体 = opencode agent 定义

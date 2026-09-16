@@ -875,6 +875,7 @@ export interface AiAgent {
   enabled: boolean;
   model_provider?: string;
   model_id?: string;
+  reasoning_effort?: string;
   approval_mode?: "manual" | "auto";
   system_prompt: string;
   skill_ids: number[];
@@ -1023,6 +1024,8 @@ export interface HarnessModelInfo {
   providerID: string;
   name?: string;
   family?: string;
+  /** Reasoning options of the underlying ai model (bedrock BYOK entries). */
+  reasoning_efforts?: { value: string; label: string }[];
 }
 
 export interface ChatSession {

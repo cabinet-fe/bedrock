@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: "AiAgents" });
 
-import { computed, onMounted, reactive, ref, useTemplateRef } from "vue";
+import { computed, onMounted, reactive, ref, useTemplateRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
@@ -107,6 +107,8 @@ const form = reactive({
   enabled: true,
   /** Composite `provider|id` of the selected harness catalog model; empty = default. */
   model: "",
+  /** Default reasoning effort of the selected model; empty = model default. */
+  reasoning_effort: "",
   approval_mode: "manual" as "manual" | "auto",
   system_prompt: "",
   skill_ids: [] as number[],
@@ -168,6 +170,33 @@ function modelLabel(agent: AiAgent): string {
   if (!agent.model_provider || !agent.model_id) return "默认";
   return `${agent.model_provider}/${agent.model_id}`;
 }
+
+/** Selected catalog model entry (undefined = default model). */
+const selectedModel = computed(
+  () => harnessModels.value.find((m) => modelValue(m) === form.model) ?? null,
+);
+
+/** Reasoning options of the selected model; empty hides the select. */
+const effortOptions = computed(() => {
+  const options = (selectedModel.value?.reasoning_efforts ?? []).map((opt) => ({
+    label: opt.label ? `${opt.label} (${opt.value})` : opt.value,
+    value: opt.value,
+  }));
+  return [{ label: "默认", value: "" }, ...options];
+});
+
+// Switching models drops an effort the new model does not offer.
+watch(
+  () => form.model,
+  () => {
+    if (
+      form.reasoning_effort &&
+      !effortOptions.value.some((o) => o.value === form.reasoning_effort)
+    ) {
+      form.reasoning_effort = "";
+    }
+  },
+);
 
 const buildJobOptions = computed(() =>
   buildJobs.value.map((j) => ({
@@ -297,6 +326,7 @@ function openCreate() {
   form.repo_bindings = [];
   form.env_vars = [];
   form.model = "";
+  form.reasoning_effort = "";
   form.approval_mode = "manual";
   formTriggers.value = [];
   initialTriggerIDs.value = [];
@@ -481,6 +511,7 @@ async function save() {
   if (model) {
     body.model_provider = model.providerID;
     body.model_id = model.id;
+    body.reasoning_effort = form.reasoning_effort || "";
   }
   try {
     let agentID: number;
@@ -609,6 +640,12 @@ const remove = bind(async (row: AiAgent) => {
           clearable
           filterable
           placeholder="留空使用默认模型"
+        />
+        <u-select
+          v-if="selectedModel?.reasoning_efforts?.length"
+          label="推理强度"
+          field="reasoning_effort"
+          :options="effortOptions"
         />
         <u-switch label="启用" field="enabled" />
         <u-textarea

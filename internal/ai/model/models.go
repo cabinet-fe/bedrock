@@ -75,6 +75,7 @@ type AiAgent struct {
 	Enabled         bool          `json:"enabled" gorm:"not null;default:true"`
 	ModelProvider   string        `json:"model_provider,omitempty" gorm:"column:model_provider;size:100"`
 	ModelID         string        `json:"model_id,omitempty" gorm:"column:model_id;size:200"`
+	ReasoningEffort string        `json:"reasoning_effort,omitempty" gorm:"column:reasoning_effort;size:40;not null;default:''"`
 	ApprovalMode    string        `json:"approval_mode" gorm:"column:approval_mode;size:20;not null;default:manual"`
 	SystemPrompt    string        `json:"system_prompt" gorm:"type:text"`
 	SkillIDsJSON    string        `json:"-" gorm:"type:text"`

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "bedrock-p1/deepseek-chat",
+  "small_model": "bedrock-p1/deepseek-chat",
+  "provider": {
+    "bedrock-p1": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "DeepSeek 官方",
+      "options": {
+        "baseURL": "https://api.deepseek.com/v1",
+        "apiKey": "sk-literal-key"
+      },
+      "models": {
+        "deepseek-chat": {
+          "name": "DeepSeek Chat"
+        },
+        "deepseek-reasoner": {
+          "name": "DeepSeek Reasoner",
+          "options": {
+            "reasoningEffort": "high"
+          }
+        }
+      }
+    },
+    "bedrock-p2": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "本地网关",
+      "options": {
+        "baseURL": "http://127.0.0.1:8000/v1"
+      },
+      "models": {
+        "qwen-max": {
+          "name": "Qwen Max"
+        }
+      }
+    }
+  }
+}
