@@ -32,7 +32,10 @@ const (
 )
 
 // SetHarnessBackend wires the harness session backend used by run
-// execution. Without it CreateRun fails with ErrHarnessDisabled.
+// execution. Without it CreateRun fails with ErrHarnessDisabled. It also
+// wires the bridge's lazy approval-mode recovery so agent sessions whose
+// in-memory mode was lost (bedrock restart) still auto-approve per the
+// agent's approval_mode when a chat continuation prompts them again.
 func (s *AgentService) SetHarnessBackend(
 	sessions *harnessservice.SessionService,
 	streams *harnessservice.StreamService,
@@ -41,6 +44,9 @@ func (s *AgentService) SetHarnessBackend(
 	s.harnessSessions = sessions
 	s.harnessStreams = streams
 	s.harnessProvider = prov
+	if streams != nil {
+		streams.SetApprovalModeResolver(s.resolveHarnessApprovalMode)
+	}
 }
 
 // HarnessEnabled reports whether run execution is available.
@@ -87,6 +93,35 @@ func approvalModeForRun(agent *model.AiAgent, trigger string) string {
 	}
 	return harnessservice.ApprovalManual
 }
+
+// resolveHarnessApprovalMode maps a harness session onto its owner agent's
+// approval mode: agent-workspace sessions resolve to ai_agents.approval_mode,
+// everything else (user chat directories, foreign paths, backend failures)
+// does not resolve and keeps the bridge fallback.
+func (s *AgentService) resolveHarnessApprovalMode(sessionID string) (string, bool) {
+	if s.harnessProvider == nil {
+		return "", false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), resolveModeTimeout)
+	defer cancel()
+	info, err := s.harnessProvider.GetSession(ctx, sessionID)
+	if err != nil || info.Directory == "" {
+		return "", false
+	}
+	agentID, ok := harnessservice.ParseAgentSessionDirectory(s.WorkspaceRoot(), info.Directory)
+	if !ok {
+		return "", false
+	}
+	agent, err := s.repo.FindAgent(agentID)
+	if err != nil {
+		return "", false
+	}
+	return agent.ApprovalMode, true
+}
+
+// resolveModeTimeout bounds one lazy approval-mode lookup (backend session
+// read + agent fetch).
+const resolveModeTimeout = 5 * time.Second
 
 // harnessOutcome is the settled terminal state of a harness-backed run.
 type harnessOutcome struct {
@@ -158,11 +193,11 @@ func (w *frameWatch) handle(frame *provider.Frame, writeLog func(string)) (harne
 			writeLog("工具失败: " + frame.ToolResult.Tool + ": " + truncLogLine(frame.ToolResult.Error))
 		}
 	case provider.FramePermission:
-		if frame.Permission != nil {
+		if frame.Permission != nil && frame.Permission.Resolved == "" {
 			writeLog("等待工具审批: " + frame.Permission.Action + " (" + frame.Permission.RequestID + ")")
 		}
 	case provider.FrameQuestion:
-		if frame.Question != nil {
+		if frame.Question != nil && frame.Question.Resolved == "" {
 			writeLog("会话提问: " + frame.Question.RequestID)
 		}
 	}

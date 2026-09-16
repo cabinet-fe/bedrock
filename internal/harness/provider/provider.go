@@ -236,18 +236,29 @@ type ToolResult struct {
 	Error              string          `json:"error,omitempty"`
 }
 
-// PermissionFrame requests a permission decision; answer via Provider.
+// PermissionFrame requests a permission decision; answer via Provider. A
+// frame with Resolved set is the bridge's post-answer echo: the ask has
+// already been answered (auto-approve, another client, or the pending-TTL
+// fallback) and consumers must close the ask instead of showing it.
 type PermissionFrame struct {
 	RequestID string   `json:"requestId"`
 	Action    string   `json:"action"` // e.g. "bash"
 	Resources []string `json:"resources,omitempty"`
 	Save      []string `json:"save,omitempty"`
+	// Resolved carries the applied answer ("once" | "always" | "reject") on
+	// bridge-synthesized echo frames; empty on asks.
+	Resolved string `json:"resolved,omitempty"`
 }
 
-// QuestionFrame requests structured input; answer via Provider.
+// QuestionFrame requests structured input; answer via Provider. Resolved is
+// the bridge's post-answer echo ("answered" | "dismissed"), mirroring
+// PermissionFrame.Resolved.
 type QuestionFrame struct {
 	RequestID string     `json:"requestId"`
 	Questions []Question `json:"questions"`
+	// Resolved carries the applied outcome on bridge-synthesized echo frames;
+	// empty on asks.
+	Resolved string `json:"resolved,omitempty"`
 }
 
 // Question is one structured question with selectable options.

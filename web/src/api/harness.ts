@@ -90,10 +90,11 @@ export interface HarnessFrame {
     output?: unknown;
     error?: string;
   };
-  permission?: { requestId: string; action: string; resources?: string[] };
+  permission?: { requestId: string; action: string; resources?: string[]; resolved?: string };
   question?: {
     requestId: string;
     questions: { question: string; options?: string[] }[];
+    resolved?: string;
   };
 }
 
@@ -357,7 +358,20 @@ export function createHarnessSessionAdapter(
       }
       case "permission": {
         const permission = frame.permission;
-        if (!permission || activePermissions.has(permission.requestId)) return;
+        if (!permission) return;
+        // The bridge echoes every applied answer (auto-approve, another
+        // client, TTL reject) as a resolved frame: close the card, never ask.
+        if (permission.resolved) {
+          if (activePermissions.delete(permission.requestId)) {
+            emit({
+              type: "approval/resolved",
+              approvalId: permission.requestId,
+              outcome: permission.resolved,
+            });
+          }
+          return;
+        }
+        if (activePermissions.has(permission.requestId)) return;
         activePermissions.add(permission.requestId);
         emit({
           type: "approval/requested",
@@ -370,7 +384,19 @@ export function createHarnessSessionAdapter(
       }
       case "question": {
         const question = frame.question;
-        if (!question || activeQuestionId === question.requestId) return;
+        if (!question) return;
+        if (question.resolved) {
+          if (activeQuestionId != null) {
+            emit({
+              type: "question/resolved",
+              questionRpcId: activeQuestionId,
+              outcome: "cancelled",
+            });
+            activeQuestionId = null;
+          }
+          return;
+        }
+        if (activeQuestionId === question.requestId) return;
         activeQuestionId = question.requestId;
         emit({
           type: "question/requested",
@@ -573,7 +599,14 @@ export function createHarnessSessionAdapter(
     },
     async respond(rpcId, ok, value) {
       if (activePermissions.has(rpcId)) {
-        await replySessionPermission(sessionId, rpcId, ok ? "once" : "reject");
+        try {
+          await replySessionPermission(sessionId, rpcId, ok ? "once" : "reject");
+        } catch (err) {
+          // The bridge already answered the ask (auto-approve beat the click);
+          // anything else is a real failure.
+          if (!(err instanceof Error) || !err.message.includes("harness-pending-not-found"))
+            throw err;
+        }
         activePermissions.delete(rpcId);
         emit({ type: "approval/resolved", approvalId: rpcId, outcome: ok ? "once" : "rejected" });
         return;

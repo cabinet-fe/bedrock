@@ -219,8 +219,11 @@ func TestStreamAutoApproveAllows(t *testing.T) {
 			t.Fatalf("auto-approve call = %+v, want req_1/once", call)
 		}
 		waitFor(t, "pending to clear", func() bool { return len(pendingIDs(svc, "ses_1")) == 0 })
-		if got := drainLive(live); len(got) != 1 || got[0].Kind != provider.FramePermission {
-			t.Fatalf("permission frame not dispatched: %v", got)
+		// The ask is dispatched live, then echoed as resolved once the answer
+		// applied; both frames reach subscribers in that order.
+		echo := waitForResolvedEcho(t, live, provider.FramePermission)
+		if echo.Permission.RequestID != "req_1" {
+			t.Fatalf("resolved echo = %+v, want req_1", echo.Permission)
 		}
 	})
 
@@ -277,6 +280,113 @@ func TestStreamAutoModeRecordsQuestionOnly(t *testing.T) {
 	}
 }
 
+// waitForResolvedEcho drains live until a resolved echo frame of the given
+// kind arrives (ask frames drained on the way are consumed, not asserted).
+func waitForResolvedEcho(t *testing.T, live <-chan *provider.Frame, kind provider.FrameKind) *provider.Frame {
+	t.Helper()
+	var found *provider.Frame
+	waitFor(t, "resolved echo", func() bool {
+		for _, f := range drainLive(live) {
+			if f.Kind != kind {
+				continue
+			}
+			if (f.Permission != nil && f.Permission.Resolved != "") ||
+				(f.Question != nil && f.Question.Resolved != "") {
+				found = f
+			}
+		}
+		return found != nil
+	})
+	return found
+}
+
+// Every applied answer is echoed to subscribers as a transient resolved
+// frame: auto-approve (once), REST replies, and the pending-TTL fallback.
+func TestStreamResolvedEchoes(t *testing.T) {
+	t.Run("auto-approve echoes once", func(t *testing.T) {
+		fake := newFakeBusProvider()
+		svc := NewStreamService(fake, StreamConfig{ApprovalMode: ApprovalAuto}, nil)
+		_, live, stop := svc.Subscribe("ses_1")
+		defer stop()
+
+		svc.dispatch(permFrame("ses_1", "evt_1", "req_1"))
+		<-fake.permCalls
+		echo := waitForResolvedEcho(t, live, provider.FramePermission)
+		if echo.Permission.RequestID != "req_1" || echo.Permission.Resolved != string(provider.PermissionOnce) {
+			t.Fatalf("echo = %+v, want req_1/once", echo.Permission)
+		}
+		if echo.Seq != 0 {
+			t.Fatalf("echo seq = %d, want transient 0", echo.Seq)
+		}
+	})
+
+	t.Run("REST reply echoes the applied answer", func(t *testing.T) {
+		fake := newFakeBusProvider()
+		svc := NewStreamService(fake, StreamConfig{}, nil)
+		_, live, stop := svc.Subscribe("ses_1")
+		defer stop()
+
+		svc.dispatch(permFrame("ses_1", "evt_1", "req_1"))
+		if err := svc.ReplyPermission(context.Background(), "ses_1", "req_1", provider.PermissionAlways); err != nil {
+			t.Fatalf("reply permission: %v", err)
+		}
+		<-fake.permCalls
+		echo := waitForResolvedEcho(t, live, provider.FramePermission)
+		if echo.Permission.Resolved != string(provider.PermissionAlways) {
+			t.Fatalf("echo resolved = %q, want always", echo.Permission.Resolved)
+		}
+
+		svc.dispatch(questionFrame("ses_1", "evt_2", "req_q"))
+		if err := svc.ReplyQuestion(context.Background(), "ses_1", "req_q", provider.QuestionAnswers{}); err != nil {
+			t.Fatalf("reply question: %v", err)
+		}
+		<-fake.questionIDs
+		qEcho := waitForResolvedEcho(t, live, provider.FrameQuestion)
+		if qEcho.Question.RequestID != "req_q" || qEcho.Question.Resolved != "answered" {
+			t.Fatalf("question echo = %+v, want req_q/answered", qEcho.Question)
+		}
+	})
+
+	t.Run("TTL reject echoes reject and dismissed", func(t *testing.T) {
+		fake := newFakeBusProvider()
+		svc := NewStreamService(fake, StreamConfig{}, nil)
+		_, live, stop := svc.Subscribe("ses_1")
+		defer stop()
+
+		svc.dispatch(permFrame("ses_1", "evt_1", "req_p"))
+		svc.dispatch(questionFrame("ses_1", "evt_2", "req_q"))
+		svc.mu.Lock()
+		for _, st := range svc.sessions {
+			for id, req := range st.pending {
+				req.ExpiresAt = time.Now().Add(-time.Second)
+				st.pending[id] = req
+			}
+		}
+		svc.mu.Unlock()
+		svc.sweepExpired(context.Background())
+		<-fake.permCalls
+		<-fake.rejectIDs
+		var permEcho, qEcho *provider.Frame
+		waitFor(t, "both echoes", func() bool {
+			for _, f := range drainLive(live) {
+				if p := f.Permission; p != nil && p.Resolved != "" {
+					permEcho = f
+				}
+				if q := f.Question; q != nil && q.Resolved != "" {
+					qEcho = f
+				}
+			}
+			return permEcho != nil && qEcho != nil
+		})
+		if permEcho.Permission.Resolved != string(provider.PermissionReject) {
+			t.Fatalf("perm echo resolved = %q, want reject", permEcho.Permission.Resolved)
+		}
+		if qEcho.Question.Resolved != "dismissed" {
+			t.Fatalf("question echo resolved = %q, want dismissed", qEcho.Question.Resolved)
+		}
+	})
+}
+
 func TestStreamPendingTTLRejects(t *testing.T) {
 	fake := newFakeBusProvider()
 	svc := NewStreamService(fake, StreamConfig{}, nil)
@@ -303,6 +413,61 @@ func TestStreamPendingTTLRejects(t *testing.T) {
 	}
 	waitFor(t, "pending to clear", func() bool { return len(pendingIDs(svc, "ses_1")) == 0 })
 }
+
+// Sessions whose approval mode was lost (restart) recover it lazily from the
+// wired resolver; a resolving auto mode auto-approves the pending asks, an
+// unresolved session keeps the fallback behavior.
+func TestStreamLazyModeResolution(t *testing.T) {
+	t.Run("resolver auto approves pending asks", func(t *testing.T) {
+		fake := newFakeBusProvider()
+		svc := NewStreamService(fake, StreamConfig{ApprovalMode: ApprovalManual}, nil)
+		_, live, stop := svc.Subscribe("ses_1")
+		defer stop()
+		svc.SetApprovalModeResolver(func(sessionID string) (string, bool) {
+			if sessionID != "ses_1" {
+				t.Fatalf("resolver session = %q, want ses_1", sessionID)
+			}
+			return ApprovalAuto, true
+		})
+
+		svc.dispatch(permFrame("ses_1", "evt_1", "req_1"))
+		call := <-fake.permCalls
+		if call.requestID != "req_1" || call.reply != provider.PermissionOnce {
+			t.Fatalf("resolved approve call = %+v, want req_1/once", call)
+		}
+		waitFor(t, "pending to clear", func() bool { return len(pendingIDs(svc, "ses_1")) == 0 })
+		if echo := waitForResolvedEcho(t, live, provider.FramePermission); echo == nil {
+			t.Fatal("lazy resolution must echo the retroactive approve")
+		}
+	})
+
+	t.Run("resolver manual pins manual", func(t *testing.T) {
+		fake := newFakeBusProvider()
+		svc := NewStreamService(fake, StreamConfig{ApprovalMode: ApprovalManual}, nil)
+		svc.SetApprovalModeResolver(func(string) (string, bool) {
+			return ApprovalManual, true
+		})
+
+		svc.dispatch(permFrame("ses_1", "evt_1", "req_1"))
+		assertNoCall(t, fake.permCalls, "auto-approve of a resolver-pinned manual session")
+		if ids := pendingIDs(svc, "ses_1"); len(ids) != 1 {
+			t.Fatalf("pending = %v, want the ask to stay", ids)
+		}
+	})
+
+	t.Run("unresolved session keeps the fallback", func(t *testing.T) {
+		fake := newFakeBusProvider()
+		svc := NewStreamService(fake, StreamConfig{ApprovalMode: ApprovalManual}, nil)
+		svc.SetApprovalModeResolver(func(string) (string, bool) { return "", false })
+
+		svc.dispatch(permFrame("ses_1", "evt_1", "req_1"))
+		assertNoCall(t, fake.permCalls, "auto-approve of an unresolved session")
+		if ids := pendingIDs(svc, "ses_1"); len(ids) != 1 {
+			t.Fatalf("pending = %v, want the ask to stay", ids)
+		}
+	})
+}
+
 
 func TestStreamRingBufferEvictsOldest(t *testing.T) {
 	svc := NewStreamService(newFakeBusProvider(), StreamConfig{RingSize: 5}, nil)

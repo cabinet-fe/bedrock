@@ -227,3 +227,27 @@ func TestEnforceSessionLimitFailuresAreLoggedNotReturned(t *testing.T) {
 		t.Fatalf("create must not fail on archive error: %v", err)
 	}
 }
+
+func TestParseAgentSessionDirectory(t *testing.T) {
+	root := t.TempDir()
+	if id, ok := ParseAgentSessionDirectory(root, AgentSessionDirectory(root, 42)); !ok || id != 42 {
+		t.Fatalf("agent dir parse = (%d, %v), want (42, true)", id, ok)
+	}
+	for _, dir := range []string{
+		filepath.Join(root, "agents", "agent-"),
+		filepath.Join(root, "agents", "agent-x"),
+		filepath.Join(root, "agents", "agent-0"),
+		filepath.Join(root, "agents", "other-1"),
+		filepath.Join(root, "harness", "users", "user-1"),
+		filepath.Join(root, "agents"),
+	} {
+		if id, ok := ParseAgentSessionDirectory(root, dir); ok {
+			t.Fatalf("parse(%q) = (%d, true), want unresolved", dir, id)
+		}
+	}
+	// A different root's agent directory does not resolve.
+	other := t.TempDir()
+	if _, ok := ParseAgentSessionDirectory(other, AgentSessionDirectory(root, 3)); ok {
+		t.Fatal("foreign root must not resolve")
+	}
+}

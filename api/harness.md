@@ -101,7 +101,7 @@
 请求：{ reply* }
 响应 200
 错误：401 / 403 / 404 / 409（`harness-pending-not-found`）/ 400（`reply` 非 `once` / `always` / `reject`）/ 503（`harness-unavailable`）
-说明：`reply` 为 `'once' | 'always' | 'reject'`。须命中流桥 pending 登记表；`approval_mode=auto` 的会话由后端自动 `once`。成功应答**记操作日志**（`harness_permission_reply`）。
+说明：`reply` 为 `'once' | 'always' | 'reject'`。须命中流桥 pending 登记表；`approval_mode=auto` 的会话由后端自动 `once`。成功应答**记操作日志**（`harness_permission_reply`），并向 WS 订阅者广播带 `resolved` 的 `permission` 回执帧（见「应答回执」）。
 
 ### POST /harness/sessions/{id}/questions/{reqId} — 提问应答
 
@@ -302,5 +302,9 @@
 
 `kind` 取值：`status`（`prompt_admitted` / `prompted` / `step_started` / `step_ended` / `step_failed` / `error` / `idle`）、`message_delta`、`message_text`、`reasoning_delta`、`tool_call`、`tool_result`、`permission`、`question`。
 
-`permission` 载荷：`{ requestId, action, resources?, save? }`，应答走 `POST .../permissions/{reqId}`。
-`question` 载荷：`{ requestId, questions: [{ question, header?, options?, multiple? }] }`，应答走 `POST .../questions/{reqId}`。
+`permission` 载荷：`{ requestId, action, resources?, save?, resolved? }`，应答走 `POST .../permissions/{reqId}`。
+`question` 载荷：`{ requestId, questions: [{ question, header?, options?, multiple? }], resolved? }`，应答走 `POST .../questions/{reqId}`。
+
+> **应答回执（resolved）**：流桥每当一条 pending 询问被成功应答——后端自动审批（`approval_mode=auto` 会话自动 `once`）、任意 REST 客户端应答、或 pending TTL 兜底拒绝——都会向实时订阅者补发一帧瞬态（`seq=0`）同 `kind` 帧：`permission.resolved` 为 `'once' | 'always' | 'reject'`，`question.resolved` 为 `'answered' | 'dismissed'`。前端收到带 `resolved` 的帧应关闭对应确认卡片，不再展示询问。回执不进回放与 pending 补发（未应答的询问才会补发）。
+>
+> **审批模式恢复**：agent 工作区会话（`{workspace}/agents/agent-{id}/`）的审批模式在运行执行前按 Agent `approval_mode` 注册；服务重启导致内存注册丢失后，流桥对模式未知的会话发起一次懒恢复（会话目录 → 所属 Agent → `approval_mode`），恢复为 `auto` 的会话其 pending 审批会被补自动应答。用户聊天目录会话与无法解析的会话维持全局兜底（`harness.approval_mode`，默认 `manual`）。

@@ -98,7 +98,10 @@ type sessionState struct {
 	subs     map[int]chan *provider.Frame
 	nextSub  int
 	approval string // "" = configured fallback
-	activeAt time.Time
+	// resolving guards the one in-flight lazy mode lookup of a session whose
+	// approval mode is unregistered (restart recovery; see resolveMode).
+	resolving bool
+	activeAt  time.Time
 	// busy tracks whether the backend agent loop is believed to run. It
 	// flips true on prompt/step-start frames and false only when the settle
 	// check confirms idleness; the synthesized idle frame closes the gap
@@ -115,11 +118,17 @@ type sessionState struct {
 // connections. Permission and question requests are registered as pending:
 // auto-mode sessions get permissions allowed immediately (questions are only
 // recorded), and unanswered requests are rejected when their TTL elapses, so
-// no session blocks forever on a missing answer.
+// no session blocks forever on a missing answer. Every successful answer is
+// echoed to subscribers as a resolved frame so asks never linger in UIs.
 type StreamService struct {
 	provider provider.Provider
 	cfg      StreamConfig
 	log      *zap.Logger
+
+	// resolveMode lazily recovers the approval mode of sessions whose mode is
+	// unregistered (e.g. created before a bedrock restart); wired by the ai
+	// domain, which owns the agent↔session-directory mapping.
+	resolveMode func(sessionID string) (string, bool)
 
 	mu        sync.Mutex
 	sessions  map[string]*sessionState
@@ -202,6 +211,14 @@ func (s *StreamService) SetApprovalMode(sessionID, mode string) {
 	s.stateLocked(sessionID).approval = mode
 }
 
+// SetApprovalModeResolver wires the lazy approval-mode recovery for sessions
+// whose mode is unregistered (restart recovery). The resolver answers
+// (mode, true) when it knows the session's owner-side mode; then that mode is
+// pinned and still-pending permissions are auto-approved if it is auto.
+func (s *StreamService) SetApprovalModeResolver(fn func(sessionID string) (string, bool)) {
+	s.resolveMode = fn
+}
+
 // Subscribe registers a live frame feed for a session and returns the
 // current ring buffer (oldest first) as the replay baseline. Snapshot and
 // registration are atomic, so replay and live frames neither overlap nor
@@ -252,14 +269,14 @@ func (s *StreamService) PendingRequests(sessionID string) []PendingRequest {
 
 // ReplyPermission answers a pending permission request.
 func (s *StreamService) ReplyPermission(ctx context.Context, sessionID, requestID string, reply provider.PermissionReply) error {
-	return s.answer(sessionID, requestID, provider.FramePermission, func() error {
+	return s.answer(sessionID, requestID, provider.FramePermission, string(reply), func() error {
 		return s.provider.ReplyPermission(ctx, sessionID, requestID, reply)
 	})
 }
 
 // ReplyQuestion answers a pending question request.
 func (s *StreamService) ReplyQuestion(ctx context.Context, sessionID, requestID string, answers provider.QuestionAnswers) error {
-	return s.answer(sessionID, requestID, provider.FrameQuestion, func() error {
+	return s.answer(sessionID, requestID, provider.FrameQuestion, "answered", func() error {
 		return s.provider.ReplyQuestion(ctx, sessionID, requestID, answers)
 	})
 }
@@ -270,6 +287,7 @@ func (s *StreamService) dispatch(frame *provider.Frame) {
 		return
 	}
 	var auto *PendingRequest
+	var resolve string
 	s.mu.Lock()
 	st := s.stateLocked(frame.SessionID)
 	if !s.acceptLocked(st, frame) {
@@ -281,8 +299,16 @@ func (s *StreamService) dispatch(frame *provider.Frame) {
 	s.appendRingLocked(st, frame)
 	if frame.Kind == provider.FramePermission || frame.Kind == provider.FrameQuestion {
 		if req, ok := s.putPendingLocked(st, frame); ok &&
-			frame.Kind == provider.FramePermission && s.modeLocked(st) == ApprovalAuto {
-			auto = &req
+			frame.Kind == provider.FramePermission {
+			switch {
+			case s.modeLocked(st) == ApprovalAuto:
+				auto = &req
+			case st.approval == "" && s.resolveMode != nil && !st.resolving:
+				// Mode unknown (e.g. session predates a restart): recover it
+				// out-of-band, then decide this ask and any older ones.
+				st.resolving = true
+				resolve = frame.SessionID
+			}
 		}
 	}
 	s.trackBusyLocked(frame.SessionID, st, frame)
@@ -292,6 +318,43 @@ func (s *StreamService) dispatch(frame *provider.Frame) {
 
 	if auto != nil {
 		go s.autoApprove(*auto)
+	}
+	if resolve != "" {
+		go s.resolveApprovalMode(resolve)
+	}
+}
+
+// resolveApprovalMode recovers the approval mode of a session whose mode is
+// unregistered and applies it: an auto result auto-approves every permission
+// still pending for the session; anything else keeps the fallback behavior.
+func (s *StreamService) resolveApprovalMode(sessionID string) {
+	mode, ok := s.resolveMode(sessionID)
+	s.mu.Lock()
+	st := s.sessions[sessionID]
+	if st == nil {
+		s.mu.Unlock()
+		return
+	}
+	st.resolving = false
+	if !ok {
+		s.mu.Unlock()
+		return
+	}
+	if mode != ApprovalAuto {
+		mode = ApprovalManual
+	}
+	st.approval = mode
+	var pending []PendingRequest
+	if mode == ApprovalAuto {
+		for _, req := range st.pending {
+			if req.Kind == provider.FramePermission {
+				pending = append(pending, req)
+			}
+		}
+	}
+	s.mu.Unlock()
+	for _, req := range pending {
+		s.autoApprove(req)
 	}
 }
 
@@ -541,8 +604,9 @@ func (s *StreamService) modeLocked(st *sessionState) string {
 }
 
 // answer takes the pending entry, forwards the reply to the provider and
-// restores the entry with its remaining TTL when the provider call fails.
-func (s *StreamService) answer(sessionID, requestID string, kind provider.FrameKind, forward func() error) error {
+// restores the entry with its remaining TTL when the provider call fails. A
+// successful answer is echoed to subscribers as a resolved frame.
+func (s *StreamService) answer(sessionID, requestID string, kind provider.FrameKind, outcome string, forward func() error) error {
 	req, ok := s.takePending(sessionID, requestID, kind)
 	if !ok {
 		return ErrRequestNotPending
@@ -551,6 +615,7 @@ func (s *StreamService) answer(sessionID, requestID string, kind provider.FrameK
 		s.requeue(req)
 		return err
 	}
+	s.publishResolved(req, outcome)
 	return nil
 }
 
@@ -581,6 +646,38 @@ func (s *StreamService) requeue(req PendingRequest) {
 	}
 }
 
+// publishResolved echoes one answered ask to the session's subscribers as a
+// transient resolved frame (seq 0): live consumers close the ask; replay is
+// unaffected because pending asks are only re-sent while unanswered.
+func (s *StreamService) publishResolved(req PendingRequest, outcome string) {
+	frame := req.Frame
+	frame.Seq = 0
+	frame.EventID = ""
+	switch {
+	case frame.Permission != nil:
+		frame.Permission = &provider.PermissionFrame{
+			RequestID: req.RequestID,
+			Action:    frame.Permission.Action,
+			Resolved:  outcome,
+		}
+	case frame.Question != nil:
+		frame.Question = &provider.QuestionFrame{
+			RequestID: req.RequestID,
+			Resolved:  outcome,
+		}
+	default:
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.sessions[req.SessionID]
+	if st == nil {
+		return
+	}
+	s.appendRingLocked(st, &frame)
+	s.fanoutLocked(st, &frame)
+}
+
 // autoApprove allows a permission request of an auto-mode session. On
 // failure the request stays pending so the TTL sweep can reject it.
 func (s *StreamService) autoApprove(req PendingRequest) {
@@ -594,6 +691,7 @@ func (s *StreamService) autoApprove(req PendingRequest) {
 		return
 	}
 	s.takePending(req.SessionID, req.RequestID, provider.FramePermission)
+	s.publishResolved(req, string(provider.PermissionOnce))
 	s.log.Info("harness permission auto-approved",
 		zap.String("session_id", req.SessionID),
 		zap.String("request_id", req.RequestID))
@@ -618,7 +716,8 @@ func (s *StreamService) sweepLoop(ctx context.Context) {
 
 // sweepExpired rejects pending requests whose TTL elapsed: permissions with
 // a reject reply, questions with a dismiss. A failed reject is requeued with
-// a fresh TTL so the next sweep retries.
+// a fresh TTL so the next sweep retries; a successful one is echoed to
+// subscribers as a resolved frame.
 func (s *StreamService) sweepExpired(ctx context.Context) {
 	now := time.Now()
 	var expired []PendingRequest
@@ -634,7 +733,9 @@ func (s *StreamService) sweepExpired(ctx context.Context) {
 	s.mu.Unlock()
 	for _, req := range expired {
 		var err error
+		outcome := "dismissed"
 		if req.Kind == provider.FramePermission {
+			outcome = string(provider.PermissionReject)
 			err = s.provider.ReplyPermission(ctx, req.SessionID, req.RequestID, provider.PermissionReject)
 		} else {
 			err = s.provider.RejectQuestion(ctx, req.SessionID, req.RequestID)
@@ -651,6 +752,7 @@ func (s *StreamService) sweepExpired(ctx context.Context) {
 			s.requeue(req)
 			continue
 		}
+		s.publishResolved(req, outcome)
 		s.log.Warn("harness pending request expired; rejected",
 			zap.String("session_id", req.SessionID),
 			zap.String("request_id", req.RequestID))

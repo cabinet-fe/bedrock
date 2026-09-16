@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
@@ -53,6 +54,22 @@ type AgentSpec struct {
 // are bound to.
 func AgentSessionDirectory(workspaceRoot string, agentID uint) string {
 	return filepath.Join(workspaceRoot, "agents", fmt.Sprintf("agent-%d", agentID))
+}
+
+// ParseAgentSessionDirectory is the inverse of AgentSessionDirectory: it
+// reports the agent an exact agent-session directory belongs to. Anything
+// else (chat directories, foreign paths) does not resolve.
+func ParseAgentSessionDirectory(workspaceRoot, directory string) (uint, bool) {
+	agentsDir := filepath.Join(workspaceRoot, "agents")
+	parent, name := filepath.Split(filepath.Clean(directory))
+	if filepath.Clean(parent) != filepath.Clean(agentsDir) || !strings.HasPrefix(name, "agent-") {
+		return 0, false
+	}
+	id, err := strconv.ParseUint(strings.TrimPrefix(name, "agent-"), 10, 64)
+	if err != nil || id == 0 {
+		return 0, false
+	}
+	return uint(id), true
 }
 
 // ChatSessionDirectory returns the workspace directory a user's interactive

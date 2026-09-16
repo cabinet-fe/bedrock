@@ -428,3 +428,58 @@ func TestExecuteRunReconcileWaitsForInactiveSession(t *testing.T) {
 		t.Fatalf("harness_session_id=%v want %q", finished.HarnessSessionID, sessionID)
 	}
 }
+
+// SetHarnessBackend wires the bridge's lazy approval-mode recovery: an
+// agent-workspace session of an approval_mode=auto agent auto-approves even
+// when its mode was never registered (restart recovery), while user chat
+// sessions keep the manual fallback.
+func TestHarnessApprovalModeResolverWiring(t *testing.T) {
+	m := newMatrixEnv(t, 30, 0)
+	agentID := m.testAgentID(t)
+	if _, err := m.agents.UpdateAgent(agentID, 1, service.AgentInput{
+		ApprovalMode: harnessservice.ApprovalAuto,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	agentSes, err := m.fake.CreateSession(ctx, provider.CreateSessionInput{
+		Directory: harnessservice.AgentSessionDirectory(m.agents.WorkspaceRoot(), agentID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chatSes, err := m.fake.CreateSession(ctx, provider.CreateSessionInput{
+		Directory: harnessservice.ChatSessionDirectory(m.agents.WorkspaceRoot(), 7),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, ask := range []struct{ session, request string }{
+		{agentSes.ID, "perm-lazy"},
+		{chatSes.ID, "perm-chat"},
+	} {
+		if err := m.fake.Emit(provider.Frame{
+			SessionID: ask.session,
+			Kind:      provider.FramePermission,
+			Permission: &provider.PermissionFrame{
+				RequestID: ask.request, Action: "bash",
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && m.fake.Reply("perm-lazy") == "" {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := m.fake.Reply("perm-lazy"); got != string(provider.PermissionOnce) {
+		t.Fatalf("agent session reply = %q, want once (lazy auto recovery)", got)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if got := m.fake.Reply("perm-chat"); got != "" {
+		t.Fatalf("chat session reply = %q, want none (manual fallback)", got)
+	}
+}
