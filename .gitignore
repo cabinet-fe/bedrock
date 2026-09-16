@@ -9,8 +9,11 @@ cmd/server/dist/
 web/dist/
 /bedrock
 /bedrock-*
+/SHA256SUMS
+/*.sha256
 server
 .tmp/
 .agents/cooking/
 .playwright-cli/
 .claude/
+.zcode/

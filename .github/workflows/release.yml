@@ -12,6 +12,10 @@ permissions:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -23,8 +27,11 @@ jobs:
           if [ ! -f cmd/server/dist/index.html ]; then
             printf '%s\n' '<!doctype html><html><head></head><body>ci placeholder</body></html>' > cmd/server/dist/index.html
           fi
-      - name: Go test
-        run: go test -count=1 -p 4 -timeout=15m ./...
+      - name: Go test (shard ${{ matrix.shard }}/2)
+        run: |
+          PKGS="$(go list ./... | awk -v s='${{ matrix.shard }}' 'NR % 2 == s % 2')"
+          echo "shard ${{ matrix.shard }}: $(echo "$PKGS" | wc -l) packages"
+          go test -count=1 -p 4 -timeout=15m $PKGS
 
   frontend:
     runs-on: ubuntu-latest
@@ -44,8 +51,9 @@ jobs:
           name: frontend-dist
           path: web/dist
 
+  # 编译不依赖测试结果，与 gate 并行提前跑；发布门禁由 publish 的 needs 保证
   binaries:
-    needs: [gate, frontend]
+    needs: [frontend]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -92,7 +100,7 @@ jobs:
             bedrock-${{ matrix.suffix }}.sha256
 
   publish:
-    needs: binaries
+    needs: [gate, binaries]
     # softprops/action-gh-release 必须基于 tag；workflow_dispatch 走分支 ref 时跳过发版
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest

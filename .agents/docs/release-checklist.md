@@ -4,22 +4,18 @@
 
 ## 版本与产物
 
-- [ ] Git tag：`vX.Y.Z`（与 `main.version` / Release 备注一致）
-- [ ] Changelog / GitHub Release notes（`generate_release_notes` 或手写）
-- [ ] Server 二进制：`bedrock-linux-amd64`、`bedrock-linux-arm64`（及需要的 Windows 包）
-- [ ] Deploy Agent：`bedrock-agent-<os>-<arch>` 与 Server **同版本**
-- [ ] 每个产物附带 SHA256（CI 生成 `*.sha256` / `SHA256SUMS`）
-- [ ] 嵌入前端为 **web**（`FRONTEND_DIR=web`）
+**所有发版产物由 CI 构建**：`.github/workflows/release.yml` 由 push `v*` tag 触发，gate（测试，2 分片并行）与 frontend 构建同时跑；交叉编译 Server + Agent（`main.version` 注入 tag 名）只依赖 frontend 产物、与 gate 并行，最后 publish 等 gate 与 binaries 全绿后汇总 SHA256 并发布 GitHub Release。发版**禁止**本地构建待发布产物（`make build-linux` / `build-win` / `build-agent-*` / `checksums`），本地编出的二进制和校验和既不进 Release 也不进仓库。
 
-本地交叉编译：
+发版步骤：
 
-```bash
-make build-linux          # bedrock-linux-amd64（含 web embed）
-make build-linux-arm64    # bedrock-linux-arm64
-make build-agent-linux    # bedrock-agent-linux-amd64
-make build-agent-linux-arm64
-make smoke-linux-package  # 产出校验和；Linux amd64 主机可启动冒烟
-```
+1. 过完「质量门禁」后打 tag 并推送：`git tag vX.Y.Z && git push origin vX.Y.Z`
+2. 盯 CI 到全部绿：`gh run watch`（或 `gh run list --workflow=release.yml`）
+3. 逐项核对 Release 产物：
+   - [ ] Server 二进制：`bedrock-linux-amd64`、`bedrock-linux-arm64`、`bedrock-windows-amd64.exe`
+   - [ ] Deploy Agent：`bedrock-agent-<os>-<arch>` 与 Server **同版本**
+   - [ ] 每个产物附带 SHA256（CI 生成 `*.sha256` / `SHA256SUMS`）
+   - [ ] Release notes 由 CI 从上一 tag 起的变更自动生成
+   - [ ] 嵌入前端为 **web**（CI 先以 `FRONTEND_DIR=web` 构建前端再交叉编译）
 
 ## 质量门禁
 
