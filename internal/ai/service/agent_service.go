@@ -937,12 +937,12 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	writeHarnessRunIntro(writeLog, agent, run, agentDef, absRoot, absOutput,
 		len(digests), len(repoDirs), timeout, approvalModeForRun(agent, run.TriggerType))
 
-	hint := agentWorkspaceScopeHint(absRoot, absOutput)
+	hint := agentWorkspaceScopeHint(absOutput)
 	var promptText string
 	if run.TriggerType == model.TriggerDocsGen {
 		promptText = "Generate API documentation based on the workspace. Output Markdown only. " + hint
 	} else {
-		promptText = composeRunPrompt(agent.SystemPrompt, run.UserPrompt, hint)
+		promptText = composeRunPrompt(run.UserPrompt, hint)
 	}
 
 	outcome := s.runHarnessSession(runCtx, agent, run, sessionID, promptText, timeout, writeLog)

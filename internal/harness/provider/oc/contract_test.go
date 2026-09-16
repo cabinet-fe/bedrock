@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"bedrock/internal/harness/provider"
 )
@@ -148,4 +149,28 @@ func TestContractWaitUnavailable(t *testing.T) {
 		t.Skip("serve now implements wait; update harness-integration-plan.md §2.2 and drop this pin")
 	}
 	t.Logf("wait error (expected unavailable on 1.18.29): %v", err)
+}
+
+// TestContractActiveSessions pins the v1.18.29 wire shape of GET
+// /api/session/active ("sessions absent from the result are inactive"): a
+// freshly created session must not appear in the busy set. This query is
+// what the stream bridge settles turns against, because the event stream
+// never broadcasts session.idle on 1.18.x.
+func TestContractActiveSessions(t *testing.T) {
+	cfg := serveEnv(t)
+	client := NewClient(cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	session, err := client.CreateSession(ctx, testSessionInput(t))
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	active, err := client.ActiveSessions(ctx)
+	if err != nil {
+		t.Fatalf("active sessions: %v", err)
+	}
+	if active[session.ID] {
+		t.Fatalf("fresh session %s reported active: %v", session.ID, active)
+	}
+	t.Logf("active set: %v", active)
 }

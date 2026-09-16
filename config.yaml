@@ -41,3 +41,10 @@ admin:
   username: "admin"
   password: "admin123"
   display_name: "管理员"
+
+harness:
+  enabled: true # true = bedrock starts and supervises the serve process
+  backend: "opencode" # reserved; only opencode for now
+  bin: "opencode" # executable name or absolute path
+  port: 4096 # listen on 127.0.0.1 only; keep clear of other services
+  approval_mode: "auto" # manual | auto (unattended triggers override per agent)

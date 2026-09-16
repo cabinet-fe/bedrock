@@ -284,6 +284,24 @@ func (c *Client) SelectModel(ctx context.Context, sessionID string, model provid
 	return c.post(ctx, "/api/session/"+sessionID+"/model", body, nil)
 }
 
+// ActiveSessions lists the sessions currently running an agent loop
+// (GET /api/session/active): id -> true; absent ids are idle. opencode
+// 1.18.29 keeps a session in the result across the inter-step gaps of one
+// turn, so membership is the turn-level busy signal.
+func (c *Client) ActiveSessions(ctx context.Context) (map[string]bool, error) {
+	var resp envelope[map[string]struct {
+		Type string `json:"type"`
+	}]
+	if err := c.get(ctx, "/api/session/active", nil, &resp); err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(resp.Data))
+	for id := range resp.Data {
+		out[id] = true
+	}
+	return out, nil
+}
+
 // Wait blocks until the session loop is idle (POST /api/session/{id}/wait).
 // opencode 1.18.29 answers 503 "Session wait is not available yet" for every
 // call; callers must fall back to event-driven idle detection.
@@ -691,6 +709,11 @@ func (a *Adapter) EventStream(ctx context.Context, sessionID string, after int64
 // (transient frames of every session, no replay).
 func (a *Adapter) BusStream(ctx context.Context) (provider.Stream, error) {
 	return a.client.BusStream(ctx)
+}
+
+// ActiveSessions implements provider.Provider: the busy-session id set.
+func (a *Adapter) ActiveSessions(ctx context.Context) (map[string]bool, error) {
+	return a.client.ActiveSessions(ctx)
 }
 
 // Wait implements provider.Provider.

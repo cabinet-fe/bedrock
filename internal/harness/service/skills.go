@@ -1,8 +1,10 @@
 // Skill and agent-definition sync into an agent workspace. These are the
-// workspace artifacts opencode discovers natively: skills under
-// .opencode/skills/ (per the M0 verification note in the plan: project-level
-// .agents/skills/ is NOT discovered, .opencode/skills/<name>/SKILL.md is)
-// and the compiled bedrock-* agent definitions under .opencode/agents/.
+// workspace artifacts opencode discovers natively: skills under .agents/skills/
+// — opencode (verified against v1.18.31) scans .claude/.agents dirs with the
+// recursive glob skills/**/SKILL.md from the session directory up to the
+// worktree, so the per-agent workspace is covered even when it is not the
+// project root — and the compiled bedrock-* agent definitions under
+// .opencode/agents/.
 package service
 
 import (
@@ -19,10 +21,15 @@ import (
 // skillMDFile is the per-skill entrypoint opencode discovers.
 const skillMDFile = "SKILL.md"
 
-// skillsRelDir is the project-level skill directory inside an agent
-// workspace (per the plan's M0 verification: .opencode/skills/, not
-// .agents/skills/).
-const skillsRelDir = ".opencode/skills"
+// skillsRelDir is the skill directory inside an agent workspace. It matches
+// the bedrock skill-library convention and opencode's .agents scan; only the
+// plural "skills" is discovered there (the singular form exists only for
+// .opencode/skill).
+const skillsRelDir = ".agents/skills"
+
+// legacySkillsRelDir is the injection directory used before the .agents/
+// switch. Removed on every sync so opencode cannot discover stale copies.
+const legacySkillsRelDir = ".opencode/skills"
 
 // maxSkillNameRunes bounds the normalized skill directory name.
 const maxSkillNameRunes = 64
@@ -42,6 +49,7 @@ type SkillSource struct {
 // truth). Directories with no source are dropped; an empty source list wipes
 // the skills root.
 func SyncAgentSkills(agentWorkspace string, sources []SkillSource) error {
+	_ = os.RemoveAll(filepath.Join(agentWorkspace, filepath.FromSlash(legacySkillsRelDir)))
 	skillsRoot := filepath.Join(agentWorkspace, filepath.FromSlash(skillsRelDir))
 	if err := os.RemoveAll(skillsRoot); err != nil {
 		return fmt.Errorf("harness skills: reset %s: %w", skillsRoot, err)

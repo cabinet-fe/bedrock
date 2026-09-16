@@ -109,7 +109,7 @@ func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
 	agent = requireWorkspaceReady(t, agents, agent.ID)
 
 	root := filepath.Join(work, "agents", fmt.Sprintf("agent-%d", agent.ID))
-	skillMD := filepath.Join(root, ".opencode", "skills", skill.Name, "SKILL.md")
+	skillMD := filepath.Join(root, ".agents", "skills", skill.Name, "SKILL.md")
 	if _, err := os.Stat(skillMD); err != nil {
 		t.Fatalf("skill not extracted: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestAgentWorkspaceSyncSkillsAndRepoCheckouts(t *testing.T) {
 	if _, err := os.Stat(defMD); err != nil {
 		t.Fatalf("compiled agent definition missing: %v", err)
 	}
-	nestedByID := filepath.Join(root, ".opencode", "skills", fmt.Sprintf("%d", skill.ID), "SKILL.md")
+	nestedByID := filepath.Join(root, ".agents", "skills", fmt.Sprintf("%d", skill.ID), "SKILL.md")
 	if _, err := os.Stat(nestedByID); err == nil {
 		t.Fatalf("skill must not be nested under id folder %q", nestedByID)
 	}
@@ -173,7 +173,7 @@ func TestSyncAgentWorkspaceSkillNormalizationAndEnvPermissions(t *testing.T) {
 
 	root := filepath.Join(work, "agents", fmt.Sprintf("agent-%d", agent.ID))
 
-	skillMD := filepath.Join(root, ".opencode", "skills", "deploy-helper", "SKILL.md")
+	skillMD := filepath.Join(root, ".agents", "skills", "deploy-helper", "SKILL.md")
 	data, err := os.ReadFile(skillMD)
 	if err != nil {
 		t.Fatalf("normalized skill dir missing: %v", err)
@@ -548,15 +548,26 @@ func TestAgentRunPromptCarriesWorkspaceScope(t *testing.T) {
 	prompt := waitRunPrompt(t, agents, fake, run.ID)
 	wantRoot := filepath.Join(work, "agents", fmt.Sprintf("agent-%d", agent.ID))
 	for _, want := range []string{
-		wantRoot,
 		filepath.Join(wantRoot, "output"),
-		"do work",
 		"./repo-{id}-{branch}",
 		"禁止访问该目录之外的任意路径",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q; got:\n%s", want, prompt)
 		}
+	}
+	// The system prompt rides the compiled opencode agent definition, not
+	// the run prompt.
+	defData, err := os.ReadFile(filepath.Join(wantRoot, ".opencode", "agents",
+		fmt.Sprintf("bedrock-agent-%d.md", agent.ID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(defData), "do work") {
+		t.Fatalf("compiled agent def missing system prompt:\n%s", defData)
+	}
+	if strings.Contains(prompt, "do work") {
+		t.Fatalf("run prompt must not duplicate the system prompt:\n%s", prompt)
 	}
 	if finished.HarnessSessionID == nil {
 		t.Fatal("harness_session_id missing on finished run")

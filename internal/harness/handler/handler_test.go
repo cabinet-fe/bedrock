@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,6 +46,9 @@ type fakeProvider struct {
 	permReplies  chan permReplyCall
 	permErr      error
 	questReplies chan questionReplyCall
+
+	activeMu sync.Mutex
+	active   map[string]bool
 }
 
 type promptCall struct {
@@ -161,6 +165,25 @@ func (f *fakeProvider) Export(_ context.Context, sessionID string) ([]byte, erro
 		return nil, f.notFound(sessionID)
 	}
 	return []byte("{\"id\":\"m1\",\"role\":\"user\"}\n"), nil
+}
+
+// SetActiveSessions pins the ActiveSessions answer (id -> busy).
+func (f *fakeProvider) SetActiveSessions(active map[string]bool) {
+	f.activeMu.Lock()
+	defer f.activeMu.Unlock()
+	f.active = active
+}
+
+// ActiveSessions implements the provider surface the stream bridge settles
+// against; nil-set means nothing runs.
+func (f *fakeProvider) ActiveSessions(_ context.Context) (map[string]bool, error) {
+	f.activeMu.Lock()
+	defer f.activeMu.Unlock()
+	out := make(map[string]bool, len(f.active))
+	for id, busy := range f.active {
+		out[id] = busy
+	}
+	return out, nil
 }
 
 func (f *fakeProvider) BusStream(context.Context) (provider.Stream, error) {

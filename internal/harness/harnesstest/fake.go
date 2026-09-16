@@ -37,6 +37,8 @@ type Fake struct {
 	interrupt map[string]int
 	replies   map[string]string
 	replySeen map[string]chan struct{}
+	// active is the ActiveSessions answer; nil means "nothing is running".
+	active map[string]bool
 
 	models []provider.ModelInfo
 	agents []provider.AgentInfo
@@ -100,6 +102,14 @@ func (f *Fake) SetAgents(agents []provider.AgentInfo) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.agents = agents
+}
+
+// SetActiveSessions pins the ActiveSessions answer (id -> busy). Call with
+// an empty/nil map to report everything idle again.
+func (f *Fake) SetActiveSessions(active map[string]bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.active = active
 }
 
 // Emit sends one frame on the bus, assigning a durable seq or a transient
@@ -370,6 +380,20 @@ func (f *Fake) EventStream(ctx context.Context, sessionID string, after int64) (
 
 func (f *Fake) BusStream(ctx context.Context) (provider.Stream, error) {
 	return chanStream{ch: f.bus, ctx: ctx}, nil
+}
+
+// ActiveSessions implements provider.Provider from the pinned set.
+func (f *Fake) ActiveSessions(_ context.Context) (map[string]bool, error) {
+	if err := f.failErr(); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make(map[string]bool, len(f.active))
+	for id, busy := range f.active {
+		out[id] = busy
+	}
+	return out, nil
 }
 
 // Wait polls until the session's script completes (returning its wait

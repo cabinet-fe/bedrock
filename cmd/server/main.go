@@ -349,6 +349,7 @@ func main() {
 		harnessStreams = harnessservice.NewStreamService(harnessProv, harnessservice.StreamConfig{
 			ApprovalMode: cfg.Harness.ApprovalMode,
 		}, logger)
+		harnessSessions.AttachStreams(harnessStreams)
 		streamCtx, cancelStreams := context.WithCancel(context.Background())
 		defer cancelStreams()
 		stopHarnessStreams = cancelStreams
@@ -477,17 +478,25 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{Addr: addr, Handler: r}
 
+	listenErr := make(chan error, 1)
 	go func() {
 		logger.Info("listening", zap.String("addr", addr))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("Server failed", zap.Error(err))
+			listenErr <- err
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	logger.Info("Shutting down...")
+	// A bind failure must take the same graceful path as a signal: exiting
+	// here directly would skip harnessProc.Stop() and orphan the serve.
+	var listenFailure error
+	select {
+	case <-quit:
+		logger.Info("Shutting down...")
+	case listenFailure = <-listenErr:
+		logger.Error("Server failed; shutting down", zap.Error(listenFailure))
+	}
 
 	cancelStatusBroadcaster()
 	stopHarnessStreams()
@@ -510,5 +519,8 @@ func main() {
 	}
 	if sqlDB, err := gdb.DB(); err == nil {
 		_ = sqlDB.Close()
+	}
+	if listenFailure != nil {
+		os.Exit(1)
 	}
 }

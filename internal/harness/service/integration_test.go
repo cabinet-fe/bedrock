@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"bedrock/internal/harness/provider"
 	"bedrock/internal/harness/provider/oc"
 )
 
@@ -236,4 +238,81 @@ func hasSkillAllow(rules []oc.AgentPermissionRule) bool {
 		}
 	}
 	return false
+}
+
+// TestIntegrationBridgeSynthesizesIdleAfterTurn drives one real model turn
+// through the stream bridge and pins the fix for the stuck "running" session
+// view: opencode 1.18.x ends a turn with the last durable step_ended and
+// never broadcasts session.idle, so the bridge's active probe must
+// synthesize the idle frame and clear the busy flag.
+func TestIntegrationBridgeSynthesizesIdleAfterTurn(t *testing.T) {
+	prov := integrationProvider(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	modelID := os.Getenv("HARNESS_OC_TEST_MODEL")
+	if modelID == "" {
+		modelID = "opencode/muse-spark-1.3-contributor-free"
+	}
+	parts := strings.SplitN(modelID, "/", 2)
+	model := &provider.ModelRef{ProviderID: parts[0], ID: parts[1]}
+
+	streams := NewStreamService(prov, StreamConfig{
+		SettleDelay: 500 * time.Millisecond,
+		SettlePoll:  500 * time.Millisecond,
+	}, nil)
+	sctx, scancel := context.WithCancel(context.Background())
+	defer scancel()
+	go streams.Run(sctx)
+
+	session, err := prov.CreateSession(ctx, provider.CreateSessionInput{
+		Directory: t.TempDir(),
+		Model:     model,
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	_, live, stop := streams.Subscribe(session.ID)
+	defer stop()
+
+	if _, err := prov.Prompt(ctx, session.ID, provider.PromptInput{
+		Text: "只回复两个字母：ok", Delivery: provider.DeliveryQueue,
+	}); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+
+	// Drain live frames until the turn's last durable step_ended passes,
+	// then require the synthesized idle within the settle window.
+	idleDeadline := time.Now().Add(90 * time.Second)
+	stepEnded := false
+	for time.Now().Before(idleDeadline) {
+		select {
+		case frame, ok := <-live:
+			if !ok {
+				t.Fatal("bridge stopped")
+			}
+			if frame.Kind == provider.FrameStatus && frame.Status != nil {
+				switch frame.Status.Name {
+				case provider.StatusStepEnded:
+					stepEnded = true
+				case provider.StatusIdle:
+					if !stepEnded {
+						t.Fatal("backend broadcast idle; this pin no longer holds")
+					}
+					if streams.SessionBusy(session.ID) {
+						t.Fatal("busy flag must clear with the synthesized idle")
+					}
+					return
+				}
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(2 * time.Second):
+			if stepEnded && !streams.SessionBusy(session.ID) {
+				t.Fatal("session settled busy=false without an idle frame")
+			}
+		}
+	}
+	t.Fatal("no idle frame within 90s of the turn")
 }

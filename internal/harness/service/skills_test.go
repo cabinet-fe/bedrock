@@ -72,9 +72,14 @@ func TestSyncAgentSkillsNormalizesNamesAndFrontmatter(t *testing.T) {
 	}
 
 	ws := t.TempDir()
-	// stale leftovers from a previous bind must disappear.
-	stale := filepath.Join(ws, ".opencode", "skills", "stale-skill")
+	// stale leftovers from a previous bind must disappear, and so must the
+	// legacy .opencode/skills injection dir from before the .agents switch.
+	stale := filepath.Join(ws, ".agents", "skills", "stale-skill")
 	if err := os.MkdirAll(stale, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(ws, ".opencode", "skills", "legacy-skill")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -82,7 +87,7 @@ func TestSyncAgentSkillsNormalizesNamesAndFrontmatter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	skills := filepath.Join(ws, ".opencode", "skills")
+	skills := filepath.Join(ws, ".agents", "skills")
 	for _, dir := range []string{"deploy-helper", "raw", "aligned"} {
 		data, err := os.ReadFile(filepath.Join(skills, dir, "SKILL.md"))
 		if err != nil {
@@ -98,6 +103,9 @@ func TestSyncAgentSkillsNormalizesNamesAndFrontmatter(t *testing.T) {
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Fatalf("stale skill dir must be removed, err=%v", err)
 	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatalf("legacy .opencode/skills dir must be removed, err=%v", err)
+	}
 	entries, err := os.ReadDir(skills)
 	if err != nil {
 		t.Fatal(err)
@@ -111,18 +119,24 @@ func TestSyncAgentSkillsNormalizesNamesAndFrontmatter(t *testing.T) {
 // dirs across syncs.
 func TestSyncAgentSkillsEmptyWipesRoot(t *testing.T) {
 	ws := t.TempDir()
-	old := filepath.Join(ws, ".opencode", "skills", "old")
+	old := filepath.Join(ws, ".agents", "skills", "old")
 	if err := os.MkdirAll(old, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(old, "SKILL.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(ws, ".opencode", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := SyncAgentSkills(ws, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(ws, ".opencode", "skills")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(ws, ".agents", "skills")); !os.IsNotExist(err) {
 		t.Fatalf("skills root must be wiped, err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ws, ".opencode", "skills")); !os.IsNotExist(err) {
+		t.Fatalf("legacy skills root must be wiped, err=%v", err)
 	}
 }
 

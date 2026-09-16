@@ -296,17 +296,34 @@ func (s *AgentService) runHarnessSession(
 				fallbackTimer.Reset(noTerminal)
 				continue
 			}
+			if s.sessionStillActive(runCtx, sessionID) {
+				writeLog("会话仍在执行，继续等待")
+				fallbackTimer.Reset(noTerminal)
+				continue
+			}
 			s.interruptSession(sessionID, writeLog)
 			return harnessOutcome{status: model.JobInterrupted, errMsg: "长时间无终态，已打断会话"}
 		}
 	}
 }
 
-// reconcileHarnessRun consults the harness for a terminal decision: the
-// message tail page settles success with the last assistant text as
-// final_output; pending requests mean the session still waits on an answer.
-// ok=false leaves the run open.
+// sessionStillActive reports whether the backend still runs the session's
+// agent loop. A failed probe answers false: the fallback semantics (treat
+// as no active session) stay unchanged when the backend is unreachable.
+func (s *AgentService) sessionStillActive(ctx context.Context, sessionID string) bool {
+	active, err := s.harnessProvider.ActiveSessions(ctx)
+	return err == nil && active[sessionID]
+}
+
+// reconcileHarnessRun consults the harness for a terminal decision: a
+// session the backend still reports running is never settled (its message
+// tail would be a mid-turn partial), pending asks leave the run open, and
+// the message tail page settles success with the last assistant text as
+// final_output. ok=false leaves the run open.
 func (s *AgentService) reconcileHarnessRun(ctx context.Context, sessionID string, watch *frameWatch, writeLog func(string)) (harnessOutcome, bool) {
+	if s.sessionStillActive(ctx, sessionID) {
+		return harnessOutcome{}, false
+	}
 	if len(s.harnessStreams.PendingRequests(sessionID)) > 0 {
 		return harnessOutcome{}, false
 	}
@@ -341,12 +358,14 @@ func (s *AgentService) settleContextDone(run *model.AgentRun, sessionID string, 
 	return harnessOutcome{status: model.JobInterrupted, errMsg: "服务关闭，执行已打断"}
 }
 
-// interruptSession asks the backend to cancel the running session loop.
-// It uses its own bounded context: callers invoke it while unwinding.
+// interruptSession asks the backend to cancel the running session loop (the
+// session-service path also opens the bridge settle window, since an aborted
+// loop may emit no further frames). It uses its own bounded context: callers
+// invoke it while unwinding.
 func (s *AgentService) interruptSession(sessionID string, writeLog func(string)) {
 	ctx, cancel := context.WithTimeout(context.Background(), interruptTimeout)
 	defer cancel()
-	if err := s.harnessProvider.Interrupt(ctx, sessionID); err != nil {
+	if err := s.harnessSessions.Interrupt(ctx, sessionID); err != nil {
 		writeLog("打断会话失败: " + err.Error())
 		return
 	}

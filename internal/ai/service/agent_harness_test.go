@@ -376,3 +376,55 @@ func TestExecuteRunReusesHarnessSession(t *testing.T) {
 		t.Fatalf("sessions=%d want 1 after re-execute", n)
 	}
 }
+
+// The no-terminal fallback reconcile must not settle a success while the
+// backend still reports the session active: the message tail at that point
+// is a mid-turn partial. Once the backend drops the session from its active
+// set, the same reconcile settles success.
+func TestExecuteRunReconcileWaitsForInactiveSession(t *testing.T) {
+	m := newMatrixEnv(t, 600, 0)
+	proceed := make(chan struct{})
+
+	m.fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, _ string) {
+		// The step text lands in the history but the turn stays open
+		// backend-side until the test opens the gate: no terminal frames.
+		_ = f.Emit(provider.Frame{
+			SessionID: sess.ID,
+			Kind:      provider.FrameMessageText,
+			MessageText: &provider.MessageText{
+				AssistantMessageID: "am-1", TextID: "t-1", Text: "partial-tail",
+			},
+		})
+		<-proceed
+		f.Complete(sess.ID, "partial-tail")
+	})
+
+	run, err := m.agents.ManualRun(m.testAgentID(t), 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := m.waitRunSession(t, run.ID)
+	m.fake.SetActiveSessions(map[string]bool{sessionID: true})
+
+	// Past the no-terminal fallback (2s) the run must still be live: the
+	// backend still reports the session active, so neither the tail-page
+	// reconcile nor the fallback interrupt may fire.
+	time.Sleep(3 * time.Second)
+	live, err := m.agents.GetRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live.Status != model.JobRunning {
+		t.Fatalf("run settled to %s while the session was still active; log=%s",
+			live.Status, readRunLog(t, live.LogPath))
+	}
+
+	// The turn finishes backend-side, but the bridge never saw idle: the
+	// next reconcile (fallback cadence) settles the success.
+	close(proceed)
+	m.fake.SetActiveSessions(nil)
+	finished := waitRunStatus(t, m.agents, run.ID, model.JobSuccess)
+	if finished.HarnessSessionID == nil || *finished.HarnessSessionID != sessionID {
+		t.Fatalf("harness_session_id=%v want %q", finished.HarnessSessionID, sessionID)
+	}
+}

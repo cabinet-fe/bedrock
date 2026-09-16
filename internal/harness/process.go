@@ -38,7 +38,10 @@ const bindHost = "127.0.0.1"
 const (
 	defaultHealthInterval = 5 * time.Second
 	defaultRestartDelay   = time.Second
-	probeTimeout          = 3 * time.Second
+	// maxRestartDelay caps exponential backoff after repeated fast crashes
+	// (missing binary, unusable port). 1s * 2^n, reached in 5 crashes.
+	maxRestartDelay = 30 * time.Second
+	probeTimeout    = 3 * time.Second
 	// hungKillThreshold is the consecutive probe-failure count after which a
 	// live-but-unresponsive process is killed so the restart loop can recover.
 	hungKillThreshold = 3
@@ -169,6 +172,8 @@ func (m *ProcessManager) Start(ctx context.Context) error {
 	m.log.Info("harness serve starting",
 		zap.String("bin", m.cfg.Bin), zap.String("base_url", m.BaseURL()))
 
+	m.reclaimStaleServe(password)
+
 	m.wg.Add(2)
 	go m.supervise()
 	go m.probe()
@@ -180,6 +185,75 @@ func (m *ProcessManager) Start(ctx context.Context) error {
 		return errors.New("harness: process manager stopped before serve became healthy")
 	case <-ctx.Done():
 		return fmt.Errorf("harness serve not healthy: %s", m.Status().LastError)
+	}
+}
+
+// reclaimStaleServe runs before the supervisor starts and clears anything
+// already listening on the port. Without it, a leftover serve from a dead
+// bedrock run (or any foreign listener) holds the port and every spawn
+// crashes on bind, producing an endless crash-restart loop while the health
+// probe reports healthy against the leftover. A leftover is identified by
+// answering /global/health with the persisted password; it is stopped just
+// the same (session state survives serve restarts), only the log differs.
+func (m *ProcessManager) reclaimStaleServe(password string) {
+	if !portAccepts(m.cfg.Port, 3*time.Second) {
+		return // port free: nothing to reclaim
+	}
+	pids, err := listenersOnPort(m.cfg.Port)
+	if err != nil || len(pids) == 0 {
+		// Busy but no pid: a foreign listener hidden by permissions (lsof
+		// needs ownership), or a dead one racing us. Nothing to signal —
+		// wait, and let the spawn retry with backoff if it survives.
+		m.log.Warn("harness serve port busy; cannot identify listener",
+			zap.Int("port", m.cfg.Port), zap.Error(err))
+		waitPortFree(m.cfg.Port, 10*time.Second)
+		return
+	}
+	client := oc.NewClient(oc.Config{BaseURL: m.BaseURL(), Password: password})
+	for _, pid := range pids {
+		proc, findErr := os.FindProcess(pid)
+		if findErr != nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+		_, probeErr := client.Health(ctx)
+		cancel()
+		if probeErr == nil {
+			m.log.Warn("harness serve port busy; stopping leftover serve from a previous run",
+				zap.Int("pid", pid), zap.Int("port", m.cfg.Port))
+		} else {
+			m.log.Warn("harness serve port busy; stopping foreign process",
+				zap.Int("pid", pid), zap.Int("port", m.cfg.Port))
+		}
+		stopProcess(proc)
+	}
+	waitPortFree(m.cfg.Port, 10*time.Second)
+}
+
+// portAccepts reports whether anything is accepting connections on the port.
+func portAccepts(port int, timeout time.Duration) bool {
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(bindHost, strconv.Itoa(port)), timeout)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// waitPortFree polls until the port stops accepting or the timeout elapses.
+func waitPortFree(port int, timeout time.Duration) bool {
+	addr := net.JoinHostPort(bindHost, strconv.Itoa(port))
+	deadline := time.Now().Add(timeout)
+	for {
+		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+		if err != nil {
+			return true
+		}
+		conn.Close()
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -198,19 +272,26 @@ func (m *ProcessManager) Stop() {
 }
 
 // supervise keeps a serve process running: spawn, wait for exit, restart.
+// Crashes double the restart delay up to maxRestartDelay; a process that
+// stayed up resets the backoff.
 func (m *ProcessManager) supervise() {
 	defer m.wg.Done()
+	delay := m.cfg.restartDelay()
 	for {
 		cmd := exec.Command(m.cfg.Bin, "serve", "--hostname", bindHost, "--port", strconv.Itoa(m.cfg.Port))
 		cmd.Env = append(os.Environ(), "OPENCODE_SERVER_PASSWORD="+m.Password())
 		configureServeProc(cmd)
 		cmd.Stdout = m.serveOutputWriter()
 		cmd.Stderr = m.serveOutputWriter()
+		started := time.Now()
 		if err := cmd.Start(); err != nil {
 			m.setState(StatusDegraded, fmt.Sprintf("starting %s: %v", m.cfg.Bin, err))
-			if !m.sleepRestartDelay() {
+			m.log.Warn("harness serve spawn failed; retrying",
+				zap.String("bin", m.cfg.Bin), zap.Error(err), zap.Duration("retry_in", delay))
+			if !m.sleepRestartDelay(delay) {
 				return
 			}
+			delay = min(delay*2, maxRestartDelay)
 			continue
 		}
 		m.mu.Lock()
@@ -229,8 +310,14 @@ func (m *ProcessManager) supervise() {
 			return
 		}
 		m.rememberCrash(waitErr)
-		if !m.sleepRestartDelay() {
+		fast := time.Since(started) < time.Minute
+		if !m.sleepRestartDelay(delay) {
 			return
+		}
+		if fast {
+			delay = min(delay*2, maxRestartDelay)
+		} else {
+			delay = m.cfg.restartDelay()
 		}
 	}
 }
@@ -297,9 +384,9 @@ func (m *ProcessManager) markHealthy() {
 	}
 }
 
-func (m *ProcessManager) sleepRestartDelay() bool {
+func (m *ProcessManager) sleepRestartDelay(delay time.Duration) bool {
 	select {
-	case <-time.After(m.cfg.restartDelay()):
+	case <-time.After(delay):
 		return true
 	case <-m.stopCh:
 		return false

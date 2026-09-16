@@ -58,11 +58,12 @@ func (h *WSHandler) RegisterRoutes(r *gin.Engine) {
 }
 
 // HandleSessionEvents upgrades one connection and streams unified frames:
-// replay baseline (durable frames with seq > after), then still-pending
-// permission/question asks, then the live fan-out. Every connection gets its
-// own subscription of the shared bridge; frames are never duplicated within
-// a connection because replay and live are snapshotted atomically by
-// Subscribe and durable frames are seq-filtered.
+// replay baseline (durable frames with seq > after), still-pending
+// permission/question asks, a settled-idle status snapshot for sessions the
+// bridge believes are not running, then the live fan-out. Every connection
+// gets its own subscription of the shared bridge; frames are never
+// duplicated within a connection because replay and live are snapshotted
+// atomically by Subscribe and durable frames are seq-filtered.
 func (h *WSHandler) HandleSessionEvents(c *gin.Context) {
 	token := c.Query("token")
 	if token == "" {
@@ -109,10 +110,16 @@ func (h *WSHandler) HandleSessionEvents(c *gin.Context) {
 	replay, live, stop := h.streams.Subscribe(sessionID)
 	defer stop()
 	pending := h.streams.PendingRequests(sessionID)
+	// Snapshot the settled state when the replay baseline itself asserts a
+	// running session: replay never carries transient status frames (seq 0),
+	// so a client joining after the last turn would otherwise stay on the
+	// running state asserted by the replayed step frames forever. The
+	// bridge's busy view and the replay are snapshotted atomically.
+	settled := !h.streams.SessionBusy(sessionID) && replayAssertsRunning(replay, after)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go h.pump(ctx, conn, replay, pending, live, after)
+	go h.pump(ctx, sessionID, conn, replay, pending, live, after, settled)
 
 	// Drain inbound messages until the peer disconnects; the stream is
 	// read-only and answers go through the REST endpoints.
@@ -125,9 +132,10 @@ func (h *WSHandler) HandleSessionEvents(c *gin.Context) {
 	_ = conn.Close()
 }
 
-// pump writes the replay baseline, the pending asks and then the live feed.
-// It returns when ctx is cancelled, the peer disconnects, or a write fails.
-func (h *WSHandler) pump(ctx context.Context, conn *websocket.Conn, replay []provider.Frame, pending []service.PendingRequest, live <-chan *provider.Frame, after int64) {
+// pump writes the replay baseline, the pending asks, the settled-idle
+// snapshot and then the live feed. It returns when ctx is cancelled, the
+// peer disconnects, or a write fails.
+func (h *WSHandler) pump(ctx context.Context, sessionID string, conn *websocket.Conn, replay []provider.Frame, pending []service.PendingRequest, live <-chan *provider.Frame, after int64, settled bool) {
 	for i := range replay {
 		// Transient frames (seq 0) are never replayed; durable frames are
 		// filtered by the caller's seq baseline.
@@ -144,6 +152,15 @@ func (h *WSHandler) pump(ctx context.Context, conn *websocket.Conn, replay []pro
 			return
 		}
 	}
+	if settled {
+		if !writeFrame(ctx, conn, &provider.Frame{
+			SessionID: sessionID,
+			Kind:      provider.FrameStatus,
+			Status:    &provider.StatusFrame{Name: provider.StatusIdle},
+		}) {
+			return
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -157,6 +174,27 @@ func (h *WSHandler) pump(ctx context.Context, conn *websocket.Conn, replay []pro
 			}
 		}
 	}
+}
+
+// replayAssertsRunning reports whether the durable status frames above the
+// seq baseline leave the session in the running state (a prompt or step
+// start after the last idle/error/step-failure), mirroring how the client
+// fold resolves them.
+func replayAssertsRunning(replay []provider.Frame, after int64) bool {
+	running := false
+	for i := range replay {
+		f := &replay[i]
+		if f.Kind != provider.FrameStatus || f.Status == nil || f.Seq <= 0 || f.Seq <= after {
+			continue
+		}
+		switch f.Status.Name {
+		case provider.StatusPromptAdmitted, provider.StatusPrompted, provider.StatusStepStarted:
+			running = true
+		case provider.StatusIdle, provider.StatusError, provider.StatusStepFailed:
+			running = false
+		}
+	}
+	return running
 }
 
 // writeFrame marshals and sends one unified frame under a write deadline.

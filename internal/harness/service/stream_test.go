@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,10 @@ type fakeBusProvider struct {
 	permErr     error
 	questionIDs chan string
 	rejectIDs   chan string
+
+	activeMu  sync.Mutex
+	active    map[string]bool
+	activeErr error
 }
 
 type permCall struct {
@@ -39,6 +44,26 @@ func newFakeBusProvider() *fakeBusProvider {
 
 func (f *fakeBusProvider) BusStream(context.Context) (provider.Stream, error) {
 	return chanStream{ch: f.bus}, nil
+}
+
+// setActive pins the ActiveSessions answer (id -> busy).
+func (f *fakeBusProvider) setActive(active map[string]bool) {
+	f.activeMu.Lock()
+	defer f.activeMu.Unlock()
+	f.active = active
+}
+
+func (f *fakeBusProvider) ActiveSessions(_ context.Context) (map[string]bool, error) {
+	f.activeMu.Lock()
+	defer f.activeMu.Unlock()
+	if f.activeErr != nil {
+		return nil, f.activeErr
+	}
+	out := make(map[string]bool, len(f.active))
+	for id, busy := range f.active {
+		out[id] = busy
+	}
+	return out, nil
 }
 
 func (f *fakeBusProvider) ReplyPermission(_ context.Context, sessionID, requestID string, reply provider.PermissionReply) error {
@@ -328,5 +353,140 @@ func TestStreamReplies(t *testing.T) {
 	waitFor(t, "entry to be restored", func() bool {
 		ids := pendingIDs(svc, "ses_1")
 		return len(ids) == 1 && ids[0] == "req_r"
+	})
+}
+
+func statusFrame(sessionID string, seq int64, name provider.StatusName) *provider.Frame {
+	return &provider.Frame{
+		Seq: seq, SessionID: sessionID, Kind: provider.FrameStatus,
+		Status: &provider.StatusFrame{Name: name},
+	}
+}
+
+// collectIdle drains live and returns the synthesized idle frame, if any.
+func collectIdle(live <-chan *provider.Frame) *provider.Frame {
+	var idle *provider.Frame
+	for _, f := range drainLive(live) {
+		if f.Kind == provider.FrameStatus && f.Status != nil && f.Status.Name == provider.StatusIdle {
+			idle = f
+		}
+	}
+	return idle
+}
+
+// A turn whose frames never include idle (opencode 1.18.x) settles: after
+// the step-ended quiet window the bridge probes the backend and, once the
+// session left the active set, synthesizes the idle frame and clears busy.
+func TestStreamSettleSynthesizesIdle(t *testing.T) {
+	fake := newFakeBusProvider()
+	fake.setActive(map[string]bool{"ses_1": true})
+	svc := NewStreamService(fake, StreamConfig{SettleDelay: 10 * time.Millisecond, SettlePoll: 10 * time.Millisecond}, nil)
+	_, live, stop := svc.Subscribe("ses_1")
+	defer stop()
+
+	svc.dispatch(statusFrame("ses_1", 1, provider.StatusPrompted))
+	svc.dispatch(statusFrame("ses_1", 2, provider.StatusStepStarted))
+	svc.dispatch(statusFrame("ses_1", 3, provider.StatusStepEnded))
+	if !svc.SessionBusy("ses_1") {
+		t.Fatal("session must be busy while the backend still runs it")
+	}
+
+	fake.setActive(map[string]bool{}) // the turn finished backend-side
+	var idle *provider.Frame
+	waitFor(t, "synthesized idle", func() bool {
+		if f := collectIdle(live); f != nil {
+			idle = f
+			return true
+		}
+		return false
+	})
+	if idle.SessionID != "ses_1" {
+		t.Fatalf("idle frame session = %q, want ses_1", idle.SessionID)
+	}
+	if svc.SessionBusy("ses_1") {
+		t.Fatal("session must be idle after the synthesized frame")
+	}
+	// The synthesized frame joins the ring so bridge subscribers replay it.
+	replay, _, stop2 := svc.Subscribe("ses_1")
+	defer stop2()
+	if last := replay[len(replay)-1]; last.Kind != provider.FrameStatus || last.Status.Name != provider.StatusIdle {
+		t.Fatalf("replay tail = %+v, want synthesized idle", last)
+	}
+}
+
+// A pending approval or question blocks the settle: the turn is paused on
+// the missing answer, not finished.
+func TestStreamSettleWaitsForPendingAsks(t *testing.T) {
+	fake := newFakeBusProvider()
+	fake.setActive(map[string]bool{})
+	svc := NewStreamService(fake, StreamConfig{SettleDelay: 10 * time.Millisecond, SettlePoll: 10 * time.Millisecond}, nil)
+	_, live, stop := svc.Subscribe("ses_1")
+	defer stop()
+
+	svc.dispatch(statusFrame("ses_1", 1, provider.StatusPrompted))
+	svc.dispatch(statusFrame("ses_1", 2, provider.StatusStepStarted))
+	svc.dispatch(permFrame("ses_1", "evt_p", "req_p"))
+	svc.dispatch(statusFrame("ses_1", 3, provider.StatusStepEnded))
+
+	time.Sleep(80 * time.Millisecond)
+	if idle := collectIdle(live); idle != nil {
+		t.Fatal("idle must not be synthesized while an ask is pending")
+	}
+	if !svc.SessionBusy("ses_1") {
+		t.Fatal("session must stay busy while an ask is pending")
+	}
+}
+
+// SettleSession opens the settle window right away: the interrupt path uses
+// it because an aborted loop may emit no further frames.
+func TestStreamSettleSessionSkipsDelay(t *testing.T) {
+	fake := newFakeBusProvider()
+	fake.setActive(map[string]bool{})
+	svc := NewStreamService(fake, StreamConfig{SettleDelay: time.Hour, SettlePoll: 10 * time.Millisecond}, nil)
+	_, live, stop := svc.Subscribe("ses_1")
+	defer stop()
+
+	svc.dispatch(statusFrame("ses_1", 1, provider.StatusPrompted))
+	svc.SettleSession("ses_1")
+	var idle *provider.Frame
+	waitFor(t, "synthesized idle", func() bool {
+		if f := collectIdle(live); f != nil {
+			idle = f
+			return true
+		}
+		return false
+	})
+	if idle == nil || svc.SessionBusy("ses_1") {
+		t.Fatal("SettleSession must settle an interrupted session immediately")
+	}
+}
+
+// A failed backend probe retries instead of settling on unknown state.
+func TestStreamSettleRetriesOnProviderError(t *testing.T) {
+	fake := newFakeBusProvider()
+	fake.activeMu.Lock()
+	fake.activeErr = errors.New("serve down")
+	fake.activeMu.Unlock()
+	svc := NewStreamService(fake, StreamConfig{SettleDelay: 10 * time.Millisecond, SettlePoll: 10 * time.Millisecond}, nil)
+	_, live, stop := svc.Subscribe("ses_1")
+	defer stop()
+
+	svc.dispatch(statusFrame("ses_1", 1, provider.StatusPrompted))
+	svc.dispatch(statusFrame("ses_1", 2, provider.StatusStepEnded))
+	time.Sleep(60 * time.Millisecond)
+	if idle := collectIdle(live); idle != nil {
+		t.Fatal("idle must not be synthesized while the backend is unreachable")
+	}
+	if !svc.SessionBusy("ses_1") {
+		t.Fatal("session must stay busy while the backend is unreachable")
+	}
+
+	// Recovery settles the session through the retry loop.
+	fake.activeMu.Lock()
+	fake.activeErr = nil
+	fake.activeMu.Unlock()
+	fake.setActive(map[string]bool{})
+	waitFor(t, "synthesized idle after recovery", func() bool {
+		return collectIdle(live) != nil
 	})
 }

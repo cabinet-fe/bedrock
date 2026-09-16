@@ -298,6 +298,11 @@ type Provider interface {
 	// frames (deltas, permission and question requests) of every session,
 	// without replay. The stream bridge is the intended consumer.
 	BusStream(ctx context.Context) (Stream, error)
+	// ActiveSessions reports which sessions currently run an agent loop
+	// (foreground drains): the returned set holds the busy session ids and
+	// absent ids are idle. Backends whose event bus never announces idle
+	// (opencode 1.18.x) are settled from this query instead.
+	ActiveSessions(ctx context.Context) (map[string]bool, error)
 	// Wait blocks until the session agent loop becomes idle.
 	Wait(ctx context.Context, sessionID string) error
 	// Interrupt cancels the running agent loop.

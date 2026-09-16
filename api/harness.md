@@ -148,9 +148,12 @@
 
 1. **回放基线**：服务端环形缓冲（每会话最近 200 帧）中 `seq > after` 的持久帧（`message_text` / `tool_call` / `tool_result` / `status`），按序推送；瞬态帧（`message_delta` 等）不回放。
 2. **pending 补发**：当前未应答的 `permission` / `question` 帧各推一次（前端按 `requestId` 幂等）。
-3. **实时流**：统一帧实时推送，与回放基线按 `seq` 衔接，无丢帧、无重复。
+3. **空闲快照**：回放基线以 `prompted` / `step_started` 收尾（客户端因此处于运行中）且流桥判定会话已空闲时，补发一帧瞬态 `status: idle`（`seq=0`）。回放已收敛或会话仍在运行则无此帧。
+4. **实时流**：统一帧实时推送，与回放基线按 `seq` 衔接，无丢帧、无重复。
 
 同一会话多个连接共享流桥的一个后端事件订阅，每连接各收一份，事件不多发。前端完整历史用 `GET .../messages` 拉取，WS 回放仅覆盖环形缓冲窗口。连接只读；应答经 REST 端点提交。
+
+> **idle 帧来源**：opencode 1.18.x 的事件流不发布 `session.idle`（一回合以最后一帧 `step_ended` 结束）。流桥在 step 结束后的安静窗口内向后端 `GET /api/session/active` 求证，确认会话离开活跃集后合成一帧瞬态 `status: idle`（`seq=0`）进入环形缓冲并实时分发；打断（interrupt）成功后立即触发同一求证。因此 idle 帧与打断后的收尾都可能以瞬态帧出现，不参与 `after` 续传。
 
 ## 对象形状
 

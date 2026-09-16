@@ -149,7 +149,7 @@ func sanitizeBranchForDir(branch string) string {
 }
 
 // SyncAgentWorkspace ensures the persistent agent directory layout:
-// skills under .opencode/skill (opencode native discovery), repo-{id}-{branch} checkouts for bindings, SYSTEM_PROMPT.md.
+// skills under .agents/skills (opencode native discovery), repo-{id}-{branch} checkouts for bindings, SYSTEM_PROMPT.md.
 // repoDirs are absolute paths of successfully synced repository checkouts (for run logs).
 func (s *AgentService) SyncAgentWorkspace(ctx context.Context, agent *model.AiAgent, userID uint, isSuperAdmin bool) (digests map[uint]string, repoDirs []string, err error) {
 	if err := ctx.Err(); err != nil {
@@ -316,27 +316,28 @@ func (s *AgentService) resolveRepoGitAuth(repo *resourcemodel.Repository) (authT
 	}
 }
 
-// agentWorkspaceScopeHint keeps the harness session inside the persistent
-// agent workspace and points deliverables at the fixed output directory.
-// The session process has no injected env vars, so the hint carries the
-// concrete paths.
-func agentWorkspaceScopeHint(agentRoot, outputDir string) string {
-	return "你的工作目录是 " + agentRoot + "（agents 下本智能体目录）。" +
-		"该目录是跨 Run 复用的持久工作区；不要删除其中已有文件，除非明确需要。" +
+// agentWorkspaceScopeHint carries the bedrock-side workspace policy:
+// persistence across runs, the bound-repo layout, the deliverable directory
+// and the soft path boundary. The working directory itself is not restated —
+// opencode reports it to the session natively.
+func agentWorkspaceScopeHint(outputDir string) string {
+	return "当前目录即本智能体的持久工作区，跨 Run 复用；不要删除其中已有文件，除非明确需要。" +
 		"只能在该目录内读写；通过 ./repo-{id}-{branch} 访问绑定仓库代码。" +
 		"禁止访问该目录之外的任意路径。" +
 		"请将需交付的文件写入 " + outputDir + "（本智能体固定产出目录，默认 ./output；跨 Run 保留，不清空）。" +
-		" Your working directory is " + agentRoot + " (this agent under agents/)." +
-		" This persistent workspace is reused across runs; do not delete existing files unless required." +
+		" The current directory is this agent's persistent workspace, reused across runs;" +
+		" do not delete existing files unless required." +
 		" Read/write only inside it; access bound repository code via ./repo-{id}-{branch}." +
 		" Do not access any path outside this directory." +
 		" Write deliverable files into " + outputDir + " (this agent's fixed output directory; preserved across runs)."
 }
 
-// composeRunPrompt joins system prompt, optional user prompt, and workspace hint.
-func composeRunPrompt(systemPrompt, userPrompt, hint string) string {
-	parts := make([]string, 0, 3)
-	for _, p := range []string{systemPrompt, userPrompt, hint} {
+// composeRunPrompt joins the user prompt and the workspace hint. The agent's
+// system prompt is not included: it rides the compiled opencode agent
+// definition (bedrock-<key>.md) as the session system prompt.
+func composeRunPrompt(userPrompt, hint string) string {
+	parts := make([]string, 0, 2)
+	for _, p := range []string{userPrompt, hint} {
 		if t := strings.TrimSpace(p); t != "" {
 			parts = append(parts, t)
 		}

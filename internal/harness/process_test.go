@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -195,6 +196,119 @@ func TestProcessDegradedWhenUnavailable(t *testing.T) {
 	}
 	if status.LastError == "" {
 		t.Fatal("degraded status should carry the spawn error")
+	}
+}
+
+// startOrphanServe runs a fakeserve nothing supervises, mimicking a serve
+// left behind by a dead bedrock run. The returned channel closes once the
+// process is reaped, letting tests verify the reclaim actually stopped it.
+func startOrphanServe(t *testing.T, port int, password string) <-chan struct{} {
+	t.Helper()
+	cmd := exec.Command(fakeServeBin, "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
+	cmd.Env = append(os.Environ(), "OPENCODE_SERVER_PASSWORD="+password)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("orphan serve: %v", err)
+	}
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if portAccepts(port, 200*time.Millisecond) {
+			return exited
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("orphan serve never came up")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// assertReaped fails the test when the orphan is still alive after grace.
+func assertReaped(t *testing.T, exited <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-exited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("orphan serve still running after reclaim")
+	}
+}
+
+// TestProcessReclaimsLeftoverServe reproduces the orphaned-serve scenario: a
+// previous bedrock run died without stopping its serve, which keeps holding
+// the port. A new manager must stop the leftover and bring up its own serve
+// instead of crash-looping against the occupied port.
+func TestProcessReclaimsLeftoverServe(t *testing.T) {
+	port := freePort(t)
+	passwordFile := filepath.Join(t.TempDir(), "server-password")
+	password := strings.Repeat("ab", passwordBytes)
+	if err := os.WriteFile(passwordFile, []byte(password), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	startOrphan := startOrphanServe(t, port, password)
+
+	m := newManager(t, fakeServeBin)
+	m.cfg.Port = port
+	m.cfg.PasswordFile = passwordFile
+	ctx, cancel := startCtx(t)
+	defer cancel()
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start over leftover: %v", err)
+	}
+	assertReaped(t, startOrphan)
+	status := m.Status()
+	if status.Restarts != 0 {
+		t.Fatalf("restarts = %d, want 0 (leftover must be stopped before the first spawn)", status.Restarts)
+	}
+	if state := status.State; state != StatusOK {
+		t.Fatalf("state = %q, want ok", state)
+	}
+}
+
+// TestProcessReclaimsForeignListener covers a foreign process squatting on
+// the port with a different password: it must be stopped so our serve can
+// bind (otherwise Start never becomes healthy).
+func TestProcessReclaimsForeignListener(t *testing.T) {
+	port := freePort(t)
+	foreignExited := startOrphanServe(t, port, "not-our-password")
+
+	m := newManager(t, fakeServeBin)
+	m.cfg.Port = port
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start over foreign listener: %v", err)
+	}
+	assertReaped(t, foreignExited)
+	if status := m.Status(); status.Restarts != 0 {
+		t.Fatalf("restarts = %d, want 0 (foreign listener must be stopped before the first spawn)", status.Restarts)
+	}
+	if state := m.Status().State; state != StatusOK {
+		t.Fatalf("state = %q, want ok", state)
+	}
+}
+
+// TestProcessBackoffAfterFastCrash verifies the restart delay doubles after
+// consecutive fast crashes instead of logging every second forever. `go
+// serve` is an unknown go subcommand: the binary exists everywhere tests
+// run and exits immediately, which is a real crash (not a spawn failure).
+func TestProcessBackoffAfterFastCrash(t *testing.T) {
+	m := NewProcessManager(ProcessConfig{
+		Bin:          "go",
+		Port:         freePort(t),
+		PasswordFile: filepath.Join(t.TempDir(), "server-password"),
+		RestartDelay: 200 * time.Millisecond,
+	}, zap.NewNop())
+	t.Cleanup(m.Stop)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	if err := m.Start(ctx); err == nil {
+		t.Fatal("expected start error for fast-crashing bin")
+	}
+	// crash+sleep cycles: with doubling, attempts land at ~0/0.25/0.7/1.55s
+	// (<= 4 by the 1.5s cutoff); a fixed 200ms delay would fit ~6.
+	if restarts := m.Status().Restarts; restarts > 4 {
+		t.Fatalf("restarts = %d within 1.5s, want <= 4 (no backoff?)", restarts)
 	}
 }
 

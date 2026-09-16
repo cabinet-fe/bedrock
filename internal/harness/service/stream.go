@@ -49,6 +49,11 @@ const (
 	// healthy this long.
 	reconnectResetAfter = time.Minute
 	answerTimeout       = 30 * time.Second
+	// DefaultSettleDelay is the quiet window after the last step-ended-ish
+	// frame before the bridge asks the backend whether the session still
+	// runs; DefaultSettlePoll is the re-check cadence while it does.
+	DefaultSettleDelay = 2 * time.Second
+	DefaultSettlePoll  = 2 * time.Second
 )
 
 // ErrRequestNotPending reports a reply to a request the bridge does not hold
@@ -67,6 +72,10 @@ type StreamConfig struct {
 	SweepInterval time.Duration
 	// RingSize overrides DefaultRingSize (0 = default).
 	RingSize int
+	// SettleDelay overrides DefaultSettleDelay (0 = default).
+	SettleDelay time.Duration
+	// SettlePoll overrides DefaultSettlePoll (0 = default).
+	SettlePoll time.Duration
 }
 
 // PendingRequest is one registered permission or question request awaiting
@@ -90,6 +99,13 @@ type sessionState struct {
 	nextSub  int
 	approval string // "" = configured fallback
 	activeAt time.Time
+	// busy tracks whether the backend agent loop is believed to run. It
+	// flips true on prompt/step-start frames and false only when the settle
+	// check confirms idleness; the synthesized idle frame closes the gap
+	// left by backends that never broadcast session.idle (opencode 1.18.x).
+	frames int64
+	busy   bool
+	settle *time.Timer
 }
 
 // StreamService is the stream bridge: it keeps exactly one backend-wide
@@ -261,6 +277,7 @@ func (s *StreamService) dispatch(frame *provider.Frame) {
 		return
 	}
 	st.activeAt = time.Now()
+	st.frames++
 	s.appendRingLocked(st, frame)
 	if frame.Kind == provider.FramePermission || frame.Kind == provider.FrameQuestion {
 		if req, ok := s.putPendingLocked(st, frame); ok &&
@@ -268,6 +285,7 @@ func (s *StreamService) dispatch(frame *provider.Frame) {
 			auto = &req
 		}
 	}
+	s.trackBusyLocked(frame.SessionID, st, frame)
 	s.fanoutLocked(st, frame)
 	s.evictLocked()
 	s.mu.Unlock()
@@ -275,6 +293,105 @@ func (s *StreamService) dispatch(frame *provider.Frame) {
 	if auto != nil {
 		go s.autoApprove(*auto)
 	}
+}
+
+// trackBusyLocked folds status frames into the busy state and (dis)arms the
+// settle check: prompt/step-start frames assert business, step-end-ish frames
+// open the settle window that confirms idleness against the backend.
+func (s *StreamService) trackBusyLocked(sessionID string, st *sessionState, frame *provider.Frame) {
+	if frame.Kind != provider.FrameStatus || frame.Status == nil {
+		return
+	}
+	switch frame.Status.Name {
+	case provider.StatusPromptAdmitted, provider.StatusPrompted, provider.StatusStepStarted:
+		st.busy = true
+		s.stopSettleLocked(st)
+	case provider.StatusStepEnded, provider.StatusStepFailed, provider.StatusError:
+		s.armSettleLocked(sessionID, st, s.settleDelay())
+	}
+}
+
+// armSettleLocked schedules the settle check for a session.
+func (s *StreamService) armSettleLocked(sessionID string, st *sessionState, delay time.Duration) {
+	s.stopSettleLocked(st)
+	st.settle = time.AfterFunc(delay, func() { s.settleCheck(sessionID) })
+}
+
+func (s *StreamService) stopSettleLocked(st *sessionState) {
+	if st.settle != nil {
+		st.settle.Stop()
+		st.settle = nil
+	}
+}
+
+// settleCheck asks the backend whether the session still runs an agent loop
+// and, once it does not and no ask awaits an answer, synthesizes the idle
+// status frame through the ring + fanout path. A still busy backend re-arms
+// the check; a failed probe retries.
+func (s *StreamService) settleCheck(sessionID string) {
+	s.mu.Lock()
+	st := s.sessions[sessionID]
+	if st == nil || !st.busy || st.settle == nil || len(st.pending) > 0 {
+		// Gone, a prompt frame arrived meanwhile, already checking, or an
+		// approval/question waits for an answer (the backend resumes the
+		// loop once it is answered and the next frames re-arm the check).
+		s.mu.Unlock()
+		return
+	}
+	st.settle = nil
+	seen := st.frames
+	s.mu.Unlock()
+
+	active, err := s.provider.ActiveSessions(context.Background())
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if st = s.sessions[sessionID]; st == nil || st.frames != seen {
+		// Evicted or a frame arrived while probing: that frame already
+		// re-tracked business, so this round is obsolete.
+		return
+	}
+	switch {
+	case err != nil:
+		// Backend unreachable: probe again later.
+	case active[sessionID]:
+		// Turn still open (inter-step gap or queued prompt): keep polling.
+	default:
+		st.busy = false
+		st.activeAt = time.Now()
+		idle := &provider.Frame{
+			SessionID: sessionID,
+			Kind:      provider.FrameStatus,
+			Status:    &provider.StatusFrame{Name: provider.StatusIdle},
+		}
+		s.appendRingLocked(st, idle)
+		st.frames++
+		s.fanoutLocked(st, idle)
+		return
+	}
+	st.settle = time.AfterFunc(s.settlePoll(), func() { s.settleCheck(sessionID) })
+}
+
+// SessionBusy reports whether the bridge believes the session's agent loop
+// still runs. Unknown sessions are idle.
+func (s *StreamService) SessionBusy(sessionID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.sessions[sessionID]
+	return st != nil && st.busy
+}
+
+// SettleSession opens a settle window right away, skipping the quiet delay.
+// Interrupt is the main caller: an aborted loop may produce no further
+// frames, so only the active probe can close the business.
+func (s *StreamService) SettleSession(sessionID string) {
+	s.mu.Lock()
+	st := s.sessions[sessionID]
+	if st == nil || !st.busy || st.settle != nil {
+		s.mu.Unlock()
+		return
+	}
+	st.settle = time.AfterFunc(0, func() { s.settleCheck(sessionID) })
+	s.mu.Unlock()
 }
 
 // acceptLocked reports whether the frame is new for its session, updating
@@ -399,6 +516,20 @@ func (s *StreamService) ringSize() int {
 		return s.cfg.RingSize
 	}
 	return DefaultRingSize
+}
+
+func (s *StreamService) settleDelay() time.Duration {
+	if s.cfg.SettleDelay > 0 {
+		return s.cfg.SettleDelay
+	}
+	return DefaultSettleDelay
+}
+
+func (s *StreamService) settlePoll() time.Duration {
+	if s.cfg.SettlePoll > 0 {
+		return s.cfg.SettlePoll
+	}
+	return DefaultSettlePoll
 }
 
 // modeLocked returns the effective approval mode of the session.

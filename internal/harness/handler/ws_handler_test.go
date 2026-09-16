@@ -308,3 +308,112 @@ func TestWSHandler_MultiConnectionNoDuplication(t *testing.T) {
 		_ = conn.SetReadDeadline(time.Time{})
 	}
 }
+
+// waitForBusy polls the bridge busy flag with a longer horizon than the
+// default settle delay needs.
+func waitForBusy(t *testing.T, what string, env *wsEnv, want bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for env.stream.SessionBusy("ses_1") != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// A client joining after a turn whose replayed durable frames assert a
+// running session (prompt/step starts, no replayable idle) gets the
+// settled-idle snapshot after the baseline, so it does not stay stuck on
+// the running state forever.
+func TestWSHandler_SettledIdleSnapshotAfterRunningReplay(t *testing.T) {
+	env := setupWS(t, true)
+
+	env.fake.bus <- &provider.Frame{Seq: 1, SessionID: "ses_1", Kind: provider.FrameStatus,
+		Status: &provider.StatusFrame{Name: provider.StatusPrompted}}
+	env.fake.bus <- &provider.Frame{Seq: 2, SessionID: "ses_1", Kind: provider.FrameStatus,
+		Status: &provider.StatusFrame{Name: provider.StatusStepStarted}}
+	env.fake.bus <- &provider.Frame{Seq: 3, SessionID: "ses_1", Kind: provider.FrameStatus,
+		Status: &provider.StatusFrame{Name: provider.StatusStepEnded}}
+	waitFor(t, "ring buffer filled", func() bool {
+		replay, _, _ := env.stream.Subscribe("ses_1")
+		return len(replay) == 3
+	})
+	waitForBusy(t, "bridge settle", env, false)
+
+	conn, _, err := dialWS(t, env, "/ws/harness/sessions/ses_1/events?token="+env.token)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	for seq := int64(1); seq <= 3; seq++ {
+		if frame := readFrame(t, conn); frame.Seq != seq {
+			t.Fatalf("replay frame seq = %d, want %d", frame.Seq, seq)
+		}
+	}
+	snapshot := readFrame(t, conn)
+	if snapshot.Kind != provider.FrameStatus || snapshot.Status == nil || snapshot.Status.Name != provider.StatusIdle {
+		t.Fatalf("expected settled-idle snapshot, got %+v", snapshot)
+	}
+}
+
+// A still-running session gets no snapshot: the live frames continue.
+func TestWSHandler_NoSnapshotWhileBusy(t *testing.T) {
+	env := setupWS(t, true)
+
+	env.fake.bus <- &provider.Frame{Seq: 1, SessionID: "ses_1", Kind: provider.FrameStatus,
+		Status: &provider.StatusFrame{Name: provider.StatusPrompted}}
+	waitFor(t, "ring buffer filled", func() bool {
+		replay, _, _ := env.stream.Subscribe("ses_1")
+		return len(replay) == 1
+	})
+	waitForBusy(t, "bridge busy", env, true)
+
+	conn, _, err := dialWS(t, env, "/ws/harness/sessions/ses_1/events?token="+env.token)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	if frame := readFrame(t, conn); frame.Seq != 1 {
+		t.Fatalf("replay frame seq = %d, want 1", frame.Seq)
+	}
+	env.fake.bus <- &provider.Frame{Seq: 2, SessionID: "ses_1", Kind: provider.FrameStatus,
+		Status: &provider.StatusFrame{Name: provider.StatusStepStarted}}
+	if frame := readFrame(t, conn); frame.Seq != 2 || frame.Status.Name != provider.StatusStepStarted {
+		t.Fatalf("expected live step_started, got %+v", frame)
+	}
+}
+
+// A replay that already ends settled (error state) asserts no running, so
+// no snapshot is needed.
+func TestWSHandler_NoSnapshotWhenReplaySettled(t *testing.T) {
+	env := setupWS(t, true)
+
+	env.fake.bus <- &provider.Frame{Seq: 1, SessionID: "ses_1", Kind: provider.FrameStatus,
+		Status: &provider.StatusFrame{Name: provider.StatusPrompted}}
+	env.fake.bus <- &provider.Frame{Seq: 2, SessionID: "ses_1", Kind: provider.FrameStatus,
+		Status: &provider.StatusFrame{Name: provider.StatusStepFailed, Error: "boom"}}
+	waitFor(t, "ring buffer filled", func() bool {
+		replay, _, _ := env.stream.Subscribe("ses_1")
+		return len(replay) == 2
+	})
+
+	conn, _, err := dialWS(t, env, "/ws/harness/sessions/ses_1/events?token="+env.token)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	for seq := int64(1); seq <= 2; seq++ {
+		if frame := readFrame(t, conn); frame.Seq != seq {
+			t.Fatalf("replay frame seq = %d, want %d", frame.Seq, seq)
+		}
+	}
+	env.fake.bus <- &provider.Frame{Seq: 3, SessionID: "ses_1", Kind: provider.FrameMessageText,
+		MessageText: &provider.MessageText{TextID: "t9", Text: "after"}}
+	if frame := readFrame(t, conn); frame.Seq != 3 {
+		t.Fatalf("expected live frame seq=3 right after replay (no snapshot), got %+v", frame)
+	}
+}

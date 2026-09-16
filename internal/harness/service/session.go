@@ -91,6 +91,9 @@ type SessionService struct {
 	provider provider.Provider
 	cfg      SessionConfig
 	log      *zap.Logger
+	// streams is attached after construction (wiring order): Interrupt uses
+	// it to close the session business the backend no longer reports on.
+	streams *StreamService
 	// dirPrep prepares a chat directory before provider calls (BYOK provider
 	// config injection); attached after construction because the
 	// implementation lives in the ai domain. Failures log, never block: a
@@ -113,7 +116,14 @@ func NewSessionService(prov provider.Provider, cfg SessionConfig, log *zap.Logge
 	return &SessionService{provider: prov, cfg: cfg, log: log}
 }
 
-// SetDirectoryPrep wires the per-directory config preparation (BYOK).
+// AttachStreams wires the stream bridge (wiring order: the bridge is built
+// after the session service).
+func (s *SessionService) AttachStreams(streams *StreamService) {
+	s.streams = streams
+}
+
+// SetDirectoryPrep wires the per-directory config preparation (BYOK) and the
+// default model resolver for sessions without an explicit model.
 func (s *SessionService) SetDirectoryPrep(fn func(directory string) error) {
 	s.dirPrep = fn
 }
@@ -238,9 +248,16 @@ func (s *SessionService) History(ctx context.Context, sessionID string) ([]provi
 	return s.provider.History(ctx, sessionID)
 }
 
-// Interrupt cancels the running agent loop of a session.
+// Interrupt cancels the running agent loop of a session. After the backend
+// accepted the cancel, the bridge gets an immediate settle window: an
+// aborted loop may produce no further frames, so only the active probe can
+// flip the session back to idle for stream consumers.
 func (s *SessionService) Interrupt(ctx context.Context, sessionID string) error {
-	return s.provider.Interrupt(ctx, sessionID)
+	err := s.provider.Interrupt(ctx, sessionID)
+	if err == nil && s.streams != nil {
+		s.streams.SettleSession(sessionID)
+	}
+	return err
 }
 
 // Export returns the session transcript as JSONL.
