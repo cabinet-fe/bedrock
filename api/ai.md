@@ -4,7 +4,7 @@ Agents、运行记录、Skills。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
 业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
-智能体执行走 harness 会话底座（会话 REST/WS 契约见 [harness.md](harness.md)）；`harness.enabled=false` 时执行类端点返回 503，不回退 CLI 执行。AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）保留在资源管理域，见 [resource.md](resource.md)（存量 `cli_key` 列停用忽略）。
+智能体执行走 harness 会话底座（会话 REST/WS 契约见 [harness.md](harness.md)）；`harness.enabled=false` 时执行类端点返回 503，不回退 CLI 执行。AI CLI 运行时管理（列表/检测/安装/升级/卸载/安装源）保留在资源管理域，见 [resource.md](resource.md)。
 
 ## Agents
 
@@ -510,7 +510,6 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 | `name` | `string` |  |  |
 | `description` | `string` |  |  |
 | `enabled` | `boolean` |  |  |
-| `cli_key` | `string` |  | 存量停用列，恒为历史值；新智能体不再使用 CLI 执行 |
 | `model_provider` | `string` |  | 会话模型覆写 provider（查 `GET /ai/models`）；空 = 用默认 |
 | `model_id` | `string` |  | 会话模型覆写 id；与 `model_provider` 同时提供 |
 | `approval_mode` | `'manual' \| 'auto'` |  | 审批模式，默认 `manual`；无人值守触发运行时强制 `auto` |

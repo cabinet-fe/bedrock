@@ -154,7 +154,7 @@
 
 权限：`ops_dev_environments:view`
 响应 200：data = object
-说明：四套并行 CLI（Claude Code、OpenCode、Reasonix、Codex）。与 Bedrock 同 UID 执行，无 OS/容器沙箱。
+说明：两套并行 CLI（OpenCode、Reasonix）。与 Bedrock 同 UID 执行，无 OS/容器沙箱。
 
 ### POST /resource/clis/{key}/detect — 检测 AI CLI
 
@@ -318,7 +318,7 @@ PAT 按 `user_id` 隔离：仅能列出/创建/更新/删除本人令牌。Beare
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `id` | `integer` |  |  |
-| `key` | `'claude_code' \| 'opencode' \| 'reasonix' \| 'codex'` |  |  |
+| `key` | `'opencode' \| 'reasonix'` |  |  |
 | `name` | `string` |  |  |
 | `binary_name` | `string` |  |  |
 | `description` | `string` |  |  |

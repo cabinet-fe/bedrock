@@ -52,7 +52,7 @@ func TestContract_AI_CRUD(t *testing.T) {
 			repo := repository.NewAIRepository(gdb)
 
 			agent := &model.AiAgent{
-				Name: "a", CliKey: "claude_code", Enabled: true, TimeoutSec: 60,
+				Name: "a", Enabled: true, TimeoutSec: 60,
 				SkillIDsJSON: "[]",
 				OutputDir:    "output",
 			}

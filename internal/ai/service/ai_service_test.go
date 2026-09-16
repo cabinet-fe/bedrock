@@ -20,7 +20,6 @@ import (
 	projectmodel "bedrock/internal/project/model"
 	projectrepo "bedrock/internal/project/repository"
 	projectservice "bedrock/internal/project/service"
-	resourcemodel "bedrock/internal/resource/model"
 )
 
 func TestAgentRunKeepsExplicitProjectID(t *testing.T) {
@@ -378,14 +377,6 @@ func TestCronReloadAppliesTimezone(t *testing.T) {
 func TestAgentRunRecovery_QueuedAndInterrupted(t *testing.T) {
 	gdb, agents, _, _, _ := setupAI(t)
 	repo := repository.NewAIRepository(gdb)
-	cliDef := &resourcemodel.CliRuntimeDefinition{
-		Key: "claude_code", Name: "Claude", BinaryName: "claude",
-	}
-	if err := gdb.Where(resourcemodel.CliRuntimeDefinition{Key: "claude_code"}).
-		Attrs(resourcemodel.CliRuntimeDefinition{Name: "Claude", BinaryName: "claude"}).
-		FirstOrCreate(cliDef).Error; err != nil {
-		t.Fatal(err)
-	}
 	agent := &model.AiAgent{
 		Name: "recover", Enabled: true, SystemPrompt: "x", TimeoutSec: 30, CreatedBy: 1,
 	}

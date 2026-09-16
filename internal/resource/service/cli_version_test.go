@@ -6,14 +6,14 @@ import (
 )
 
 func TestNpmPackageFromTemplate(t *testing.T) {
-	got := npmPackageFromTemplate(npmInstallLike("@anthropic-ai/claude-code"))
-	if got != "@anthropic-ai/claude-code" {
+	got := npmPackageFromTemplate(npmInstallLike("opencode-ai"))
+	if got != "opencode-ai" {
 		t.Fatalf("got %q", got)
 	}
 	if npmPackageFromTemplate(`curl -fsSL "$base/install.sh" | sh`) != "" {
 		t.Fatal("expected empty for non-npm template")
 	}
-	if npmPackageFromTemplate(`mise use -g "npm:@openai/codex@$version"`) != "" {
+	if npmPackageFromTemplate(`mise use -g "npm:reasonix@$version"`) != "" {
 		t.Fatal("mise npm backend templates must not be parsed")
 	}
 	if npmPackageFromTemplate(`npm install -g leftover`) != "leftover" {
@@ -63,10 +63,10 @@ func TestIsNewerCLIVersion(t *testing.T) {
 }
 
 func TestNormalizeCLIVersion(t *testing.T) {
-	if got := normalizeCLIVersion("claude version 1.2.3"); got != "1.2.3" {
+	if got := normalizeCLIVersion("opencode version 1.2.3"); got != "1.2.3" {
 		t.Fatalf("got %q", got)
 	}
-	if got := normalizeCLIVersion("/usr/local/bin/claude"); got != "" {
+	if got := normalizeCLIVersion("/usr/local/bin/opencode"); got != "" {
 		t.Fatalf("path should be empty, got %q", got)
 	}
 }

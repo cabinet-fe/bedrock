@@ -58,7 +58,7 @@
 | **部署 Agent（Deploy Agent）**  | 目标机上独立二进制，用于 HTTP 上传与远程执行                                                               | AI 智能体                             |
 | **凭证（Credential）**          | 通用密钥库条目（Git/SSH/Token/API Key 等），受 RBAC 控制                                                   | 仅 Git 仓库密码                       |
 | **开发环境（DevEnvironment）**   | 宿主机上的 Go/Node/Java/Python 等运行时与包管理器                                                          | CI「环境」                            |
-| **AI CLI / CLI 运行时**         | Claude Code、OpenCode、Reasonix、Codex 等 AI 命令行工具                                                    | 网络代理                              |
+| **AI CLI / CLI 运行时**         | OpenCode、Reasonix 等 AI 命令行工具                                                                      | 网络代理                              |
 | **AI 智能体（AI Agent）**       | 平台托管的智能体定义：提示词、CLI、Skill、触发器、上下文                                                   | 部署 Agent                            |
 | **智能体运行（Agent Run）**     | 一次智能体异步执行及交互记录；记录状态、日志与文本输出，不承载文件制品                                     | 构建执行                              |
 | **开放 Agent Skill**            | 符合 [Agent Skills](https://agentskills.io/specification) 规范的技能包（含 `SKILL.md`）                    | Cursor 私有专有格式（可兼容但不限定） |
@@ -365,7 +365,7 @@ database:
 
 **智能体 CLI：**
 
-- Claude Code / OpenCode / Reasonix / Codex：检测、安装、升级、卸载、npm Registry 多源回退。
+- OpenCode / Reasonix：检测、安装、升级、卸载、npm Registry 多源回退。
 - API 路径仍为 `/resource/clis`（模型归属资源域）；权限与菜单入口统一为运维 `ops_dev_environments:*`（仅超管），无独立 CLI 菜单。
 
 **安装源：**
@@ -509,7 +509,7 @@ BuildRun 的输出目录、制品归档、保留与下载能力属于 CI/CD 域�
 
 ### 10.1 CLI 管理
 
-**内置 CLI（首期）：** Claude Code、OpenCode、Reasonix、Codex CLI。
+**内置 CLI（首期）：** OpenCode、Reasonix CLI（Claude Code / Codex 支持已移除）。
 
 **能力：**
 

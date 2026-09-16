@@ -115,7 +115,6 @@ type aiAgentMigrationModel struct {
 	Name         string    `gorm:"size:100;not null"`
 	Description  string    `gorm:"size:500"`
 	Enabled      bool      `gorm:"not null;default:true"`
-	CliKey       string    `gorm:"size:40;not null;index"`
 	SystemPrompt string    `gorm:"type:text"`
 	SkillIDsJSON string    `gorm:"type:text"`
 	RepositoryID *uint     `gorm:"index"`
@@ -200,18 +199,6 @@ func seedAICLIDefinitions(db *gorm.DB) error {
 	now := time.Now().UTC()
 	defs := []cliRuntimeDefinitionMigrationModel{
 		{
-			Key: "claude_code", Name: "Claude Code", BinaryName: "claude",
-			Description:       "Anthropic Claude Code CLI（同 UID 执行，无沙箱）",
-			DetectCommand:     "command -v claude && claude --version",
-			HealthCommand:     "claude --version",
-			InstallTemplate:   npmCLIInstallTemplate("@anthropic-ai/claude-code", "claude_code"),
-			UpgradeTemplate:   npmCLIUpgradeTemplate("@anthropic-ai/claude-code", "claude_code"),
-			UninstallTemplate: npmCLIUninstallTemplate("@anthropic-ai/claude-code"),
-			DefaultArgs:       "--print", APIBaseEnv: "ANTHROPIC_BASE_URL",
-			EnvTemplateJSON: `{"ANTHROPIC_API_KEY":""}`,
-			InstallStatus:   "unknown", CreatedAt: now, UpdatedAt: now,
-		},
-		{
 			Key: "opencode", Name: "OpenCode", BinaryName: "opencode",
 			Description:       "OpenCode CLI（同 UID 执行，无沙箱）",
 			DetectCommand:     "command -v opencode && opencode --version",
@@ -235,18 +222,6 @@ func seedAICLIDefinitions(db *gorm.DB) error {
 			EnvTemplateJSON: `{"REASONIX_API_KEY":""}`,
 			InstallStatus:   "unknown", CreatedAt: now, UpdatedAt: now,
 		},
-		{
-			Key: "codex", Name: "Codex", BinaryName: "codex",
-			Description:       "OpenAI Codex CLI（同 UID 执行，无沙箱）",
-			DetectCommand:     "command -v codex && codex --version",
-			HealthCommand:     "codex --version",
-			InstallTemplate:   npmCLIInstallTemplate("@openai/codex", "codex"),
-			UpgradeTemplate:   npmCLIUpgradeTemplate("@openai/codex", "codex"),
-			UninstallTemplate: npmCLIUninstallTemplate("@openai/codex"),
-			DefaultArgs:       "exec", APIBaseEnv: "OPENAI_BASE_URL",
-			EnvTemplateJSON: `{"OPENAI_API_KEY":""}`,
-			InstallStatus:   "unknown", CreatedAt: now, UpdatedAt: now,
-		},
 	}
 	for _, def := range defs {
 		var existing cliRuntimeDefinitionMigrationModel
@@ -262,14 +237,10 @@ func seedAICLIDefinitions(db *gorm.DB) error {
 	}
 
 	sources := []cliInstallSourceMigrationModel{
-		{CliKey: "claude_code", Name: "npm registry", BaseURL: "https://registry.npmjs.org", Priority: 10, Enabled: true},
-		{CliKey: "claude_code", Name: "npm mirror", BaseURL: "https://registry.npmmirror.com", Priority: 20, Enabled: true},
 		{CliKey: "opencode", Name: "npm registry", BaseURL: "https://registry.npmjs.org", Priority: 10, Enabled: true},
 		{CliKey: "opencode", Name: "npm mirror", BaseURL: "https://registry.npmmirror.com", Priority: 20, Enabled: true},
 		{CliKey: "reasonix", Name: "npm registry", BaseURL: "https://registry.npmjs.org", Priority: 10, Enabled: true},
 		{CliKey: "reasonix", Name: "npm mirror", BaseURL: "https://registry.npmmirror.com", Priority: 20, Enabled: true},
-		{CliKey: "codex", Name: "npm registry", BaseURL: "https://registry.npmjs.org", Priority: 10, Enabled: true},
-		{CliKey: "codex", Name: "npm mirror", BaseURL: "https://registry.npmmirror.com", Priority: 20, Enabled: true},
 	}
 	for _, source := range sources {
 		var existing cliInstallSourceMigrationModel

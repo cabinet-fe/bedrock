@@ -37,16 +37,16 @@ func TestMigration000055_HarnessSessions(t *testing.T) {
 			t.Errorf("expected column %s on ai_agents", col)
 		}
 	}
-	// Legacy columns stay (cli_key retained but deprecated, old runs untouched).
-	if !gdb.Migrator().HasColumn("ai_agents", "cli_key") {
-		t.Error("expected legacy column ai_agents.cli_key to be retained")
+	// 000056 drops the deprecated cli_key column; agent_runs.output_text stays.
+	if gdb.Migrator().HasColumn("ai_agents", "cli_key") {
+		t.Error("expected deprecated column ai_agents.cli_key to be dropped by 000056")
 	}
 	if !gdb.Migrator().HasColumn("agent_runs", "output_text") {
 		t.Error("expected legacy column agent_runs.output_text to be retained")
 	}
 
 	// approval_mode defaults to manual for existing rows.
-	if err := gdb.Exec("INSERT INTO ai_agents (name, cli_key, timeout_sec, created_at, updated_at) VALUES ('a', 'opencode', 60, datetime('now'), datetime('now'))").Error; err != nil {
+	if err := gdb.Exec("INSERT INTO ai_agents (name, timeout_sec, created_at, updated_at) VALUES ('a', 60, datetime('now'), datetime('now'))").Error; err != nil {
 		t.Fatalf("insert legacy agent: %v", err)
 	}
 	var approvalMode string

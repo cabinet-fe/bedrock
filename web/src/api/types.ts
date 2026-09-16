@@ -873,8 +873,6 @@ export interface AiAgent {
   name: string;
   description: string;
   enabled: boolean;
-  /** Legacy CLI column, deprecated by the harness session backend. */
-  cli_key: string;
   model_provider?: string;
   model_id?: string;
   approval_mode?: "manual" | "auto";

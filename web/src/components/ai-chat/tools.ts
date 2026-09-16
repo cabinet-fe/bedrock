@@ -623,7 +623,6 @@ export const aiChatTools: ChatTool[] = [
       const columns = [
         { key: "id", name: "ID", width: 70, align: "center" as const },
         { key: "name", name: "智能体名称", minWidth: 140, type: "link" as const, linkKey: "link" },
-        { key: "cli_key", name: "CLI Key", minWidth: 120 },
         { key: "description", name: "描述", minWidth: 160 },
         { key: "status", name: "启用状态", width: 90, type: "tag" as const },
       ];
@@ -631,7 +630,6 @@ export const aiChatTools: ChatTool[] = [
       const items = (res.items || []).map((a) => ({
         id: a.id,
         name: a.name,
-        cli_key: a.cli_key,
         description: a.description || "—",
         status: a.enabled ? "已启用" : "已禁用",
         link: "/ai/agents",

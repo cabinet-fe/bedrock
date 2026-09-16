@@ -67,13 +67,12 @@ type AgentRepoBinding struct {
 
 func (AgentRepoBinding) TableName() string { return "ai_agent_repo_bindings" }
 
-// AiAgent is a configured agent bound to one CLI, skills, and repository checkouts.
+// AiAgent is a configured agent bound to skills, model selection, and repository checkouts.
 type AiAgent struct {
 	ID              uint          `json:"id" gorm:"primaryKey"`
 	Name            string        `json:"name" gorm:"size:100;not null"`
 	Description     string        `json:"description" gorm:"size:500"`
 	Enabled         bool          `json:"enabled" gorm:"not null;default:true"`
-	CliKey          string        `json:"cli_key" gorm:"size:40;not null;index"` // legacy column, deprecated by the harness session backend
 	ModelProvider   string        `json:"model_provider,omitempty" gorm:"column:model_provider;size:100"`
 	ModelID         string        `json:"model_id,omitempty" gorm:"column:model_id;size:200"`
 	ApprovalMode    string        `json:"approval_mode" gorm:"column:approval_mode;size:20;not null;default:manual"`

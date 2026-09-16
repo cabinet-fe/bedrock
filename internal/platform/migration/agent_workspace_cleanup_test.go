@@ -221,7 +221,7 @@ func setupLegacyAgentWorkspaceUpgrade(t *testing.T) (*gorm.DB, *airepository.AIR
 
 	repo := airepository.NewAIRepository(gdb)
 	agent := &aimodel.AiAgent{
-		Name: "legacy", Enabled: true, CliKey: "claude_code",
+		Name: "legacy", Enabled: true,
 		SkillIDsJSON: "[]", OutputDir: "output", TimeoutSec: 30,
 	}
 	if err := repo.CreateAgent(agent); err != nil {

@@ -22,7 +22,7 @@
 | D4 | 对象 ACL 与项目归属 | **仅产品项目**使用成员 ACL（写侧）；项目域读侧：持有对应 `:view` 即可读全部项目内容。BuildJob / ScriptJob / BuildPipeline 可选 `project_id`（可空）；AiAgent 跨项目共用。CI/CD 全局列表另受角色 `data_scope`；运维/凭证/Skills 等仍为全局 RBAC |
 | D5 | 全局项目权限 | 显式 `project_projects:view_all` / `manage_all`（`view_all` 保留兼容；读侧已由 `:view` 覆盖全员可读）；普通 `:update` 不隐含全局越权；角色 `data_scope=all` 仅影响 CI/CD 等非项目域列表读 |
 | D6 | AI 文档发布 | 同节点双态草稿；人工确认发布；`expected_version` 乐观锁 |
-| D7 | AI CLI | Claude Code / OpenCode / Reasonix / Codex **并行**交付，均为 GA 条件 |
+| D7 | AI CLI | OpenCode / Reasonix 并行交付；Claude Code / Codex 支持已移除（harness 会话底座取代 CLI 执行路径） |
 | D8 | 构建事件触发 Agent | 默认 `artifact_ready`；BuildJob 可覆盖为 `distribution_finished` |
 | D9 | 菜单可见性 | 分组下菜单需自身 `:view`；`hidden` 菜单永不进导航；空分组不返回 |
 | D10 | 系统信息 | 非超管可看与超管相同的**只读**系统信息；运维写操作仍仅超管 |

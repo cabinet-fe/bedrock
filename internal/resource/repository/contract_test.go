@@ -34,10 +34,10 @@ func TestContract_ResourceCliPat_CRUD(t *testing.T) {
 
 			cliRepo := repository.NewCLIRepository(gdb)
 			clis, err := cliRepo.List()
-			if err != nil || len(clis) != 4 {
+			if err != nil || len(clis) != 2 {
 				t.Fatalf("seeded CLIs: %v len=%d", err, len(clis))
 			}
-			cli, err := cliRepo.FindByKey("claude_code")
+			cli, err := cliRepo.FindByKey("opencode")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -45,7 +45,7 @@ func TestContract_ResourceCliPat_CRUD(t *testing.T) {
 			if err := cliRepo.Update(cli); err != nil {
 				t.Fatal(err)
 			}
-			sources, err := cliRepo.ListEnabledSources("claude_code")
+			sources, err := cliRepo.ListEnabledSources("opencode")
 			if err != nil || len(sources) == 0 {
 				t.Fatalf("seeded sources: %v len=%d", err, len(sources))
 			}

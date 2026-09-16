@@ -51,14 +51,16 @@ func TestContract_Migration000055HarnessSessions(t *testing.T) {
 					t.Fatalf("ai_agents.%s missing on %s", column, driver)
 				}
 			}
-			// Legacy columns must survive: cli_key retained (deprecated), old runs unread.
+			// cli_key is dropped by 000056; agent_runs.output_text stays unread.
 			for _, legacy := range []struct{ table, column string }{
-				{"ai_agents", "cli_key"},
 				{"agent_runs", "output_text"},
 			} {
 				if !gdb.Migrator().HasColumn(legacy.table, legacy.column) {
 					t.Fatalf("%s.%s legacy column missing on %s", legacy.table, legacy.column, driver)
 				}
+			}
+			if gdb.Migrator().HasColumn("ai_agents", "cli_key") {
+				t.Fatalf("ai_agents.cli_key must be dropped by 000056 on %s", driver)
 			}
 
 			insertRun := func(sessionID any) error {

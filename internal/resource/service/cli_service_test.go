@@ -33,9 +33,9 @@ func setupCLI(t *testing.T) (*gorm.DB, *service.CLIService) {
 	return gdb, service.NewCLIService(repository.NewCLIRepository(gdb))
 }
 
-func TestFourCLIDetectReferencePaths(t *testing.T) {
+func TestCLIDetectReferencePaths(t *testing.T) {
 	_, cli := setupCLI(t)
-	for _, key := range []string{"claude_code", "opencode", "reasonix", "codex"} {
+	for _, key := range []string{"opencode", "reasonix"} {
 		result, err := cli.Detect(key)
 		if err != nil {
 			t.Fatalf("%s detect: %v", key, err)
@@ -59,14 +59,12 @@ func TestCLIListSeeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 4 {
-		t.Fatalf("want 4 CLIs, got %d", len(items))
+	if len(items) != 2 {
+		t.Fatalf("want 2 CLIs, got %d", len(items))
 	}
 	wantDefaultArgs := map[string]string{
-		"claude_code": "--print",
-		"codex":       "exec",
-		"opencode":    "run",
-		"reasonix":    "run --max-steps 400",
+		"opencode": "run",
+		"reasonix": "run --max-steps 400",
 	}
 	for _, item := range items {
 		got := strings.TrimSpace(item.DefaultArgs)
@@ -80,13 +78,13 @@ func TestCLIListSeeded(t *testing.T) {
 func TestDetectExtractsVersionNotPath(t *testing.T) {
 	gdb, cli := setupCLI(t)
 	if err := gdb.Model(&model.CliRuntimeDefinition{}).
-		Where("key = ?", "claude_code").
+		Where("key = ?", "reasonix").
 		Updates(map[string]any{
-			"detect_command": `printf '/usr/local/bin/claude\nclaude version 2.3.4\n'`,
+			"detect_command": `printf '/usr/local/bin/reasonix\nreasonix version 2.3.4\n'`,
 		}).Error; err != nil {
 		t.Fatal(err)
 	}
-	result, err := cli.Detect("claude_code")
+	result, err := cli.Detect("reasonix")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,12 +102,12 @@ func TestDetectExtractsVersionNotPath(t *testing.T) {
 func TestDetectFindsPATHBinaryWithoutMise(t *testing.T) {
 	_, cli := setupCLI(t)
 	stubDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(stubDir, "codex"), []byte("#!/bin/sh\necho 'codex-cli 3.1.4'\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(stubDir, "opencode"), []byte("#!/bin/sh\necho 'opencode-cli 3.1.4'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	result, err := cli.Detect("codex")
+	result, err := cli.Detect("opencode")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,17 +122,17 @@ func TestDetectFindsPATHBinaryWithoutMise(t *testing.T) {
 func TestDetectClearsStaleWhenMissing(t *testing.T) {
 	gdb, cli := setupCLI(t)
 	if err := gdb.Model(&model.CliRuntimeDefinition{}).
-		Where("key = ?", "codex").
+		Where("key = ?", "opencode").
 		Updates(map[string]any{
 			"detect_command":    "false",
-			"installed_path":    "/stale/codex",
+			"installed_path":    "/stale/opencode",
 			"installed_version": "9.9.9",
 			"install_status":    "installed",
 			"healthy":           true,
 		}).Error; err != nil {
 		t.Fatal(err)
 	}
-	result, err := cli.Detect("codex")
+	result, err := cli.Detect("opencode")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +140,7 @@ func TestDetectClearsStaleWhenMissing(t *testing.T) {
 		t.Fatal("expected missing")
 	}
 	var got model.CliRuntimeDefinition
-	if err := gdb.Where("key = ?", "codex").First(&got).Error; err != nil {
+	if err := gdb.Where("key = ?", "opencode").First(&got).Error; err != nil {
 		t.Fatal(err)
 	}
 	if got.InstallStatus != "missing" || got.InstalledPath != "" || got.InstalledVersion != "" || got.Healthy {
@@ -221,16 +219,16 @@ func TestExecuteMultiSourceFallback(t *testing.T) {
 func TestExecuteDefaultRegistryWhenNoSources(t *testing.T) {
 	gdb, cli := setupCLI(t)
 	if err := gdb.Model(&model.CliRuntimeDefinition{}).
-		Where("key = ?", "codex").
+		Where("key = ?", "reasonix").
 		Updates(map[string]any{
 			"install_template": `base="{{base_url}}"; if [ -n "$base" ]; then echo unexpected-registry; exit 1; fi; echo default-registry-ok`,
 		}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := gdb.Where("cli_key = ?", "codex").Delete(&model.CliInstallSource{}).Error; err != nil {
+	if err := gdb.Where("cli_key = ?", "reasonix").Delete(&model.CliInstallSource{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	result, err := cli.Execute(context.Background(), "codex", "install", service.ExecuteInput{}, 1)
+	result, err := cli.Execute(context.Background(), "reasonix", "install", service.ExecuteInput{}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,11 +271,11 @@ func TestCLINPMTemplates(t *testing.T) {
 func TestCheckUpdateRequiresNpmPackage(t *testing.T) {
 	gdb, cli := setupCLI(t)
 	if err := gdb.Model(&model.CliRuntimeDefinition{}).
-		Where("key = ?", "codex").
+		Where("key = ?", "reasonix").
 		Update("install_template", `echo no-npm`).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, err := cli.CheckUpdate(context.Background(), "codex")
+	_, err := cli.CheckUpdate(context.Background(), "reasonix")
 	if err == nil || !strings.Contains(err.Error(), "npm 包") {
 		t.Fatalf("expected npm package error, got %v", err)
 	}
@@ -286,22 +284,22 @@ func TestCheckUpdateRequiresNpmPackage(t *testing.T) {
 func TestCheckUpdateReportsAvailability(t *testing.T) {
 	gdb, cli := setupCLI(t)
 	if err := gdb.Model(&model.CliRuntimeDefinition{}).
-		Where("key = ?", "codex").
+		Where("key = ?", "opencode").
 		Updates(map[string]any{
-			"install_template":  `npm install -g @openai/codex${version:+@$version}`,
+			"install_template":  `npm install -g opencode-ai${version:+@$version}`,
 			"installed_version": "0.0.0",
 			"install_status":    "installed",
 		}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := gdb.Where("cli_key = ?", "codex").Delete(&model.CliInstallSource{}).Error; err != nil {
+	if err := gdb.Where("cli_key = ?", "opencode").Delete(&model.CliInstallSource{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	result, err := cli.CheckUpdate(context.Background(), "codex")
+	result, err := cli.CheckUpdate(context.Background(), "opencode")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Package != "@openai/codex" {
+	if result.Package != "opencode-ai" {
 		t.Fatalf("package: %s", result.Package)
 	}
 	if result.Error != "" {
@@ -321,11 +319,11 @@ func TestCheckUpdateReportsAvailability(t *testing.T) {
 func TestListCLIVersionsWithoutPackage(t *testing.T) {
 	gdb, cli := setupCLI(t)
 	if err := gdb.Model(&model.CliRuntimeDefinition{}).
-		Where("key = ?", "codex").
+		Where("key = ?", "reasonix").
 		Update("install_template", `echo no-npm`).Error; err != nil {
 		t.Fatal(err)
 	}
-	got, err := cli.ListVersions(context.Background(), "codex")
+	got, err := cli.ListVersions(context.Background(), "reasonix")
 	if err != nil {
 		t.Fatal(err)
 	}

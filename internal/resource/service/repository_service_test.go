@@ -54,7 +54,7 @@ func TestRepositoryDeleteBlockedByAgentBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := &model.AiAgent{
-		Name: "a", CliKey: "claude_code", Enabled: true, TimeoutSec: 60,
+		Name: "a", Enabled: true, TimeoutSec: 60,
 		SkillIDsJSON: "[]", OutputDir: "output",
 	}
 	if err := aiRepo.CreateAgent(agent); err != nil {
