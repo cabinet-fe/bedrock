@@ -18,6 +18,7 @@ import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import ProjectSelect from "@/components/project-select";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
+import RunHistoryDialog from "@/views/projects/components/run-history-dialog.vue";
 
 function parsePositiveInt(raw: unknown): number | undefined {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -176,6 +177,14 @@ function openEditor(row: BuildPipeline) {
   void router.push({ name: "cicd-pipeline-editor", params: { id: String(row.id) } });
 }
 
+const historyOpen = ref(false);
+const historyPipeline = ref<BuildPipeline | null>(null);
+
+function openHistory(row: BuildPipeline) {
+  historyPipeline.value = row;
+  historyOpen.value = true;
+}
+
 onMounted(async () => {
   const editID = parsePositiveInt(route.query.id);
   const prefillID = parsePositiveInt(route.query.project_id);
@@ -247,6 +256,12 @@ onMounted(async () => {
             运行
           </u-action>
           <u-action
+            v-if="hasPermission('cicd_pipeline_runs:view')"
+            @run="openHistory(rowData as BuildPipeline)"
+          >
+            运行历史
+          </u-action>
+          <u-action
             v-if="
               hasPermission('cicd_pipelines:view') && (rowData as BuildPipeline).trigger_webhook
             "
@@ -290,6 +305,13 @@ onMounted(async () => {
         <u-button type="primary" :loading="saving" @click="save">保存</u-button>
       </template>
     </u-dialog>
+
+    <RunHistoryDialog
+      v-model="historyOpen"
+      kind="pipeline"
+      :entity-id="historyPipeline?.id ?? 0"
+      :entity-name="historyPipeline?.name ?? ''"
+    />
   </div>
 </template>
 

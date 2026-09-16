@@ -90,11 +90,14 @@ func EnsureRBACResources(db *gorm.DB) error {
 			Code: "cicd", Name: "CI/CD", RoutePrefix: "/cicd", SortKey: 30,
 			Menus: []seedMenu{
 				{Code: "cicd_build_jobs", Title: "构建任务", Route: "/cicd/build-jobs", SortKey: 10, Actions: append(append([]string{}, standardCRUD...), "execute")},
-				{Code: "cicd_build_runs", Title: "构建记录", Route: "/cicd/build-runs", SortKey: 20, Actions: []string{"view"}},
+				// Hidden from nav: per-task run history lives in the task
+				// list dialogs; the view permissions stay for those dialogs,
+				// project panels and dashboard summaries.
+				{Code: "cicd_build_runs", Title: "构建记录", Route: "/cicd/build-runs", SortKey: 20, Hidden: true, Actions: []string{"view"}},
 				{Code: "cicd_script_jobs", Title: "脚本任务", Route: "/cicd/script-jobs", SortKey: 25, Actions: append(append([]string{}, standardCRUD...), "execute")},
-				{Code: "cicd_script_runs", Title: "脚本记录", Route: "/cicd/script-runs", SortKey: 26, Actions: []string{"view"}},
+				{Code: "cicd_script_runs", Title: "脚本记录", Route: "/cicd/script-runs", SortKey: 26, Hidden: true, Actions: []string{"view"}},
 				{Code: "cicd_pipelines", Title: "构建流水线", Route: "/cicd/pipelines", SortKey: 30, Actions: append(append([]string{}, standardCRUD...), "execute")},
-				{Code: "cicd_pipeline_runs", Title: "流水线运行", Route: "/cicd/pipeline-runs", SortKey: 40, Actions: []string{"view"}},
+				{Code: "cicd_pipeline_runs", Title: "流水线运行", Route: "/cicd/pipeline-runs", SortKey: 40, Hidden: true, Actions: []string{"view"}},
 			},
 		},
 		{
@@ -118,7 +121,10 @@ func EnsureRBACResources(db *gorm.DB) error {
 			Code: "ai", Name: "AI", RoutePrefix: "/ai", SortKey: 50,
 			Menus: []seedMenu{
 				{Code: "ai_agents", Title: "智能体", Route: "/ai/agents", SortKey: 10, Actions: append(append([]string{}, standardCRUD...), "execute")},
-				{Code: "ai_runs", Title: "运行记录", Route: "/ai/runs", SortKey: 20, Actions: []string{"view"}},
+				// Hidden from nav: agent run history lives in the agent list
+				// dialog; the view permission stays for that dialog, project
+				// panels and dashboard summaries.
+				{Code: "ai_runs", Title: "运行记录", Route: "/ai/runs", SortKey: 20, Hidden: true, Actions: []string{"view"}},
 				// Hidden from nav: mounts the harness chat API permissions
 				// (api/harness.md) without a dedicated page. The menu code is
 				// the prefix the handlers enforce (harness_chat:view/send/approve).
@@ -154,7 +160,12 @@ func EnsureRBACResources(db *gorm.DB) error {
 				return err
 			}
 		}
-		if err := hideMenus(tx, "project_requirements", "project_docs", "project_dev_docs", "harness_chat"); err != nil {
+		if err := hideMenus(tx,
+			"project_requirements", "project_docs", "project_dev_docs", "harness_chat",
+			// Retired record-list menus: history moved into per-task dialogs
+			// (cicd_*_runs / ai_runs keep only their view permissions).
+			"cicd_build_runs", "cicd_script_runs", "cicd_pipeline_runs", "ai_runs",
+		); err != nil {
 			return err
 		}
 		return removeRetiredMenus(tx, "dashboard_system_info", "dashboard_system_status", "resource_clis")

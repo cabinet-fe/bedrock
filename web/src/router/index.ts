@@ -148,15 +148,6 @@ const router = createRouter({
           },
         },
         {
-          path: "cicd/build-runs",
-          name: "cicd-build-runs",
-          component: () => import("@/views/cicd/build-runs/pages/main.vue"),
-          meta: {
-            permission: "cicd_build_runs:view",
-            title: "构建记录",
-          },
-        },
-        {
           path: "cicd/build-runs/:id",
           name: "cicd-build-run-detail",
           component: () => import("@/views/cicd/build-runs/pages/detail.vue"),
@@ -172,15 +163,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_script_jobs:view",
             title: "脚本任务",
-          },
-        },
-        {
-          path: "cicd/script-runs",
-          name: "cicd-script-runs",
-          component: () => import("@/views/cicd/script-runs/pages/main.vue"),
-          meta: {
-            permission: "cicd_script_runs:view",
-            title: "脚本记录",
           },
         },
         {
@@ -208,15 +190,6 @@ const router = createRouter({
           meta: {
             permission: "cicd_pipelines:view",
             title: "流水线编排",
-          },
-        },
-        {
-          path: "cicd/pipeline-runs",
-          name: "cicd-pipeline-runs",
-          component: () => import("@/views/cicd/pipeline-runs/pages/main.vue"),
-          meta: {
-            permission: "cicd_pipeline_runs:view",
-            title: "流水线运行",
           },
         },
         {
@@ -327,12 +300,6 @@ const router = createRouter({
           name: "ai-agents",
           component: () => import("@/views/ai/agents/pages/main.vue"),
           meta: { permission: "ai_agents:view", title: "Agents" },
-        },
-        {
-          path: "ai/runs",
-          name: "ai-runs",
-          component: () => import("@/views/ai/runs/pages/main.vue"),
-          meta: { permission: "ai_runs:view", title: "运行记录" },
         },
         {
           path: "ai/runs/:id",
