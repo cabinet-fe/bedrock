@@ -37,10 +37,11 @@ func (c goldenCase) name() string {
 
 func (c goldenCase) input() AgentDefInput {
 	in := AgentDefInput{
-		Name:         "Release Helper",
-		Description:  " Assists with   release notes\nand changelogs. ",
-		ApprovalMode: c.approval,
-		HasSkills:    c.skills,
+		Name:                "Release Helper",
+		Description:         " Assists with   release notes\nand changelogs. ",
+		ApprovalMode:        c.approval,
+		HasSkills:           c.skills,
+		InjectDefaultPrompt: true,
 	}
 	if c.prompt {
 		in.SystemPrompt = "你是发布助手，负责整理变更日志。"

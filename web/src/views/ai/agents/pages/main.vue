@@ -110,6 +110,7 @@ const form = reactive({
   /** Default reasoning effort of the selected model; empty = model default. */
   reasoning_effort: "",
   approval_mode: "manual" as "manual" | "auto",
+  inject_default_prompt: true,
   system_prompt: "",
   skill_ids: [] as number[],
   repo_bindings: [] as RepoBindingDraft[],
@@ -328,6 +329,7 @@ function openCreate() {
   form.model = "";
   form.reasoning_effort = "";
   form.approval_mode = "manual";
+  form.inject_default_prompt = true;
   formTriggers.value = [];
   initialTriggerIDs.value = [];
   resetTriggerDraft();
@@ -339,6 +341,7 @@ async function openEdit(row: AiAgent) {
   o(form).extend(row);
   form.model = row.model_provider && row.model_id ? `${row.model_provider}|${row.model_id}` : "";
   form.approval_mode = row.approval_mode ?? "manual";
+  form.inject_default_prompt = row.inject_default_prompt ?? true;
   form.skill_ids = [...(row.skill_ids ?? [])];
   form.repo_bindings = (row.repo_bindings ?? []).map((b: AiAgentRepoBinding) => ({
     repository_id: b.repository_id,
@@ -501,6 +504,7 @@ async function save() {
     description: form.description,
     enabled: form.enabled,
     approval_mode: form.approval_mode,
+    inject_default_prompt: form.inject_default_prompt,
     system_prompt: form.system_prompt,
     skill_ids: form.skill_ids,
     repo_bindings: bindings,
@@ -655,6 +659,7 @@ const remove = bind(async (row: AiAgent) => {
           :rows="6"
           placeholder="描述任务目标；若需访问绑定仓库，请写相对路径，如 ./repo-12-main"
         />
+        <u-switch label="注入默认提示词" field="inject_default_prompt" />
       </template>
 
       <template #group:bindings>

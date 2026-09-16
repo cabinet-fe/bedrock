@@ -7,10 +7,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -18,7 +20,8 @@ import (
 	"bedrock/internal/harness/provider/oc"
 )
 
-// DefaultMaxSessionsPerDir is the default cap of non-archived sessions kept
+// ErrInvalidModelProvider reports an explicit model provider outside bedrock-p*.
+var ErrInvalidModelProvider = errors.New("model.provider 必须为 bedrock-p* 平台 BYOK 提供商")
 // per workspace directory; older ones are archived when a new session is
 // created in the same directory.
 const DefaultMaxSessionsPerDir = 20
@@ -40,9 +43,10 @@ type AgentSpec struct {
 	Description   string
 	SystemPrompt  string
 	SkillIDs      []uint
-	ModelProvider string
-	ModelID       string
-	ApprovalMode  string // manual | auto (see provider/oc compile modes)
+	ModelProvider       string
+	ModelID             string
+	ApprovalMode        string // manual | auto (see provider/oc compile modes)
+	InjectDefaultPrompt bool
 }
 
 // AgentSessionDirectory returns the workspace directory an agent's sessions
@@ -218,6 +222,12 @@ func (s *SessionService) CreateChatSession(ctx context.Context, userID uint, inp
 		return nil, fmt.Errorf("harness session dir: %w", err)
 	}
 	s.prepDirectory(input.Directory)
+	if input.Model != nil {
+		providerID := strings.TrimSpace(input.Model.ProviderID)
+		if providerID != "" && !strings.HasPrefix(providerID, "bedrock-p") {
+			return nil, ErrInvalidModelProvider
+		}
+	}
 	if input.Model == nil {
 		input.Model = s.resolveDefaultModel()
 	}

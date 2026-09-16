@@ -85,13 +85,14 @@ func SyncAgentSkills(agentWorkspace string, sources []SkillSource) error {
 // removed. The definition name sessions should use is AgentDefName.
 func SyncAgentDefinition(agentWorkspace string, agent AgentSpec) error {
 	input := oc.AgentDefInput{
-		Name:          agent.Name,
-		Description:   agent.Description,
-		SystemPrompt:  agent.SystemPrompt,
-		HasSkills:     len(agent.SkillIDs) > 0,
-		ModelProvider: agent.ModelProvider,
-		ModelID:       agent.ModelID,
-		ApprovalMode:  agent.ApprovalMode,
+		Name:                agent.Name,
+		Description:         agent.Description,
+		SystemPrompt:        agent.SystemPrompt,
+		HasSkills:           len(agent.SkillIDs) > 0,
+		ModelProvider:       agent.ModelProvider,
+		ModelID:             agent.ModelID,
+		ApprovalMode:        agent.ApprovalMode,
+		InjectDefaultPrompt: agent.InjectDefaultPrompt,
 	}
 	var referenced []string
 	if agent.hasCustomization() {

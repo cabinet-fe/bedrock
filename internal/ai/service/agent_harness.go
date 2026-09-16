@@ -61,14 +61,15 @@ func (s *AgentService) SetHarnessTimers(idleConfirm, noTerminal time.Duration) {
 // harnessAgentSpec projects the persisted agent onto the harness domain.
 func harnessAgentSpec(agent *model.AiAgent) harnessservice.AgentSpec {
 	return harnessservice.AgentSpec{
-		ID:            agent.ID,
-		Name:          agent.Name,
-		Description:   agent.Description,
-		SystemPrompt:  agent.SystemPrompt,
-		SkillIDs:      agent.SkillIDs,
-		ModelProvider: agent.ModelProvider,
-		ModelID:       agent.ModelID,
-		ApprovalMode:  agent.ApprovalMode,
+		ID:                  agent.ID,
+		Name:                agent.Name,
+		Description:         agent.Description,
+		SystemPrompt:        agent.SystemPrompt,
+		SkillIDs:            agent.SkillIDs,
+		ModelProvider:       agent.ModelProvider,
+		ModelID:             agent.ModelID,
+		ApprovalMode:        agent.ApprovalMode,
+		InjectDefaultPrompt: agent.InjectDefaultPrompt,
 	}
 }
 

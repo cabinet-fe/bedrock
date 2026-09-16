@@ -34,7 +34,9 @@ func setupHarnessConfig(t *testing.T) (*HarnessConfigService, *ProviderService, 
 	}
 	providers := NewProviderService(repository.NewProviderRepository(gdb))
 	root := t.TempDir()
-	return NewHarnessConfigService(providers, root, nil), providers, root
+	const testProxyBase = "http://127.0.0.1:8080/api/v1/ai"
+	const testProxyKey = "br_harness_test_token"
+	return NewHarnessConfigService(providers, root, testProxyBase, testProxyKey, nil), providers, root
 }
 
 func seedHarnessProvider(t *testing.T, providers *ProviderService, key string) (uint, string) {
@@ -92,8 +94,8 @@ func TestHarnessConfigRefreshAndEnsure(t *testing.T) {
 	for _, want := range []string{
 		`"` + key + `"`,
 		`"@ai-sdk/openai-compatible"`,
-		`"baseURL": "https://api.deepseek.com/v1"`,
-		`"apiKey": "sk-test"`,
+		`"baseURL": "http://127.0.0.1:8080/api/v1/ai"`,
+		`"apiKey": "br_harness_test_token"`,
 		`"model": "` + key + `/deepseek-chat"`,
 	} {
 		if !strings.Contains(got, want) {
@@ -142,7 +144,7 @@ func TestHarnessConfigRefreshAndEnsure(t *testing.T) {
 	}
 }
 
-// TestHarnessConfigProviderWithoutKey omits apiKey but keeps the provider.
+// TestHarnessConfigProviderWithoutKey still writes the loopback proxy token.
 func TestHarnessConfigProviderWithoutKey(t *testing.T) {
 	svc, providers, root := setupHarnessConfig(t)
 	p, err := providers.CreateProvider(1, model.ProviderInput{
@@ -158,10 +160,10 @@ func TestHarnessConfigProviderWithoutKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := readHarnessConfig(t, filepath.Join(root, "opencode.json"))
-	if strings.Contains(got, "apiKey") {
-		t.Fatalf("keyless provider must omit apiKey:\n%s", got)
+	if !strings.Contains(got, `"apiKey": "br_harness_test_token"`) {
+		t.Fatalf("keyless provider must still carry loopback token:\n%s", got)
 	}
-	if !strings.Contains(got, `"baseURL": "http://127.0.0.1:8000/v1"`) {
+	if !strings.Contains(got, `"baseURL": "http://127.0.0.1:8080/api/v1/ai"`) {
 		t.Fatalf("baseURL missing:\n%s", got)
 	}
 }

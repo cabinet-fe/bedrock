@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -89,6 +90,8 @@ func (h *Handler) writeProviderError(c *gin.Context, err error) {
 		pkg.Error(c, http.StatusNotFound, "harness-session-not-found")
 	case errors.Is(err, service.ErrRequestNotPending):
 		pkg.Error(c, http.StatusConflict, "harness-pending-not-found")
+	case errors.Is(err, service.ErrInvalidModelProvider):
+		pkg.Error(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, provider.ErrUnavailable):
 		pkg.Error(c, http.StatusServiceUnavailable, unavailableMessage)
 	default:
@@ -320,6 +323,9 @@ func (h *Handler) ListModels(c *gin.Context) {
 	}
 	items := make([]modelInfoResponse, 0, len(models))
 	for _, m := range models {
+		if !strings.HasPrefix(strings.TrimSpace(m.ProviderID), "bedrock-p") {
+			continue
+		}
 		items = append(items, newModelInfoResponse(m))
 	}
 	pkg.Success(c, items)

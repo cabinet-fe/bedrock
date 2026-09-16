@@ -246,11 +246,16 @@ func main() {
 	projectSvc.SetDocsAIBridge(docsBridge)
 	providerRepo := airepo.NewProviderRepository(gdb)
 	providerSvc := aiservice.NewProviderService(providerRepo)
+	harnessLoopbackToken, err := aiservice.GenerateHarnessLoopbackToken()
+	if err != nil {
+		logger.Fatal("Failed to generate harness loopback token", zap.Error(err))
+	}
+	proxyBaseURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/ai", cfg.Server.Port)
 	// BYOK provider config: render enabled providers/models into the harness
 	// workspace configs (root anchor at boot + CRUD sync, agent/chat
-	// directories before sessions). Keys are written into the per-directory
-	// opencode.json (0600) because opencode does not expand key references.
-	harnessConfigSvc := aiservice.NewHarnessConfigService(providerSvc, agentWorkDir, logger)
+	// directories before sessions). opencode calls the local ChatProxy via
+	// loopback token; upstream keys stay in the platform DB.
+	harnessConfigSvc := aiservice.NewHarnessConfigService(providerSvc, agentWorkDir, proxyBaseURL, harnessLoopbackToken, logger)
 	providerSvc.SetHarnessConfigSyncer(func() {
 		if err := harnessConfigSvc.Refresh(); err != nil {
 			logger.Warn("harness provider config refresh failed", zap.Error(err))
@@ -265,6 +270,7 @@ func main() {
 	chatProxy := aiservice.NewChatProxy(providerSvc, chatSvc)
 	chatHandler := aihandler.NewChatHandler(chatSvc, chatProxy, providerSvc)
 	aiHandler := aihandler.NewHandler(agentSvc, skillSvc, permSvc, providerSvc, chatHandler)
+	aiHandler.SetChatCompletionsAuth(authmiddleware.AuthChatCompletions(authSvc, patSvc, harnessLoopbackToken))
 
 	pipeline := engine.NewPipeline(
 		runRepo, jobRepo, repoRepo, serverRepo,

@@ -153,7 +153,7 @@ func (f *fakeProvider) ReplyQuestion(_ context.Context, sessionID, requestID str
 func (f *fakeProvider) RejectQuestion(_ context.Context, _, _ string) error { return nil }
 
 func (f *fakeProvider) ListModels(_ context.Context, _ string) ([]provider.ModelInfo, error) {
-	return []provider.ModelInfo{{ID: "claude-sonnet", ProviderID: "anthropic", Name: "Sonnet"}}, nil
+	return []provider.ModelInfo{{ID: "claude-sonnet", ProviderID: "bedrock-p1", Name: "Sonnet"}}, nil
 }
 
 func (f *fakeProvider) ListAgents(_ context.Context, _ string) ([]provider.AgentInfo, error) {

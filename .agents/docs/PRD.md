@@ -527,6 +527,7 @@ BuildRun 的输出目录、制品归档、保留与下载能力属于 CI/CD 域�
 | enabled       | 是否启用                   |
 | cli_key       | 使用的 AI CLI              |
 | system_prompt | 固定系统提示词             |
+| inject_default_prompt | 是否注入默认工作区/.env 提示词（默认 true；关闭时编译定义与 Run 均不拼接） |
 | skill_ids     | 显式绑定的一个或多个 Skill |
 | repo_bindings | 可选绑定多组仓库+分支（同 Agent 内 `(仓库, 分支)` 唯一；工作区 `repo-{id}-{branch}/`） |
 | output_dir    | 固定产出目录相对名（默认 `output`） |

@@ -18,6 +18,7 @@ import (
 	airepo "bedrock/internal/ai/repository"
 	aiservice "bedrock/internal/ai/service"
 	"bedrock/internal/pkg"
+	authmiddleware "bedrock/internal/auth/middleware"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
@@ -27,7 +28,7 @@ import (
 	rbacservice "bedrock/internal/rbac/service"
 )
 
-func setupChatHandlerTestRouter(t *testing.T) (*gin.Engine, *aiservice.ProviderService, *aiservice.ChatService) {
+func setupChatHandlerTestRouter(t *testing.T, harnessToken ...string) (*gin.Engine, *aiservice.ProviderService, *aiservice.ChatService) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	if err := pkg.InitEncryption(strings.Repeat("cd", 32)); err != nil {
@@ -70,6 +71,9 @@ func setupChatHandlerTestRouter(t *testing.T) (*gin.Engine, *aiservice.ProviderS
 
 	chatHandler := aihandler.NewChatHandler(chatSvc, chatProxy, providerSvc)
 	h := aihandler.NewHandler(agents, skills, permSvc, providerSvc, chatHandler)
+	if len(harnessToken) > 0 && harnessToken[0] != "" {
+		h.SetChatCompletionsAuth(authmiddleware.AuthChatCompletions(nil, nil, harnessToken[0]))
+	}
 
 	r := gin.New()
 	api := r.Group("/api/v1")
@@ -327,6 +331,50 @@ func TestChatHandler_CompletionsProxyEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "流式输出片段") {
 		t.Fatalf("expected response to contain streamed content, got %s", w.Body.String())
+	}
+}
+
+func TestChatHandler_CompletionsLoopbackHarnessToken(t *testing.T) {
+	const harnessToken = "br_harness_chat_test"
+	r, providerSvc, _ := setupChatHandlerTestRouter(t, harnessToken)
+
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"harness ok\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer upstreamServer.Close()
+
+	p, err := providerSvc.CreateProvider(1, model.ProviderInput{
+		Name: "HarnessProxy", APIURL: upstreamServer.URL, APIKey: "sk-upstream",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := providerSvc.CreateModel(p.ID, model.ModelInput{Name: "M", ModelID: "harness-model"}); err != nil {
+		t.Fatal(err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"model": "harness-model",
+		"messages": []map[string]string{
+			{"role": "user", "content": "ping"},
+		},
+		"stream": true,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/chat/completions", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+harnessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:54321"
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "harness ok") {
+		t.Fatalf("expected harness streamed content, got %s", w.Body.String())
 	}
 }
 

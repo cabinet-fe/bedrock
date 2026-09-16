@@ -35,9 +35,10 @@ type AgentDefInput struct {
 	Description   string
 	SystemPrompt  string
 	HasSkills     bool
-	ModelProvider string
-	ModelID       string
-	ApprovalMode  string // manual | auto
+	ModelProvider       string
+	ModelID             string
+	ApprovalMode        string // manual | auto
+	InjectDefaultPrompt bool
 }
 
 // AgentDefFileName returns the compiled file name for an agent key
@@ -132,8 +133,10 @@ func renderAgentDef(agentKey string, in AgentDefInput) []byte {
 		b.WriteString(body)
 		b.WriteString("\n\n")
 	}
-	b.WriteString(envReadHint)
-	b.WriteByte('\n')
+	if in.InjectDefaultPrompt {
+		b.WriteString(envReadHint)
+		b.WriteByte('\n')
+	}
 	return b.Bytes()
 }
 
@@ -158,9 +161,7 @@ func agentDefDescription(agentKey string, in AgentDefInput) string {
 // envReadHint teaches the session agent where its env vars live. The .env
 // file is always present in the workspace (written by SyncAgentWorkspace).
 const envReadHint = "运行所需环境变量已写入工作区根目录的 .env 文件（每行 KEY=VALUE）。" +
-	"需要取值时读取该文件；其中的值可能包含密钥，不要原样展示给用户或提交到仓库。" +
-	" Required environment variables live in the .env file at the workspace root (KEY=VALUE per line)." +
-	" Read it when you need a value; values may contain secrets — never print or commit them."
+	"需要取值时读取该文件；其中的值可能包含密钥，不要原样展示给用户或提交到仓库。"
 
 // yamlQuote renders s as a double-quoted YAML scalar.
 func yamlQuote(s string) string {

@@ -324,12 +324,7 @@ func agentWorkspaceScopeHint(outputDir string) string {
 	return "当前目录即本智能体的持久工作区，跨 Run 复用；不要删除其中已有文件，除非明确需要。" +
 		"只能在该目录内读写；通过 ./repo-{id}-{branch} 访问绑定仓库代码。" +
 		"禁止访问该目录之外的任意路径。" +
-		"请将需交付的文件写入 " + outputDir + "（本智能体固定产出目录，默认 ./output；跨 Run 保留，不清空）。" +
-		" The current directory is this agent's persistent workspace, reused across runs;" +
-		" do not delete existing files unless required." +
-		" Read/write only inside it; access bound repository code via ./repo-{id}-{branch}." +
-		" Do not access any path outside this directory." +
-		" Write deliverable files into " + outputDir + " (this agent's fixed output directory; preserved across runs)."
+		"请将需交付的文件写入 " + outputDir + "（本智能体固定产出目录，默认 ./output；跨 Run 保留，不清空）。"
 }
 
 // composeRunPrompt joins the user prompt and the workspace hint. The agent's

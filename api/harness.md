@@ -12,9 +12,11 @@
 平台「AI 服务商」中启用的提供商/模型（`api/ai.md` Providers 节）自动渲染为 opencode 的 BYOK 提供商，**无需在服务器上手工配置 opencode**：
 
 - 渲染目标为各会话目录的 `opencode.json`（opencode 按 `location.directory` 逐目录加载）：工作区根（`GET /ai/models` 目录锚点）、每个智能体工作区（Run 前由工作区同步刷新）、每个聊天用户目录（会话/目录读取前刷新）。
-- 提供商 id 为 `bedrock-p{providerID}`（稳定，不随改名漂移）；默认模型取目录排序第一的启用模型，写入配置 `model`/`small_model`，并同时作为无显式模型会话的建会话默认（防 opencode 冷启动回退到宿主机用户的第三方 provider）。
+- 提供商 id 为 `bedrock-p{providerID}`（稳定，不随改名漂移）；每个 `bedrock-p*` 的 `options.baseURL` 固定为 `http://127.0.0.1:{server.port}/api/v1/ai`（OpenAI SDK POST `{baseURL}/chat/completions` → 平台 `ChatProxy`），`options.apiKey` 为进程启动时生成的 loopback token（**不是**上游解密 Key；上游 URL/Key 仅 ChatProxy 查库转发时使用）。
+- 默认模型取目录排序第一的启用模型，写入配置 `model`/`small_model`，并同时作为无显式模型会话的建会话默认（防 opencode 冷启动回退到宿主机用户的第三方 provider）。
 - 模型默认推理强度：`ai_agents.reasoning_effort` 渲染为该智能体工作区里所选模型的 `options.reasoningEffort`（opencode 以 `reasoning_effort` 进入每次请求）；聊天目录不设。
-- 已对 opencode 1.18.x 实测的行为边界：自定义提供商的 `apiKey` **不支持** `{file:}`/`{env:}` 引用（原样发送），因此密钥以明文写入目录配置（0600，同 UID 可见 —— 与工作区 `.env` 同一威胁模型，平台无 OS 沙箱）；opencode 内置的免费模型（provider `opencode`）无法通过 `enabled_providers`/`disabled_providers` 过滤，会与 `bedrock-*` 一并列出；agent 定义 frontmatter 的模型参数不透传，故推理强度走模型级 options。
+- 模型目录（`GET /ai/models`、`GET /harness/models`）仅返回 `bedrock-p*`；显式 `model.provider` 建会话或保存 Agent 模型覆写须为 `bedrock-p*`，否则 400。
+- 已对 opencode 1.18.x 实测：agent 定义 frontmatter 的模型参数不透传，故推理强度走模型级 options。
 
 ## 模块可用性
 

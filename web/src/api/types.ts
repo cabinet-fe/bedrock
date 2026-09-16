@@ -877,6 +877,7 @@ export interface AiAgent {
   model_id?: string;
   reasoning_effort?: string;
   approval_mode?: "manual" | "auto";
+  inject_default_prompt?: boolean;
   system_prompt: string;
   skill_ids: number[];
   repo_bindings: AiAgentRepoBinding[];

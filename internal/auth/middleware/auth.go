@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"errors"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -82,6 +84,54 @@ func AuthWithPAT(authSvc *authservice.AuthService, patSvc PATValidator) gin.Hand
 		c.Set(ctxIsPAT, false)
 		c.Next()
 	}
+}
+
+// AuthChatCompletions accepts JWT/PAT or a loopback harness token (opencode
+// → ChatProxy). The harness path sets user_id=0 and skips chat persistence.
+func AuthChatCompletions(authSvc *authservice.AuthService, patSvc PATValidator, harnessToken string) gin.HandlerFunc {
+	jwtOrPAT := AuthWithPAT(authSvc, patSvc)
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader != "" && harnessToken != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				raw := parts[1]
+				if strings.HasPrefix(raw, "br_harness_") {
+					if isLoopbackRequest(c) && subtle.ConstantTimeCompare([]byte(raw), []byte(harnessToken)) == 1 {
+						c.Set(ctxUserID, uint(0))
+						c.Set(ctxUsername, "")
+						c.Set(ctxIsSuperAdmin, false)
+						c.Set(ctxIsPAT, false)
+						c.Next()
+						return
+					}
+					pkg.Error(c, http.StatusUnauthorized, "invalid or expired token")
+					return
+				}
+			}
+		}
+		jwtOrPAT(c)
+	}
+}
+
+func isLoopbackRequest(c *gin.Context) bool {
+	host := requestRemoteHost(c)
+	if host == "" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func requestRemoteHost(c *gin.Context) string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(c.Request.RemoteAddr))
+	if err != nil {
+		return strings.TrimSpace(c.Request.RemoteAddr)
+	}
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	}
+	return host
 }
 
 func GetUserID(c *gin.Context) uint {

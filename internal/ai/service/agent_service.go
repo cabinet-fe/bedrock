@@ -240,8 +240,9 @@ type AgentInput struct {
 	ModelID       string `json:"model_id"`
 	// ReasoningEffort is the default reasoning effort passed to the model
 	// (valid values come from the chosen model's reasoning_efforts options).
-	ReasoningEffort string `json:"reasoning_effort"`
-	ApprovalMode    string `json:"approval_mode"`
+	ReasoningEffort     string `json:"reasoning_effort"`
+	ApprovalMode        string `json:"approval_mode"`
+	InjectDefaultPrompt *bool  `json:"inject_default_prompt"`
 }
 
 // validateAgentModelConfig checks the model override pair, the reasoning
@@ -266,6 +267,9 @@ func validateAgentModelConfig(modelProvider, modelID, reasoningEffort, approvalM
 	if strings.ContainsAny(effort, " \t\r\n") || len(effort) > 40 {
 		return errors.New("reasoning_effort 必须为不超过 40 字符的非空格值")
 	}
+	if hasProvider && !IsBedrockHarnessProvider(modelProvider) {
+		return errors.New("model_provider 必须为 bedrock-p* 平台 BYOK 提供商")
+	}
 	return nil
 }
 
@@ -279,12 +283,13 @@ func (s *AgentService) CreateAgent(createdBy uint, in AgentInput) (*model.AiAgen
 	}
 	agent := &model.AiAgent{
 		Name: name, Description: strings.TrimSpace(in.Description),
-		Enabled:       boolOr(in.Enabled, true),
-		ModelProvider: strings.TrimSpace(in.ModelProvider),
-		ModelID:       strings.TrimSpace(in.ModelID),
-		ReasoningEffort: strings.TrimSpace(in.ReasoningEffort),
-		ApprovalMode:  stringOr(in.ApprovalMode, harnessservice.ApprovalManual),
-		SystemPrompt:  in.SystemPrompt,
+		Enabled:             boolOr(in.Enabled, true),
+		ModelProvider:       strings.TrimSpace(in.ModelProvider),
+		ModelID:             strings.TrimSpace(in.ModelID),
+		ReasoningEffort:     strings.TrimSpace(in.ReasoningEffort),
+		ApprovalMode:        stringOr(in.ApprovalMode, harnessservice.ApprovalManual),
+		InjectDefaultPrompt: boolOr(in.InjectDefaultPrompt, true),
+		SystemPrompt:        in.SystemPrompt,
 		OutputDir:     stringOr(in.OutputDir, "output"),
 		TimeoutSec:    intOr(in.TimeoutSec, 600), CreatedBy: createdBy,
 		WorkspaceStatus: model.WorkspacePending,
@@ -345,6 +350,9 @@ func (s *AgentService) UpdateAgent(id, userID uint, in AgentInput) (*model.AiAge
 	agent.ReasoningEffort = strings.TrimSpace(in.ReasoningEffort)
 	if strings.TrimSpace(in.ApprovalMode) != "" {
 		agent.ApprovalMode = strings.TrimSpace(in.ApprovalMode)
+	}
+	if in.InjectDefaultPrompt != nil {
+		agent.InjectDefaultPrompt = *in.InjectDefaultPrompt
 	}
 	if in.SystemPrompt != "" || in.SystemPrompt == "" && in.Name != "" {
 		agent.SystemPrompt = in.SystemPrompt
@@ -937,10 +945,16 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	writeHarnessRunIntro(writeLog, agent, run, agentDef, absRoot, absOutput,
 		len(digests), len(repoDirs), timeout, approvalModeForRun(agent, run.TriggerType))
 
-	hint := agentWorkspaceScopeHint(absOutput)
+	hint := ""
+	if agent.InjectDefaultPrompt {
+		hint = agentWorkspaceScopeHint(absOutput)
+	}
 	var promptText string
 	if run.TriggerType == model.TriggerDocsGen {
-		promptText = "Generate API documentation based on the workspace. Output Markdown only. " + hint
+		promptText = "Generate API documentation based on the workspace. Output Markdown only."
+		if agent.InjectDefaultPrompt {
+			promptText += " " + hint
+		}
 	} else {
 		promptText = composeRunPrompt(run.UserPrompt, hint)
 	}

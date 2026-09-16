@@ -20,8 +20,8 @@ func TestWorkspaceConfigGolden(t *testing.T) {
 				Providers: []ProviderConfigEntry{
 					{
 						Key: "bedrock-p1", Name: "DeepSeek 官方",
-						BaseURL: "https://api.deepseek.com/v1",
-						APIKey:  "sk-literal-key",
+						BaseURL: "http://127.0.0.1:8080/api/v1/ai",
+						APIKey:  "br_harness_loopback",
 						Models: []ModelConfigEntry{
 							{ID: "deepseek-chat", Name: "DeepSeek Chat"},
 							{ID: "deepseek-reasoner", Name: "DeepSeek Reasoner", ReasoningEffort: "high"},
@@ -29,7 +29,8 @@ func TestWorkspaceConfigGolden(t *testing.T) {
 					},
 					{
 						Key: "bedrock-p2", Name: "本地网关",
-						BaseURL: "http://127.0.0.1:8000/v1",
+						BaseURL: "http://127.0.0.1:8080/api/v1/ai",
+						APIKey:  "br_harness_loopback",
 						Models: []ModelConfigEntry{{ID: "qwen-max", Name: "Qwen Max"}},
 					},
 				},

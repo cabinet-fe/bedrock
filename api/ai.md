@@ -106,7 +106,7 @@ Agents、运行记录、Skills。
 权限：`ai_agents:view`
 响应 200：`ModelInfo[]`
 错误：503（`harness.enabled=false` 或会话底座不可用）/ 502（其它上游错误）
-说明：透传 harness 会话底座的模型目录（`[{id, providerID, name?, family?, reasoning_efforts?}]`，按 provider 分组供 Agent 配置页模型选择器使用）。目录锚定在工作区根目录的 `opencode.json`：由启用的「服务商/模型」自动渲染为 `bedrock-p{providerID}` BYOK 提供商（详见 harness.md），opencode 内置的免费模型也会一并列出。`model_provider`/`model_id` 保存校验以此目录为准；映射到平台模型的条目附带 `reasoning_efforts`（供 `reasoning_effort` 下拉）。
+说明：透传 harness 会话底座的模型目录（`[{id, providerID, name?, family?, reasoning_efforts?}]`，按 provider 分组供 Agent 配置页模型选择器使用）。目录锚定在工作区根目录的 `opencode.json`：由启用的「服务商/模型」自动渲染为 `bedrock-p{providerID}` BYOK 提供商（详见 harness.md）；**仅返回 `bedrock-p*` 条目**，不含 opencode 内置或其它宿主机 provider。`model_provider`/`model_id` 保存校验须为 `bedrock-p*`；映射到平台模型的条目附带 `reasoning_efforts`（供 `reasoning_effort` 下拉）。
 
 ### GET /ai/agents-defs — 列出 harness agent 定义目录
 
@@ -391,7 +391,7 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 请求：`ChatCompletionRequest`
 响应 200：Server-Sent Events (`text/event-stream`)
 错误：400 / 404 / 502
-说明：OpenAI 兼容端点。根据请求的 `model` 匹配已启用的服务商与模型配置，解密服务商 API Key 注入 HTTP Authorization 请求头，透传 `reasoning_effort` 与默认模型参数，向上游 OpenAI 兼容端点发起流式请求并实时以 SSE 格式转发回前端。若请求携带 `session_id`，且该会话属于当前用户，服务端将在对话完成时持久化问答消息。
+说明：OpenAI 兼容端点。鉴权：**JWT/PAT**，或 **127.0.0.1/::1 + 进程 loopback harness token**（opencode BYOK 调用；`user_id=0`，不落聊天会话）。根据请求的 `model` 匹配已启用的服务商与模型配置，解密上游 API Key 转发，透传 `reasoning_effort` 与默认模型参数，向上游 OpenAI 兼容端点发起流式请求并实时以 SSE 格式转发。若请求携带 `session_id` 且该会话属于当前用户，服务端在对话完成时持久化问答消息。
 
 ## 对象形状
 
@@ -513,7 +513,8 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 | `model_provider` | `string` |  | 会话模型覆写 provider（查 `GET /ai/models`）；空 = 用默认 |
 | `model_id` | `string` |  | 会话模型覆写 id；与 `model_provider` 同时提供 |
 | `reasoning_effort` | `string` |  | 默认推理强度；空 = 模型默认 |
-| `approval_mode` | `'manual' \| 'auto'` |  | 审批模式，默认 `manual`；无人值守触发运行时强制 `auto` |
+| `approval_mode` | `'manual' \| 'auto'` |  | 默认 `manual` |
+| `inject_default_prompt` | `boolean` |  | 是否注入默认工作区/.env 提示词；默认 `true` |
 | `system_prompt` | `string` |  |  |
 | `skill_ids` | `integer[]` |  |  |
 | `repo_bindings` | `{ repository_id: integer, branch: string }[]` |  |  |
@@ -543,6 +544,7 @@ Skills 为跨项目复用的能力包，由 Agent 引用，**不**归属产品�
 | `model_id` | `string` |  | 会话模型覆写 id |
 | `reasoning_effort` | `string` |  | 默认推理强度，写入工作区 `opencode.json` 的模型请求参数（`reasoning_effort`）；须配模型；取值以所选模型的 `reasoning_efforts` 为准，空 = 模型默认 |
 | `approval_mode` | `'manual' \| 'auto'` |  | 默认 `manual` |
+| `inject_default_prompt` | `boolean` |  | 创建缺省 `true`；更新 `null` 表示保持 |
 
 ### AgentRun
 

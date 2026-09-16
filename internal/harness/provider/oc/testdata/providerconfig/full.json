@@ -7,8 +7,8 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "DeepSeek 官方",
       "options": {
-        "baseURL": "https://api.deepseek.com/v1",
-        "apiKey": "sk-literal-key"
+        "baseURL": "http://127.0.0.1:8080/api/v1/ai",
+        "apiKey": "br_harness_loopback"
       },
       "models": {
         "deepseek-chat": {
@@ -26,7 +26,8 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "本地网关",
       "options": {
-        "baseURL": "http://127.0.0.1:8000/v1"
+        "baseURL": "http://127.0.0.1:8080/api/v1/ai",
+        "apiKey": "br_harness_loopback"
       },
       "models": {
         "qwen-max": {

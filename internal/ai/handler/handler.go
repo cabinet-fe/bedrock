@@ -29,12 +29,13 @@ type HarnessCatalog interface {
 }
 
 type Handler struct {
-	agents    *service.AgentService
-	skills    *service.SkillService
-	perm      *rbacservice.PermissionService
-	providers *service.ProviderService
-	chat      *ChatHandler
-	harness   HarnessCatalog
+	agents              *service.AgentService
+	skills              *service.SkillService
+	perm                *rbacservice.PermissionService
+	providers           *service.ProviderService
+	chat                *ChatHandler
+	harness             HarnessCatalog
+	chatCompletionsAuth gin.HandlerFunc
 }
 
 func NewHandler(
@@ -57,6 +58,12 @@ func (h *Handler) SetHarnessCatalog(c HarnessCatalog) { h.harness = c }
 
 func (h *Handler) SetChatHandler(chat *ChatHandler) {
 	h.chat = chat
+}
+
+// SetChatCompletionsAuth overrides auth for POST /ai/chat/completions (JWT/PAT
+// or loopback harness token). When unset, RegisterRoutes uses authMW.
+func (h *Handler) SetChatCompletionsAuth(mw gin.HandlerFunc) {
+	h.chatCompletionsAuth = mw
 }
 
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
@@ -102,7 +109,12 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 		ai.GET("/chat/sessions/:id/messages", h.chat.ListMessages)
 		ai.POST("/chat/sessions/:id/messages", h.chat.CreateMessage)
 		ai.GET("/chat/models", h.chat.ListAvailableModels)
-		ai.POST("/chat/completions", h.chat.ChatCompletions)
+		completionsAuth := authMW
+		if h.chatCompletionsAuth != nil {
+			completionsAuth = h.chatCompletionsAuth
+		}
+		chatCompletions := rg.Group("/ai")
+		chatCompletions.POST("/chat/completions", completionsAuth, h.chat.ChatCompletions)
 	}
 
 	skills := rg.Group("/skills", authMW)
@@ -304,6 +316,9 @@ func (h *Handler) ListHarnessModels(c *gin.Context) {
 	}
 	items := make([]harnessModelResponse, 0, len(models))
 	for _, m := range models {
+		if !service.IsBedrockHarnessProvider(m.ProviderID) {
+			continue
+		}
 		item := harnessModelResponse{
 			ID: m.ID, ProviderID: m.ProviderID, Name: m.Name, Family: m.Family,
 		}

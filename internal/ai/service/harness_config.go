@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -9,6 +11,8 @@ import (
 	"bedrock/internal/ai/model"
 	harnessservice "bedrock/internal/harness/service"
 )
+
+const harnessLoopbackTokenBytes = 32
 
 // harnessProviderSource supplies the enabled provider catalog and decrypts
 // API keys for the harness BYOK config (satisfied by ProviderService).
@@ -23,23 +27,46 @@ type harnessProviderSource interface {
 // user directory before every session/catalog read, and the workspace root
 // as the anchor for the agent-form model catalog.
 //
-// opencode 1.18.x loads config per location but does not expand
-// `{file:}`/`{env:}` references in custom provider apiKey options, so the
-// decrypted key is written into the workspace config itself (0600) — the
-// same same-UID threat model as the per-agent .env (no OS sandbox).
+// Each bedrock-p* provider points at the local ChatProxy (loopback baseURL +
+// process token); upstream API keys stay in the platform DB for forwarding.
 type HarnessConfigService struct {
-	providers harnessProviderSource
-	root      string
-	log       *zap.Logger
+	providers    harnessProviderSource
+	root         string
+	proxyBaseURL string
+	proxyAPIKey  string
+	log          *zap.Logger
+}
+
+// GenerateHarnessLoopbackToken returns a bearer token for opencode →
+// ChatProxy calls on 127.0.0.1/::1 only.
+func GenerateHarnessLoopbackToken() (string, error) {
+	b := make([]byte, harnessLoopbackTokenBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "br_harness_" + hex.EncodeToString(b), nil
+}
+
+// IsBedrockHarnessProvider reports whether providerID is a platform BYOK key.
+func IsBedrockHarnessProvider(providerID string) bool {
+	return strings.HasPrefix(strings.TrimSpace(providerID), "bedrock-p")
 }
 
 // NewHarnessConfigService builds the service. root is the bedrock workspace
-// root (catalog anchor for GET /ai/models).
-func NewHarnessConfigService(providers harnessProviderSource, workspaceRoot string, log *zap.Logger) *HarnessConfigService {
+// root (catalog anchor for GET /ai/models). proxyBaseURL is the OpenAI SDK
+// base (e.g. http://127.0.0.1:{port}/api/v1/ai); proxyAPIKey is the loopback
+// bearer token written into opencode.json instead of upstream keys.
+func NewHarnessConfigService(providers harnessProviderSource, workspaceRoot, proxyBaseURL, proxyAPIKey string, log *zap.Logger) *HarnessConfigService {
 	if log == nil {
 		log = zap.NewNop()
 	}
-	return &HarnessConfigService{providers: providers, root: workspaceRoot, log: log}
+	return &HarnessConfigService{
+		providers:    providers,
+		root:         workspaceRoot,
+		proxyBaseURL: strings.TrimRight(strings.TrimSpace(proxyBaseURL), "/"),
+		proxyAPIKey:  strings.TrimSpace(proxyAPIKey),
+		log:          log,
+	}
 }
 
 // WorkspaceRoot returns the anchor directory backing GET /ai/models.
@@ -142,13 +169,9 @@ func (s *HarnessConfigService) buildSpec() (harnessservice.ProviderConfigSpec, e
 		entry := harnessservice.ProviderSpec{
 			Key:     HarnessProviderKey(p.ID),
 			Name:    name,
-			BaseURL: baseURL,
+			BaseURL: s.proxyBaseURL,
+			APIKey:  s.proxyAPIKey,
 		}
-		key, err := s.providers.DecryptAPIKey(p.ID)
-		if err != nil {
-			return spec, fmt.Errorf("解密服务商 %d API Key 失败: %w", p.ID, err)
-		}
-		entry.APIKey = strings.TrimSpace(key)
 		for _, m := range p.Models {
 			entry.Models = append(entry.Models, harnessservice.ProviderModelSpec{
 				ID: strings.TrimSpace(m.ModelID), Name: strings.TrimSpace(m.Name),
