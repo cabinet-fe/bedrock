@@ -51,12 +51,36 @@ const canCancel = computed(() => {
 /** UAiChat session transport bound to the run's harness session, if any. */
 const sessionTransport = shallowRef<ChatSessionTransport | null>(null);
 
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+function schedulePoll() {
+  if (pollTimer) clearTimeout(pollTimer);
+  if (!isLive.value || runId == null) return;
+  // If session is still preparing (no session ID yet), poll faster (1s) to mount chat ASAP.
+  const delay = run.value?.harness_session_id ? 4000 : 1000;
+  pollTimer = setTimeout(async () => {
+    if (!isLive.value || runId == null) return;
+    try {
+      run.value = await getRun(runId);
+    } catch {
+      /* keep the last known status */
+    } finally {
+      schedulePoll();
+    }
+  }, delay);
+}
+
 watch(
   () => (canChat.value ? run.value?.harness_session_id : undefined),
   (sessionId) => {
     sessionTransport.value = sessionId
-      ? createServerTransport(createHarnessSessionAdapter(sessionId))
+      ? createServerTransport(
+          createHarnessSessionAdapter(sessionId, {
+            initialPrompt: run.value?.user_prompt,
+          }),
+        )
       : null;
+    if (sessionId) schedulePoll();
   },
 );
 
@@ -128,23 +152,13 @@ function onChatError(error: Error) {
   message.error(error.message || "会话流异常");
 }
 
-let pollTimer: ReturnType<typeof setInterval> | undefined;
-
 onMounted(async () => {
   await load();
-  // Refresh the run status while it is live (the session view itself streams).
-  pollTimer = setInterval(async () => {
-    if (!isLive.value || runId == null) return;
-    try {
-      run.value = await getRun(runId);
-    } catch {
-      /* keep the last known status */
-    }
-  }, 5000);
+  schedulePoll();
 });
 
 onScopeDispose(() => {
-  if (pollTimer) clearInterval(pollTimer);
+  if (pollTimer) clearTimeout(pollTimer);
 });
 </script>
 
@@ -237,9 +251,10 @@ onScopeDispose(() => {
           </div>
         </section>
         <section v-else class="section">
-          <h3 class="section__title">输出</h3>
+          <h3 class="section__title">会话</h3>
           <div class="panel output-panel">
             <pre v-if="legacyOutput" class="output-panel__text">{{ legacyOutput }}</pre>
+            <p v-else-if="isLive" class="output-panel__empty">会话环境准备中，正在启动智能体…</p>
             <p v-else class="output-panel__empty">
               {{
                 run.harness_session_id ? "无查看会话权限，无法加载会话视图" : "旧运行记录无会话输出"

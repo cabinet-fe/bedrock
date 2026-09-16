@@ -181,6 +181,19 @@ function textOfParts(parts: HarnessMessagePart[] | undefined, type: "text" | "re
  * have no seq at all, so the objects are cast at the emission sites.
  */
 
+export interface HarnessSessionAdapterOptions {
+  initialPrompt?: string;
+}
+
+function cleanUserContent(raw: string, initialPrompt?: string): string {
+  if (!initialPrompt) return raw;
+  const trimmed = initialPrompt.trim();
+  if (trimmed && raw.startsWith(trimmed)) {
+    return initialPrompt;
+  }
+  return raw;
+}
+
 /**
  * Bedrock harness session adapter for @veltra/ai session mode.
  *
@@ -189,7 +202,10 @@ function textOfParts(parts: HarnessMessagePart[] | undefined, type: "text" | "re
  * here by message id / text part id / tool call id, and pending asks are
  * idempotent by requestId (the WS handler re-sends them on connect).
  */
-export function createHarnessSessionAdapter(sessionId: string): ChatSessionAdapter {
+export function createHarnessSessionAdapter(
+  sessionId: string,
+  options?: HarnessSessionAdapterOptions,
+): ChatSessionAdapter {
   let handlers: { onEvent(event: ChatSessionEvent): void; onDisconnect?(): void } | null = null;
   let ws: WebSocket | null = null;
   let disposed = true;
@@ -209,6 +225,8 @@ export function createHarnessSessionAdapter(sessionId: string): ChatSessionAdapt
   let activeQuestionId: string | null = null;
   /** message id -> finished text parts in arrival order. */
   const textParts = new Map<string, { id: string; text: string }[]>();
+  /** message id -> accumulated reasoning text to prevent message_text wiping it out. */
+  const reasoningParts = new Map<string, string>();
 
   function emit(event: ChatSessionEvent): void {
     handlers?.onEvent(event);
@@ -223,11 +241,13 @@ export function createHarnessSessionAdapter(sessionId: string): ChatSessionAdapt
     if (index >= 0) parts[index] = { id: textId, text };
     else parts.push({ id: textId, text });
     textParts.set(messageId, parts);
+    const reasoning = reasoningParts.get(messageId);
     emit({
       type: "assistant/message",
       messageId,
       seq,
       content: parts.map((part) => part.text).join(""),
+      reasoning: reasoning || undefined,
     });
   }
 
@@ -246,8 +266,20 @@ export function createHarnessSessionAdapter(sessionId: string): ChatSessionAdapt
         const status = frame.status;
         if (!status) return;
         switch (status.name) {
+          case "prompt_admitted":
           case "prompted":
-          case "step_started":
+            if (status.messageId) {
+              if (!seenUserIds.has(status.messageId)) {
+                seenUserIds.add(status.messageId);
+                if (options?.initialPrompt?.trim()) {
+                  emit({
+                    type: "user/message",
+                    messageId: status.messageId,
+                    content: options.initialPrompt,
+                  } as ChatSessionEvent);
+                }
+              }
+            }
             emit({ type: "running", running: true });
             return;
           case "step_failed":
@@ -280,9 +312,11 @@ export function createHarnessSessionAdapter(sessionId: string): ChatSessionAdapt
       case "reasoning_delta": {
         const delta = frame.reasoningDelta;
         if (!delta) return;
+        const msgId = delta.assistantMessageId;
+        reasoningParts.set(msgId, (reasoningParts.get(msgId) ?? "") + delta.delta);
         emit({
           type: "assistant/chunk",
-          messageId: delta.assistantMessageId,
+          messageId: msgId,
           delta: "",
           reasoningDelta: delta.delta,
         } as ChatSessionEvent);
@@ -389,14 +423,21 @@ export function createHarnessSessionAdapter(sessionId: string): ChatSessionAdapt
   async function fetchHistory(): Promise<{ events: ChatSessionEvent[]; hasMore: boolean }> {
     const messages = await listSessionMessages(sessionId);
     const events: ChatSessionEvent[] = [];
+    let foundUserMessage = false;
+
     for (const message of messages) {
       if (message.role === "user") {
-        if (seenUserIds.has(message.id)) continue;
+        if (seenUserIds.has(message.id)) {
+          foundUserMessage = true;
+          continue;
+        }
         seenUserIds.add(message.id);
+        foundUserMessage = true;
+        const rawText = textOfParts(message.content, "text");
         events.push({
           type: "user/message",
           messageId: message.id,
-          content: textOfParts(message.content, "text"),
+          content: cleanUserContent(rawText, options?.initialPrompt),
         } as ChatSessionEvent);
         continue;
       }
@@ -411,7 +452,12 @@ export function createHarnessSessionAdapter(sessionId: string): ChatSessionAdapt
       }[] = [];
       for (const part of message.content ?? []) {
         if (part.type === "text" || part.type === "reasoning") {
-          if (part.id) knownTextKeys.add(`${message.id}:${part.id}`);
+          if (part.id) {
+            knownTextKeys.add(`${message.id}:${part.id}`);
+            if (part.type === "reasoning" && part.text) {
+              reasoningParts.set(message.id, (reasoningParts.get(message.id) ?? "") + part.text);
+            }
+          }
           continue;
         }
         knownCallIds.add(part.callID);
@@ -422,16 +468,45 @@ export function createHarnessSessionAdapter(sessionId: string): ChatSessionAdapt
               ? "error"
               : "running";
         if (status !== "running") finalCallIds.add(part.callID);
+
+        let result = part.state?.output;
+        if (result == null && (part.state as { content?: unknown })?.content != null) {
+          const c = (part.state as { content?: unknown }).content;
+          if (typeof c === "string") {
+            result = c;
+          } else if (Array.isArray(c)) {
+            result = c
+              .map((item: unknown) => {
+                if (typeof item === "string") return item;
+                if (
+                  item &&
+                  typeof item === "object" &&
+                  "text" in item &&
+                  typeof (item as { text: unknown }).text === "string"
+                ) {
+                  return (item as { text: string }).text;
+                }
+                return stringifyArg(item);
+              })
+              .join("");
+          } else {
+            result = stringifyArg(c);
+          }
+        }
+
         toolCalls.push({
           id: part.callID,
           name: part.name ?? "",
           arguments: stringifyArg(part.state?.input),
           status,
-          result: part.state?.output,
+          result: result == null ? undefined : result,
           error: part.state?.error || undefined,
         });
       }
       const reasoning = textOfParts(message.content, "reasoning");
+      if (reasoning) {
+        reasoningParts.set(message.id, reasoning);
+      }
       events.push({
         type: "assistant/message",
         messageId: message.id,
@@ -440,6 +515,21 @@ export function createHarnessSessionAdapter(sessionId: string): ChatSessionAdapt
         toolCalls: toolCalls.length ? toolCalls : undefined,
       } as ChatSessionEvent);
     }
+
+    // If initial history fetch yielded no user message yet (prompt still being submitted in backend),
+    // and an initialPrompt is known for this run, seed it so the user sees their prompt immediately.
+    if (!foundUserMessage && options?.initialPrompt?.trim()) {
+      const syntheticId = "run-initial-prompt";
+      if (!seenUserIds.has(syntheticId)) {
+        seenUserIds.add(syntheticId);
+        events.unshift({
+          type: "user/message",
+          messageId: syntheticId,
+          content: options.initialPrompt,
+        } as ChatSessionEvent);
+      }
+    }
+
     return { events, hasMore: false };
   }
 
