@@ -148,7 +148,7 @@ MARK_ALL="$(curl -sS -o /tmp/smoke-notif-read.json -w '%{http_code}' -X PUT \
 
 echo "==> harness catalogs (fake serve backend)"
 MODELS="$(curl -fsS "$BASE/api/v1/harness/models" "${AUTH[@]}")"
-json_get "$MODELS" "any(m.get('id')=='smoke-model' and m.get('provider')=='smoke-prov' for m in o['data'])" >/dev/null
+json_get "$MODELS" "any(m.get('id')=='smoke-model' and m.get('provider')=='bedrock-p-smoke' for m in o['data'])" >/dev/null
 AGENTS="$(curl -fsS "$BASE/api/v1/harness/agents" "${AUTH[@]}")"
 json_get "$AGENTS" "any(a.get('name')=='build' and a.get('native') for a in o['data'])" >/dev/null
 
@@ -158,7 +158,7 @@ DIR_CODE="$(curl -sS -o /tmp/smoke-harness-dir.json -w '%{http_code}' -X POST \
 [[ "$DIR_CODE" == "400" ]] || { echo "create with directory → $DIR_CODE $(cat /tmp/smoke-harness-dir.json)" >&2; exit 1; }
 
 SESS="$(curl -fsS -X POST "$BASE/api/v1/harness/sessions" "${AUTH[@]}" \
-  -d '{"agent":"build","model":{"provider":"smoke-prov","id":"smoke-model"}}')"
+  -d '{"agent":"build","model":{"provider":"bedrock-p-smoke","id":"smoke-model"}}')"
 SID="$(json_get "$SESS" "o['data']['id']")"
 json_get "$SESS" "o['data']['directory'].startswith('/') and o['data']['model']['id']=='smoke-model'" >/dev/null
 echo "harness session: $SID"

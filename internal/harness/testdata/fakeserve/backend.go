@@ -17,7 +17,7 @@ import (
 
 // Fixed catalog entries the smoke suite asserts on.
 const (
-	fakeProviderID = "smoke-prov"
+	fakeProviderID = "bedrock-p-smoke"
 	fakeModelID    = "smoke-model"
 	fakeBuildAgent = "build"
 )
