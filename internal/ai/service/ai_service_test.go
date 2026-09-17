@@ -496,8 +496,9 @@ func TestCancelQueuedRunWhileWorkerBusy(t *testing.T) {
 func TestCancelDuringInFlightSessionKeepsCancelled(t *testing.T) {
 	_, agents, fake, _, _ := setupAI(t)
 	agents.SetInlineExec(false)
+	proceed := make(chan struct{})
 	fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, _ string) {
-		time.Sleep(80 * time.Millisecond)
+		<-proceed
 		f.Complete(sess.ID, "ok")
 	})
 
