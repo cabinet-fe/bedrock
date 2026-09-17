@@ -16,4 +16,4 @@ Agent 入口索引。详细内容在 `.agents/docs/`，**按需读取，禁止�
 | `.agents/docs/DESIGN.md`                      | 技术设计真源（决策、领域模型、安全边界）                                    | 仅用户确认的设计变更                                                                                                                                                   |
 | `.agents/docs/ops-handbook.md`                | 安装、备份、升级与回退操作手册                                              | 运维行为变化时                                                                                                                                                         |
 | `.agents/docs/release-checklist.md`           | 发布检查单                                                                  | 发布流程变化时                                                                                                                                                         |
-| `harness-integration-plan.md`                 | 智能体会话底座实现方案（v4：opencode 先行 + Provider 抽象，待评审，仓库根） | 实现会话底座或某后端适配器时                                                                                                                                           |
+
