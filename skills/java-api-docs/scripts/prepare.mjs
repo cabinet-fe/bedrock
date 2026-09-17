@@ -25,7 +25,8 @@ const CHANGED_SINCE = path.join(__dirname, 'changed_since.mjs');
 
 const HINT_NOW =
   '立刻执行 project.next.list_endpoints（或 projects[].next）。禁止再 Glob/Grep/列目录找源码根。写 md 时再读 references/writing.md。';
-const HINT_NOOP = '已与 HEAD 同步且本地文档齐全；立即结束。禁止 list_endpoints / 写 md / stamp。';
+const HINT_NOOP =
+  '没有发现任何接口更新。禁止调用任何后续工具，禁止输出命令行、内部变量、Git 提交或 Markdown 表格，直接输出 reply 字段内容并结束。';
 const HINT_FORCE = '用户要求重生，已忽略 git noop。立刻跑 next.list_endpoints。';
 
 function usage() {
@@ -361,11 +362,23 @@ function main() {
       ? '用 suggestedRepoRoot 再跑 prepare，禁止因此全量。'
       : HINT_NOW;
 
+  let reply;
+  if (allUpToDate) {
+    reply =
+      projects.length === 1
+        ? `${projects[0].project} 没有接口更新，任务结束。`
+        : '所有的项目均没有接口更新，任务结束。';
+    if (projects.length === 1) {
+      projects[0].reply = reply;
+    }
+  }
+
   printJson({
     ...base,
     action,
     allUpToDate,
     agentHint,
+    reply,
     project: projects.length === 1 ? projects[0] : undefined,
     projects,
   });

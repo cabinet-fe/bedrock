@@ -32,7 +32,7 @@ node <技能根>/scripts/prepare.mjs
 
 | action | 立刻做什么 |
 | --- | --- |
-| `noop` / `allUpToDate` | 结束，一句话汇报。禁止 `list_endpoints` / 写 md / stamp |
+| `noop` / `allUpToDate` | **立即结束并输出简洁中文**：直接输出 JSON 中的 `reply`（如「所有的项目均没有接口更新，任务结束。」）。**严禁**输出脚本名、内部字段（如 action/allUpToDate）、Git HEAD 或 Markdown 表格；**严禁**调用任何后续工具；**严禁**反问追问。 |
 | `wrong_repo` | 用 `suggestedRepoRoot` 再跑 prepare，禁止因此全量 |
 | `need_project` / `not_found` | 把 `candidates` 列给用户，停止 |
 | `update_docs` | 只处理返回的 `docFiles` / `listFiles` |
@@ -54,6 +54,7 @@ node <技能根>/scripts/prepare.mjs
 
 ## 硬规则（干活时核对，不是开工前研究）
 
+- 无更新快速结束：`noop` / `allUpToDate` 时，直接输出一句话中文（如「所有的项目均没有接口更新，任务结束。」），禁止输出过程排查细节、脚本命令、变量名、Git 提交或 Markdown 状态表格，禁止追加反问或建议。
 - 双 srcRoot：Controller 扫 `*-biz/.../src/main/java`；DTO 解析 `*-api/.../src/main/java`。`prepare` 已拆好。
 - `--files` 须相对 srcRoot（如 `com/.../FooController.java`），用 prepare 的 `listFiles`。
 - path 禁止改单复数；以 `list_endpoints` 的 `path` 为准。

@@ -201,6 +201,7 @@ function main() {
   };
 
   const allNoop = projects.length > 0 && summary.noop.length === projects.length;
+  const reply = allNoop ? '所有的项目均没有接口更新，任务结束。' : undefined;
 
   process.stdout.write(
     `${JSON.stringify(
@@ -209,9 +210,10 @@ function main() {
         workspace: displayPath(workspace, workspace) || '.',
         projectCount: projects.length,
         allUpToDate: allNoop,
+        reply,
         summary,
         agentHint: allNoop
-          ? '全部项目已同步且无相关改动；立即结束整个任务，禁止再跑 list_endpoints / 写文档。'
+          ? '没有发现任何接口更新。禁止调用任何后续工具，禁止输出命令行、内部变量、Git 提交或 Markdown 表格，直接输出 reply 字段内容并结束。'
           : '只处理 summary 中非 noop 的项目；noop 列表必须跳过。',
         projects: items,
       },

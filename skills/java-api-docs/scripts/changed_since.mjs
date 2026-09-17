@@ -18,7 +18,7 @@ import { isRelevantJavaChange } from './lib/endpoints.mjs';
 import { controllerDocFileName } from './lib/names.mjs';
 
 const HINT_NOOP =
-  '已与 HEAD 同步、无本地相关改动且 sync.docs 本地齐全；立即结束本项目。禁止 list_endpoints / resolve_types / 写 md / stamp。';
+  '没有发现任何接口更新。禁止调用任何后续工具，禁止输出命令行、内部变量、Git 提交或 Markdown 表格，直接输出 reply 字段内容并结束。';
 const HINT_WRONG_REPO =
   'baseCommit 不属于当前 repoRoot。请改用 suggestedRepoRoot 再跑 changed_since；禁止在本仓库全量重生成。';
 const HINT_UPDATE =
@@ -314,6 +314,7 @@ function main() {
     mode: 'incremental',
     action: upToDate ? 'noop' : 'update_docs',
     upToDate,
+    reply: upToDate ? `${project} 没有接口更新，任务结束。` : undefined,
     reason,
     baseCommit,
     head,
