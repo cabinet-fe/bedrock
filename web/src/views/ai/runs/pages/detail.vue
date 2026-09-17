@@ -5,6 +5,7 @@ import { computed, onMounted, onScopeDispose, ref, shallowRef, watch } from "vue
 import { useRoute } from "vue-router";
 import { saveBlob } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
+import { Maximum, ZoomOut } from "@veltra/icons/normal";
 import { createServerTransport, UAiChat, type ChatSessionTransport } from "@veltra/ai";
 import "@veltra/ai/style";
 
@@ -148,16 +149,39 @@ async function onDownloadArtifact() {
   }
 }
 
+const isFullscreen = shallowRef(false);
+
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value;
+}
+
+function onKeyDown(e: KeyboardEvent) {
+  if (e.key === "Escape" && isFullscreen.value) {
+    isFullscreen.value = false;
+  }
+}
+
+watch(isFullscreen, (val) => {
+  if (typeof document !== "undefined") {
+    document.body.style.overflow = val ? "hidden" : "";
+  }
+});
+
 function onChatError(error: Error) {
   message.error(error.message || "会话流异常");
 }
 
 onMounted(async () => {
+  window.addEventListener("keydown", onKeyDown);
   await load();
   schedulePoll();
 });
 
 onScopeDispose(() => {
+  window.removeEventListener("keydown", onKeyDown);
+  if (isFullscreen.value && typeof document !== "undefined") {
+    document.body.style.overflow = "";
+  }
   if (pollTimer) clearTimeout(pollTimer);
 });
 </script>
@@ -239,8 +263,17 @@ onScopeDispose(() => {
         </section>
 
         <section v-if="sessionTransport" class="section">
-          <h3 class="section__title">会话</h3>
-          <div class="session-panel">
+          <div class="section__head">
+            <h3 class="section__title">会话</h3>
+            <u-button text size="small" :icon="Maximum" @click="toggleFullscreen"> 全屏 </u-button>
+          </div>
+          <div class="session-panel" :class="{ 'session-panel--fullscreen': isFullscreen }">
+            <div v-if="isFullscreen" class="session-panel__fullscreen-toolbar">
+              <span class="session-panel__fullscreen-title">运行 #{{ run?.id }} 会话</span>
+              <u-button text size="small" :icon="ZoomOut" @click="toggleFullscreen">
+                退出全屏 (Esc)
+              </u-button>
+            </div>
             <u-ai-chat
               class="session-panel__chat"
               :transport="sessionTransport"
@@ -329,6 +362,13 @@ onScopeDispose(() => {
   min-width: 0;
 }
 
+.section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .section__title {
   margin: 0;
   font-size: 14px;
@@ -404,8 +444,8 @@ onScopeDispose(() => {
 }
 
 .session-panel {
-  height: min(72vh, 720px);
-  min-height: 360px;
+  height: min(85vh, 900px);
+  min-height: 520px;
   display: flex;
   flex-direction: column;
   border: fn.use-var(border);
@@ -414,7 +454,36 @@ onScopeDispose(() => {
   overflow: hidden;
 }
 
+.session-panel--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  width: 100vw;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  border: 0;
+  border-radius: 0;
+}
+
+.session-panel__fullscreen-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: fn.use-var(border);
+  background: fn.use-var(bg-color, top);
+  flex-shrink: 0;
+}
+
+.session-panel__fullscreen-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: fn.use-var(text-color, title);
+}
+
 .session-panel__chat {
+  flex: 1;
+  min-height: 0;
   height: 100%;
   width: 100%;
 }
