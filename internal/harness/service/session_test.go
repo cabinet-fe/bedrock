@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,11 +18,13 @@ import (
 type fakeProvider struct {
 	provider.Provider
 
-	nextSeq    int
-	sessions   map[string]provider.SessionInfo
-	archived   []string
-	listErr    error
-	archiveErr error
+	nextSeq         int
+	sessions        map[string]provider.SessionInfo
+	archived        []string
+	listErr         error
+	archiveErr      error
+	listAgentsCalls int
+	hideAgentUntil  int
 }
 
 func newFakeProvider() *fakeProvider {
@@ -72,6 +75,27 @@ func (f *fakeProvider) ArchiveSession(_ context.Context, sessionID string) error
 	f.sessions[sessionID] = info
 	f.archived = append(f.archived, sessionID)
 	return nil
+}
+
+func (f *fakeProvider) ListAgents(_ context.Context, directory string) ([]provider.AgentInfo, error) {
+	f.listAgentsCalls++
+	if f.hideAgentUntil > 0 && f.listAgentsCalls <= f.hideAgentUntil {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	out := make([]provider.AgentInfo, 0, len(f.sessions))
+	for _, info := range f.sessions {
+		if directory != "" && info.Directory != directory {
+			continue
+		}
+		name := info.Agent
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, provider.AgentInfo{Name: name})
+	}
+	return out, nil
 }
 
 func TestAgentDefName(t *testing.T) {
@@ -128,6 +152,47 @@ func TestCreateAgentSession(t *testing.T) {
 	}
 	if plain.Model != nil {
 		t.Fatalf("model = %+v, want nil", plain.Model)
+	}
+}
+
+func TestCreateAgentSessionWaitsForCatalog(t *testing.T) {
+	root := t.TempDir()
+	fake := newFakeProvider()
+	fake.hideAgentUntil = 3
+	svc := NewSessionService(fake, SessionConfig{WorkspaceRoot: root}, nil)
+
+	start := time.Now()
+	session, err := svc.CreateAgentSession(context.Background(), AgentSpec{
+		ID: 3, SystemPrompt: "p",
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Agent != "bedrock-agent-3" {
+		t.Fatalf("agent = %q, want bedrock-agent-3", session.Agent)
+	}
+	if fake.listAgentsCalls <= fake.hideAgentUntil {
+		t.Fatalf("listAgentsCalls=%d, want > %d", fake.listAgentsCalls, fake.hideAgentUntil)
+	}
+	if elapsed := time.Since(start); elapsed < directoryReadyPoll {
+		t.Fatalf("returned too fast: %s", elapsed)
+	}
+}
+
+func TestCreateAgentSessionReadyTimeout(t *testing.T) {
+	root := t.TempDir()
+	fake := newFakeProvider()
+	fake.hideAgentUntil = 1000
+	svc := NewSessionService(fake, SessionConfig{
+		WorkspaceRoot:         root,
+		DirectoryReadyTimeout: 80 * time.Millisecond,
+	}, nil)
+
+	_, err := svc.CreateAgentSession(context.Background(), AgentSpec{
+		ID: 4, SystemPrompt: "p",
+	}, 1)
+	if err == nil || !strings.Contains(err.Error(), "工作区未就绪") {
+		t.Fatalf("want 工作区未就绪, got %v", err)
 	}
 }
 

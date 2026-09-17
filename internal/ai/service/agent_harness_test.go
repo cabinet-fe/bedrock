@@ -429,6 +429,84 @@ func TestExecuteRunReconcileWaitsForInactiveSession(t *testing.T) {
 	}
 }
 
+// A queued prompt that the backend has not started (cold instance load)
+// must not be killed by the no-terminal fallback.
+func TestExecuteRunWaitsWhenPromptNotPickedUp(t *testing.T) {
+	m := newMatrixEnv(t, 600, 0)
+	proceed := make(chan struct{})
+	m.fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, _ string) {
+		<-proceed
+		f.Complete(sess.ID, "late-start")
+	})
+
+	run, err := m.agents.ManualRun(m.testAgentID(t), 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = m.waitRunSession(t, run.ID)
+
+	time.Sleep(3 * time.Second)
+	live, err := m.agents.GetRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live.Status != model.JobRunning {
+		t.Fatalf("status=%s want running; log=%s", live.Status, readRunLog(t, live.LogPath))
+	}
+
+	close(proceed)
+	finished := waitRunStatus(t, m.agents, run.ID, model.JobSuccess)
+	if !strings.Contains(finished.FinalOutput, "late-start") {
+		t.Fatalf("final_output=%q want late-start log=%s", finished.FinalOutput, readRunLog(t, finished.LogPath))
+	}
+}
+
+// An empty assistant stub (opencode creates one at step start) must not
+// settle the run as success. The real reply later still succeeds.
+func TestExecuteRunIgnoresEmptyAssistantStub(t *testing.T) {
+	m := newMatrixEnv(t, 600, 0)
+	proceed := make(chan struct{})
+
+	m.fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, _ string) {
+		f.AppendHistory(sess.ID, provider.Message{
+			ID:      "stub",
+			Role:    "assistant",
+			Content: []byte(`[]`),
+		})
+		_ = f.Emit(provider.Frame{
+			SessionID: sess.ID,
+			Kind:      provider.FrameStatus,
+			Status:    &provider.StatusFrame{Name: provider.StatusStepEnded},
+		})
+		<-proceed
+		f.Complete(sess.ID, "real-reply")
+	})
+
+	run, err := m.agents.ManualRun(m.testAgentID(t), 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = m.waitRunSession(t, run.ID)
+
+	time.Sleep(400 * time.Millisecond)
+	live, err := m.agents.GetRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live.Status == model.JobSuccess {
+		t.Fatalf("empty assistant stub settled success; log=%s", readRunLog(t, live.LogPath))
+	}
+	if live.Status != model.JobRunning && live.Status != model.JobQueued {
+		t.Fatalf("status=%s want running; log=%s", live.Status, readRunLog(t, live.LogPath))
+	}
+
+	close(proceed)
+	finished := waitRunStatus(t, m.agents, run.ID, model.JobSuccess)
+	if !strings.Contains(finished.FinalOutput, "real-reply") {
+		t.Fatalf("final_output=%q want real-reply log=%s", finished.FinalOutput, readRunLog(t, finished.LogPath))
+	}
+}
+
 // SetHarnessBackend wires the bridge's lazy approval-mode recovery: an
 // agent-workspace session of an approval_mode=auto agent auto-approves even
 // when its mode was never registered (restart recovery), while user chat

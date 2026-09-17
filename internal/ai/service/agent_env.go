@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -156,11 +155,7 @@ func (s *AgentService) writeAgentEnvFile(agent *model.AiAgent, agentRoot string)
 	}
 	content := formatDotEnv(vars)
 	path := filepath.Join(agentRoot, ".env")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		return "", nil, err
-	}
-	// WriteFile keeps the mode of an existing file; enforce 0600 explicitly.
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := writeFileIfUnchanged(path, []byte(content), 0o600); err != nil {
 		return "", nil, err
 	}
 	abs, absErr := filepath.Abs(path)

@@ -8,6 +8,7 @@
 package service
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -42,19 +43,20 @@ type SkillSource struct {
 	Dir  string
 }
 
-// SyncAgentSkills rebuilds {agentWorkspace}/.opencode/skills/ from sources.
+// SyncAgentSkills injects sources into {agentWorkspace}/.agents/skills/.
 // Each skill is copied into a normalized lowercase-hyphen directory and the
 // copied SKILL.md frontmatter name is aligned with that directory (opencode
 // identifies skills by the frontmatter name; bedrock is the naming source of
-// truth). Directories with no source are dropped; an empty source list wipes
-// the skills root.
+// truth). Unchanged dest directories are left in place so opencode does not
+// reload the project; directories with no source are dropped; an empty
+// source list wipes the skills root.
 func SyncAgentSkills(agentWorkspace string, sources []SkillSource) error {
 	_ = os.RemoveAll(filepath.Join(agentWorkspace, filepath.FromSlash(legacySkillsRelDir)))
 	skillsRoot := filepath.Join(agentWorkspace, filepath.FromSlash(skillsRelDir))
-	if err := os.RemoveAll(skillsRoot); err != nil {
-		return fmt.Errorf("harness skills: reset %s: %w", skillsRoot, err)
-	}
 	if len(sources) == 0 {
+		if err := os.RemoveAll(skillsRoot); err != nil {
+			return fmt.Errorf("harness skills: reset %s: %w", skillsRoot, err)
+		}
 		return nil
 	}
 	if err := os.MkdirAll(skillsRoot, 0o755); err != nil {
@@ -68,6 +70,12 @@ func SyncAgentSkills(agentWorkspace string, sources []SkillSource) error {
 		}
 		seen[name] = true
 		dest := filepath.Join(skillsRoot, name)
+		if skillDirMatches(src.Dir, dest, name) {
+			continue
+		}
+		if err := os.RemoveAll(dest); err != nil {
+			return fmt.Errorf("复制技能 %s: %w", src.Name, err)
+		}
 		if err := copyDir(src.Dir, dest); err != nil {
 			return fmt.Errorf("复制技能 %s: %w", src.Name, err)
 		}
@@ -75,7 +83,74 @@ func SyncAgentSkills(agentWorkspace string, sources []SkillSource) error {
 			return fmt.Errorf("校验技能 %s: %w", src.Name, err)
 		}
 	}
+	entries, err := os.ReadDir(skillsRoot)
+	if err != nil {
+		return fmt.Errorf("harness skills: read %s: %w", skillsRoot, err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() || seen[e.Name()] {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(skillsRoot, e.Name())); err != nil {
+			return fmt.Errorf("harness skills: drop stale %s: %w", e.Name(), err)
+		}
+	}
 	return nil
+}
+
+// skillDirMatches reports whether dest already equals the injected form of
+// src (frontmatter name aligned). A miss forces a recopy of that skill only.
+func skillDirMatches(src, dest, name string) bool {
+	if _, err := os.Stat(dest); err != nil {
+		return false
+	}
+	want, err := skillFileMap(src, name)
+	if err != nil {
+		return false
+	}
+	got, err := skillFileMap(dest, "")
+	if err != nil {
+		return false
+	}
+	if len(want) != len(got) {
+		return false
+	}
+	for rel, data := range want {
+		if !bytes.Equal(got[rel], data) {
+			return false
+		}
+	}
+	return true
+}
+
+// skillFileMap walks dir into slash-separated relative path → contents.
+// When name is non-empty, the root SKILL.md is aligned to that directory name
+// so a source tree can be compared with an already-injected dest.
+func skillFileMap(dir, name string) (map[string][]byte, error) {
+	out := map[string][]byte{}
+	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		key := filepath.ToSlash(rel)
+		if name != "" && key == skillMDFile {
+			data = alignFrontmatterName(data, name)
+		}
+		out[key] = data
+		return nil
+	})
+	return out, err
 }
 
 // SyncAgentDefinition compiles the agent definition for agent into

@@ -73,6 +73,7 @@ export interface HarnessFrame {
       | "error"
       | "idle";
     messageId?: string;
+    assistantMessageId?: string;
     error?: string;
   };
   messageDelta?: { assistantMessageId: string; textId: string; delta: string };
@@ -228,9 +229,63 @@ export function createHarnessSessionAdapter(
   const textParts = new Map<string, { id: string; text: string }[]>();
   /** message id -> accumulated reasoning text to prevent message_text wiping it out. */
   const reasoningParts = new Map<string, string>();
+  /** Assistant messages already materialised in the fold (history or live). */
+  const seenAssistantIds = new Set<string>();
+  /**
+   * Live assistant messages still in fold `streaming` status. History replay
+   * emits `assistant/message` (done); live reasoning/tool steps only emit
+   * `assistant/chunk`, so these must be closed explicitly or they stay
+   * in-progress after the session is idle.
+   */
+  const openAssistantIds = new Set<string>();
 
   function emit(event: ChatSessionEvent): void {
     handlers?.onEvent(event);
+  }
+
+  function assistantContent(messageId: string): string {
+    return (textParts.get(messageId) ?? []).map((part) => part.text).join("");
+  }
+
+  /** Fold treats `assistant/message` as the done marker; `finish` only clears running. */
+  function finalizeAssistant(messageId: string): void {
+    if (!messageId || !openAssistantIds.has(messageId)) return;
+    openAssistantIds.delete(messageId);
+    emit({
+      type: "assistant/message",
+      messageId,
+      content: assistantContent(messageId),
+      reasoning: reasoningParts.get(messageId) || undefined,
+    } as ChatSessionEvent);
+  }
+
+  function finalizeOpenAssistants(except?: string): void {
+    const ids: string[] = [];
+    for (const id of openAssistantIds) {
+      if (id !== except) ids.push(id);
+    }
+    for (const id of ids) finalizeAssistant(id);
+  }
+
+  /**
+   * Open `messageId` as the sole in-progress assistant. Closes any other
+   * streaming thinking block first. `stub` creates an empty streaming
+   * message so a subsequent tool/call attaches to this id, not the previous.
+   */
+  function beginAssistant(messageId: string, stub = false): void {
+    if (!messageId) return;
+    finalizeOpenAssistants(messageId);
+    if (!seenAssistantIds.has(messageId)) {
+      seenAssistantIds.add(messageId);
+      if (stub) {
+        emit({
+          type: "assistant/chunk",
+          messageId,
+          delta: "",
+        } as ChatSessionEvent);
+      }
+    }
+    openAssistantIds.add(messageId);
   }
 
   function onMessageText(messageId: string, textId: string, text: string, seq: number): void {
@@ -242,14 +297,16 @@ export function createHarnessSessionAdapter(
     if (index >= 0) parts[index] = { id: textId, text };
     else parts.push({ id: textId, text });
     textParts.set(messageId, parts);
-    const reasoning = reasoningParts.get(messageId);
+    beginAssistant(messageId);
     emit({
       type: "assistant/message",
       messageId,
       seq,
       content: parts.map((part) => part.text).join(""),
-      reasoning: reasoning || undefined,
+      reasoning: reasoningParts.get(messageId) || undefined,
     });
+    // Text-ended already marks the fold message done.
+    openAssistantIds.delete(messageId);
   }
 
   function onFrame(frame: HarnessFrame): void {
@@ -269,24 +326,36 @@ export function createHarnessSessionAdapter(
         switch (status.name) {
           case "prompt_admitted":
           case "prompted":
-            if (status.messageId) {
-              if (!seenUserIds.has(status.messageId)) {
-                seenUserIds.add(status.messageId);
-                if (options?.initialPrompt?.trim()) {
-                  emit({
-                    type: "user/message",
-                    messageId: status.messageId,
-                    content: options.initialPrompt,
-                  } as ChatSessionEvent);
-                }
-              }
+            if (
+              status.messageId &&
+              !seenUserIds.has(status.messageId) &&
+              options?.initialPrompt?.trim()
+            ) {
+              // Only mark seen when we actually emit: otherwise history replay
+              // can still surface the composed prompt (workspace hint, etc.).
+              seenUserIds.add(status.messageId);
+              emit({
+                type: "user/message",
+                messageId: status.messageId,
+                content: options.initialPrompt,
+              } as ChatSessionEvent);
             }
             emit({ type: "running", running: true });
             return;
+          case "step_started":
+            // Next LLM step: close leftover thinking so at most one block is in-progress.
+            finalizeOpenAssistants(status.assistantMessageId);
+            return;
+          case "step_ended":
+            if (status.assistantMessageId) finalizeAssistant(status.assistantMessageId);
+            else finalizeOpenAssistants();
+            return;
           case "step_failed":
+            finalizeOpenAssistants();
             emit({ type: "error", code: "step_failed", message: status.error || "step failed" });
             return;
           case "error":
+            finalizeOpenAssistants();
             emit({
               type: "error",
               code: "harness_error",
@@ -294,6 +363,22 @@ export function createHarnessSessionAdapter(
             });
             return;
           case "idle":
+            finalizeOpenAssistants();
+            if (textParts.size === 0) {
+              // Prep window can finish the turn before the chat mounts; pull
+              // history so a late assistant message is not dropped by finish.
+              void fetchHistory().then(
+                ({ events }) => {
+                  if (disposed) return;
+                  for (const event of events) emit(event);
+                  emit({ type: "finish" });
+                },
+                () => {
+                  if (!disposed) emit({ type: "finish" });
+                },
+              );
+              return;
+            }
             emit({ type: "finish" });
             return;
           default:
@@ -303,6 +388,7 @@ export function createHarnessSessionAdapter(
       case "message_delta": {
         const delta = frame.messageDelta;
         if (!delta) return;
+        beginAssistant(delta.assistantMessageId);
         emit({
           type: "assistant/chunk",
           messageId: delta.assistantMessageId,
@@ -314,6 +400,7 @@ export function createHarnessSessionAdapter(
         const delta = frame.reasoningDelta;
         if (!delta) return;
         const msgId = delta.assistantMessageId;
+        beginAssistant(msgId);
         reasoningParts.set(msgId, (reasoningParts.get(msgId) ?? "") + delta.delta);
         emit({
           type: "assistant/chunk",
@@ -333,6 +420,8 @@ export function createHarnessSessionAdapter(
         const call = frame.toolCall;
         if (!call || knownCallIds.has(call.callId)) return;
         knownCallIds.add(call.callId);
+        // Stub first if this assistant message is new so the call attaches here.
+        beginAssistant(call.assistantMessageId, true);
         emit({
           type: "tool/call",
           callId: call.callId,
@@ -468,6 +557,7 @@ export function createHarnessSessionAdapter(
         continue;
       }
       if (message.role !== "assistant") continue;
+      seenAssistantIds.add(message.id);
       const toolCalls: {
         id: string;
         name: string;

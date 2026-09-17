@@ -198,6 +198,35 @@ func readFile(t *testing.T, path string) string {
 	return string(data)
 }
 
+func TestWriteFileAtomicSkipsIdentical(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "opencode.json")
+	data := []byte("{\n  \"x\": 1\n}\n")
+	if err := writeFileAtomic(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileAtomic(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Fatalf("identical rewrite bumped mtime: %s -> %s", before.ModTime(), after.ModTime())
+	}
+	if err := writeFileAtomic(path, []byte("{\n  \"x\": 2\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, path); !strings.Contains(got, `"x": 2`) {
+		t.Fatalf("content not replaced: %s", got)
+	}
+}
+
 func assertNoTmpLeftovers(t *testing.T, dir string) {
 	t.Helper()
 	entries, err := os.ReadDir(dir)

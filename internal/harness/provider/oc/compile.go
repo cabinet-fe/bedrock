@@ -31,10 +31,10 @@ const descriptionMaxRunes = 160
 // AgentDefInput is the agent projection the compiler needs. The zero value
 // compiles nothing (see NeedsAgentDef).
 type AgentDefInput struct {
-	Name          string
-	Description   string
-	SystemPrompt  string
-	HasSkills     bool
+	Name                string
+	Description         string
+	SystemPrompt        string
+	HasSkills           bool
 	ModelProvider       string
 	ModelID             string
 	ApprovalMode        string // manual | auto
@@ -208,8 +208,16 @@ func truncateRunes(s string, max int) string {
 }
 
 // writeFileAtomic writes data to path via a tmp file in the same directory
-// followed by rename, so readers never observe a partial document.
+// followed by rename, so readers never observe a partial document. Identical
+// contents are left untouched: rewriting would bump mtime and make opencode
+// reload the project instance (a multi-second stall before the next prompt).
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, data) {
+		if info, statErr := os.Stat(path); statErr == nil && info.Mode().Perm() == perm {
+			return nil
+		}
+		return os.Chmod(path, perm)
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err

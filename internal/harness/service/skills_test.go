@@ -140,6 +140,31 @@ func TestSyncAgentSkillsEmptyWipesRoot(t *testing.T) {
 	}
 }
 
+func TestSyncAgentSkillsSkipsUnchanged(t *testing.T) {
+	parent := t.TempDir()
+	src := writeSkillDir(t, parent, "a", "---\nname: aligned\n---\n\n# ok\n")
+	ws := t.TempDir()
+	sources := []SkillSource{{Name: "aligned", Dir: src}}
+	if err := SyncAgentSkills(ws, sources); err != nil {
+		t.Fatal(err)
+	}
+	skillMD := filepath.Join(ws, ".agents", "skills", "aligned", "SKILL.md")
+	before, err := os.Stat(skillMD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncAgentSkills(ws, sources); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(skillMD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Fatalf("unchanged skill was rewritten: mtime %s -> %s", before.ModTime(), after.ModTime())
+	}
+}
+
 // TestSyncAgentSkillsMissingSkillMDFails asserts a source without SKILL.md
 // fails the sync instead of injecting a broken skill.
 func TestSyncAgentSkillsMissingSkillMDFails(t *testing.T) {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -197,7 +198,7 @@ func (s *AgentService) SyncAgentWorkspace(ctx context.Context, agent *model.AiAg
 	}
 
 	promptPath := filepath.Join(root, "SYSTEM_PROMPT.md")
-	if err := os.WriteFile(promptPath, []byte(agent.SystemPrompt), 0o644); err != nil {
+	if err := writeFileIfUnchanged(promptPath, []byte(agent.SystemPrompt), 0o644); err != nil {
 		return nil, nil, err
 	}
 	// 解密写入工作区 .env（同 UID 可见）；Run 时还会注入 cmd.Env。
@@ -440,4 +441,19 @@ func (s *AgentService) normalizeRepoBindings(in []model.RepoBinding) ([]model.Re
 		out = append(out, model.RepoBinding{RepositoryID: b.RepositoryID, Branch: branch})
 	}
 	return out, nil
+}
+
+// writeFileIfUnchanged writes path only when contents (or mode) differ, so
+// opencode's directory watcher does not treat a no-op sync as a reload.
+func writeFileIfUnchanged(path string, data []byte, perm os.FileMode) error {
+	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, data) {
+		if info, statErr := os.Stat(path); statErr == nil && info.Mode().Perm() == perm {
+			return nil
+		}
+		return os.Chmod(path, perm)
+	}
+	if err := os.WriteFile(path, data, perm); err != nil {
+		return err
+	}
+	return os.Chmod(path, perm)
 }

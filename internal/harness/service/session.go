@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -23,9 +24,19 @@ import (
 
 // ErrInvalidModelProvider reports an explicit model provider outside bedrock-p*.
 var ErrInvalidModelProvider = errors.New("model.provider 必须为 bedrock-p* 平台 BYOK 提供商")
-// per workspace directory; older ones are archived when a new session is
-// created in the same directory.
-const DefaultMaxSessionsPerDir = 20
+
+const (
+	// DefaultMaxSessionsPerDir is the archive/count limit per workspace
+	// directory; older ones are archived when a new session is created in
+	// the same directory.
+	DefaultMaxSessionsPerDir = 20
+	// directoryReadyPoll / defaultDirectoryReadyTimeout bound how long
+	// CreateAgentSession waits for the directory agent catalog to include
+	// the compiled definition. A freshly created session's project instance
+	// loads asynchronously; prompting before that yields an empty turn.
+	directoryReadyPoll           = 200 * time.Millisecond
+	defaultDirectoryReadyTimeout = 2 * time.Minute
+)
 
 // SessionConfig configures the SessionService.
 type SessionConfig struct {
@@ -34,16 +45,18 @@ type SessionConfig struct {
 	WorkspaceRoot string
 	// MaxSessionsPerDir overrides DefaultMaxSessionsPerDir (0 = default).
 	MaxSessionsPerDir int
+	// DirectoryReadyTimeout overrides defaultDirectoryReadyTimeout (0 = default).
+	DirectoryReadyTimeout time.Duration
 }
 
 // AgentSpec is the agent projection CreateAgentSession needs. The ai domain
 // maps its persisted agent onto it; the harness domain must not depend on ai.
 type AgentSpec struct {
-	ID            uint
-	Name          string
-	Description   string
-	SystemPrompt  string
-	SkillIDs      []uint
+	ID                  uint
+	Name                string
+	Description         string
+	SystemPrompt        string
+	SkillIDs            []uint
 	ModelProvider       string
 	ModelID             string
 	ApprovalMode        string // manual | auto (see provider/oc compile modes)
@@ -179,6 +192,13 @@ func (s *SessionService) maxSessionsPerDir() int {
 	return DefaultMaxSessionsPerDir
 }
 
+func (s *SessionService) directoryReadyTimeout() time.Duration {
+	if s.cfg.DirectoryReadyTimeout > 0 {
+		return s.cfg.DirectoryReadyTimeout
+	}
+	return defaultDirectoryReadyTimeout
+}
+
 // CreateSession passes a session create through to the provider, then
 // enforces the per-directory archive limit.
 func (s *SessionService) CreateSession(ctx context.Context, input provider.CreateSessionInput) (*provider.Session, error) {
@@ -211,6 +231,9 @@ func (s *SessionService) CreateAgentSession(ctx context.Context, agent AgentSpec
 	if err != nil {
 		return nil, err
 	}
+	if err := s.waitDirectoryReady(ctx, directory, input.Agent); err != nil {
+		return nil, err
+	}
 	s.log.Info("harness agent session created",
 		zap.Uint("agent_id", agent.ID),
 		zap.Uint("user_id", userID),
@@ -218,6 +241,57 @@ func (s *SessionService) CreateAgentSession(ctx context.Context, agent AgentSpec
 		zap.String("agent_def", input.Agent),
 	)
 	return session, nil
+}
+
+// waitDirectoryReady blocks until the directory catalog lists agentName.
+// Prompting before the project instance has loaded yields an empty turn, so
+// a timeout is returned as an error instead of racing the prompt.
+func (s *SessionService) waitDirectoryReady(ctx context.Context, directory, agentName string) error {
+	if strings.TrimSpace(agentName) == "" {
+		return nil
+	}
+	if s.directoryHasAgent(ctx, directory, agentName) {
+		return nil
+	}
+	timeout := s.directoryReadyTimeout()
+	s.log.Info("waiting for harness directory catalog",
+		zap.String("directory", directory),
+		zap.String("agent", agentName),
+		zap.Duration("timeout", timeout))
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(directoryReadyPoll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-waitCtx.Done():
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			s.log.Warn("harness session directory not ready before prompt",
+				zap.String("directory", directory),
+				zap.String("agent", agentName),
+				zap.Duration("timeout", timeout))
+			return fmt.Errorf("工作区未就绪: opencode 未能在 %s 内加载智能体 %s", timeout, agentName)
+		case <-ticker.C:
+			if s.directoryHasAgent(waitCtx, directory, agentName) {
+				return nil
+			}
+		}
+	}
+}
+
+func (s *SessionService) directoryHasAgent(ctx context.Context, directory, agentName string) bool {
+	agents, err := s.provider.ListAgents(ctx, directory)
+	if err != nil {
+		return false
+	}
+	for _, a := range agents {
+		if a.Name == agentName {
+			return true
+		}
+	}
+	return false
 }
 
 // ListActiveSessions lists the non-archived sessions of a directory, newest

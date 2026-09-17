@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -275,7 +276,27 @@ func (f *Fake) CreateSession(_ context.Context, input provider.CreateSessionInpu
 	}
 	f.sessions = append(f.sessions, *sess)
 	f.waitDone[id] = make(chan struct{})
+	if name := strings.TrimSpace(input.Agent); name != "" {
+		found := false
+		for _, a := range f.agents {
+			if a.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			f.agents = append(f.agents, provider.AgentInfo{Name: name})
+		}
+	}
 	return sess, nil
+}
+
+// AppendHistory records transcript messages as if the backend already
+// persisted them (empty assistant stubs, mid-turn tails, …).
+func (f *Fake) AppendHistory(sessionID string, messages ...provider.Message) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.history[sessionID] = append(f.history[sessionID], messages...)
 }
 
 func (f *Fake) ListSessions(_ context.Context, directory string) ([]provider.SessionInfo, error) {

@@ -162,9 +162,11 @@ func (s *AgentService) ensureHarnessSession(ctx context.Context, run *model.Agen
 // session error.
 type frameWatch struct {
 	lastText string
+	sawFrame bool
 }
 
 func (w *frameWatch) handle(frame *provider.Frame, writeLog func(string)) (harnessOutcome, bool) {
+	w.sawFrame = true
 	switch frame.Kind {
 	case provider.FrameStatus:
 		if frame.Status == nil {
@@ -337,6 +339,14 @@ func (s *AgentService) runHarnessSession(
 				fallbackTimer.Reset(noTerminal)
 				continue
 			}
+			if !watch.sawFrame {
+				// Prompt queued but the project instance has not started the
+				// turn (cold opencode load). Killing here is the 1-minute
+				// "准备环境" interrupt; keep waiting until the run timeout.
+				writeLog("会话尚未开始执行，继续等待工作区加载")
+				fallbackTimer.Reset(noTerminal)
+				continue
+			}
 			s.interruptSession(sessionID, writeLog)
 			return harnessOutcome{status: model.JobInterrupted, errMsg: "长时间无终态，已打断会话"}
 		}
@@ -355,7 +365,8 @@ func (s *AgentService) sessionStillActive(ctx context.Context, sessionID string)
 // session the backend still reports running is never settled (its message
 // tail would be a mid-turn partial), pending asks leave the run open, and
 // the message tail page settles success with the last assistant text as
-// final_output. ok=false leaves the run open.
+// final_output. An assistant stub with no text (opencode creates one at
+// step start) is not a completed turn. ok=false leaves the run open.
 func (s *AgentService) reconcileHarnessRun(ctx context.Context, sessionID string, watch *frameWatch, writeLog func(string)) (harnessOutcome, bool) {
 	if s.sessionStillActive(ctx, sessionID) {
 		return harnessOutcome{}, false
@@ -374,7 +385,10 @@ func (s *AgentService) reconcileHarnessRun(ctx context.Context, sessionID string
 		}
 		final := strings.TrimSpace(messages[i].Text())
 		if final == "" {
-			final = watch.lastText
+			final = strings.TrimSpace(watch.lastText)
+		}
+		if final == "" {
+			continue
 		}
 		return harnessOutcome{status: model.JobSuccess, final: final}, true
 	}

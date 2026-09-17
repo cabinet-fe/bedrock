@@ -290,8 +290,8 @@ func (s *AgentService) CreateAgent(createdBy uint, in AgentInput) (*model.AiAgen
 		ApprovalMode:        stringOr(in.ApprovalMode, harnessservice.ApprovalManual),
 		InjectDefaultPrompt: boolOr(in.InjectDefaultPrompt, true),
 		SystemPrompt:        in.SystemPrompt,
-		OutputDir:     stringOr(in.OutputDir, "output"),
-		TimeoutSec:    intOr(in.TimeoutSec, 600), CreatedBy: createdBy,
+		OutputDir:           stringOr(in.OutputDir, "output"),
+		TimeoutSec:          intOr(in.TimeoutSec, 600), CreatedBy: createdBy,
 		WorkspaceStatus: model.WorkspacePending,
 		WorkspaceError:  "",
 	}
@@ -931,8 +931,9 @@ func (s *AgentService) ExecuteRun(ctx context.Context, id uint) {
 	}
 	absOutput, _ := filepath.Abs(outputDir)
 
-	// Harness session: compile (already synced above) → create session →
-	// prompt (delivery=queue) → event-driven state machine.
+	// Harness session: compile (already synced above) → wait for opencode
+	// to load the directory catalog → create session → prompt.
+	writeLog("正在等待 opencode 加载工作区")
 	sessionID, err := s.ensureHarnessSession(runCtx, run, agent, run.TriggeredBy, writeLog)
 	if err != nil {
 		if s.finishIfCancelled(run, writeLog) {
