@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { reactive, ref, useTemplateRef } from "vue";
+import { onScopeDispose, reactive, ref, useTemplateRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@veltra/desktop";
 
 import { useAuthStore } from "@/stores/auth";
+import { useLoginFlow } from "./flow-canvas";
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -11,27 +12,111 @@ const route = useRoute();
 
 const usernameInputRef = useTemplateRef<HTMLInputElement>("username");
 const passwordInputRef = useTemplateRef<HTMLInputElement>("password");
+const confirmInputRef = useTemplateRef<HTMLInputElement>("confirm");
+const flowCanvasRef = useTemplateRef<HTMLCanvasElement>("flowCanvas");
+const hubCardRef = useTemplateRef<HTMLFormElement>("hubCard");
+const stageRef = useTemplateRef<HTMLElement>("stage");
+const mode = ref<"login" | "register">("login");
+// 嵌入部署由服务端注入；dev / 未注入时视为开放
+const allowRegister = window.__BEDROCK_ALLOW_REGISTER__ !== false;
 const loading = ref(false);
 const formData = reactive({
   username: "",
   password: "",
+  confirm: "",
 });
 const errors = reactive({
   username: "",
   password: "",
+  confirm: "",
 });
+
+// 登录面板即平台枢纽：画布上的左列端点流入、右列端点流出
+useLoginFlow(flowCanvasRef, hubCardRef);
+
+// 面板 3D 倾斜：指针坐标只在 rAF 回调里消费一次，角度/眩光写成 CSS 变量，平滑交给 transition
+const tiltReady =
+  window.matchMedia("(hover: hover) and (pointer: fine)").matches &&
+  !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const MAX_TILT = 7;
+let tiltRaf = 0;
+let ptrX = 0;
+let ptrY = 0;
+
+function onStagePointer(event: PointerEvent) {
+  if (!tiltReady) return;
+  ptrX = event.clientX;
+  ptrY = event.clientY;
+  if (!tiltRaf) tiltRaf = requestAnimationFrame(applyTilt);
+}
+
+function applyTilt() {
+  tiltRaf = 0;
+  const hub = hubCardRef.value;
+  const stage = stageRef.value;
+  if (!hub || !stage) return;
+  const r = hub.getBoundingClientRect();
+  const nx = Math.max(-1, Math.min(1, (ptrX / innerWidth) * 2 - 1));
+  const ny = Math.max(-1, Math.min(1, (ptrY / innerHeight) * 2 - 1));
+  stage.style.setProperty("--rx", `${(-ny * MAX_TILT).toFixed(2)}deg`);
+  stage.style.setProperty("--ry", `${(nx * MAX_TILT).toFixed(2)}deg`);
+  stage.style.setProperty("--gx", `${(((ptrX - r.left) / r.width) * 100).toFixed(1)}%`);
+  stage.style.setProperty("--gy", `${(((ptrY - r.top) / r.height) * 100).toFixed(1)}%`);
+  stage.style.setProperty("--px", nx.toFixed(3));
+  stage.style.setProperty("--py", ny.toFixed(3));
+}
+
+// 离开页面时面板回正；眩光位置保留，避免渐变跳变
+function onStageLeave() {
+  if (!tiltReady) return;
+  cancelAnimationFrame(tiltRaf);
+  tiltRaf = 0;
+  const stage = stageRef.value;
+  if (!stage) return;
+  for (const [prop, value] of [
+    ["--rx", "0deg"],
+    ["--ry", "0deg"],
+    ["--px", "0"],
+    ["--py", "0"],
+  ] as const) {
+    stage.style.setProperty(prop, value);
+  }
+}
+
+onScopeDispose(() => cancelAnimationFrame(tiltRaf));
 
 function validate() {
   errors.username = formData.username ? "" : "请输入用户名";
   errors.password = formData.password ? "" : "请输入密码";
+  if (mode.value === "register") {
+    if (formData.username && (formData.username.length < 3 || formData.username.length > 50)) {
+      errors.username = "用户名需 3-50 个字符";
+    }
+    if (formData.password && formData.password.length < 8) {
+      errors.password = "密码至少 8 位";
+    }
+    errors.confirm = formData.confirm === formData.password ? "" : "两次输入的密码不一致";
+    return !errors.username && !errors.password && !errors.confirm;
+  }
   return !errors.username && !errors.password;
 }
 
-// 点击终端空白处时，聚焦第一个待填字段
+// 切换登录/注册：保留用户名，清掉密码与错误
+function toggleMode() {
+  mode.value = mode.value === "login" ? "register" : "login";
+  formData.password = "";
+  formData.confirm = "";
+  errors.username = "";
+  errors.password = "";
+  errors.confirm = "";
+}
+
+// 点击面板空白处时，聚焦第一个待填字段
 function focusFirstEmptyField(event: MouseEvent) {
   if ((event.target as HTMLElement).closest("input, button")) return;
   if (!formData.username) usernameInputRef.value?.focus();
   else if (!formData.password) passwordInputRef.value?.focus();
+  else if (mode.value === "register" && !formData.confirm) confirmInputRef.value?.focus();
 }
 
 async function handleSubmit() {
@@ -39,12 +124,16 @@ async function handleSubmit() {
 
   loading.value = true;
   try {
-    await auth.login(formData.username, formData.password);
+    if (mode.value === "register") {
+      await auth.register(formData.username, formData.password);
+    } else {
+      await auth.login(formData.username, formData.password);
+    }
     const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "/";
     await router.replace(redirect || "/");
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "登录失败";
-    message.error(msg);
+    const fallback = mode.value === "register" ? "注册失败" : "登录失败";
+    message.error(err instanceof Error ? err.message : fallback);
   } finally {
     loading.value = false;
   }
@@ -52,63 +141,80 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="login-page">
-    <!-- 栏外竖批，取《吕氏春秋》句，暗合「磐石」与「朱砂」 -->
-    <p class="side-quote side-quote--left" aria-hidden="true">石可破也，而不可夺坚</p>
-    <p class="side-quote side-quote--right" aria-hidden="true">丹可磨也，而不可夺赤</p>
+  <div ref="stage" class="login-page" @pointermove="onStagePointer" @pointerleave="onStageLeave">
+    <canvas ref="flowCanvas" class="flow" aria-hidden="true" />
 
-    <div class="stage">
-      <section class="editorial">
-        <p class="kicker">
-          <span class="kicker-name">BEDROCK</span>
-          <span class="kicker-rule" aria-hidden="true" />
-          <span class="kicker-issue">VOL.01</span>
-        </p>
+    <!-- 淡墨巨字，衬于面板之后 -->
+    <p class="backdrop-glyph" aria-hidden="true">磐</p>
 
-        <h1 class="masthead">磐石<span class="seal" aria-hidden="true">磐</span></h1>
+    <!-- 中央枢纽即登录入口：角色端流入，交付端流出 -->
+    <form ref="hubCard" class="hub" @submit.prevent="handleSubmit" @click="focusFirstEmptyField">
+      <header class="hub-brand">
+        <span class="seal" aria-hidden="true">磐</span>
+        <div class="brand-copy">
+          <p class="brand-name">BEDROCK</p>
+          <p class="brand-motto">磐石 · 人机协作开发平台</p>
+        </div>
+      </header>
 
-        <p class="motto">诸事归一</p>
-      </section>
+      <ul class="hub-modules" aria-label="平台能力">
+        <li>构建</li>
+        <li>流水线</li>
+        <li>智能体</li>
+        <li>技能</li>
+      </ul>
 
-      <!-- 终端即登录入口 -->
-      <form class="code-note" @submit.prevent="handleSubmit" @click="focusFirstEmptyField">
-        <pre class="code-comment">
-/*
- * 磐石 Bedrock · 诸事归一
- * 代码托管 / 持续集成 / 部署运维 / 智能协同
- */</pre>
-        <p class="term-line">$ bedrock login <span class="cursor" aria-hidden="true" /></p>
+      <p class="term-line">
+        $ bedrock {{ mode === "login" ? "login" : "register --new-user" }}
+        <span class="cursor" aria-hidden="true" />
+      </p>
 
-        <label class="term-line term-field">
-          <span class="term-prompt">username:</span>
-          <input
-            ref="username"
-            v-model.trim="formData.username"
-            type="text"
-            autocomplete="username"
-            spellcheck="false"
-            @input="errors.username = ''"
-          />
-        </label>
-        <p v-if="errors.username" class="term-error">✗ {{ errors.username }}</p>
+      <label class="term-line term-field">
+        <span class="term-prompt">username:</span>
+        <input
+          ref="username"
+          v-model.trim="formData.username"
+          type="text"
+          autocomplete="username"
+          spellcheck="false"
+          @input="errors.username = ''"
+        />
+      </label>
+      <p v-if="errors.username" class="term-error">✗ {{ errors.username }}</p>
 
-        <label class="term-line term-field">
-          <span class="term-prompt">password:</span>
-          <input
-            ref="password"
-            v-model="formData.password"
-            type="password"
-            autocomplete="current-password"
-            @input="errors.password = ''"
-          />
-        </label>
-        <p v-if="errors.password" class="term-error">✗ {{ errors.password }}</p>
+      <label class="term-line term-field">
+        <span class="term-prompt">password:</span>
+        <input
+          ref="password"
+          v-model="formData.password"
+          type="password"
+          :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
+          @input="errors.password = ''"
+        />
+      </label>
+      <p v-if="errors.password" class="term-error">✗ {{ errors.password }}</p>
 
-        <button class="term-submit" type="submit" :disabled="loading">
-          {{ loading ? "[ 验证中 … ]" : "[ 登 录 ]" }}
-        </button>
-      </form>
-    </div>
+      <label v-if="mode === 'register'" class="term-line term-field">
+        <span class="term-prompt">confirm:</span>
+        <input
+          ref="confirm"
+          v-model="formData.confirm"
+          type="password"
+          autocomplete="new-password"
+          @input="errors.confirm = ''"
+        />
+      </label>
+      <p v-if="mode === 'register' && errors.confirm" class="term-error">✗ {{ errors.confirm }}</p>
+
+      <button class="term-submit" type="submit" :disabled="loading">
+        <template v-if="loading">{{ mode === "login" ? "[ 验证中 … ]" : "[ 创建中 … ]" }}</template>
+        <template v-else>{{ mode === "login" ? "[ 登 录 ]" : "[ 注 册 ]" }}</template>
+      </button>
+
+      <button v-if="allowRegister" class="term-switch" type="button" @click="toggleMode">
+        {{ mode === "login" ? "no account? register →" : "has account? login →" }}
+      </button>
+    </form>
   </div>
 </template>
 
@@ -122,6 +228,7 @@ async function handleSubmit() {
   position: fixed;
   inset: 0;
   isolation: isolate;
+  perspective: 1100px;
   height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
@@ -137,136 +244,144 @@ async function handleSubmit() {
   color: var(--u-text-color-title);
 }
 
-/* 栏外竖批 */
-.side-quote {
+/* 节点流动画：蓝图网格 + 左右端点连线与粒子 */
+.flow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 淡墨「磐」字水印，位于画布之上、面板之下 */
+.backdrop-glyph {
   position: absolute;
   top: 50%;
-  translate: 0 -50%;
+  left: 50%;
+  translate: -50% -50%;
   margin: 0;
-  writing-mode: vertical-rl;
   font-family: var(--serif);
-  font-size: 15px;
-  letter-spacing: 0.5em;
-  color: var(--u-text-color-assist);
-
-  &--left {
-    left: clamp(20px, 3.5vw, 52px);
-  }
-
-  &--right {
-    right: clamp(20px, 3.5vw, 52px);
-  }
+  font-size: clamp(320px, 44vw, 620px);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--u-text-color-title);
+  opacity: 0.05;
+  pointer-events: none;
+  user-select: none;
 }
 
-.stage {
+/* 登录面板：画布网络的中央枢纽 */
+.hub {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: 1fr minmax(280px, 380px);
-  align-items: center;
-  gap: clamp(40px, 6vw, 96px);
-  width: min(960px, 100%);
-}
-
-/* 刊头 */
-.editorial {
-  animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.kicker {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 0 0 28px;
-}
-
-.kicker-name {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.42em;
-  color: var(--u-text-color-assist);
-}
-
-.kicker-rule {
-  width: 56px;
-  height: 1px;
-  background: var(--u-border-muted-color);
-}
-
-.kicker-issue {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: var(--u-text-color-assist);
-}
-
-.masthead {
-  position: relative;
-  display: inline-block;
-  margin: 0 0 20px;
-  font-family: var(--serif);
-  font-size: clamp(84px, 9.5vw, 144px);
-  font-weight: 700;
-  line-height: 1.05;
-  letter-spacing: 0.14em;
-}
-
-/* 朱砂小印，缀于题名之侧 */
-.seal {
-  position: absolute;
-  right: -40px;
-  bottom: 10px;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--u-radius-small);
-  background: var(--seal);
-  color: var(--u-bg-color-top);
-  font-size: 17px;
-  letter-spacing: 0;
-  box-shadow: 0 1px 3px rgb(43 42 38 / 25%);
-  transform: rotate(3deg);
-}
-
-.motto {
-  margin: 0;
-  font-family: var(--serif);
-  font-size: clamp(15px, 1.6vw, 18px);
-  letter-spacing: 0.36em;
-  color: var(--u-text-color-main);
-}
-
-/* 终端即登录入口：文档注释 + 命令行之下直接输入 */
-.code-note {
   display: flex;
   flex-direction: column;
-  padding: 14px 16px;
+  width: min(400px, 100%);
+  box-sizing: border-box;
+  padding: 24px 26px 22px;
   font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.9;
   color: var(--u-text-color-second);
-  background: var(--u-bg-color-middle);
+  background: var(--u-bg-color-top);
   border: var(--u-border);
-  border-radius: var(--u-radius-default);
+  border-radius: var(--u-radius-large);
+  box-shadow: var(--u-shadow-lg, var(--u-shadow-sm));
   cursor: text;
-  animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  // 工程制图角标
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--u-color-primary);
+    opacity: 0.75;
+  }
+
+  &::before {
+    top: -6px;
+    left: -6px;
+    border-right: none;
+    border-bottom: none;
+  }
+
+  &::after {
+    right: -6px;
+    bottom: -6px;
+    border-left: none;
+    border-top: none;
+  }
 }
 
-.code-comment {
+.hub-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 16px;
+}
+
+/* 朱砂小印 */
+.seal {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--u-radius-small);
+  background: var(--seal);
+  color: var(--u-bg-color-top);
+  font-family: var(--serif);
+  font-size: 21px;
+  box-shadow: 0 1px 3px rgb(43 42 38 / 25%);
+  transform: rotate(3deg);
+}
+
+.brand-name {
   margin: 0;
-  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  color: var(--u-text-color-title);
+}
+
+.brand-motto {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 12px;
+  letter-spacing: 0.3em;
   color: var(--u-text-color-assist);
 }
 
+/* 平台能力标签：流经枢纽之物 */
+.hub-modules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+
+  li {
+    padding: 0 9px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--u-text-color-second);
+    border: 1px solid var(--u-border-muted-color);
+    border-radius: var(--u-radius-small);
+  }
+}
+
 .term-line {
-  margin: 0;
+  margin: 0 0 4px;
+  color: var(--u-color-primary);
 }
 
 .term-field {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  color: var(--u-text-color-second);
 }
 
 .term-prompt {
@@ -328,8 +443,27 @@ async function handleSubmit() {
   }
 }
 
+/* 登录/注册模式切换：终端里的下一条命令 */
+.term-switch {
+  align-self: flex-end;
+  margin-top: 6px;
+  padding: 0;
+  font: inherit;
+  color: var(--u-color-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+
+  &:hover {
+    opacity: 1;
+    text-decoration: underline dotted;
+  }
+}
+
 /* 输入聚焦后隐去装饰光标，避免与原生 caret 争辉 */
-.code-note:focus-within .cursor {
+.hub:focus-within .cursor {
   animation: none;
   opacity: 0;
 }
@@ -343,15 +477,16 @@ async function handleSubmit() {
   animation: blink 1.1s steps(2, jump-none) infinite;
 }
 
+/* rise 走 translate 属性，与倾斜的 transform 正交组合互不覆盖 */
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    translate: 0 16px;
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
+    translate: 0 0;
   }
 }
 
@@ -361,29 +496,51 @@ async function handleSubmit() {
   }
 }
 
-@media (max-width: 1279px) {
-  .side-quote {
-    display: none;
+/* 面板 3D：倾斜角/眩光位置由 --rx/--ry/--gx/--gy 驱动（脚本写入），全在合成器层；
+   仅支持悬停指针且未开启「减弱动态效果」时启用 */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .hub {
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transition: transform 0.2s ease-out;
+    transform-style: preserve-3d;
+    will-change: transform;
+    background:
+      radial-gradient(
+        360px circle at var(--gx, 50%) var(--gy, 30%),
+        color-mix(in srgb, var(--u-color-primary) 13%, transparent),
+        transparent 65%
+      ),
+      var(--u-bg-color-top);
+  }
+
+  /* 景深分层：品牌浮得最高，输入区最贴近面板 */
+  .hub-brand {
+    translate: 0 0 34px;
+  }
+
+  .hub-modules {
+    translate: 0 0 22px;
+  }
+
+  .term-field {
+    translate: 0 0 14px;
+  }
+
+  .term-submit {
+    translate: 0 0 18px;
+  }
+
+  /* 背景淡墨巨字与面板反向视差，强化纵深 */
+  .backdrop-glyph {
+    translate: calc(-50% + var(--px, 0) * -22px) calc(-50% + var(--py, 0) * -14px);
+    transition: translate 0.25s ease-out;
   }
 }
 
-@media (max-width: 1023px) {
-  .stage {
-    grid-template-columns: 1fr;
-    gap: 32px;
-    width: min(480px, 100%);
-  }
-
-  .masthead {
-    font-size: clamp(64px, 16vw, 96px);
-  }
-
-  .seal {
-    right: -32px;
-    bottom: 6px;
-    width: 24px;
-    height: 24px;
-    font-size: 14px;
+/* 窄屏收起节点网络，只留登录面板 */
+@media (max-width: 759px) {
+  .flow {
+    display: none;
   }
 }
 

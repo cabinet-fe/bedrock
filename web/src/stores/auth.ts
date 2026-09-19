@@ -1,7 +1,8 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
-import { clearTokens, loginApi, logoutApi, meApi, setAccessToken } from "@/api/auth";
+import { clearTokens, loginApi, logoutApi, meApi, registerApi, setAccessToken } from "@/api/auth";
+import type { LoginResponse } from "@/api/auth";
 import { getAccessToken } from "@/api/http";
 import type { MenuGroupNode, User } from "@/api/types";
 import { encryptLoginPassword } from "@/lib/login-crypto";
@@ -22,8 +23,16 @@ export const useAuthStore = defineStore("auth", () => {
   const isSuperAdmin = computed(() => !!user.value?.is_super_admin);
 
   async function login(username: string, password: string): Promise<void> {
-    const passwordCipher = await encryptLoginPassword(password);
-    const data = await loginApi(username, passwordCipher);
+    const data = await loginApi(username, await encryptLoginPassword(password));
+    await establishSession(data);
+  }
+
+  async function register(username: string, password: string): Promise<void> {
+    const data = await registerApi(username, await encryptLoginPassword(password));
+    await establishSession(data);
+  }
+
+  async function establishSession(data: LoginResponse): Promise<void> {
     setAccessToken(data.access_token);
     token.value = data.access_token;
     user.value = data.user;
@@ -106,6 +115,7 @@ export const useAuthStore = defineStore("auth", () => {
     isAuthenticated,
     isSuperAdmin,
     login,
+    register,
     logout,
     fetchMe,
     refreshMe,

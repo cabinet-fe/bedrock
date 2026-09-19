@@ -9,6 +9,17 @@ export async function loginApi(username: string, passwordCipher: string): Promis
   return body;
 }
 
+export async function registerApi(
+  username: string,
+  passwordCipher: string,
+): Promise<LoginResponse> {
+  const { body } = await bareHttp.post<LoginResponse>("/auth/register", {
+    username,
+    password_cipher: passwordCipher,
+  });
+  return body;
+}
+
 export async function logoutApi(): Promise<void> {
   await http.post("/auth/logout");
 }

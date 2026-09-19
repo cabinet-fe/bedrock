@@ -11,6 +11,8 @@ interface ImportMeta {
 
 interface Window {
   __BEDROCK_ENCRYPTION_KEY__?: string;
+  /** Injected by the server (embedded build); undefined (dev) means register open. */
+  __BEDROCK_ALLOW_REGISTER__?: boolean;
 }
 
 declare module "*.vue" {
