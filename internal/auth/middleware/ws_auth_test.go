@@ -10,18 +10,18 @@ import (
 	authrepo "bedrock/internal/auth/repository"
 	authservice "bedrock/internal/auth/service"
 	"bedrock/internal/pkg"
-	rbacrepo "bedrock/internal/rbac/repository"
-	rbacservice "bedrock/internal/rbac/service"
-	resourcerepo "bedrock/internal/resource/repository"
-	"bedrock/internal/resource/model"
-	resourceservice "bedrock/internal/resource/service"
-	systemrepo "bedrock/internal/system/repository"
-	systemservice "bedrock/internal/system/service"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
 	_ "bedrock/internal/platform/migration/migrations"
 	"bedrock/internal/platform/seed"
+	rbacrepo "bedrock/internal/rbac/repository"
+	rbacservice "bedrock/internal/rbac/service"
+	"bedrock/internal/resource/model"
+	resourcerepo "bedrock/internal/resource/repository"
+	resourceservice "bedrock/internal/resource/service"
+	systemrepo "bedrock/internal/system/repository"
+	systemservice "bedrock/internal/system/service"
 )
 
 func TestResolveQueryTokenRejectsEmpty(t *testing.T) {
@@ -100,9 +100,10 @@ func newAuthAndPAT(t *testing.T) (*authservice.AuthService, *resourceservice.PAT
 	resourceRepo := rbacrepo.NewResourceRepository(gdb)
 	menuGroupRepo := rbacrepo.NewMenuGroupRepository(gdb)
 	permSvc := rbacservice.NewPermissionService(roleRepo, resourceRepo, menuGroupRepo)
+	roleSvc := rbacservice.NewRoleService(roleRepo, resourceRepo)
 	authSvc, err := authservice.NewAuthService(&config.Config{
 		JWT: config.JWTConfig{Secret: "test-secret", AccessTTL: "1h", RefreshTTL: "24h"},
-	}, userRepo, permSvc)
+	}, userRepo, permSvc, roleSvc)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -23,6 +23,7 @@ import (
 	_ "bedrock/internal/platform/migration/migrations"
 	projectrepo "bedrock/internal/project/repository"
 	projectservice "bedrock/internal/project/service"
+	rbacmodel "bedrock/internal/rbac/model"
 	storagerepo "bedrock/internal/storage/repository"
 	storageservice "bedrock/internal/storage/service"
 )
@@ -92,6 +93,11 @@ func openAITestDB(t *testing.T) *gorm.DB {
 		}
 	})
 	return gdb
+}
+
+// actorOne is the all-scope actor used across the service tests (user 1).
+func actorOne() service.AgentActor {
+	return service.AgentActor{UserID: 1, DataScope: rbacmodel.DataScopeAll}
 }
 
 // wireTestHarness builds a fake harness backend (session + stream services
@@ -169,7 +175,7 @@ func setupAgentWorkspace(t *testing.T) (*service.AgentService, *harnesstest.Fake
 
 func requireWorkspaceReady(t *testing.T, agents *service.AgentService, agentID uint) *model.AiAgent {
 	t.Helper()
-	got, err := agents.GetAgent(agentID)
+	got, err := agents.GetAgent(agentID, service.AgentActor{DataScope: rbacmodel.DataScopeAll})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +187,7 @@ func requireWorkspaceReady(t *testing.T, agents *service.AgentService, agentID u
 
 func requireRunStatus(t *testing.T, agents *service.AgentService, runID uint, want string) *model.AgentRun {
 	t.Helper()
-	got, err := agents.GetRun(runID)
+	got, err := agents.RequireRunAccess(runID, service.AgentActor{DataScope: rbacmodel.DataScopeAll})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +202,7 @@ func waitRunStatus(t *testing.T, agents *service.AgentService, runID uint, want 
 	deadline := time.Now().Add(8 * time.Second)
 	var last *model.AgentRun
 	for time.Now().Before(deadline) {
-		got, err := agents.GetRun(runID)
+		got, err := agents.RequireRunAccess(runID, service.AgentActor{DataScope: rbacmodel.DataScopeAll})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -218,7 +224,7 @@ func waitRunPrompt(t *testing.T, agents *service.AgentService, fake *harnesstest
 	var sessionID string
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		run, err := agents.GetRun(runID)
+		run, err := agents.RequireRunAccess(runID, service.AgentActor{DataScope: rbacmodel.DataScopeAll})
 		if err != nil {
 			t.Fatal(err)
 		}

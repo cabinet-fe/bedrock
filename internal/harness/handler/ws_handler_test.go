@@ -65,7 +65,7 @@ func setupWS(t *testing.T, enabled bool) *wsEnv {
 		rbacrepo.NewResourceRepository(gdb),
 		rbacrepo.NewMenuGroupRepository(gdb),
 	)
-	authSvc, err := authservice.NewAuthService(&config.Config{JWT: config.JWTConfig{Secret: "ws-test-secret"}}, nil, nil)
+	authSvc, err := authservice.NewAuthService(&config.Config{JWT: config.JWTConfig{Secret: "ws-test-secret"}}, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

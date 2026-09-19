@@ -132,10 +132,24 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	skills.POST("/:id/files/rename", rbacmw.RequirePermission(h.perm, "ai_skills:update"), h.RenameSkillEntry)
 }
 
+// agentActor resolves the requesting user + data scope for agent-scoped endpoints.
+func (h *Handler) agentActor(c *gin.Context) (service.AgentActor, bool) {
+	scope, err := h.perm.ResolveDataScope(authmiddleware.GetUserID(c), authmiddleware.IsSuperAdmin(c))
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return service.AgentActor{}, false
+	}
+	return service.AgentActor{UserID: authmiddleware.GetUserID(c), DataScope: scope}, true
+}
+
 func (h *Handler) ListAgents(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	items, total, err := h.agents.ListAgents(page, pageSize)
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	items, total, err := h.agents.ListAgents(page, pageSize, actor)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -159,7 +173,11 @@ func (h *Handler) CreateAgent(c *gin.Context) {
 
 func (h *Handler) GetAgent(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	item, err := h.agents.GetAgent(uint(id))
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	item, err := h.agents.GetAgent(uint(id), actor)
 	if err != nil {
 		writeErr(c, err)
 		return
@@ -174,7 +192,11 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效请求")
 		return
 	}
-	item, err := h.agents.UpdateAgent(uint(id), authmiddleware.GetUserID(c), input)
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	item, err := h.agents.UpdateAgent(uint(id), actor, input)
 	if err != nil {
 		writeErr(c, err)
 		return
@@ -184,7 +206,11 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 
 func (h *Handler) DeleteAgent(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err := h.agents.DeleteAgent(uint(id), authmiddleware.GetUserID(c)); err != nil {
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	if err := h.agents.DeleteAgent(uint(id), actor); err != nil {
 		writeErr(c, err)
 		return
 	}
@@ -193,7 +219,11 @@ func (h *Handler) DeleteAgent(c *gin.Context) {
 
 func (h *Handler) ListTriggers(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	items, err := h.agents.ListTriggers(uint(id))
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	items, err := h.agents.ListTriggers(uint(id), actor)
 	if err != nil {
 		writeErr(c, err)
 		return
@@ -208,7 +238,11 @@ func (h *Handler) CreateTrigger(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效请求")
 		return
 	}
-	item, err := h.agents.CreateTrigger(uint(id), authmiddleware.GetUserID(c), input)
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	item, err := h.agents.CreateTrigger(uint(id), actor, input)
 	if err != nil {
 		writeErr(c, err)
 		return
@@ -223,7 +257,11 @@ func (h *Handler) UpdateTrigger(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效请求")
 		return
 	}
-	item, err := h.agents.UpdateTrigger(uint(tid), authmiddleware.GetUserID(c), input)
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	item, err := h.agents.UpdateTrigger(uint(tid), actor, input)
 	if err != nil {
 		writeErr(c, err)
 		return
@@ -233,7 +271,11 @@ func (h *Handler) UpdateTrigger(c *gin.Context) {
 
 func (h *Handler) DeleteTrigger(c *gin.Context) {
 	tid, _ := strconv.ParseUint(c.Param("tid"), 10, 64)
-	if err := h.agents.DeleteTrigger(uint(tid), authmiddleware.GetUserID(c)); err != nil {
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	if err := h.agents.DeleteTrigger(uint(tid), actor); err != nil {
 		writeErr(c, err)
 		return
 	}
@@ -250,7 +292,11 @@ func (h *Handler) ManualRun(c *gin.Context) {
 		UserPrompt string `json:"user_prompt"`
 	}
 	_ = c.ShouldBindJSON(&input)
-	run, err := h.agents.ManualRun(uint(id), authmiddleware.GetUserID(c), input.UserPrompt)
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	run, err := h.agents.ManualRun(uint(id), actor, input.UserPrompt)
 	if err != nil {
 		writeErr(c, err)
 		return
@@ -278,7 +324,11 @@ func (h *Handler) APIRun(c *gin.Context) {
 		UserPrompt string `json:"user_prompt"`
 	}
 	_ = c.ShouldBindJSON(&input)
-	run, err := h.agents.APIRun(uint(id), authmiddleware.GetUserID(c), input.UserPrompt)
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	run, err := h.agents.APIRun(uint(id), actor, input.UserPrompt)
 	if err != nil {
 		writeErr(c, err)
 		return
@@ -393,7 +443,11 @@ func (h *Handler) ListRuns(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "无效 project_id")
 		return
 	}
-	items, total, err := h.agents.ListRuns(page, pageSize, agentID, c.Query("status"), projectID)
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	items, total, err := h.agents.ListRuns(page, pageSize, agentID, c.Query("status"), projectID, actor)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -403,7 +457,11 @@ func (h *Handler) ListRuns(c *gin.Context) {
 
 func (h *Handler) GetRun(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	run, err := h.agents.GetRun(uint(id))
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	run, err := h.agents.RequireRunAccess(uint(id), actor)
 	if err != nil {
 		writeErr(c, err)
 		return
@@ -413,10 +471,18 @@ func (h *Handler) GetRun(c *gin.Context) {
 
 func (h *Handler) DownloadRunArtifact(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	path, filename, err := h.agents.ArtifactPath(uint(id))
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	path, filename, err := h.agents.ArtifactPath(uint(id), actor)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			pkg.Error(c, http.StatusNotFound, "资源不存在")
+			return
+		}
+		if errors.Is(err, service.ErrAgentForbidden) {
+			pkg.Error(c, http.StatusForbidden, err.Error())
 			return
 		}
 		pkg.Error(c, http.StatusNotFound, err.Error())
@@ -427,6 +493,14 @@ func (h *Handler) DownloadRunArtifact(c *gin.Context) {
 
 func (h *Handler) CancelRun(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	actor, ok := h.agentActor(c)
+	if !ok {
+		return
+	}
+	if _, err := h.agents.RequireRunAccess(uint(id), actor); err != nil {
+		writeErr(c, err)
+		return
+	}
 	if err := h.agents.CancelRun(uint(id)); err != nil {
 		writeErr(c, err)
 		return
@@ -671,11 +745,14 @@ func parseOptionalUintQuery(c *gin.Context, key string) (*uint, error) {
 }
 
 func writeErr(c *gin.Context, err error) {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
 		pkg.Error(c, http.StatusNotFound, "资源不存在")
-		return
+	case errors.Is(err, service.ErrAgentForbidden):
+		pkg.Error(c, http.StatusForbidden, err.Error())
+	default:
+		pkg.Error(c, http.StatusBadRequest, err.Error())
 	}
-	pkg.Error(c, http.StatusBadRequest, err.Error())
 }
 
 func writeSkillErr(c *gin.Context, err error) {

@@ -1,6 +1,6 @@
 # 认证
 
-登录、刷新、登出、当前用户。
+登录、注册、刷新、登出、当前用户。
 
 通用约定（信封、分页、认证）见 [.agents/api.md](../.agents/api.md)。
 业务语义与权限模型见 [DESIGN.md](../.agents/docs/DESIGN.md)。
@@ -15,6 +15,17 @@
 响应头：写入 HttpOnly `refresh_token`（Max-Age 取 jwt.refresh_ttl，不设 Secure；Path=/api/v1/auth）
 响应 200：data = LoginResponse
 错误：400 / 401
+
+### POST /auth/register — 注册
+
+认证：不需要
+请求：{ username*, password_cipher, password }
+前置：`auth.allow_register`（默认 true）控制注册开放；关闭时一律 403
+校验：用户名 3-50 字符（去首尾空白后）；密码 ≥ 8 位
+响应头：写入 HttpOnly `refresh_token`（同登录）
+响应 200：data = LoginResponse（注册即登录）
+错误：400（参数无效 / 用户名已被占用）/ 403（注册未开放）
+说明：新用户自动绑定内置「普通用户」角色（数据范围 self）：可见构建、脚本、流水线、项目、缺陷、智能体、技能模块，数据仅限自己创建的（公开资源按 D3 仍可读）；更多权限由管理员分配角色。
 
 ### POST /auth/refresh — 刷新访问令牌
 

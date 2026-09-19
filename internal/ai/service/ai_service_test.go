@@ -36,7 +36,7 @@ func TestAgentRunKeepsExplicitProjectID(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent = requireWorkspaceReady(t, agents, agent.ID)
-	run, err := agents.ManualRun(agent.ID, 1, "hi")
+	run, err := agents.ManualRun(agent.ID, actorOne(), "hi")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestAgentRunKeepsExplicitProjectID(t *testing.T) {
 	if explicit.ProjectID == nil || *explicit.ProjectID != project.ID {
 		t.Fatalf("explicit project_id=%v want %d", explicit.ProjectID, project.ID)
 	}
-	runs, total, err := agents.ListRuns(1, 20, 0, "", &project.ID)
+	runs, total, err := agents.ListRuns(1, 20, 0, "", &project.ID, actorOne())
 	if err != nil || total < 1 {
 		t.Fatalf("list runs by project total=%d err=%v", total, err)
 	}
@@ -69,15 +69,15 @@ func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent = requireWorkspaceReady(t, agents, agent.ID)
-	manual, err := agents.ManualRun(agent.ID, 1, "")
+	manual, err := agents.ManualRun(agent.ID, actorOne(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	api, err := agents.APIRun(agent.ID, 1, "")
+	api, err := agents.APIRun(agent.ID, actorOne(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	cronTrig, err := agents.CreateTrigger(agent.ID, 1, service.TriggerInput{
+	cronTrig, err := agents.CreateTrigger(agent.ID, actorOne(), service.TriggerInput{
 		Type: model.TriggerCron, CronExpression: "0 0 * * *", CronTimezone: "UTC",
 	})
 	if err != nil {
@@ -92,7 +92,7 @@ func TestTriggersCreateIndependentAgentRuns(t *testing.T) {
 	job := &cicdmodel.BuildJob{ID: 99, AgentTriggerEvent: model.EventArtifactReady, AgentIDs: cicdmodel.UintList{agent.ID}}
 	buildRun := &cicdmodel.BuildRun{ID: 77, BuildJobID: 99, Status: "success", TriggeredBy: 1, ArtifactPath: "/tmp/a.tgz"}
 	agents.OnBuildEvent(model.EventArtifactReady, job, buildRun)
-	items, _, _ := agents.ListRuns(1, 50, agent.ID, "", nil)
+	items, _, _ := agents.ListRuns(1, 50, agent.ID, "", nil, actorOne())
 	var buildEventRun *model.AgentRun
 	for i := range items {
 		if items[i].TriggerType == model.TriggerBuildEvent {
@@ -347,7 +347,7 @@ func TestCronReloadAppliesTimezone(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent = requireWorkspaceReady(t, agents, agent.ID)
-	_, err = agents.CreateTrigger(agent.ID, 1, service.TriggerInput{
+	_, err = agents.CreateTrigger(agent.ID, actorOne(), service.TriggerInput{
 		Type: model.TriggerCron, CronExpression: "0 12 * * *", CronTimezone: "Asia/Shanghai",
 	})
 	if err != nil {
@@ -436,13 +436,13 @@ func TestCancelRunReleasesWorkerQueue(t *testing.T) {
 	}
 	agent = requireWorkspaceReady(t, agents, agent.ID)
 
-	hung, err := agents.ManualRun(agent.ID, 1, "hang")
+	hung, err := agents.ManualRun(agent.ID, actorOne(), "hang")
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitRunPrompt(t, agents, fake, hung.ID)
 
-	queued, err := agents.ManualRun(agent.ID, 1, "next")
+	queued, err := agents.ManualRun(agent.ID, actorOne(), "next")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,13 +472,13 @@ func TestCancelQueuedRunWhileWorkerBusy(t *testing.T) {
 	}
 	agent = requireWorkspaceReady(t, agents, agent.ID)
 
-	hung, err := agents.ManualRun(agent.ID, 1, "hang")
+	hung, err := agents.ManualRun(agent.ID, actorOne(), "hang")
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitRunPrompt(t, agents, fake, hung.ID)
 
-	queued, err := agents.ManualRun(agent.ID, 1, "queued")
+	queued, err := agents.ManualRun(agent.ID, actorOne(), "queued")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +510,7 @@ func TestCancelDuringInFlightSessionKeepsCancelled(t *testing.T) {
 	}
 	agent = requireWorkspaceReady(t, agents, agent.ID)
 
-	run, err := agents.ManualRun(agent.ID, 1, "job")
+	run, err := agents.ManualRun(agent.ID, actorOne(), "job")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,12 +536,12 @@ func TestShutdownDoesNotStartQueuedRun(t *testing.T) {
 	}
 	agent = requireWorkspaceReady(t, agents, agent.ID)
 
-	hung, err := agents.ManualRun(agent.ID, 1, "hang")
+	hung, err := agents.ManualRun(agent.ID, actorOne(), "hang")
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitRunPrompt(t, agents, fake, hung.ID)
-	queued, err := agents.ManualRun(agent.ID, 1, "queued")
+	queued, err := agents.ManualRun(agent.ID, actorOne(), "queued")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,7 +557,7 @@ func TestShutdownDoesNotStartQueuedRun(t *testing.T) {
 		t.Fatal("Shutdown blocked on queued run")
 	}
 
-	got, err := agents.GetRun(queued.ID)
+	got, err := agents.RequireRunAccess(queued.ID, actorOne())
 	if err != nil {
 		t.Fatal(err)
 	}

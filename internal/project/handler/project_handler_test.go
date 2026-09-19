@@ -316,7 +316,7 @@ func TestGenerateDocsWiredReturnsAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := agents.GetAgent(agent.ID)
+	got, err := agents.GetAgent(agent.ID, aiservice.AgentActor{UserID: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

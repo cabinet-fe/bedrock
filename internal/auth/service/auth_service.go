@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -33,13 +34,14 @@ type Claims struct {
 type AuthService struct {
 	users      *repository.UserRepository
 	perm       *rbacservice.PermissionService
+	roles      *rbacservice.RoleService
 	secret     []byte
 	accessTTL  time.Duration
 	refreshTTL time.Duration
 	refreshKey []byte
 }
 
-func NewAuthService(cfg *config.Config, users *repository.UserRepository, perm *rbacservice.PermissionService) (*AuthService, error) {
+func NewAuthService(cfg *config.Config, users *repository.UserRepository, perm *rbacservice.PermissionService, roles *rbacservice.RoleService) (*AuthService, error) {
 	if cfg == nil || cfg.JWT.Secret == "" {
 		return nil, fmt.Errorf("jwt secret is required")
 	}
@@ -66,6 +68,7 @@ func NewAuthService(cfg *config.Config, users *repository.UserRepository, perm *
 	return &AuthService{
 		users:      users,
 		perm:       perm,
+		roles:      roles,
 		secret:     secret,
 		accessTTL:  accessTTL,
 		refreshTTL: refreshTTL,
@@ -150,6 +153,41 @@ func (s *AuthService) Authenticate(username, password string) (*model.User, erro
 	}
 	if !pkg.CheckPassword(password, user.PasswordHash) {
 		return nil, errors.New("用户名或密码错误")
+	}
+	return user, nil
+}
+
+// Register creates a self-service account bound to the builtin user role
+// (data scope self). Login-strength rules only apply to new passwords.
+func (s *AuthService) Register(username, password string) (*model.User, error) {
+	username = strings.TrimSpace(username)
+	if n := len([]rune(username)); n < 3 || n > 50 {
+		return nil, errors.New("用户名长度需在 3-50 个字符之间")
+	}
+	if len(password) < 8 {
+		return nil, errors.New("密码至少 8 位")
+	}
+	if _, err := s.users.FindByUsername(username); err == nil {
+		return nil, errors.New("用户名已被占用")
+	}
+	hash, err := pkg.HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+	user := &model.User{
+		Username:     username,
+		PasswordHash: hash,
+		DisplayName:  username,
+		IsActive:     true,
+	}
+	if err := s.users.Create(user); err != nil {
+		// uniqueIndex race on username may land here before the pre-check sees it.
+		return nil, errors.New("创建用户失败")
+	}
+	if s.roles != nil {
+		if err := s.roles.EnsureDefaultUserRoleBound(user.ID); err != nil {
+			return nil, fmt.Errorf("绑定默认角色失败: %w", err)
+		}
 	}
 	return user, nil
 }

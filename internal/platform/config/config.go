@@ -61,6 +61,12 @@ type AdminConfig struct {
 	DisplayName string `mapstructure:"display_name"`
 }
 
+// AuthConfig controls the public auth endpoints. AllowRegister toggles
+// POST /auth/register; deployments can close self-signup without code changes.
+type AuthConfig struct {
+	AllowRegister bool `mapstructure:"allow_register"`
+}
+
 // DshConfig is the DSH subprocess settings. Listen address is not configurable.
 type DshConfig struct {
 	Enabled        bool   `mapstructure:"enabled"`
@@ -96,6 +102,7 @@ type Config struct {
 	Storage    StorageConfig    `mapstructure:"storage"`
 	Encryption EncryptionConfig `mapstructure:"encryption"`
 	Admin      AdminConfig      `mapstructure:"admin"`
+	Auth       AuthConfig       `mapstructure:"auth"`
 	Dsh        DshConfig        `mapstructure:"dsh"`
 	Harness    HarnessConfig    `mapstructure:"harness"`
 }
@@ -127,6 +134,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("database.conn_max_lifetime", "1h")
 	v.SetDefault("jwt.access_ttl", "2h")
 	v.SetDefault("jwt.refresh_ttl", "168h")
+	v.SetDefault("auth.allow_register", true)
 	v.SetDefault("build.max_concurrent", 3)
 	v.SetDefault("storage.root", "./data/storage")
 	v.SetDefault("storage.attachment_max_bytes", 20*1024*1024)

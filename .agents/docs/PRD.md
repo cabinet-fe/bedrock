@@ -245,6 +245,7 @@ database:
 - Web：JWT `access_token` + `refresh_token`（可沿用现有时效语义，如 access 较短、refresh 较长；refresh 默认 7 天）。
 - **Token 存储（前端）：** 因本系统**可能部署在非 HTTPS 环境**（内网 HTTP、IP 直访等），`access_token` 存 **Web Storage** 并以 `Authorization: Bearer` 传递；`refresh_token` 仅由服务端通过 **`Set-Cookie`** 下发（HttpOnly，**不设 Secure**）。前端不读写 refresh_token。
 - 登录：支持加密传输密码（沿用 `password_cipher` 思路）。
+- **自助注册**：`POST /auth/register` 公开端点（注册即登录，响应同登录）；受 `auth.allow_register` 配置控制（默认开）。新用户自动绑定内置「普通用户」角色（`code=user`，`data_scope=self`）：可见构建、脚本、流水线、项目、缺陷、智能体、技能模块，数据仅限自己创建的；更多权限由管理员分配角色。
 - Skill 安装器：用户 **个人访问令牌（PAT）**。
 - 智能体外部触发 API：用户 JWT 或 PAT（至少一种；若同时支持，PAT 需可限定 scope）。
 - Webhook 触发构建：公开路径 + 仓库/任务级 secret（沿用现有公开 webhook 思路）。

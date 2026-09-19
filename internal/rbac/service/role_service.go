@@ -132,6 +132,16 @@ func (s *RoleService) EnsureSuperAdminRoleBound(userID uint) error {
 	return s.roles.EnsureUserHasRole(userID, role.ID)
 }
 
+// EnsureDefaultUserRoleBound binds the builtin user role to userID
+// (self-registration path; SetUserRoles rejects builtin roles).
+func (s *RoleService) EnsureDefaultUserRoleBound(userID uint) error {
+	role, err := s.roles.FindByCode(model.RoleCodeUser)
+	if err != nil {
+		return fmt.Errorf("内置普通用户角色不存在: %w", err)
+	}
+	return s.roles.EnsureUserHasRole(userID, role.ID)
+}
+
 func (s *RoleService) filterAssignableRoleIDs(roleIDs []uint) ([]uint, error) {
 	out := make([]uint, 0, len(roleIDs))
 	for _, id := range roleIDs {

@@ -21,7 +21,7 @@ import (
 // CancelRun intentionally skips terminal-hook callbacks (like BuildRunService
 // .CancelInternal): the orchestrator marks stage state itself while finalizing.
 type AgentRunLauncher interface {
-	GetAgent(id uint) (*aimodel.AiAgent, error)
+	AgentExists(id uint) error
 	CreateRun(agentID uint, in aiservice.CreateRunInput) (*aimodel.AgentRun, error)
 	CancelRun(id uint) error
 }
@@ -119,8 +119,7 @@ func (o *PipelineOrchestrator) refChecker() PipelineRefChecker {
 			if o.agents == nil {
 				return false
 			}
-			_, e := o.agents.GetAgent(id)
-			return e == nil
+			return o.agents.AgentExists(id) == nil
 		},
 	}
 }

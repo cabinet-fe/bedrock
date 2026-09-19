@@ -60,11 +60,11 @@ type stubAgentLauncher struct {
 	existing  map[uint]bool
 }
 
-func (s *stubAgentLauncher) GetAgent(id uint) (*aimodel.AiAgent, error) {
+func (s *stubAgentLauncher) AgentExists(id uint) error {
 	if s.existing[id] {
-		return &aimodel.AiAgent{ID: id, Name: fmt.Sprintf("agent-%d", id)}, nil
+		return nil
 	}
-	return nil, errors.New("agent not found")
+	return errors.New("agent not found")
 }
 
 func (s *stubAgentLauncher) CreateRun(agentID uint, in aiservice.CreateRunInput) (*aimodel.AgentRun, error) {

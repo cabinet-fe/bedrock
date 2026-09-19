@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"bedrock/internal/auth/middleware"
+	authmodel "bedrock/internal/auth/model"
 	"bedrock/internal/auth/service"
 	"bedrock/internal/pkg"
 )
@@ -15,16 +16,18 @@ import (
 const refreshCookieName = "refresh_token"
 
 type AuthHandler struct {
-	auth *service.AuthService
+	auth          *service.AuthService
+	allowRegister bool
 }
 
-func NewAuthHandler(auth *service.AuthService) *AuthHandler {
-	return &AuthHandler{auth: auth}
+func NewAuthHandler(auth *service.AuthService, allowRegister bool) *AuthHandler {
+	return &AuthHandler{auth: auth, allowRegister: allowRegister}
 }
 
 // RegisterRoutes mounts auth endpoints under /api/v1.
 func (h *AuthHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	rg.POST("/auth/login", h.Login)
+	rg.POST("/auth/register", h.Register)
 	rg.POST("/auth/refresh", h.Refresh)
 
 	secured := rg.Group("", authMW)
@@ -66,38 +69,32 @@ func (h *AuthHandler) readRefreshToken(c *gin.Context) string {
 	return strings.TrimSpace(req.RefreshToken)
 }
 
-// POST /auth/login — prefers password_cipher; plaintext password allowed for debug only.
-func (h *AuthHandler) Login(c *gin.Context) {
-	var req struct {
-		Username       string `json:"username" binding:"required"`
-		Password       string `json:"password"`
-		PasswordCipher string `json:"password_cipher"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Error(c, http.StatusBadRequest, "参数错误")
-		return
-	}
+// credentialsPayload is the shared login/register body: cipher preferred,
+// plaintext password allowed for debug only.
+type credentialsPayload struct {
+	Username       string `json:"username" binding:"required"`
+	Password       string `json:"password"`
+	PasswordCipher string `json:"password_cipher"`
+}
 
-	var password string
-	if strings.TrimSpace(req.PasswordCipher) != "" {
-		p, err := pkg.DecryptLoginPasswordCipher(strings.TrimSpace(req.PasswordCipher))
+// resolvePassword decrypts password_cipher, falling back to plaintext password.
+func resolvePassword(req credentialsPayload) (string, bool) {
+	if p := strings.TrimSpace(req.PasswordCipher); p != "" {
+		password, err := pkg.DecryptLoginPasswordCipher(p)
 		if err != nil {
-			pkg.Error(c, http.StatusBadRequest, "登录参数无效")
-			return
+			return "", false
 		}
-		password = p
-	} else if req.Password != "" {
-		password = req.Password
-	} else {
-		pkg.Error(c, http.StatusBadRequest, "参数错误")
-		return
+		return password, true
 	}
+	if req.Password != "" {
+		return req.Password, true
+	}
+	return "", false
+}
 
-	user, err := h.auth.Authenticate(req.Username, password)
-	if err != nil {
-		pkg.Error(c, http.StatusUnauthorized, err.Error())
-		return
-	}
+// issueSession generates the token pair for user and writes the
+// login-shaped response (access token + refresh cookie + identity).
+func (h *AuthHandler) issueSession(c *gin.Context, user *authmodel.User) {
 	accessToken, refreshToken, err := h.auth.GenerateTokenPair(user)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "生成Token失败")
@@ -115,6 +112,50 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		"permissions":  me.Permissions,
 		"menus":        me.Menus,
 	})
+}
+
+// POST /auth/login — prefers password_cipher; plaintext password allowed for debug only.
+func (h *AuthHandler) Login(c *gin.Context) {
+	var req credentialsPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	password, ok := resolvePassword(req)
+	if !ok {
+		pkg.Error(c, http.StatusBadRequest, "登录参数无效")
+		return
+	}
+	user, err := h.auth.Authenticate(req.Username, password)
+	if err != nil {
+		pkg.Error(c, http.StatusUnauthorized, err.Error())
+		return
+	}
+	h.issueSession(c, user)
+}
+
+// POST /auth/register — self-service signup gated by auth.allow_register.
+func (h *AuthHandler) Register(c *gin.Context) {
+	if !h.allowRegister {
+		pkg.Error(c, http.StatusForbidden, "注册未开放")
+		return
+	}
+	var req credentialsPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+	password, ok := resolvePassword(req)
+	if !ok {
+		pkg.Error(c, http.StatusBadRequest, "注册参数无效")
+		return
+	}
+	user, err := h.auth.Register(req.Username, password)
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.issueSession(c, user)
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {

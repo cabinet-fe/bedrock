@@ -19,12 +19,14 @@ Agents、运行记录、Skills。
 - AgentRun **成功**时将产出目录快照归档为 `{artifact_dir}/agent-{id}/run-{runID}.zip`，并写入 `artifact_path`（`artifact_kind=archive`）；空目录不归档；归档失败只记日志、不阻断成功态。可通过 `GET /ai/runs/:id/artifact` 下载。此能力与 CI/CD BuildRun 制品相互独立。
 - 构建事件触发（`AgentTrigger.build_event` / `BuildJob.agent_ids`）与工作区绑定解耦，语义不变。
 - **智能体不归属项目**：同一 Agent 可被多个项目复用（Skills 同理）。`GET /ai/runs` 可带 `project_id` 过滤（仅匹配 Run 上显式写入的值，如 `docs_generate`）。
+- **数据范围**：`data_scope=self` 的用户仅能看到/操作自己创建的 Agent（列表过滤；详情/更新/删除/触发器/手动与 API 触发运行按归属校验，非本人返回 403）；`GET /ai/runs` 及运行详情/制品下载/取消在 self 范围下仅返回本人 Agent 的 Run。`data_scope=all` 与超管不受限。
 
 ### GET /ai/agents — 列出 Agents
 
 权限：`ai_agents:view`
 查询参数：page: integer, page_size: integer
 响应 200
+说明：`data_scope=self` 时仅返回自己创建的 Agent。
 
 ### POST /ai/agents — 创建 Agent
 

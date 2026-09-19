@@ -59,7 +59,7 @@ func waitWorkspaceAsync(t *testing.T, agents *service.AgentService, agentID uint
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		got, err := agents.GetAgent(agentID)
+		got, err := agents.GetAgent(agentID, actorOne())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -68,7 +68,7 @@ func waitWorkspaceAsync(t *testing.T, agents *service.AgentService, agentID uint
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	got, _ := agents.GetAgent(agentID)
+	got, _ := agents.GetAgent(agentID, actorOne())
 	t.Fatalf("workspace_status=%q want=%q err=%q", got.WorkspaceStatus, want, got.WorkspaceError)
 	return nil
 }
@@ -298,7 +298,7 @@ func TestAgentWorkspaceRemovesStaleJobLinksAndUnboundRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	updated, err := agents.UpdateAgent(agent.ID, 1, service.AgentInput{
+	updated, err := agents.UpdateAgent(agent.ID, actorOne(), service.AgentInput{
 		Name: "cleanup",
 		RepoBindings: []model.RepoBinding{
 			{RepositoryID: repoKeep, Branch: "main"},
@@ -345,7 +345,7 @@ func TestAgentWorkspaceDeleteRemovesDir(t *testing.T) {
 	if _, err := os.Stat(root); err != nil {
 		t.Fatal(err)
 	}
-	if err := agents.DeleteAgent(agent.ID, 1); err != nil {
+	if err := agents.DeleteAgent(agent.ID, actorOne()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(root); !os.IsNotExist(err) {
@@ -399,7 +399,7 @@ func TestAgentRunsReusePersistentWorkspace(t *testing.T) {
 
 	var finishedRuns []*model.AgentRun
 	for range 2 {
-		run, err := agents.ManualRun(agent.ID, 1, "")
+		run, err := agents.ManualRun(agent.ID, actorOne(), "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -439,7 +439,7 @@ func TestAgentRunsReusePersistentWorkspace(t *testing.T) {
 		if _, err := os.Stat(wantArt); err != nil {
 			t.Fatalf("artifact missing: %v", err)
 		}
-		path, name, err := agents.ArtifactPath(finished.ID)
+		path, name, err := agents.ArtifactPath(finished.ID, actorOne())
 		if err != nil || path != wantArt || name != filepath.Base(wantArt) {
 			t.Fatalf("ArtifactPath=%q name=%q err=%v", path, name, err)
 		}
@@ -514,7 +514,7 @@ func TestAgentManualRunRejectedWhileWorkspacePending(t *testing.T) {
 	if agent.WorkspaceStatus != model.WorkspacePending {
 		t.Fatalf("status=%q", agent.WorkspaceStatus)
 	}
-	_, err = agents.ManualRun(agent.ID, 1, "")
+	_, err = agents.ManualRun(agent.ID, actorOne(), "")
 	if err == nil || !strings.Contains(err.Error(), "工作区未初始化完成") {
 		t.Fatalf("expected pending gate error, got %v", err)
 	}
@@ -540,7 +540,7 @@ func TestAgentRunPromptCarriesWorkspaceScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent = requireWorkspaceReady(t, agents, agent.ID)
-	run, err := agents.ManualRun(agent.ID, 1, "")
+	run, err := agents.ManualRun(agent.ID, actorOne(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -607,7 +607,7 @@ func TestCancelRunAbortsWorkspaceSync(t *testing.T) {
 		return stubGitCheckout(ctx, workDir, repoURL, authType, username, password, branch, logFn)
 	})
 
-	hung, err := agents.ManualRun(agent.ID, 1, "hang")
+	hung, err := agents.ManualRun(agent.ID, actorOne(), "hang")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -617,7 +617,7 @@ func TestCancelRunAbortsWorkspaceSync(t *testing.T) {
 		t.Fatal("first run never entered git checkout")
 	}
 
-	queued, err := agents.ManualRun(agent.ID, 1, "next")
+	queued, err := agents.ManualRun(agent.ID, actorOne(), "next")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -127,6 +127,9 @@ func main() {
 	if err := seed.EnsureRBACResources(gdb); err != nil {
 		logger.Fatal("Failed to seed RBAC resources", zap.Error(err))
 	}
+	if err := seed.EnsureDefaultUserRole(gdb); err != nil {
+		logger.Fatal("Failed to seed default user role", zap.Error(err))
+	}
 
 	userRepo := authrepo.NewUserRepository(gdb)
 	roleRepo := rbacrepo.NewRoleRepository(gdb)
@@ -154,12 +157,12 @@ func main() {
 	mailSvc := systemservice.NewMailService(mailRepo)
 	mailDispatcher := systemservice.NewMailDispatcher(mailSvc, userRepo, logger)
 
-	authSvc, err := authservice.NewAuthService(cfg, userRepo, permSvc)
+	authSvc, err := authservice.NewAuthService(cfg, userRepo, permSvc, roleSvc)
 	if err != nil {
 		logger.Fatal("Failed to init auth service", zap.Error(err))
 	}
 
-	authHandler := authhandler.NewAuthHandler(authSvc)
+	authHandler := authhandler.NewAuthHandler(authSvc, cfg.Auth.AllowRegister)
 	userHandler := systemhandler.NewUserHandler(userSvc, permSvc)
 	roleHandler := rbachandler.NewRoleHandler(roleSvc, permSvc)
 	resourceHandler := rbachandler.NewResourceHandler(resourceSvc, menuGroupSvc, permSvc)
@@ -304,8 +307,7 @@ func main() {
 	scriptRunSvc.SetTerminalHook(pipelineOrch)
 	agentSvc.SetTerminalHook(pipelineOrch)
 	pipelineSvc.SetAgentExists(func(id uint) bool {
-		_, err := agentSvc.GetAgent(id)
-		return err == nil
+		return agentSvc.AgentExists(id) == nil
 	})
 	pipelineWebhookSvc := cicdservice.NewPipelineWebhookService(pipelineRepo, pipelineDeliveryRepo, pipelineOrch)
 	pipelineCronSched := cicdservice.NewPipelineCronScheduler(pipelineRepo, pipelineRunRepo, pipelineOrch, logger)
@@ -444,7 +446,7 @@ func main() {
 	statusBroadcasterCtx, cancelStatusBroadcaster := context.WithCancel(context.Background())
 	dashboardSvc.StartStatusBroadcaster(statusBroadcasterCtx, hub, 3*time.Second)
 
-	serveSPA(r, cfg.Encryption.Key)
+	serveSPA(r, cfg.Encryption.Key, cfg.Auth.AllowRegister)
 
 	for _, dir := range []string{cfg.Build.WorkspaceDir, cfg.Build.ArtifactDir, cfg.Build.LogDir, cfg.Build.CacheDir} {
 		if dir != "" {

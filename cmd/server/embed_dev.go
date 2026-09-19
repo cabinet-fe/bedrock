@@ -13,7 +13,7 @@ func init() {
 	gin.SetMode(gin.ReleaseMode)
 }
 
-func serveSPA(r *gin.Engine, _ string) {
+func serveSPA(r *gin.Engine, _ string, _ bool) {
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws/") {

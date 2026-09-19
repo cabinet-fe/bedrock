@@ -22,6 +22,7 @@ import (
 	"bedrock/internal/harness/harnesstest"
 	"bedrock/internal/harness/provider"
 	harnessservice "bedrock/internal/harness/service"
+	rbacmodel "bedrock/internal/rbac/model"
 )
 
 // matrixEnv is one matrix cell's freshly wired service stack.
@@ -75,7 +76,7 @@ func (m *matrixEnv) waitRunSession(t *testing.T, runID uint) string {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		run, err := m.agents.GetRun(runID)
+		run, err := m.agents.RequireRunAccess(runID, service.AgentActor{DataScope: rbacmodel.DataScopeAll})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,7 +112,7 @@ func TestAgentRunStateMachineMatrix(t *testing.T) {
 		create   func(*service.AgentService, uint) (*model.AgentRun, error)
 	}{
 		{"manual", true, func(a *service.AgentService, id uint) (*model.AgentRun, error) {
-			return a.ManualRun(id, 1, "")
+			return a.ManualRun(id, actorOne(), "")
 		}},
 		{"cron", false, func(a *service.AgentService, id uint) (*model.AgentRun, error) {
 			return a.CreateRun(id, service.CreateRunInput{TriggerType: model.TriggerCron, TriggeredBy: 0})
@@ -348,7 +349,7 @@ func TestAgentRunStateMachineMatrix(t *testing.T) {
 // testAgentID returns the matrix env's single agent id.
 func (m *matrixEnv) testAgentID(t *testing.T) uint {
 	t.Helper()
-	items, _, err := m.agents.ListAgents(1, 10)
+	items, _, err := m.agents.ListAgents(1, 10, actorOne())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +363,7 @@ func (m *matrixEnv) testAgentID(t *testing.T) uint {
 func TestExecuteRunReusesHarnessSession(t *testing.T) {
 	m := newMatrixEnv(t, 30, 0)
 	agentID := m.testAgentID(t)
-	run, err := m.agents.ManualRun(agentID, 1, "")
+	run, err := m.agents.ManualRun(agentID, actorOne(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +400,7 @@ func TestExecuteRunReconcileWaitsForInactiveSession(t *testing.T) {
 		f.Complete(sess.ID, "partial-tail")
 	})
 
-	run, err := m.agents.ManualRun(m.testAgentID(t), 1, "")
+	run, err := m.agents.ManualRun(m.testAgentID(t), actorOne(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +411,7 @@ func TestExecuteRunReconcileWaitsForInactiveSession(t *testing.T) {
 	// backend still reports the session active, so neither the tail-page
 	// reconcile nor the fallback interrupt may fire.
 	time.Sleep(3 * time.Second)
-	live, err := m.agents.GetRun(run.ID)
+	live, err := m.agents.RequireRunAccess(run.ID, actorOne())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,14 +440,14 @@ func TestExecuteRunWaitsWhenPromptNotPickedUp(t *testing.T) {
 		f.Complete(sess.ID, "late-start")
 	})
 
-	run, err := m.agents.ManualRun(m.testAgentID(t), 1, "")
+	run, err := m.agents.ManualRun(m.testAgentID(t), actorOne(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = m.waitRunSession(t, run.ID)
 
 	time.Sleep(3 * time.Second)
-	live, err := m.agents.GetRun(run.ID)
+	live, err := m.agents.RequireRunAccess(run.ID, actorOne())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,14 +483,14 @@ func TestExecuteRunIgnoresEmptyAssistantStub(t *testing.T) {
 		f.Complete(sess.ID, "real-reply")
 	})
 
-	run, err := m.agents.ManualRun(m.testAgentID(t), 1, "")
+	run, err := m.agents.ManualRun(m.testAgentID(t), actorOne(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = m.waitRunSession(t, run.ID)
 
 	time.Sleep(400 * time.Millisecond)
-	live, err := m.agents.GetRun(run.ID)
+	live, err := m.agents.RequireRunAccess(run.ID, actorOne())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,7 +515,7 @@ func TestExecuteRunIgnoresEmptyAssistantStub(t *testing.T) {
 func TestHarnessApprovalModeResolverWiring(t *testing.T) {
 	m := newMatrixEnv(t, 30, 0)
 	agentID := m.testAgentID(t)
-	if _, err := m.agents.UpdateAgent(agentID, 1, service.AgentInput{
+	if _, err := m.agents.UpdateAgent(agentID, actorOne(), service.AgentInput{
 		ApprovalMode: harnessservice.ApprovalAuto,
 	}); err != nil {
 		t.Fatal(err)

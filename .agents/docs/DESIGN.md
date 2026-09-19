@@ -199,6 +199,7 @@ RbacResource
         OR（CI/CD 全局列表读侧）data_scope=all
            或 created_by=自己 或 is_public
         OR（Skill 读侧）visibility=public 或 created_by=自己 或 data_scope=all
+        OR（Agent 及其 Run）created_by=自己 或 data_scope=all
          )
 ```
 
@@ -209,7 +210,7 @@ RbacResource
 - **`ProductProject.is_public`**：字段保留兼容，**不再影响**项目读可见性；写、成员管理不因该字段放宽。
 - **对象级成员 ACL**：仅产品项目（`ProductProject` / 成员）的**写**路径。
 - **CI/CD**：无成员表；可选 `project_id` 归属项目。全局列表（不带 `project_id`）在 `data_scope=self` 时可见 `created_by=自己` 或 `is_public`；BuildRun / ScriptRun / PipelineRun 跟随 Job/Pipeline。列表带 `?project_id=` 时跳过上述数据范围过滤（仍需各域 `:view`）。**写/执行**仍仅本人（`data_scope=self`）或 `data_scope=all` / 超管，不因项目归属放宽。
-- **AI Agent**：跨项目共用，**不**绑定 `project_id`。Skills **不**绑定项目；列表/详情遵循 `data_scope=all OR visibility=public OR created_by=自己`；改删仍仅创建者/超管。运维、凭证等域仍为全局 RBAC only。
+- **AI Agent**：跨项目共用，**不**绑定 `project_id`；列表/详情/改删/触发器/手动与 API 触发遵循 `data_scope=all OR created_by=自己`（无 public 例外）；AgentRun 列表/详情/制品下载/取消跟随所属 Agent 的归属。Skills **不**绑定项目；列表/详情遵循 `data_scope=all OR visibility=public OR created_by=自己`；改删仍仅创建者/超管。运维、凭证等域仍为全局 RBAC only。
 - **安全边界**：上述规则是应用层授权，**不是** OS/租户隔离；同 UID 执行与凭证注入边界见 §1.2 / 安全表述。
 
 ### 4.5 凭证与服务器认证

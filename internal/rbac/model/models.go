@@ -11,6 +11,7 @@ const (
 	RoleTypeCustom  = "custom"
 
 	RoleCodeSuperAdmin = "super_admin"
+	RoleCodeUser       = "user"
 
 	// DataScopeSelf：仅自己创建的数据（项目另含成员例外）
 	DataScopeSelf = "self"

@@ -59,7 +59,12 @@ func (h *WSHandler) HandleAgentRunLogs(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	run, err := h.agents.GetRun(uint(runID))
+	scope, err := h.perm.ResolveDataScope(claims.UserID, claims.IsSuperAdmin)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	run, err := h.agents.RequireRunAccess(uint(runID), service.AgentActor{UserID: claims.UserID, DataScope: scope})
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return

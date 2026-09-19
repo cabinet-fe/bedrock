@@ -46,6 +46,10 @@ admin:
   password: "change-me-on-first-login"
   display_name: "管理员"
 
+# Public auth endpoints.
+auth:
+  allow_register: true # false = POST /auth/register answers 403 and the login page hides signup
+
 # DSH interactive sessions. Listen address is always 127.0.0.1 (not configurable).
 dsh:
   enabled: true # false = module off; omit this section to keep enabled=false

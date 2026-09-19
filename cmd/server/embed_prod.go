@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -21,12 +22,15 @@ func init() {
 	gin.SetMode(gin.ReleaseMode)
 }
 
-func injectEncryptionKey(html []byte, keyHex string) []byte {
+// injectBootstrapConfig splices the runtime bootstrap (login encryption key,
+// register toggle) into the SPA shell before </head>.
+func injectBootstrapConfig(html []byte, keyHex string, allowRegister bool) []byte {
 	keyJSON, err := json.Marshal(keyHex)
 	if err != nil {
 		keyJSON = []byte(`""`)
 	}
-	snippet := `<script>window.__BEDROCK_ENCRYPTION_KEY__=` + string(keyJSON) + `</script>`
+	snippet := `<script>window.__BEDROCK_ENCRYPTION_KEY__=` + string(keyJSON) +
+		`;window.__BEDROCK_ALLOW_REGISTER__=` + strconv.FormatBool(allowRegister) + `</script>`
 	const marker = "</head>"
 	idx := bytes.Index(html, []byte(marker))
 	if idx < 0 {
@@ -75,7 +79,7 @@ func cacheControlForStaticFile(filePath string) string {
 	return shortTTLCacheControl
 }
 
-func serveSPA(r *gin.Engine, encryptionKeyHex string) {
+func serveSPA(r *gin.Engine, encryptionKeyHex string, allowRegister bool) {
 	distFS, err := fs.Sub(webFS, "dist")
 	if err != nil {
 		return
@@ -87,7 +91,7 @@ func serveSPA(r *gin.Engine, encryptionKeyHex string) {
 	staticServer := http.FileServer(http.FS(distFS))
 
 	serveIndex := func(c *gin.Context) {
-		html := injectEncryptionKey(indexHTML, encryptionKeyHex)
+		html := injectBootstrapConfig(indexHTML, encryptionKeyHex, allowRegister)
 		c.Header("Cache-Control", noStoreCacheControl)
 		c.Header("Pragma", "no-cache")
 		c.Header("Expires", "0")

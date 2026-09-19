@@ -20,6 +20,7 @@ import (
 	"bedrock/internal/engine"
 	"bedrock/internal/harness/provider"
 	harnessservice "bedrock/internal/harness/service"
+	rbacmodel "bedrock/internal/rbac/model"
 	resourcemodel "bedrock/internal/resource/model"
 	"bedrock/internal/ws"
 )
@@ -273,6 +274,33 @@ func validateAgentModelConfig(modelProvider, modelID, reasoningEffort, approvalM
 	return nil
 }
 
+// AgentActor is the requesting user plus resolved data scope for the
+// agent-scoped endpoints (super admins resolve to scope all).
+type AgentActor struct {
+	UserID    uint
+	DataScope string
+}
+
+var ErrAgentForbidden = errors.New("无权访问该智能体")
+
+// requireAgent loads the agent and enforces data-scope ownership.
+func (s *AgentService) requireAgent(agentID uint, actor AgentActor) (*model.AiAgent, error) {
+	agent, err := s.repo.FindAgent(agentID)
+	if err != nil {
+		return nil, err
+	}
+	if actor.DataScope != rbacmodel.DataScopeAll && agent.CreatedBy != actor.UserID {
+		return nil, ErrAgentForbidden
+	}
+	return agent, nil
+}
+
+// AgentExists reports whether the agent row exists (internal validation, no ACL).
+func (s *AgentService) AgentExists(id uint) error {
+	_, err := s.repo.FindAgent(id)
+	return err
+}
+
 func (s *AgentService) CreateAgent(createdBy uint, in AgentInput) (*model.AiAgent, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
@@ -324,8 +352,8 @@ func (s *AgentService) CreateAgent(createdBy uint, in AgentInput) (*model.AiAgen
 	return agent, nil
 }
 
-func (s *AgentService) UpdateAgent(id, userID uint, in AgentInput) (*model.AiAgent, error) {
-	agent, err := s.repo.FindAgent(id)
+func (s *AgentService) UpdateAgent(id uint, actor AgentActor, in AgentInput) (*model.AiAgent, error) {
+	agent, err := s.requireAgent(id, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -397,28 +425,31 @@ func (s *AgentService) UpdateAgent(id, userID uint, in AgentInput) (*model.AiAge
 	}
 	decodeSkillIDs(agent)
 	projectAgentEnvVars(agent)
-	s.enqueueWorkspaceInit(agent.ID, userID)
+	s.enqueueWorkspaceInit(agent.ID, actor.UserID)
 	if s.audit != nil {
-		_ = s.audit.Write(userID, "", "agent_update", "ai_agent", fmt.Sprintf("%d", agent.ID), agent.Name, "")
+		_ = s.audit.Write(actor.UserID, "", "agent_update", "ai_agent", fmt.Sprintf("%d", agent.ID), agent.Name, "")
 	}
 	return agent, nil
 }
 
-func (s *AgentService) DeleteAgent(id, userID uint) error {
+func (s *AgentService) DeleteAgent(id uint, actor AgentActor) error {
+	if _, err := s.requireAgent(id, actor); err != nil {
+		return err
+	}
 	if err := s.repo.DeleteAgent(id); err != nil {
 		return err
 	}
 	s.removeAgentWorkspace(id)
 	s.removeAgentArtifacts(id)
 	if s.audit != nil {
-		_ = s.audit.Write(userID, "", "agent_delete", "ai_agent", fmt.Sprintf("%d", id), "", "")
+		_ = s.audit.Write(actor.UserID, "", "agent_delete", "ai_agent", fmt.Sprintf("%d", id), "", "")
 	}
 	_ = s.ReloadCron()
 	return nil
 }
 
-func (s *AgentService) GetAgent(id uint) (*model.AiAgent, error) {
-	agent, err := s.repo.FindAgent(id)
+func (s *AgentService) GetAgent(id uint, actor AgentActor) (*model.AiAgent, error) {
+	agent, err := s.requireAgent(id, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -430,8 +461,12 @@ func (s *AgentService) GetAgent(id uint) (*model.AiAgent, error) {
 	return agent, nil
 }
 
-func (s *AgentService) ListAgents(page, pageSize int) ([]model.AiAgent, int64, error) {
-	items, total, err := s.repo.ListAgents(page, pageSize)
+func (s *AgentService) ListAgents(page, pageSize int, actor AgentActor) ([]model.AiAgent, int64, error) {
+	var createdBy *uint
+	if actor.DataScope != rbacmodel.DataScopeAll {
+		createdBy = &actor.UserID
+	}
+	items, total, err := s.repo.ListAgents(page, pageSize, createdBy)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -454,9 +489,9 @@ type TriggerInput struct {
 	BuildEvent     string `json:"build_event"`
 }
 
-func (s *AgentService) CreateTrigger(agentID, userID uint, in TriggerInput) (*model.AgentTrigger, error) {
-	if _, err := s.repo.FindAgent(agentID); err != nil {
-		return nil, errors.New("智能体不存在")
+func (s *AgentService) CreateTrigger(agentID uint, actor AgentActor, in TriggerInput) (*model.AgentTrigger, error) {
+	if _, err := s.requireAgent(agentID, actor); err != nil {
+		return nil, err
 	}
 	t := &model.AgentTrigger{
 		AgentID: agentID, Type: strings.TrimSpace(in.Type),
@@ -474,15 +509,18 @@ func (s *AgentService) CreateTrigger(agentID, userID uint, in TriggerInput) (*mo
 	}
 	_ = s.ReloadCron()
 	if s.audit != nil {
-		_ = s.audit.Write(userID, "", "agent_trigger_create", "agent_trigger", fmt.Sprintf("%d", t.ID),
+		_ = s.audit.Write(actor.UserID, "", "agent_trigger_create", "agent_trigger", fmt.Sprintf("%d", t.ID),
 			fmt.Sprintf("agent_id=%d type=%s", agentID, t.Type), "")
 	}
 	return t, nil
 }
 
-func (s *AgentService) UpdateTrigger(id, userID uint, in TriggerInput) (*model.AgentTrigger, error) {
+func (s *AgentService) UpdateTrigger(id uint, actor AgentActor, in TriggerInput) (*model.AgentTrigger, error) {
 	t, err := s.repo.FindTrigger(id)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := s.requireAgent(t.AgentID, actor); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(in.Type) != "" {
@@ -511,23 +549,33 @@ func (s *AgentService) UpdateTrigger(id, userID uint, in TriggerInput) (*model.A
 	}
 	_ = s.ReloadCron()
 	if s.audit != nil {
-		_ = s.audit.Write(userID, "", "agent_trigger_update", "agent_trigger", fmt.Sprintf("%d", t.ID),
+		_ = s.audit.Write(actor.UserID, "", "agent_trigger_update", "agent_trigger", fmt.Sprintf("%d", t.ID),
 			fmt.Sprintf("agent_id=%d type=%s", t.AgentID, t.Type), "")
 	}
 	return t, nil
 }
 
-func (s *AgentService) DeleteTrigger(id, userID uint) error {
+func (s *AgentService) DeleteTrigger(id uint, actor AgentActor) error {
+	t, err := s.repo.FindTrigger(id)
+	if err != nil {
+		return err
+	}
+	if _, err := s.requireAgent(t.AgentID, actor); err != nil {
+		return err
+	}
 	if err := s.repo.DeleteTrigger(id); err != nil {
 		return err
 	}
 	if s.audit != nil {
-		_ = s.audit.Write(userID, "", "agent_trigger_delete", "agent_trigger", fmt.Sprintf("%d", id), "", "")
+		_ = s.audit.Write(actor.UserID, "", "agent_trigger_delete", "agent_trigger", fmt.Sprintf("%d", id), "", "")
 	}
 	return s.ReloadCron()
 }
 
-func (s *AgentService) ListTriggers(agentID uint) ([]model.AgentTrigger, error) {
+func (s *AgentService) ListTriggers(agentID uint, actor AgentActor) ([]model.AgentTrigger, error) {
+	if _, err := s.requireAgent(agentID, actor); err != nil {
+		return nil, err
+	}
 	return s.repo.ListTriggers(agentID)
 }
 
@@ -596,15 +644,21 @@ func (s *AgentService) CreateRun(agentID uint, in CreateRunInput) (*model.AgentR
 	return run, nil
 }
 
-func (s *AgentService) ManualRun(agentID, userID uint, userPrompt string) (*model.AgentRun, error) {
+func (s *AgentService) ManualRun(agentID uint, actor AgentActor, userPrompt string) (*model.AgentRun, error) {
+	if _, err := s.requireAgent(agentID, actor); err != nil {
+		return nil, err
+	}
 	return s.CreateRun(agentID, CreateRunInput{
-		TriggerType: model.TriggerManual, TriggeredBy: userID, UserPrompt: userPrompt,
+		TriggerType: model.TriggerManual, TriggeredBy: actor.UserID, UserPrompt: userPrompt,
 	})
 }
 
-func (s *AgentService) APIRun(agentID, userID uint, userPrompt string) (*model.AgentRun, error) {
+func (s *AgentService) APIRun(agentID uint, actor AgentActor, userPrompt string) (*model.AgentRun, error) {
+	if _, err := s.requireAgent(agentID, actor); err != nil {
+		return nil, err
+	}
 	return s.CreateRun(agentID, CreateRunInput{
-		TriggerType: model.TriggerAPI, TriggeredBy: userID, UserPrompt: userPrompt,
+		TriggerType: model.TriggerAPI, TriggeredBy: actor.UserID, UserPrompt: userPrompt,
 	})
 }
 
@@ -669,13 +723,22 @@ func (s *AgentService) dispatchBuildEvent(event string, job *cicdmodel.BuildJob,
 	}
 }
 
-func (s *AgentService) GetRun(id uint) (*model.AgentRun, error) {
-	return s.repo.FindRun(id)
+// RequireRunAccess loads the run (agent preloaded) and enforces ownership
+// via the owning agent. Public read/cancel/download paths share it.
+func (s *AgentService) RequireRunAccess(runID uint, actor AgentActor) (*model.AgentRun, error) {
+	run, err := s.repo.FindRun(runID)
+	if err != nil {
+		return nil, err
+	}
+	if run.Agent == nil || (actor.DataScope != rbacmodel.DataScopeAll && run.Agent.CreatedBy != actor.UserID) {
+		return nil, ErrAgentForbidden
+	}
+	return run, nil
 }
 
 // ArtifactPath returns the success-run snapshot archive for download.
-func (s *AgentService) ArtifactPath(id uint) (path string, filename string, err error) {
-	run, err := s.repo.FindRun(id)
+func (s *AgentService) ArtifactPath(id uint, actor AgentActor) (path string, filename string, err error) {
+	run, err := s.RequireRunAccess(id, actor)
 	if err != nil {
 		return "", "", err
 	}
@@ -689,8 +752,12 @@ func (s *AgentService) ArtifactPath(id uint) (path string, filename string, err 
 	return path, filepath.Base(path), nil
 }
 
-func (s *AgentService) ListRuns(page, pageSize int, agentID uint, status string, projectID *uint) ([]model.AgentRun, int64, error) {
-	return s.repo.ListRuns(page, pageSize, agentID, status, projectID)
+func (s *AgentService) ListRuns(page, pageSize int, agentID uint, status string, projectID *uint, actor AgentActor) ([]model.AgentRun, int64, error) {
+	var agentCreatedBy *uint
+	if actor.DataScope != rbacmodel.DataScopeAll {
+		agentCreatedBy = &actor.UserID
+	}
+	return s.repo.ListRuns(page, pageSize, agentID, status, projectID, agentCreatedBy)
 }
 
 func (s *AgentService) CancelRun(id uint) error {
