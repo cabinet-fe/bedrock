@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# Bedrock one-line installer: interactive setup of Bedrock Server (main) or
-# Deploy Agent, with mainland-China GitHub mirror fallbacks and a
-# download -> graceful stop -> replace -> restart update flow.
+# BEDROCK_ONE_LINE_INSTALLER
+# Bedrock one-line installer + bedctl CLI: interactive setup of Bedrock
+# Server (main) or Deploy Agent, with mainland-China GitHub mirror fallbacks
+# and a download -> graceful stop -> replace -> restart update flow.
+#
+# The script installs itself as the `bedctl` command (install/update/status/
+# start/stop/restart/logs/doctor/self-update) and remembers install dirs and
+# the chosen download mirror.
 #
 # See .agents/docs/ops-handbook.md for the manual install path.
 set -euo pipefail
+
+SCRIPT_VERSION="1.0.0"
 
 REPO="cabinet-fe/bedrock"
 RELEASE_BASE="${BEDROCK_RELEASE_BASE:-https://github.com/${REPO}}"
@@ -22,6 +29,8 @@ OPT_ADDR=""
 OPT_MIRROR="${BEDROCK_MIRROR:-}"
 OPT_NO_MIRROR=0
 OPT_YES=0
+OPT_COMPONENT=""
+OPT_LOGS_N=""
 MIRROR=""
 IS_ROOT=0
 [ "$(id -u)" = "0" ] && IS_ROOT=1
@@ -40,7 +49,7 @@ die()   { err "$*"; exit 1; }
 
 usage() {
   cat <<'EOF'
-Bedrock 一键安装 / 更新脚本
+Bedrock 一键安装 / 更新脚本（安装后自动装为 bedctl 命令行工具）
 
 用法:
   ./install.sh                     交互模式（推荐）
@@ -49,16 +58,31 @@ Bedrock 一键安装 / 更新脚本
   ./install.sh update   [选项]     更新已安装组件（下载 → 优雅停机 → 更新 → 重启）
   ./install.sh status              查看安装状态
 
+bedctl 管理命令（安装完成即可用，无需再下载脚本）:
+  bedctl install server|agent [选项]   安装（同 ./install.sh server|agent）
+  bedctl update [server|agent]         更新已安装组件
+  bedctl status                        查看安装状态
+  bedctl start|stop|restart [server|agent]
+                                       服务管理（缺省作用于全部已安装组件）
+  bedctl logs [server|agent] [-n N]    最近日志（默认 100 行）
+  bedctl doctor [server|agent]         体检: 服务/端口/监听地址/本机健康/防火墙
+  bedctl self-update                   bedctl 自我升级（拉取仓库最新脚本）
+  bedctl version                       查看 bedctl 版本
+
+  bedctl 会记住安装目录与下载源（root: /etc/bedrock/bedctl.env，非 root: ~/.bedrock/bedctl.env），
+  后续命令无需重复传 --dir / --mirror。
+
 选项:
   --mirror <URL>     GitHub 镜像前缀，如 https://gh-proxy.com/
   --no-mirror        强制直连 GitHub
-  --dir <DIR>        安装目录（默认 /opt/bedrock[-agent]，非 root 为 ~/bedrock[-agent]）
+  --dir <DIR>        安装目录（默认 /opt/bedrock[-agent]，非 root 为 ~/bedrock[-agent]；已记住时用记住的目录）
   --version <TAG>    指定版本（默认最新 release，如 v2.0.0）
   --port <N>         Server 监听端口（默认 8080）
   --admin-user <U>   超级管理员用户名（默认 admin）
   --admin-pass <P>   超级管理员密码（默认随机生成并打印）
   --token <T>        Agent 认证 token（默认随机生成并打印，需填回平台「服务器」配置）
   --addr <A>         Agent 监听地址（默认 :9091）
+  -n <N>             logs 输出行数（配合 bedctl logs）
   --yes              非交互模式，未提供的参数取默认值
 
 环境变量:
@@ -127,6 +151,29 @@ rand_hex() { # rand_hex <bytes> -> stdout
   fi
 }
 
+# --------------------------------------------------------------- state ----
+# bedctl 状态：记住各组件安装目录与下载源，供下次命令直接复用。
+
+state_dir() { [ "$IS_ROOT" = "1" ] && printf '/etc/bedrock' || printf '%s/.bedrock' "$HOME"; }
+state_file() { printf '%s/bedctl.env' "$(state_dir)"; }
+
+state_set() { # state_set <KEY> <VALUE>
+  local key=$1 val=$2 f tmp
+  f=$(state_file)
+  mkdir -p "$(state_dir)" 2>/dev/null || return 0
+  tmp="$f.tmp.$$"
+  touch "$f" 2>/dev/null || return 0
+  grep -v "^${key}=" "$f" >"$tmp" 2>/dev/null || true
+  printf '%s=%s\n' "$key" "$val" >>"$tmp"
+  mv -f "$tmp" "$f"
+}
+
+state_get() { # state_get <KEY> -> stdout（未设置时为空）
+  [ -f "$(state_file)" ] || return 0
+  sed -n "s/^$1=//p" "$(state_file)" 2>/dev/null | head -1
+  return 0
+}
+
 # --------------------------------------------------------------- mirrors ---
 
 normalize_mirror() { # ensure trailing slash, empty means direct
@@ -174,6 +221,11 @@ pick_mirror() {
 
   if ! interactive; then
     MIRROR=$first_ok
+    # 直连与内置镜像都探测失败时，退回上次记录的下载源
+    if [ -z "$MIRROR" ] && [ "$direct_ok" = "0" ]; then
+      MIRROR=$(state_get MIRROR)
+      [ -n "$MIRROR" ] && info "直连与内置镜像探测失败，使用上次记录的下载源: ${MIRROR}"
+    fi
   else
     local def_label sel custom
     if [ -n "$first_ok" ] || [ "$direct_ok" = "1" ]; then
@@ -201,6 +253,8 @@ pick_mirror() {
     esac
   fi
   info "使用下载源: $([ -n "$MIRROR" ] && printf '%s' "$MIRROR" || printf '直连 GitHub')"
+  if [ -n "$MIRROR" ]; then state_set MIRROR "$MIRROR"; fi
+  return 0
 }
 
 # Fetch a repo-relative path (e.g. /releases/download/vX/asset) to dest,
@@ -431,13 +485,16 @@ agent_port() { # agent_port <dir> ; addr ":9091" or "0.0.0.0:9091" -> 9091
   local a p
   a=$(yaml_value "$1/bedrock-agent.yaml" "" addr) || true
   # addr is top-level in agent config: fall back to a flat grep
-  [ -n "$a" ] || a=$(sed -n 's/^[[:space:]]*addr:[[:space:]]*"\{0,1\}\([^"[:space:]]*\).*/\1/p' "$1/bedrock-agent.yaml" 2>/dev/null | head -1)
+  if [ -z "$a" ]; then
+    a=$(sed -n 's/^[[:space:]]*addr:[[:space:]]*"\{0,1\}\([^"[:space:]]*\).*/\1/p' "$1/bedrock-agent.yaml" 2>/dev/null | head -1) || true
+  fi
   p=${a##*:}
   printf '%s' "${p:-9091}"
 }
 
 agent_token() { # agent_token <dir>
   sed -n 's/^[[:space:]]*token:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$/\1/p' "$1/bedrock-agent.yaml" 2>/dev/null | head -1
+  return 0
 }
 
 wait_health() { # wait_health <url> [bearer] [tries] ; ok -> 0
@@ -464,11 +521,104 @@ component_health() { # component_health <component> <dir>
   fi
 }
 
+HEALTH_URL=""
+HEALTH_BEARER=""
+health_url_for() { # health_url_for <comp> <dir> ; 设置 HEALTH_URL / HEALTH_BEARER
+  if [ "$1" = "server" ]; then
+    HEALTH_BEARER=""
+    HEALTH_URL="http://127.0.0.1:$(server_port "$2")/api/v1/health"
+  else
+    HEALTH_BEARER=$(agent_token "$2")
+    HEALTH_URL="http://127.0.0.1:$(agent_port "$2")/healthz"
+  fi
+}
+
+# --------------------------------------------- readiness & diagnostics ---
+
+LAST_HTTP_CODE=""
+
+port_busy() { # port_busy <port> ; 0 = 127.0.0.1:<port> 上有进程在监听
+  (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+
+svc_dead() { # svc_dead <comp> <dir> ; 0 = 进程已退出或处于崩溃重启循环，不会再就绪
+  local comp=$1 dir=$2 state sub pidfile pid
+  if [ "$SYSTEMD" = "1" ]; then
+    local unit
+    unit="$(svc_name "$comp").service"
+    state=$(systemctl show -p ActiveState --value "$unit" 2>/dev/null)
+    sub=$(systemctl show -p SubState --value "$unit" 2>/dev/null)
+    if [ "$state" = "failed" ] || [ "$state" = "inactive" ]; then return 0; fi
+    # Restart=on-failure 的退避窗口（activating/auto-restart）说明进程在反复崩溃
+    if [ "$state" = "activating" ] && [ "$sub" = "auto-restart" ]; then return 0; fi
+    return 1
+  fi
+  pidfile=$(svc_pidfile "$comp" "$dir")
+  pid=$(cat "$pidfile" 2>/dev/null || true)
+  [ -n "$pid" ] || return 0
+  ! kill -0 "$pid" 2>/dev/null
+}
+
+wait_service_ready() { # wait_service_ready <comp> <dir> <url> [bearer] [tries] ; ok -> 0
+  local comp=$1 dir=$2 url=$3 bearer=${4:-} tries=${5:-60} i=0
+  LAST_HTTP_CODE=""
+  while [ "$i" -lt "$tries" ]; do
+    if [ -n "$bearer" ]; then
+      LAST_HTTP_CODE=$(curl -m 2 -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${bearer}" "$url" 2>/dev/null) || LAST_HTTP_CODE="000"
+    else
+      LAST_HTTP_CODE=$(curl -m 2 -s -o /dev/null -w '%{http_code}' "$url" 2>/dev/null) || LAST_HTTP_CODE="000"
+    fi
+    [ "$LAST_HTTP_CODE" = "200" ] && return 0
+    # 进程已经退出（配置错误、端口冲突等）就没必要等满整个窗口
+    if svc_dead "$comp" "$dir"; then return 1; fi
+    sleep 1
+    i=$((i + 1))
+  done
+  return 1
+}
+
+readiness_hint() { # 用 wait_service_ready 留下的 LAST_HTTP_CODE 解释失败原因
+  case "${LAST_HTTP_CODE:-000}" in
+    000) printf '端口无响应，服务可能启动即退出或未监听' ;;
+    401|403) printf 'HTTP %s，健康检查鉴权不匹配（token/配置变更？）' "${LAST_HTTP_CODE}" ;;
+    *) printf 'HTTP %s，端口有响应但不是预期的服务（可能被其他程序占用）' "${LAST_HTTP_CODE}" ;;
+  esac
+}
+
+print_logs() { # print_logs <comp> <dir> [lines] ; 直接把最近日志打给用户看
+  local comp=$1 dir=$2 n=${3:-30} name f
+  name=$(svc_name "$comp")
+  echo >&2
+  if [ "$SYSTEMD" = "1" ]; then
+    info "最近 ${n} 行日志（journalctl -u ${name}）:"
+    journalctl -u "${name}.service" -n "$n" --no-pager --quiet 2>/dev/null \
+      || warn "无法读取 journal，请手动执行: journalctl -u ${name} -n ${n} --no-pager"
+  else
+    f=$(svc_logfile "$comp" "$dir")
+    if [ -f "$f" ]; then
+      info "最近 ${n} 行日志（${f}）:"
+      tail -n "$n" "$f"
+    else
+      warn "未找到日志文件: ${f}"
+    fi
+  fi
+}
+
 # ------------------------------------------------------------- install ----
 
-default_dir() { # default_dir <server|agent>
-  local suffix=""
-  [ "$1" = "agent" ] && suffix="-agent"
+default_dir() { # default_dir <server|agent> : 记住的目录 > 平台默认
+  local comp=$1 suffix="" key val
+  [ "$comp" = "agent" ] && suffix="-agent"
+  case $comp in
+    server) key=SERVER_DIR ;;
+    agent) key=AGENT_DIR ;;
+    *) return 1 ;;
+  esac
+  val=$(state_get "$key")
+  if [ -n "$val" ]; then
+    printf '%s' "$val"
+    return 0
+  fi
   if [ "$IS_ROOT" = "1" ]; then
     printf '/opt/bedrock%s' "$suffix"
   else
@@ -550,24 +700,85 @@ EOF
   chmod 600 "$dir/config.yaml"
 }
 
+# --------------------------------------------------------------- bedctl ----
+
+cli_path() { [ "$IS_ROOT" = "1" ] && printf '/usr/local/bin/bedctl' || printf '%s/.local/bin/bedctl' "$HOME"; }
+
+download_cli_script() { # download_cli_script <dest> ; 0 = ok
+  local dest=$1 base m
+  # 以文件方式运行时直接复制自身；curl | bash 时 $0 不是文件，改从仓库下载
+  if [ -f "$0" ] && grep -q "BEDROCK_ONE_LINE_INSTALLER" "$0" 2>/dev/null; then
+    cp -f "$0" "$dest"
+    return 0
+  fi
+  for m in "${MIRROR}" "" "${MIRRORS[@]}"; do
+    if [ -z "$m" ]; then base=$RELEASE_BASE; else base="${m}${RELEASE_BASE}"; fi
+    if curl -fsSL ${CURL_QUIET} --connect-timeout 8 -o "$dest" "${base}/raw/main/scripts/install.sh" 2>/dev/null \
+      && grep -q "BEDROCK_ONE_LINE_INSTALLER" "$dest" 2>/dev/null; then
+      return 0
+    fi
+  done
+  rm -f "$dest"
+  return 1
+}
+
+install_cli() { # install_cli ; 把本脚本装成 bedctl 命令并记录路径
+  local dest tmp
+  dest=$(cli_path)
+  mkdir -p "$(dirname "$dest")" 2>/dev/null || { warn "无法创建 $(dirname "$dest")，跳过 bedctl 安装"; return 0; }
+  tmp="${dest}.tmp.$$"
+  if ! download_cli_script "$tmp"; then
+    warn "bedctl 安装脚本获取失败，跳过（可稍后重新运行本安装流程）"
+    return 0
+  fi
+  chmod +x "$tmp"
+  mv -f "$tmp" "$dest"
+  state_set CLI_PATH "$dest"
+  info "已安装命令行工具: ${dest}"
+  case ":$PATH:" in
+    *":$(dirname "$dest"):"*) ;;
+    *) warn "提示: $(dirname "$dest") 不在 PATH 中，请将其加入 PATH 后使用 bedctl" ;;
+  esac
+  return 0
+}
+
 install_server() {
-  local dir port user pass tag
+  local dir port tag
   if interactive; then
     dir=$(ask "安装目录" "${OPT_DIR:-$(default_dir server)}")
   else
     dir="${OPT_DIR:-$(default_dir server)}"
   fi
-  port="${OPT_PORT:-$(interactive && ask "监听端口" 8080 || echo 8080)}"
-  user="${OPT_ADMIN_USER:-$(interactive && ask "超级管理员用户名" admin || echo admin)}"
-  pass="${OPT_ADMIN_PASS:-$(rand_hex 8)}"
-  local generated_pass=0
-  [ -z "$OPT_ADMIN_PASS" ] && generated_pass=1
 
   case $dir in
     *\ *) die "安装目录不能包含空格: $dir" ;;
   esac
   mkdir -p "$dir/data" "$dir/.update" "$dir/backups" \
     || die "无法创建目录 ${dir}（安装到系统路径请用 sudo 运行，或用 --dir 指定可写目录）"
+
+  # 已有配置时端口/管理员以配置文件为准，不问也不覆盖
+  local kept_config=0
+  [ -f "$dir/config.yaml" ] && kept_config=1
+  local user pass generated_pass=0
+  if [ "$kept_config" = "1" ]; then
+    local ignored=""
+    [ -n "$OPT_PORT" ] && ignored="${ignored} --port"
+    [ -n "$OPT_ADMIN_USER" ] && ignored="${ignored} --admin-user"
+    [ -n "$OPT_ADMIN_PASS" ] && ignored="${ignored} --admin-pass"
+    if [ -n "$ignored" ]; then
+      warn "已有 config.yaml，以下选项不生效（脚本不覆盖现有配置）:${ignored}"
+    fi
+  else
+    if interactive; then
+      port=$(ask "监听端口" "${OPT_PORT:-8080}")
+      user=$(ask "超级管理员用户名" "${OPT_ADMIN_USER:-admin}")
+    else
+      port="${OPT_PORT:-8080}"
+      user="${OPT_ADMIN_USER:-admin}"
+    fi
+    pass="${OPT_ADMIN_PASS:-$(rand_hex 8)}"
+    [ -z "$OPT_ADMIN_PASS" ] && generated_pass=1
+  fi
 
   tag=$(resolve_tag)
   info "目标版本: ${tag}"
@@ -578,12 +789,38 @@ install_server() {
 
   download_verified "$asset_server" "$tag" "$dir/.update/bedrock-new"
 
-  local new_config=0
-  [ -f "$dir/config.yaml" ] || new_config=1
-  if [ "$new_config" = "1" ]; then
-    gen_server_config "$dir" "$port" "$user" "$pass"
-  else
+  if [ "$kept_config" = "1" ]; then
     warn "config.yaml 已存在，保留现有配置（不覆盖）"
+  else
+    gen_server_config "$dir" "$port" "$user" "$pass"
+  fi
+
+  # 生效端口：新安装用请求端口；沿用配置时从配置解析，解析失败才回退默认值并明说
+  local eff_port
+  if [ "$kept_config" = "1" ]; then
+    eff_port=$(yaml_value "$dir/config.yaml" server port || true)
+    if [ -n "$eff_port" ]; then
+      info "监听端口（来自现有配置）: ${eff_port}"
+    else
+      eff_port=8080
+      warn "未能从现有 config.yaml 解析 server.port，健康检查按默认端口 ${eff_port} 进行"
+    fi
+    local cfg_host
+    cfg_host=$(yaml_value "$dir/config.yaml" server host || true)
+    case $cfg_host in
+      127.0.0.1|localhost|::1)
+        warn "现有配置 server.host=${cfg_host} 仅监听本机回环，外部将无法访问（改为 0.0.0.0 可对外开放）"
+        ;;
+    esac
+  else
+    eff_port="$port"
+  fi
+
+  svc_stop server "$dir"
+  if port_busy "$eff_port"; then
+    err "端口 ${eff_port} 仍被占用：可能存在不受服务管理器管理的旧进程"
+    err "请用 ss -ltnp 'sport = :${eff_port}' 找到占用进程并处理后，重新运行本脚本"
+    return 1
   fi
 
   info "放置二进制..."
@@ -594,31 +831,48 @@ install_server() {
   svc_install server "$dir"
   svc_start server "$dir"
 
-  info "等待服务就绪（最长 60s）..."
-  local health_url="http://127.0.0.1:$(server_port "$dir")/api/v1/health"
-  if ! wait_health "$health_url" "" 60; then
-    err "健康检查失败，查看日志: $(svc_logfile server "$dir") 或 journalctl -u bedrock -n 50"
+  local health_url="http://127.0.0.1:${eff_port}/api/v1/health"
+  info "等待服务就绪（最长 60s，进程退出会提前报告）..."
+  if ! wait_service_ready server "$dir" "$health_url" "" 60; then
+    err "健康检查未通过：$(readiness_hint)"
+    print_logs server "$dir"
+    svc_stop server "$dir" || true
+    if [ -f "$dir/bedrock.bak" ]; then
+      warn "自动回滚到旧版本..."
+      mv -f "$dir/bedrock.bak" "$dir/bedrock"
+      svc_start server "$dir"
+      if wait_service_ready server "$dir" "$health_url" "" 30; then
+        warn "已回滚到旧版本并恢复运行；失败原因见上方日志，修复后重新运行本脚本即可"
+      else
+        err "回滚后仍无法启动，请手动检查 ${dir}/bedrock 与上方日志"
+      fi
+    else
+      err "首次安装无可回滚的旧版本。常见原因：config.yaml 缺少必填项（jwt.secret / encryption.key）、数据库初始化失败、端口冲突；修复后重新运行本脚本"
+    fi
     return 1
   fi
 
   echo
   info "${C_G}Bedrock Server 安装成功${C_0}  版本: $("$dir/bedrock" --version 2>/dev/null || echo "$tag")"
-  printf '  访问地址:     http://<本机IP>:%s\n' "$(server_port "$dir")"
+  printf '  访问地址:     http://<本机IP>:%s\n' "$eff_port"
   printf '  安装目录:     %s\n' "$dir"
   printf '  数据目录:     %s/data\n' "$dir"
-  if [ "$new_config" = "1" ]; then
+  if [ "$kept_config" = "1" ]; then
+    printf '  配置文件:     %s/config.yaml（沿用旧配置）\n' "$dir"
+  else
     printf '  超级管理员:   %s\n' "$user"
     if [ "$generated_pass" = "1" ]; then
       printf '  管理员密码:   %s（随机生成，仅本次显示，请妥善保存）\n' "$pass"
     fi
-  else
-    printf '  配置文件:     %s/config.yaml（沿用旧配置）\n' "$dir"
   fi
   if [ "$SYSTEMD" = "1" ]; then
-    printf '  服务管理:     systemctl {status|restart|stop} bedrock\n'
+    printf '  服务管理:     systemctl {status|restart|stop} bedrock 或 bedctl {start|stop|restart} server\n'
   else
-    printf '  服务管理:     重新运行本脚本 update / status；日志 %s\n' "$(svc_logfile server "$dir")"
+    printf '  服务管理:     bedctl {start|stop|restart} server；日志 bedctl logs server\n'
   fi
+  printf '  故障排查:     bedctl doctor server（外部访问不通时先跑这个）\n'
+  state_set SERVER_DIR "$dir"
+  install_cli
 }
 
 install_agent() {
@@ -628,16 +882,32 @@ install_agent() {
   else
     dir="${OPT_DIR:-$(default_dir agent)}"
   fi
-  addr="${OPT_ADDR:-$(interactive && ask "监听地址" ":9091" || echo ":9091")}"
-  token="${OPT_TOKEN:-$(rand_hex 16)}"
-  local generated_token=0
-  [ -z "$OPT_TOKEN" ] && generated_token=1
 
   case $dir in
     *\ *) die "安装目录不能包含空格: $dir" ;;
   esac
   mkdir -p "$dir/.update" \
     || die "无法创建目录 ${dir}（安装到系统路径请用 sudo 运行，或用 --dir 指定可写目录）"
+
+  local kept_config=0
+  [ -f "$dir/bedrock-agent.yaml" ] && kept_config=1
+  local generated_token=0
+  if [ "$kept_config" = "1" ]; then
+    local ignored=""
+    [ -n "$OPT_ADDR" ] && ignored="${ignored} --addr"
+    [ -n "$OPT_TOKEN" ] && ignored="${ignored} --token"
+    if [ -n "$ignored" ]; then
+      warn "已有 bedrock-agent.yaml，以下选项不生效（脚本不覆盖现有配置）:${ignored}"
+    fi
+  else
+    if interactive; then
+      addr=$(ask "监听地址" "${OPT_ADDR:-:9091}")
+    else
+      addr="${OPT_ADDR:-:9091}"
+    fi
+    token="${OPT_TOKEN:-$(rand_hex 16)}"
+    [ -z "$OPT_TOKEN" ] && generated_token=1
+  fi
 
   tag=$(resolve_tag)
   info "目标版本: ${tag}"
@@ -648,9 +918,9 @@ install_agent() {
 
   download_verified "$asset_agent" "$tag" "$dir/.update/bedrock-agent-new"
 
-  local new_config=0
-  [ -f "$dir/bedrock-agent.yaml" ] || new_config=1
-  if [ "$new_config" = "1" ]; then
+  if [ "$kept_config" = "1" ]; then
+    warn "bedrock-agent.yaml 已存在，保留现有配置（不覆盖）"
+  else
     cat >"$dir/bedrock-agent.yaml" <<EOF
 # Generated by bedrock install.sh at $(date '+%Y-%m-%d %H:%M:%S').
 addr: "${addr}"
@@ -659,8 +929,26 @@ token: "${token}"
 # tls_key: "/path/to/key.pem"
 EOF
     chmod 600 "$dir/bedrock-agent.yaml"
+  fi
+
+  local eff_port shown_addr
+  if [ "$kept_config" = "1" ]; then
+    eff_port=$(agent_port "$dir")
+    shown_addr=$(sed -n 's/^[[:space:]]*addr:[[:space:]]*"\{0,1\}\([^"[:space:]]*\)"\{0,1\}.*/\1/p' "$dir/bedrock-agent.yaml" 2>/dev/null | head -1)
+    [ -n "$shown_addr" ] || shown_addr=":${eff_port}"
+    info "监听地址（来自现有配置）: ${shown_addr}"
+    grep -q '^[[:space:]]*addr:' "$dir/bedrock-agent.yaml" 2>/dev/null \
+      || warn "未能从现有 bedrock-agent.yaml 解析 addr，健康检查按默认端口 ${eff_port} 进行"
   else
-    warn "bedrock-agent.yaml 已存在，保留现有配置（不覆盖）"
+    eff_port=${addr##*:}
+    shown_addr="$addr"
+  fi
+
+  svc_stop agent "$dir"
+  if port_busy "$eff_port"; then
+    err "端口 ${eff_port} 仍被占用：可能存在不受服务管理器管理的旧进程"
+    err "请用 ss -ltnp 'sport = :${eff_port}' 找到占用进程并处理后，重新运行本脚本"
+    return 1
   fi
 
   info "放置二进制..."
@@ -671,27 +959,44 @@ EOF
   svc_install agent "$dir"
   svc_start agent "$dir"
 
-  info "等待服务就绪（最长 30s）..."
-  if ! wait_health "http://127.0.0.1:$(agent_port "$dir")/healthz" "$(agent_token "$dir")" 30; then
-    err "健康检查失败，查看日志: $(svc_logfile agent "$dir") 或 journalctl -u bedrock-agent -n 50"
+  local health_url="http://127.0.0.1:${eff_port}/healthz"
+  info "等待服务就绪（最长 30s，进程退出会提前报告）..."
+  if ! wait_service_ready agent "$dir" "$health_url" "$(agent_token "$dir")" 30; then
+    err "健康检查未通过：$(readiness_hint)"
+    print_logs agent "$dir"
+    svc_stop agent "$dir" || true
+    if [ -f "$dir/bedrock-agent.bak" ]; then
+      warn "自动回滚到旧版本..."
+      mv -f "$dir/bedrock-agent.bak" "$dir/bedrock-agent"
+      svc_start agent "$dir"
+      if wait_service_ready agent "$dir" "$health_url" "$(agent_token "$dir")" 15; then
+        warn "已回滚到旧版本并恢复运行；失败原因见上方日志，修复后重新运行本脚本即可"
+      else
+        err "回滚后仍无法启动，请手动检查 ${dir}/bedrock-agent 与上方日志"
+      fi
+    else
+      err "首次安装无可回滚的旧版本。常见原因：bedrock-agent.yaml 缺少 token、端口冲突；修复后重新运行本脚本"
+    fi
     return 1
   fi
 
   echo
   info "${C_G}Deploy Agent 安装成功${C_0}  版本: $("$dir/bedrock-agent" --version 2>/dev/null || echo "$tag")"
   printf '  安装目录:     %s\n' "$dir"
-  printf '  监听地址:     %s\n' "$addr"
-  if [ "$new_config" = "1" ]; then
+  printf '  监听地址:     %s\n' "$shown_addr"
+  if [ "$kept_config" = "0" ]; then
     printf '  认证 token:   %s\n' "$token"
     if [ "$generated_token" = "1" ]; then
       printf '                （随机生成，仅本次显示；请填入平台「资源管理 → 服务器」对应 Agent 的 token）\n'
     fi
   fi
   if [ "$SYSTEMD" = "1" ]; then
-    printf '  服务管理:     systemctl {status|restart|stop} bedrock-agent\n'
+    printf '  服务管理:     systemctl {status|restart|stop} bedrock-agent 或 bedctl {start|stop|restart} agent\n'
   else
-    printf '  服务管理:     重新运行本脚本 update / status；日志 %s\n' "$(svc_logfile agent "$dir")"
+    printf '  服务管理:     bedctl {start|stop|restart} agent；日志 bedctl logs agent\n'
   fi
+  state_set AGENT_DIR "$dir"
+  install_cli
 }
 
 # -------------------------------------------------------------- update ----
@@ -739,29 +1044,26 @@ update_component() { # update_component <server|agent> <dir> ; 0 = ok / skip
 
   info "启动..."
   svc_start "$comp" "$dir"
-  info "等待服务就绪（最长 60s）..."
-  if ! component_health_wait "$comp" "$dir"; then
-    err "$(svc_name "$comp"): 新版本健康检查失败，自动回滚到 ${cur}"
+  health_url_for "$comp" "$dir"
+  local url="$HEALTH_URL" bearer="$HEALTH_BEARER" tries
+  if [ "$comp" = "server" ]; then tries=60; else tries=30; fi
+  info "等待服务就绪（最长 ${tries}s，进程退出会提前报告）..."
+  if ! wait_service_ready "$comp" "$dir" "$url" "$bearer" "$tries"; then
+    err "$(svc_name "$comp"): 新版本健康检查失败（$(readiness_hint)），自动回滚到 ${cur}"
+    print_logs "$comp" "$dir"
     svc_stop "$comp" "$dir"
     mv -f "$bin.bak" "$bin"
     svc_start "$comp" "$dir"
-    if component_health_wait "$comp" "$dir"; then
-      warn "已回滚到旧版本 ${cur} 并恢复运行；请将失败现象（$(svc_logfile "$comp" "$dir")）反馈至项目仓库"
+    if wait_service_ready "$comp" "$dir" "$url" "$bearer" "$tries"; then
+      warn "已回滚到旧版本 ${cur} 并恢复运行；失败原因见上方日志，请反馈至项目仓库"
     else
-      err "回滚后启动仍失败，请手动检查: $bin / $bin.bak 与日志 $(svc_logfile "$comp" "$dir")"
+      err "回滚后启动仍失败，请手动检查: $bin / $bin.bak"
+      print_logs "$comp" "$dir"
     fi
     return 1
   fi
   info "$(svc_name "$comp") 更新成功: ${cur} → $("$bin" --version 2>/dev/null || echo "$tag")"
   return 0
-}
-
-component_health_wait() {
-  if [ "$1" = "server" ]; then
-    wait_health "http://127.0.0.1:$(server_port "$2")/api/v1/health" "" 60
-  else
-    wait_health "http://127.0.0.1:$(agent_port "$2")/healthz" "$(agent_token "$2")" 30
-  fi
 }
 
 cmd_update() {
@@ -813,13 +1115,229 @@ cmd_status() {
   done
 }
 
+# -------------------------------------------------------------- manage ----
+
+pick_component() { # pick_component [server|agent] -> stdout: server|agent|both|空
+  local comp=${1:-} s a has_s=0 has_a=0
+  case $comp in
+    server|agent) printf '%s' "$comp"; return 0 ;;
+  esac
+  s=$(default_dir server)
+  a=$(default_dir agent)
+  [ -x "$s/bedrock" ] && has_s=1
+  [ -x "$a/bedrock-agent" ] && has_a=1
+  if [ "$has_s" = "1" ] && [ "$has_a" = "1" ]; then printf 'both'
+  elif [ "$has_s" = "1" ]; then printf 'server'
+  elif [ "$has_a" = "1" ]; then printf 'agent'
+  fi
+  return 0
+}
+
+cmd_svc() { # cmd_svc <start|stop|restart> [OPT_COMPONENT]
+  local action=$1 comp comps dir bin listed
+  listed=$(pick_component "${OPT_COMPONENT:-}")
+  [ -n "$listed" ] || die "未发现已安装组件（bedctl status 查看，或用参数 server|agent 指定）"
+  case $listed in
+    both) comps="server agent" ;;
+    *) comps="$listed" ;;
+  esac
+  for comp in $comps; do
+    dir=$(default_dir "$comp")
+    bin="$dir/$(svc_bin "$comp")"
+    if [ ! -x "$bin" ]; then
+      warn "$(svc_name "$comp"): 未安装（$bin 不存在），跳过"
+      continue
+    fi
+    case $action in
+      stop)
+        svc_stop "$comp" "$dir"
+        ;;
+      start)
+        if svc_is_active "$comp" "$dir"; then
+          info "$(svc_name "$comp"): 已在运行"
+        else
+          svc_start "$comp" "$dir"
+          health_url_for "$comp" "$dir"
+          if wait_service_ready "$comp" "$dir" "$HEALTH_URL" "$HEALTH_BEARER" 15; then
+            info "$(svc_name "$comp"): 已启动（健康检查通过）"
+          else
+            warn "$(svc_name "$comp"): 已执行启动但未就绪，运行 bedctl logs $comp 查看日志"
+          fi
+        fi
+        ;;
+      restart)
+        svc_stop "$comp" "$dir"
+        svc_start "$comp" "$dir"
+        health_url_for "$comp" "$dir"
+        if wait_service_ready "$comp" "$dir" "$HEALTH_URL" "$HEALTH_BEARER" 15; then
+          info "$(svc_name "$comp"): 已重启（健康检查通过）"
+        else
+          warn "$(svc_name "$comp"): 已执行重启但未就绪，运行 bedctl logs $comp 查看日志"
+        fi
+        ;;
+    esac
+  done
+}
+
+cmd_logs() { # cmd_logs [-n N] [OPT_COMPONENT]
+  local comp listed dir
+  listed=$(pick_component "${OPT_COMPONENT:-}")
+  [ -n "$listed" ] || die "未发现已安装组件（bedctl logs server|agent）"
+  comp=$listed
+  [ "$comp" = "both" ] && comp=server
+  dir=$(default_dir "$comp")
+  print_logs "$comp" "$dir" "${OPT_LOGS_N:-100}"
+}
+
+cmd_doctor() { # cmd_doctor [OPT_COMPONENT] ; 0 = 全部正常
+  local comps=() comp dir bin issues rc=0 port url host addr
+  if [ -n "${OPT_COMPONENT:-}" ]; then
+    comps=("$OPT_COMPONENT")
+  else
+    case $(pick_component "") in
+      both) comps=(server agent) ;;
+      server) comps=(server) ;;
+      agent) comps=(agent) ;;
+      *) die "未发现已安装组件（bedctl doctor server|agent）" ;;
+    esac
+  fi
+  for comp in "${comps[@]}"; do
+    echo
+    info "诊断 Bedrock $(svc_name "$comp")"
+    dir=$(default_dir "$comp")
+    bin="$dir/$(svc_bin "$comp")"
+    issues=0
+    if [ ! -x "$bin" ]; then
+      err "  未安装: ${bin} 不存在"
+      rc=1
+      continue
+    fi
+    printf '  安装目录: %s\n' "$dir"
+    printf '  版本:     %s\n' "$("$bin" --version 2>/dev/null || echo unknown)"
+
+    if svc_is_active "$comp" "$dir"; then
+      printf '  服务:     运行中\n'
+    else
+      printf '  %s服务:     未运行（bedctl start %s 启动）%s\n' "$C_Y" "$comp" "$C_0"
+      issues=1
+    fi
+
+    if [ "$comp" = "server" ]; then
+      port=$(yaml_value "$dir/config.yaml" server port || true)
+      if [ -n "$port" ]; then
+        printf '  配置端口: %s\n' "$port"
+      else
+        port=8080
+        printf '  %s配置端口: 未能解析 config.yaml 的 server.port，按 8080 检查%s\n' "$C_Y" "$C_0"
+      fi
+      host=$(yaml_value "$dir/config.yaml" server host || true)
+      [ -n "$host" ] || host="0.0.0.0"
+      case $host in
+        127.0.0.1|localhost|::1)
+          printf '  %s监听地址: %s —— 仅本机可访问，外部连不上优先改这里（改为 0.0.0.0 后 bedctl restart server）%s\n' "$C_Y" "$host" "$C_0"
+          issues=1
+          ;;
+        *) printf '  监听地址: %s（对所有网卡开放）\n' "$host" ;;
+      esac
+    else
+      port=$(agent_port "$dir")
+      addr=$(sed -n 's/^[[:space:]]*addr:[[:space:]]*"\{0,1\}\([^"[:space:]]*\)"\{0,1\}.*/\1/p' "$dir/bedrock-agent.yaml" 2>/dev/null | head -1)
+      [ -n "$addr" ] || addr=":${port}"
+      case ${addr%%:*} in
+        127.0.0.1|localhost|::1)
+          printf '  %s监听地址: %s —— 仅本机可访问，外部连不上优先改这里（如 :9091）%s\n' "$C_Y" "$addr" "$C_0"
+          issues=1
+          ;;
+        *) printf '  监听地址: %s\n' "$addr" ;;
+      esac
+    fi
+
+    if port_busy "$port"; then
+      printf '  端口:     %s 有进程监听\n' "$port"
+    else
+      printf '  %s端口:     %s 无监听 —— 服务大概率没起来，运行 bedctl logs %s 查看原因%s\n' "$C_Y" "$port" "$comp" "$C_0"
+      issues=1
+    fi
+
+    if svc_is_active "$comp" "$dir"; then
+      health_url_for "$comp" "$dir"
+      LAST_HTTP_CODE=""
+      if wait_service_ready "$comp" "$dir" "$HEALTH_URL" "$HEALTH_BEARER" 1; then
+        printf '  本机健康: 通过（%s）\n' "$HEALTH_URL"
+      else
+        printf '  %s本机健康: 未通过（%s）—— 运行 bedctl logs %s 查看日志%s\n' "$C_Y" "$(readiness_hint)" "$comp" "$C_0"
+        issues=1
+      fi
+    fi
+
+    if [ "$SYSTEMD" = "1" ]; then
+      if systemctl is-enabled --quiet "$(svc_name "$comp").service" 2>/dev/null; then
+        printf '  开机自启: 已启用\n'
+      else
+        printf '  %s开机自启: 未启用（systemctl enable %s）%s\n' "$C_Y" "$(svc_name "$comp")" "$C_0"
+      fi
+    fi
+
+    # 本机正常但外部连不上：按层给出排查清单（能自动查的自动查）
+    if [ "$issues" = "0" ]; then
+      printf '  %s本机一切正常。外部仍连不上时按序检查：%s\n' "$C_B" "$C_0"
+      printf '    1. 云安全组: 入方向放行 TCP %s（源 0.0.0.0/0）\n' "$port"
+      if [ "$IS_ROOT" = "1" ]; then
+        if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd -q --state 2>/dev/null; then
+          if firewall-cmd --list-ports 2>/dev/null | tr ' ' '\n' | grep -qx "${port}/tcp"; then
+            printf '    2. firewalld: 已放行 %s/tcp\n' "$port"
+          else
+            printf '    %s2. firewalld 运行中且未放行 %s/tcp，执行: firewall-cmd --permanent --add-port=%s/tcp && firewall-cmd --reload%s\n' "$C_Y" "$port" "$port" "$C_0"
+          fi
+        elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+          if ufw status 2>/dev/null | grep -qE "(^|[[:space:]])${port}/tcp"; then
+            printf '    2. ufw: 已放行 %s/tcp\n' "$port"
+          else
+            printf '    %s2. ufw 运行中且未放行 %s/tcp，执行: ufw allow %s/tcp%s\n' "$C_Y" "$port" "$port" "$C_0"
+          fi
+        else
+          printf '    2. 宿主机防火墙: 未检测到 firewalld/ufw，如有 iptables/nftables 规则请自查 %s/tcp\n' "$port"
+        fi
+      else
+        printf '    2. 宿主机防火墙: firewalld/ufw 是否放行 %s/tcp（root 运行 bedctl doctor 会自动检查）\n' "$port"
+      fi
+      printf '    3. 用公网 IP/EIP 访问（不是内网 IP），并确认 EIP 已绑定该实例\n'
+      printf '    4. 配了 Nginx 等反代/HTTPS 时，检查反代监听端口与 upstream 转发\n'
+      printf '    5. 外部机器上执行 curl -v http://<公网IP>:%s/ —— 超时=安全组/防火墙，连接拒绝=服务未监听\n' "$port"
+    fi
+    [ "$issues" = "1" ] && rc=1
+  done
+  return $rc
+}
+
+cmd_self_update() { # cmd_self_update ; 从仓库拉最新 install.sh 替换 bedctl 自身
+  local dest tmp ok=1 base m newver
+  dest=$(state_get CLI_PATH)
+  if [ -z "$dest" ] || [ ! -e "$dest" ]; then dest=$(cli_path); fi
+  mkdir -p "$(dirname "$dest")" 2>/dev/null || die "无法创建 $(dirname "$dest")"
+  tmp="${dest}.tmp.$$"
+  for m in "${MIRROR}" "" "${MIRRORS[@]}"; do
+    if [ -z "$m" ]; then base=$RELEASE_BASE; else base="${m}${RELEASE_BASE}"; fi
+    if curl -fsSL ${CURL_QUIET} --connect-timeout 8 -o "$tmp" "${base}/raw/main/scripts/install.sh" 2>/dev/null \
+      && grep -q "BEDROCK_ONE_LINE_INSTALLER" "$tmp" 2>/dev/null; then
+      ok=0
+      break
+    fi
+  done
+  [ "$ok" = "0" ] || { rm -f "$tmp"; die "bedctl 自更新失败：无法下载 scripts/install.sh（可 --mirror 指定镜像重试）"; }
+  bash -n "$tmp" 2>/dev/null || { rm -f "$tmp"; die "下载的脚本语法校验失败，放弃替换"; }
+  chmod +x "$tmp"
+  mv -f "$tmp" "$dest"
+  newver=$(sed -n 's/^SCRIPT_VERSION="\(.*\)"$/\1/p' "$dest" | head -1)
+  info "bedctl 已更新到 ${newver:-最新版}（${dest}）"
+}
+
 # ----------------------------------------------------------------- args ----
 
 parse_args() {
-  local pos=()
+  local -a pos=()
   while [ $# -gt 0 ]; do
     case $1 in
-      server|agent|update|status) COMMAND=$1 ;;
       --mirror) OPT_MIRROR=${2:-}; shift ;;
       --mirror=*) OPT_MIRROR="${1#*=}" ;;
       --no-mirror) OPT_NO_MIRROR=1 ;;
@@ -838,11 +1356,30 @@ parse_args() {
       --addr) OPT_ADDR=${2:-}; shift ;;
       --addr=*) OPT_ADDR="${1#*=}" ;;
       --yes|-y) OPT_YES=1 ;;
+      -n) OPT_LOGS_N=${2:-}; shift ;;
       -h|--help) usage; exit 0 ;;
-      *) die "未知参数: $1（--help 查看用法）" ;;
+      *) pos+=("$1") ;;
     esac
     shift
   done
+  if [ "${#pos[@]}" -gt 2 ]; then
+    die "多余参数: ${pos[2]}（--help 查看用法）"
+  fi
+  if [ "${#pos[@]}" -ge 1 ]; then
+    case ${pos[0]} in
+      server|agent|install|update|status|start|stop|restart|logs|doctor|self-update|version) COMMAND=${pos[0]} ;;
+      *) die "未知命令: ${pos[0]}（--help 查看用法）" ;;
+    esac
+  fi
+  if [ "${#pos[@]}" = "2" ]; then
+    case ${pos[1]} in
+      server|agent) OPT_COMPONENT=${pos[1]} ;;
+      *) die "未知组件: ${pos[1]}（可选 server|agent）" ;;
+    esac
+    case $COMMAND in
+      server|agent) die "命令 ${COMMAND} 后不需要再指定组件" ;;
+    esac
+  fi
   OPT_MIRROR=$(normalize_mirror "$OPT_MIRROR")
 }
 
@@ -872,7 +1409,7 @@ main() {
   if [ -z "$COMMAND" ]; then
     if ! interactive; then
       usage
-      die "非交互模式（--yes）需要指定子命令: server | agent | update | status"
+      die "非交互模式（--yes）需要指定子命令: install | server | agent | update | status | start | stop | restart | logs | doctor | self-update | version"
     fi
     detect_platform
     pick_mirror
@@ -884,6 +1421,37 @@ main() {
     status)
       detect_platform
       cmd_status
+      ;;
+    start|stop|restart)
+      cmd_svc "$COMMAND"
+      ;;
+    logs)
+      cmd_logs
+      ;;
+    doctor)
+      cmd_doctor
+      ;;
+    self-update)
+      cmd_self_update
+      ;;
+    version)
+      printf 'bedctl %s\n' "$SCRIPT_VERSION"
+      ;;
+    install)
+      detect_platform
+      pick_mirror
+      case $OPT_COMPONENT in
+        server) install_server || exit 1 ;;
+        agent) install_agent || exit 1 ;;
+        *)
+          if interactive; then
+            menu
+          else
+            usage
+            die "非交互模式需要: install server|agent"
+          fi
+          ;;
+      esac
       ;;
     server)
       detect_platform

@@ -21,7 +21,30 @@ curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/cabinet-fe/bed
 - Server 安装目录默认 `/opt/bedrock`（非 root 为 `~/bedrock`），Agent 为 `/opt/bedrock-agent`（`~/bedrock-agent`）；生成 `config.yaml`（`encryption.key`/`jwt.secret` 随机 64 hex、超管密码随机生成仅打印一次，文件权限 600），数据落 `<安装目录>/data`
 - 服务托管：root 且有 systemd 时安装 `bedrock` / `bedrock-agent` 单元（开机自启、`TimeoutStopSec=45` 匹配 Server 30s 优雅停机）；否则 nohup + `<目录>/.<name>.pid` 与 `<目录>/<name>.log`
 - 更新（`install.sh update [--version TAG] [--dir DIR]`）：下载新版本并校验 → 优雅停机（SIGTERM，最长 60s，超时 SIGKILL 兜底）→ 停机窗口备份 SQLite 到 `<目录>/backups/`（保留 3 份）→ 替换二进制（旧版留存 `<bin>.bak`）→ 重启 → 健康检查（Server `/api/v1/health`，Agent `/healthz`）；健康检查失败自动回滚 `.bak` 并恢复运行
-- `config.yaml` 永不覆盖（重装/更新均保留）；版本对比依赖 `--version` 输出；`install.sh status` 查看版本/服务/健康
+- 安装 / 重装（`server` / `agent` 子命令）同样先优雅停旧进程、预检端口占用（被绕过服务管理器的进程占用时报错退出，不动二进制）；健康检查失败会自动打印最近 30 行日志（journalctl 或 `<目录>/<name>.log`），进程启动即退时秒级报错不等满窗口，存在 `.bak` 时自动回滚恢复
+- `config.yaml` 永不覆盖（重装/更新均保留），已有配置时端口/管理员/token 以配置文件为准，`--port` 等参数与现配置冲突会明示不生效；版本对比依赖 `--version` 输出；`install.sh status` 查看版本/服务/健康
+- **bedctl 命令行工具**：安装/更新成功后脚本自动把自身装为 `bedctl`（root: `/usr/local/bin/bedctl`，非 root: `~/.local/bin/bedctl`），并把各组件安装目录与下载源记入状态文件（root: `/etc/bedrock/bedctl.env`，非 root: `~/.bedrock/bedctl.env`），后续命令无需重复 `--dir` / `--mirror`：
+
+```bash
+bedctl install server|agent [选项]   # 安装（同 install.sh server|agent）
+bedctl update [server|agent]         # 更新
+bedctl status                        # 状态
+bedctl start|stop|restart [server|agent]  # 服务管理（缺省作用于全部已安装组件）
+bedctl logs [server|agent] [-n N]    # 最近日志（默认 100 行）
+bedctl doctor [server|agent]         # 体检：服务/端口/监听地址/本机健康/防火墙
+bedctl self-update                   # bedctl 自我升级
+```
+
+### 1.1.1 外部访问不通排查（bedctl doctor）
+
+云部署「安全组已放行但仍连不上」时，在服务器上运行 `bedctl doctor`（非 root 时自动降级为只读检查；建议 sudo 运行以启用防火墙自动检查），按其输出处理。常见层级从内到外：
+
+1. **服务本身没起来**（最常见）：doctor 显示「服务: 未运行 / 端口无监听」时先看 `bedctl logs`；健康检查失败的具体原因会打印最近 30 行日志。
+2. **配置只绑了回环**：`config.yaml` 的 `server.host` 为 `127.0.0.1` / `localhost` 时本机健康检查通过但外部不可达，改为 `0.0.0.0` 后 `bedctl restart server`。
+3. **宿主机防火墙**：安全组之外还有一层，CentOS 系 firewalld / Ubuntu 系 ufw 需放行端口（root 下 doctor 会自动检查并给出放行命令）。
+4. **云平台层**：安全组入方向 TCP 端口（源 0.0.0.0/0）、EIP 已绑定实例、用公网 IP 而非内网 IP 访问。
+5. **反向代理**：配了 Nginx/HTTPS 时检查反代监听与 upstream。
+6. **定位方法**：外部机器 `curl -v http://<公网IP>:<端口>/` —— 超时＝安全组/防火墙，连接拒绝＝服务未监听。
 
 ### 1.2 手动安装
 

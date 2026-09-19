@@ -58,7 +58,20 @@ curl -fsSL https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/ins
 curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
 ```
 
-脚本会下载发布产物并校验 SHA256、生成配置（随机密钥与超管密码）、注册 systemd 服务（无 systemd 时以 nohup 托管）并完成健康检查；`update` 路径按「下载 → 优雅停机 → 备份 SQLite → 替换二进制 → 重启」执行，失败自动回滚。更多细节见 [操作手册](./.agents/docs/ops-handbook.md)。
+脚本会下载发布产物并校验 SHA256、生成配置（随机密钥与超管密码）、注册 systemd 服务（无 systemd 时以 nohup 托管）并完成健康检查；`update` 路径按「下载 → 优雅停机 → 备份 SQLite → 替换二进制 → 重启」执行，失败自动回滚。
+
+安装完成后，脚本会把自己安装为 `bedctl` 命令行工具（记住安装目录与下载源），后续运维无需再下载脚本：
+
+```bash
+bedctl status                      # 查看安装状态
+bedctl start|stop|restart          # 服务管理（可加 server|agent 指定组件）
+bedctl logs server -n 100          # 查看最近日志
+bedctl doctor                      # 体检：服务/端口/监听地址/本机健康/防火墙排查
+bedctl update                      # 更新（可 --version 指定版本）
+bedctl self-update                 # 升级 bedctl 自身
+```
+
+更多细节见 [操作手册](./.agents/docs/ops-handbook.md)。
 
 ### 手动部署
 
