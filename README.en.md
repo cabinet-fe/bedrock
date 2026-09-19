@@ -45,6 +45,24 @@ A **project development foundation** platform: host operations, **CI/CD delivery
 
 For production or a trial: use a prebuilt binary with default SQLite.
 
+### One-line install (recommended)
+
+On a Linux server (interactive: install the Server, the Deploy Agent, or update an existing install; falls back to GitHub mirrors when direct access is unavailable):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
+```
+
+For mainland-China networks, prefix a mirror:
+
+```bash
+curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
+```
+
+The script downloads release artifacts with SHA256 verification, generates the config (random secrets and admin password), registers a systemd service (or falls back to nohup), and runs a health check. `update` follows download → graceful stop → SQLite backup → binary swap → restart, with automatic rollback on failure. See the [ops handbook](./.agents/docs/ops-handbook.md) for details.
+
+### Manual deploy
+
 ```bash
 # 1. Obtain release artifacts (example: Linux amd64)
 #    bedrock-linux-amd64, bedrock-agent-linux-amd64 (+ .sha256)

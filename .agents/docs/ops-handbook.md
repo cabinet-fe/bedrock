@@ -6,6 +6,25 @@
 
 ## 1. 全新安装（默认 SQLite）
 
+### 1.1 一键安装与更新（install.sh，推荐）
+
+Linux 服务器（amd64/arm64）执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
+# 中国大陆可加镜像前缀（任意 gh 代理均可）：
+curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
+```
+
+- 交互菜单：安装 **Bedrock Server（主体）** / **Deploy Agent（代理分发工具）** / 更新已安装组件 / 查看状态；子命令 + `--yes` 可全非交互（`--help` 查看参数）
+- 下载 GitHub Release 产物并校验 SHA256（平台级 `.sha256`）；GitHub 直连不可达时自动改走镜像（内置 `gh-proxy.com`、`ghfast.top`，`--mirror` / `BEDROCK_MIRROR` 可自定义，下载失败自动轮换源）
+- Server 安装目录默认 `/opt/bedrock`（非 root 为 `~/bedrock`），Agent 为 `/opt/bedrock-agent`（`~/bedrock-agent`）；生成 `config.yaml`（`encryption.key`/`jwt.secret` 随机 64 hex、超管密码随机生成仅打印一次，文件权限 600），数据落 `<安装目录>/data`
+- 服务托管：root 且有 systemd 时安装 `bedrock` / `bedrock-agent` 单元（开机自启、`TimeoutStopSec=45` 匹配 Server 30s 优雅停机）；否则 nohup + `<目录>/.<name>.pid` 与 `<目录>/<name>.log`
+- 更新（`install.sh update [--version TAG] [--dir DIR]`）：下载新版本并校验 → 优雅停机（SIGTERM，最长 60s，超时 SIGKILL 兜底）→ 停机窗口备份 SQLite 到 `<目录>/backups/`（保留 3 份）→ 替换二进制（旧版留存 `<bin>.bak`）→ 重启 → 健康检查（Server `/api/v1/health`，Agent `/healthz`）；健康检查失败自动回滚 `.bak` 并恢复运行
+- `config.yaml` 永不覆盖（重装/更新均保留）；版本对比依赖 `--version` 输出；`install.sh status` 查看版本/服务/健康
+
+### 1.2 手动安装
+
 ```bash
 # 1. 取得发布包（示例：Linux amd64）
 #    bedrock-linux-amd64 + bedrock-agent-linux-amd64（+ .sha256）

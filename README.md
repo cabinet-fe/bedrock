@@ -44,6 +44,24 @@
 
 适合生产或试用：使用预构建二进制 + 默认 SQLite。
 
+### 一键安装（推荐）
+
+Linux 服务器上执行（交互式：选择安装 Server 主体 / Deploy Agent，或更新已装组件；GitHub 直连不可达时自动切换镜像源）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
+```
+
+中国大陆网络可加镜像前缀：
+
+```bash
+curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
+```
+
+脚本会下载发布产物并校验 SHA256、生成配置（随机密钥与超管密码）、注册 systemd 服务（无 systemd 时以 nohup 托管）并完成健康检查；`update` 路径按「下载 → 优雅停机 → 备份 SQLite → 替换二进制 → 重启」执行，失败自动回滚。更多细节见 [操作手册](./.agents/docs/ops-handbook.md)。
+
+### 手动部署
+
 ```bash
 # 1. 取得发布包（示例：Linux amd64）
 #    bedrock-linux-amd64、bedrock-agent-linux-amd64（及 .sha256）

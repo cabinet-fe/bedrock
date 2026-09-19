@@ -35,7 +35,12 @@ func main() {
 	tokenFlag := flag.String("token", "", "agent bearer token")
 	certFile := flag.String("tls-cert", "", "TLS certificate path")
 	keyFile := flag.String("tls-key", "", "TLS private key path")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(version)
+		os.Exit(0)
+	}
 
 	cfgPath := strings.TrimSpace(*configPath)
 	if cfgPath == "" {
