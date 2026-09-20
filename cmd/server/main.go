@@ -316,6 +316,8 @@ func main() {
 	// Harness session backend: bedrock supervises `opencode serve` on
 	// 127.0.0.1 with a persisted random Basic Auth password. Startup failure
 	// keeps the server running in degraded mode (the manager keeps retrying).
+	// Started in the background: a slow or broken harness must not delay the
+	// HTTP listener (health checks in install.sh wait on it).
 	var harnessProc *harness.ProcessManager
 	if cfg.Harness.Enabled {
 		harnessProc = harness.NewProcessManager(harness.ProcessConfig{
@@ -323,14 +325,7 @@ func main() {
 			Port:         cfg.Harness.Port,
 			PasswordFile: filepath.Join(filepath.Dir(cfg.Storage.Root), "harness", "server-password"),
 		}, logger)
-		startCtx, cancelHarnessStart := context.WithTimeout(context.Background(), 60*time.Second)
-		if err := harnessProc.Start(startCtx); err != nil {
-			logger.Error("harness serve not healthy; running degraded (agent execution unavailable until it recovers)",
-				zap.Error(err),
-				zap.String("hint", fmt.Sprintf("check that harness.bin %q is installed and on PATH", cfg.Harness.Bin)),
-			)
-		}
-		cancelHarnessStart()
+		harnessProc.StartBackground()
 	}
 
 	// Harness domain services: the provider adapter targets the supervised

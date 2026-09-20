@@ -145,18 +145,35 @@ func (m *ProcessManager) setState(state, lastErr string) {
 }
 
 // Start launches the supervisor goroutines and blocks until the first
-// successful health probe, ctx is done, or Stop is called. Returning an
-// error leaves the supervisor running (it keeps retrying); only a password
-// failure is terminal.
+// successful health probe, ctx is done, or Stop is called. Callers that must
+// not delay startup use StartBackground instead.
 func (m *ProcessManager) Start(ctx context.Context) error {
+	m.startBackground()
+	select {
+	case <-m.healthyWait():
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("harness serve not healthy: %s", m.Status().LastError)
+	}
+}
+
+// StartBackground launches the serve supervisor and returns immediately; the
+// supervisor keeps retrying until healthy or Stop. Callers that must not
+// delay the HTTP listener (server main) use this and let harness converge in
+// the background; Start stays for tests and explicit waiters.
+func (m *ProcessManager) StartBackground() { m.startBackground() }
+
+func (m *ProcessManager) startBackground() {
 	m.mu.Lock()
 	if m.started {
 		m.mu.Unlock()
-		return errors.New("harness: process manager already started")
+		return
 	}
 	password, err := loadOrCreatePassword(m.cfg.PasswordFile)
 	if err != nil {
-		return fmt.Errorf("harness serve password: %w", err)
+		m.mu.Unlock()
+		m.log.Error("harness serve password unavailable; running degraded", zap.Error(err))
+		return
 	}
 	m.started = true
 	m.password = password
@@ -177,15 +194,20 @@ func (m *ProcessManager) Start(ctx context.Context) error {
 	m.wg.Add(2)
 	go m.supervise()
 	go m.probe()
+}
 
-	select {
-	case <-healthy:
-		return nil
-	case <-m.stopCh:
-		return errors.New("harness: process manager stopped before serve became healthy")
-	case <-ctx.Done():
-		return fmt.Errorf("harness serve not healthy: %s", m.Status().LastError)
+// healthyWait returns the channel Start blocks on: the live healthy channel,
+// or a closed one when the manager is stopped or was never started, so
+// waiters fall through instead of hanging on a dead manager.
+func (m *ProcessManager) healthyWait() <-chan struct{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.healthy != nil {
+		return m.healthy
 	}
+	closed := make(chan struct{})
+	close(closed)
+	return closed
 }
 
 // reclaimStaleServe runs before the supervisor starts and clears anything
@@ -258,11 +280,18 @@ func waitPortFree(port int, timeout time.Duration) bool {
 }
 
 // Stop terminates the serve process (SIGTERM, then SIGKILL after the grace
-// period) and waits for the supervisor goroutines.
+// period) and waits for the supervisor goroutines. Closing healthy here lets
+// Start waiters return instead of blocking on a manager that will never
+// become healthy (markHealthy does the same close-and-nil, so no double
+// close: whoever sees it non-nil closes and nils it under the mutex).
 func (m *ProcessManager) Stop() {
 	m.stopOnce.Do(func() {
 		m.mu.Lock()
 		stopCh := m.stopCh
+		if m.healthy != nil {
+			close(m.healthy)
+			m.healthy = nil
+		}
 		m.mu.Unlock()
 		if stopCh != nil {
 			close(stopCh)
