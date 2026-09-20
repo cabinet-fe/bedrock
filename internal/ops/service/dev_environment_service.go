@@ -496,7 +496,11 @@ func executeCommand(ctx context.Context, command string) (string, error) {
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
 	} else {
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
+		shell := "bash"
+		if _, err := exec.LookPath("bash"); err != nil {
+			shell = "sh"
+		}
+		cmd = exec.CommandContext(ctx, shell, "-c", pkg.WrapShellWithProfile(command))
 	}
 	pkg.ApplyMisePath(cmd)
 	var output bytes.Buffer

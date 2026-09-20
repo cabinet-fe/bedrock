@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"bedrock/internal/pkg"
 	"bedrock/internal/resource/model"
 	"bedrock/internal/resource/repository"
 )
@@ -406,7 +407,8 @@ func executeShell(ctx context.Context, command string) (string, error) {
 		err := cmd.Run()
 		return buf.String(), err
 	}
-	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	cmd := exec.CommandContext(ctx, "bash", "-c", pkg.WrapShellWithProfile(command))
+	pkg.ApplyMisePath(cmd)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
