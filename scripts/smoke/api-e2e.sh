@@ -299,20 +299,20 @@ AUDIT="$(curl -fsS "$BASE/api/v1/operation-logs?action=harness_permission_reply&
 json_get "$AUDIT" "any(i.get('resource_id')=='$SID' for i in o['data']['items'])" >/dev/null
 echo "harness permission reply audited"
 
-echo "==> harness RBAC: user without harness_chat → 403"
+echo "==> harness RBAC: plain user has all non-super-admin-only features"
 curl -fsS -X POST "$BASE/api/v1/users" "${AUTH[@]}" \
-  -d '{"username":"smoke-noperm","password":"smoke-pass-123","display_name":"No Harness"}' >/dev/null
-NOPERM_LOGIN="$(curl -fsS -X POST "$BASE/api/v1/auth/login" -H 'Content-Type: application/json' \
-  -d '{"username":"smoke-noperm","password":"smoke-pass-123"}')"
-NOPERM_TOKEN="$(json_get "$NOPERM_LOGIN" "o['data']['access_token']")"
-RB_SEND="$(curl -sS -o /tmp/smoke-harness-403.json -w '%{http_code}' -X POST \
-  "$BASE/api/v1/harness/sessions" -H "Authorization: Bearer $NOPERM_TOKEN" -H 'Content-Type: application/json' -d '{}')"
-[[ "$RB_SEND" == "403" ]] || { echo "no-perm create → $RB_SEND $(cat /tmp/smoke-harness-403.json)" >&2; exit 1; }
-RB_VIEW="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/v1/harness/models" -H "Authorization: Bearer $NOPERM_TOKEN")"
-[[ "$RB_VIEW" == "403" ]] || { echo "no-perm models → $RB_VIEW" >&2; exit 1; }
-RB_WS="$(curl -sS -o /dev/null -w '%{http_code}' \
-  "$BASE/ws/harness/sessions/$SID/events?token=$NOPERM_TOKEN")"
-[[ "$RB_WS" == "403" ]] || { echo "no-perm WS → $RB_WS" >&2; exit 1; }
+  -d '{"username":"smoke-plain","password":"smoke-pass-123","display_name":"Plain User"}' >/dev/null
+PLAIN_LOGIN="$(curl -fsS -X POST "$BASE/api/v1/auth/login" -H 'Content-Type: application/json' \
+  -d '{"username":"smoke-plain","password":"smoke-pass-123"}')"
+PLAIN_TOKEN="$(json_get "$PLAIN_LOGIN" "o['data']['access_token']")"
+RB_SEND="$(curl -sS -o /tmp/smoke-harness-plain.json -w '%{http_code}' -X POST \
+  "$BASE/api/v1/harness/sessions" -H "Authorization: Bearer $PLAIN_TOKEN" -H 'Content-Type: application/json' -d '{}')"
+[[ "$RB_SEND" == "201" ]] || { echo "plain create → $RB_SEND $(cat /tmp/smoke-harness-plain.json)" >&2; exit 1; }
+RB_VIEW="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/v1/harness/models" -H "Authorization: Bearer $PLAIN_TOKEN")"
+[[ "$RB_VIEW" == "200" ]] || { echo "plain models → $RB_VIEW" >&2; exit 1; }
+RB_SUPER="$(curl -sS -o /tmp/smoke-harness-super.json -w '%{http_code}' \
+  "$BASE/api/v1/dashboard/system-info" -H "Authorization: Bearer $PLAIN_TOKEN")"
+[[ "$RB_SUPER" == "403" ]] || { echo "plain super-admin-only dashboard → $RB_SUPER $(cat /tmp/smoke-harness-super.json)" >&2; exit 1; }
 
 # --- harness.enabled=false: gates answer 503, no CLI fallback ---
 
