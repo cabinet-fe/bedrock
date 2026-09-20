@@ -29,8 +29,12 @@ func upBugRemoveAIAndCleanup(ctx context.Context, db *gorm.DB, driver migration.
 			}
 		}
 
-		if err := tx.Exec("DELETE FROM role_permissions WHERE permission = ?", "project_bugs:execute").Error; err != nil {
-			return err
+		// role_permissions was dropped by later migration 000059; guard the
+		// delete so fresh-install replays (and this test) tolerate its absence.
+		if tx.Migrator().HasTable("role_permissions") {
+			if err := tx.Exec("DELETE FROM role_permissions WHERE permission = ?", "project_bugs:execute").Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Exec("DELETE FROM rbac_resources WHERE full_code = ?", "project_bugs:execute").Error; err != nil {
 			return err
