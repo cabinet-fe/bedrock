@@ -645,7 +645,8 @@ func validateBuildWorkDir(buildDir string) error {
 	return nil
 }
 
-// mergeBuildEnv builds process env: os.Environ → host LookupEnv for names → Key-Value overrides.
+// mergeBuildEnv builds process env: os.Environ → host LookupEnv for names →
+// Key-Value overrides → PATH tool-dir completion.
 func mergeBuildEnv(names []string, overrides map[string]string) []string {
 	merged := map[string]string{}
 	for _, e := range os.Environ() {
@@ -669,6 +670,8 @@ func mergeBuildEnv(names []string, overrides map[string]string) []string {
 		}
 		merged[k] = v
 	}
+	home, _ := os.UserHomeDir()
+	ensurePATH(merged, home)
 	out := make([]string, 0, len(merged))
 	for k, v := range merged {
 		out = append(out, k+"="+v)

@@ -143,3 +143,102 @@ func TestResolvePOSIXShell(t *testing.T) {
 		t.Fatalf("shell not usable: %v", err)
 	}
 }
+
+func TestEnsurePATH(t *testing.T) {
+	home := t.TempDir()
+	bunBin := filepath.Join(home, ".bun", "bin")
+	goBin := filepath.Join(home, "go", "bin")
+	for _, dir := range []string{bunBin, goBin} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	orig := toolPathDirs
+	toolPathDirs = []string{".bun/bin", ".cargo/bin", "go/bin"}
+	t.Cleanup(func() { toolPathDirs = orig })
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "appends existing dirs after current path",
+			path: "/usr/local/bin:/usr/bin:/bin",
+			want: "/usr/local/bin:/usr/bin:/bin:" + bunBin + ":" + goBin,
+		},
+		{
+			name: "keeps existing entry first without duplicate",
+			path: bunBin + ":/usr/bin",
+			want: bunBin + ":/usr/bin:" + goBin,
+		},
+		{
+			name: "skips missing dirs",
+			path: "/usr/bin",
+			want: "/usr/bin:" + bunBin + ":" + goBin,
+		},
+		{
+			name: "builds path when empty",
+			path: "",
+			want: bunBin + ":" + goBin,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			env := map[string]string{"PATH": tt.path}
+			ensurePATH(env, home)
+			if env["PATH"] != tt.want {
+				t.Fatalf("PATH=%q want %q", env["PATH"], tt.want)
+			}
+		})
+	}
+}
+
+func TestEnsurePATH_SkipsHomeRelativeWhenHomeEmpty(t *testing.T) {
+	orig := toolPathDirs
+	toolPathDirs = []string{".bun/bin", "/usr/local/bin"}
+	t.Cleanup(func() { toolPathDirs = orig })
+
+	env := map[string]string{"PATH": "/usr/bin"}
+	ensurePATH(env, "")
+	if env["PATH"] != "/usr/bin:/usr/local/bin" {
+		t.Fatalf("PATH=%q, home-relative dir must be skipped and absolute dir kept", env["PATH"])
+	}
+}
+
+func TestMergeBuildEnv_CompletesPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip()
+	}
+	home := t.TempDir()
+	bunBin := filepath.Join(home, ".bun", "bin")
+	if err := os.MkdirAll(bunBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := toolPathDirs
+	toolPathDirs = []string{".bun/bin"}
+	t.Cleanup(func() { toolPathDirs = orig })
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "/usr/local/bin:/usr/bin")
+
+	findPath := func(env []string) string {
+		for _, e := range env {
+			if k, v, ok := strings.Cut(e, "="); ok && k == "PATH" {
+				return v
+			}
+		}
+		return ""
+	}
+
+	got := findPath(mergeBuildEnv(nil, nil))
+	if want := "/usr/local/bin:/usr/bin:" + bunBin; got != want {
+		t.Fatalf("PATH=%q want %q", got, want)
+	}
+
+	// Job-level PATH override keeps user entries first, then gets completed.
+	got = findPath(mergeBuildEnv(nil, map[string]string{"PATH": "/custom/bin"}))
+	if want := "/custom/bin:" + bunBin; got != want {
+		t.Fatalf("PATH=%q want %q", got, want)
+	}
+}
