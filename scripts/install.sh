@@ -377,11 +377,35 @@ svc_exec_args() { # svc_exec_args <component> <dir>
   fi
 }
 
+detect_login_path() {
+  # The service env must not depend on whoever launched the installer: capture
+  # the PATH an interactive login shell would have, so user-level tools (bun,
+  # cargo, mise...) whose rc entries sit below the non-interactive early return
+  # (e.g. Ubuntu ~/.bashrc) stay visible to build scripts.
+  local probe p
+  for probe in "${SHELL:-/bin/bash}" /bin/bash; do
+    command -v "$probe" >/dev/null 2>&1 || continue
+    p=$(timeout 5 "$probe" -l -i -c 'echo $PATH' 2>/dev/null | tail -n 1 || true)
+    if [ -n "$p" ]; then
+      printf '%s' "$p"
+      return 0
+    fi
+  done
+  printf '%s' "$PATH"
+}
+
 svc_install() { # svc_install <component> <dir>
-  local comp=$1 dir=$2 name timeout
+  local comp=$1 dir=$2 name timeout lpath lhome env_lines
   name=$(svc_name "$comp")
   if [ "$SYSTEMD" = "1" ]; then
     if [ "$comp" = "server" ]; then timeout=45; else timeout=10; fi
+    lpath=$(detect_login_path)
+    lhome=${HOME:-}
+    env_lines=""
+    if [ -n "$lhome" ]; then
+      env_lines="Environment=\"HOME=${lhome}\""$'\n'
+    fi
+    env_lines+="Environment=\"PATH=${lpath}\""
     cat >"/etc/systemd/system/${name}.service" <<EOF
 [Unit]
 Description=Bedrock ${comp} (installed by install.sh)
@@ -391,6 +415,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=${dir}
+${env_lines}
 ExecStart=$(svc_exec_args "$comp" "$dir")
 Restart=on-failure
 RestartSec=3
@@ -459,8 +484,9 @@ svc_start() { # svc_start <component> <dir>
     local logfile pidfile
     logfile=$(svc_logfile "$comp" "$dir")
     pidfile=$(svc_pidfile "$comp" "$dir")
+    # Login PATH for the same reason as svc_install; env passes it to nohup and the child.
     # shellcheck disable=SC2046
-    nohup $(svc_exec_args "$comp" "$dir") >>"$logfile" 2>&1 &
+    env PATH="$(detect_login_path)" nohup $(svc_exec_args "$comp" "$dir") >>"$logfile" 2>&1 &
     echo $! >"$pidfile"
   fi
 }

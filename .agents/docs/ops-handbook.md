@@ -19,7 +19,7 @@ curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/cabinet-fe/bed
 - 交互菜单：安装 **Bedrock Server（主体）** / **Deploy Agent（代理分发工具）** / 更新已安装组件 / 查看状态；子命令 + `--yes` 可全非交互（`--help` 查看参数）
 - 下载 GitHub Release 产物并校验 SHA256（平台级 `.sha256`）；GitHub 直连不可达时自动改走镜像（内置 `gh-proxy.com`、`ghfast.top`，`--mirror` / `BEDROCK_MIRROR` 可自定义，下载失败自动轮换源）
 - Server 安装目录默认 `/opt/bedrock`（非 root 为 `~/bedrock`），Agent 为 `/opt/bedrock-agent`（`~/bedrock-agent`）；生成 `config.yaml`（`encryption.key`/`jwt.secret` 随机 64 hex、超管密码随机生成仅打印一次，文件权限 600），数据落 `<安装目录>/data`
-- 服务托管：root 且有 systemd 时安装 `bedrock` / `bedrock-agent` 单元（开机自启、`TimeoutStopSec=45` 匹配 Server 30s 优雅停机）；否则 nohup + `<目录>/.<name>.pid` 与 `<目录>/<name>.log`
+- 服务托管：root 且有 systemd 时安装 `bedrock` / `bedrock-agent` 单元（开机自启、`TimeoutStopSec=45` 匹配 Server 30s 优雅停机）；否则 nohup + `<目录>/.<name>.pid` 与 `<目录>/<name>.log`。安装/更新时把登录 shell 的 `PATH`（交互探测）与 `HOME` 固化进服务环境（systemd `Environment=` 行 / nohup `env PATH=`），构建脚本不依赖服务进程被谁启动；安装后新装的用户级工具由引擎执行时按常见目录兜底补全（`internal/engine/env_path.go`）
 - 更新（`install.sh update [--version TAG] [--dir DIR]`）：下载新版本并校验 → 优雅停机（SIGTERM，最长 60s，超时 SIGKILL 兜底）→ 停机窗口备份 SQLite 到 `<目录>/backups/`（保留 3 份）→ 替换二进制（旧版留存 `<bin>.bak`）→ 重启 → 健康检查（Server `/api/v1/health`，Agent `/healthz`）；健康检查失败自动回滚 `.bak` 并恢复运行
 - 安装 / 重装（`server` / `agent` 子命令）同样先优雅停旧进程、预检端口占用（被绕过服务管理器的进程占用时报错退出，不动二进制）；健康检查失败会自动打印最近 30 行日志（journalctl 或 `<目录>/<name>.log`），进程启动即退时秒级报错不等满窗口，存在 `.bak` 时自动回滚恢复
 - `config.yaml` 永不覆盖（重装/更新均保留），已有配置时端口/管理员/token 以配置文件为准，`--port` 等参数与现配置冲突会明示不生效；版本对比依赖 `--version` 输出；`install.sh status` 查看版本/服务/健康
