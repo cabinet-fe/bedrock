@@ -32,8 +32,12 @@ func TestWrapShellWithProfile(t *testing.T) {
 			t.Fatalf("expected untouched command on windows: %q", wrapped)
 		}
 	} else {
-		if !strings.Contains(wrapped, ".bashrc") || !strings.HasSuffix(wrapped, cmd) {
-			t.Fatalf("expected profile wrap: %q", wrapped)
+		// .bashrc 有交互守卫不能 source；必须加载 profile 并产出 mise 的 shims PATH
+		if strings.Contains(wrapped, ".bashrc") || !strings.HasSuffix(wrapped, cmd) {
+			t.Fatalf("expected profile wrap without .bashrc: %q", wrapped)
+		}
+		if !strings.Contains(wrapped, "mise activate bash --shims") {
+			t.Fatalf("expected mise shims activate: %q", wrapped)
 		}
 	}
 }
@@ -43,6 +47,7 @@ func TestApplyMisePath(t *testing.T) {
 	ApplyMisePath(cmd)
 	hasPath := false
 	hasMiseYes := false
+	hasHome := runtime.GOOS == "windows"
 	for _, env := range cmd.Env {
 		if strings.HasPrefix(env, "PATH=") && strings.Contains(env, "shims") {
 			hasPath = true
@@ -50,11 +55,17 @@ func TestApplyMisePath(t *testing.T) {
 		if env == "MISE_YES=1" {
 			hasMiseYes = true
 		}
+		if strings.HasPrefix(env, "HOME=") && env != "HOME=" {
+			hasHome = true
+		}
 	}
 	if !hasPath {
 		t.Fatal("missing shims in PATH")
 	}
 	if !hasMiseYes {
 		t.Fatal("missing MISE_YES=1")
+	}
+	if !hasHome {
+		t.Fatal("missing HOME (service processes may run without it)")
 	}
 }

@@ -3,16 +3,30 @@ package pkg
 import (
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
 )
 
+// homeDir 先取 $HOME；服务进程（如 systemd 系统单元）常不设置 HOME，
+// 此时回退到 /etc/passwd 里当前用户的 home，保证 mise 路径可解析。
+func homeDir() string {
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		return home
+	}
+	if u, userErr := user.Current(); userErr == nil && u.HomeDir != "" {
+		return u.HomeDir
+	}
+	return ""
+}
+
 // ApplyMisePath 把 mise shims 与 ~/.local/bin 放到 PATH 前面，供开发语言环境与工具发现命令。
 func ApplyMisePath(cmd *exec.Cmd) {
-	home, err := os.UserHomeDir()
+	home := homeDir()
 	path := os.Getenv("PATH")
-	if err == nil {
+	if home != "" {
 		dataDir := os.Getenv("MISE_DATA_DIR")
 		if dataDir == "" {
 			dataDir = filepath.Join(home, ".local", "share", "mise")
@@ -22,28 +36,32 @@ func ApplyMisePath(cmd *exec.Cmd) {
 	}
 	env := make([]string, 0, len(os.Environ())+3)
 	for _, item := range os.Environ() {
-		if strings.HasPrefix(item, "PATH=") || strings.HasPrefix(item, "BASH_ENV=") {
+		if strings.HasPrefix(item, "PATH=") || strings.HasPrefix(item, "HOME=") {
 			continue
 		}
 		env = append(env, item)
 	}
-	env = append(env, "PATH="+path, "MISE_YES=1")
-	if err == nil && runtime.GOOS != "windows" {
-		bashrc := filepath.Join(home, ".bashrc")
-		if _, statErr := os.Stat(bashrc); statErr == nil {
-			env = append(env, "BASH_ENV="+bashrc)
-		}
+	// 显式注入 HOME：shell 侧 prelude 的 $HOME（profile 与 mise 路径）依赖它
+	if home != "" && runtime.GOOS != "windows" {
+		env = append(env, "HOME="+home)
 	}
-	cmd.Env = env
+	cmd.Env = append(env, "PATH="+path, "MISE_YES=1")
 }
 
-// WrapShellWithProfile 在 POSIX shell 执行前尝试加载 ~/.bashrc、~/.bash_profile 与 ~/.profile，
-// 使非登录/非交互式命令执行也能获取到用户配置的环境变量与工具。
+// WrapShellWithProfile 在命令执行前让非登录/非交互 shell 也能拿到用户配置的工具：
+// 先加载登录 profile（.bash_profile / .profile，非交互 shell 的正确入口），
+// 再显式发现 mise 并以 activate --shims 导出静态 PATH（无 hook，非交互安全）。
+// 不 source .bashrc：发行版默认带 `case $- in *i*) ;; *) return;; esac`
+// 交互守卫，非交互下在 mise activate 之前就 return，且可能污染 stdout。
 func WrapShellWithProfile(command string) string {
 	if runtime.GOOS == "windows" {
 		return command
 	}
-	prelude := `[ -f "$HOME/.bashrc" ] && { export PS1=1; . "$HOME/.bashrc" >/dev/null 2>&1; unset PS1; }; [ -f "$HOME/.bash_profile" ] && . "$HOME/.bash_profile" >/dev/null 2>&1; [ -f "$HOME/.profile" ] && . "$HOME/.profile" >/dev/null 2>&1; `
+	prelude := `[ -f "$HOME/.bash_profile" ] && . "$HOME/.bash_profile" >/dev/null 2>&1; ` +
+		`[ -f "$HOME/.profile" ] && . "$HOME/.profile" >/dev/null 2>&1; ` +
+		`command -v mise >/dev/null 2>&1 || { [ -x "$HOME/.local/bin/mise" ] && export PATH="$HOME/.local/bin:$PATH"; }; ` +
+		`command -v mise >/dev/null 2>&1 || { [ -x /usr/local/bin/mise ] && export PATH="/usr/local/bin:$PATH"; }; ` +
+		`command -v mise >/dev/null 2>&1 && eval "$(mise activate bash --shims 2>/dev/null)" || export PATH="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims:$PATH"; `
 	return prelude + command
 }
 
