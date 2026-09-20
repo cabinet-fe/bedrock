@@ -96,7 +96,8 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	return r, gdb
 }
 
-func TestProviderHandler_ForbiddenForNonAdmin(t *testing.T) {
+// Provider routes are no longer admin-gated; renamed to keep a plain-user pass path.
+func TestProviderHandler_NonAdminAllowed(t *testing.T) {
 	router, _ := setupTestRouter(t)
 
 	reqList := httptest.NewRequest(http.MethodGet, "/api/v1/ai/providers", nil)
@@ -104,8 +105,8 @@ func TestProviderHandler_ForbiddenForNonAdmin(t *testing.T) {
 	reqList.Header.Set("X-Test-Is-Admin", "false")
 	wList := httptest.NewRecorder()
 	router.ServeHTTP(wList, reqList)
-	if wList.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 Forbidden for non-admin on list providers, got %d", wList.Code)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("expected 200 for non-admin on list providers, got %d", wList.Code)
 	}
 
 	createBody := bytes.NewBufferString(`{"name":"OpenAI","api_url":"https://api.openai.com/v1"}`)
@@ -115,8 +116,8 @@ func TestProviderHandler_ForbiddenForNonAdmin(t *testing.T) {
 	reqCreate.Header.Set("X-Test-Is-Admin", "false")
 	wCreate := httptest.NewRecorder()
 	router.ServeHTTP(wCreate, reqCreate)
-	if wCreate.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 Forbidden for non-admin on create provider, got %d", wCreate.Code)
+	if wCreate.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for non-admin on create provider, got %d", wCreate.Code)
 	}
 
 	reqModels := httptest.NewRequest(http.MethodGet, "/api/v1/ai/providers/1/models", nil)
@@ -124,8 +125,8 @@ func TestProviderHandler_ForbiddenForNonAdmin(t *testing.T) {
 	reqModels.Header.Set("X-Test-Is-Admin", "false")
 	wModels := httptest.NewRecorder()
 	router.ServeHTTP(wModels, reqModels)
-	if wModels.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 Forbidden for non-admin on list models, got %d", wModels.Code)
+	if wModels.Code != http.StatusOK {
+		t.Fatalf("expected 200 for non-admin on list models, got %d", wModels.Code)
 	}
 }
 

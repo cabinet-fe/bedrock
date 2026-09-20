@@ -24,13 +24,13 @@ func (r *RoleRepository) Create(role *model.Role) error {
 
 func (r *RoleRepository) FindByID(id uint) (*model.Role, error) {
 	var role model.Role
-	err := r.db.Preload("Permissions").First(&role, id).Error
+	err := r.db.First(&role, id).Error
 	return &role, err
 }
 
 func (r *RoleRepository) FindByCode(code string) (*model.Role, error) {
 	var role model.Role
-	err := r.db.Preload("Permissions").Where("code = ?", code).First(&role).Error
+	err := r.db.Where("code = ?", code).First(&role).Error
 	return &role, err
 }
 
@@ -40,8 +40,7 @@ func (r *RoleRepository) List(q pkg.ListQuery) ([]model.Role, int64, error) {
 	if err := r.db.Model(&model.Role{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := r.db.Preload("Permissions").
-		Offset(q.Offset()).Limit(q.PageSize).
+	err := r.db.Offset(q.Offset()).Limit(q.PageSize).
 		Order("id ASC").Find(&items).Error
 	return items, total, err
 }
@@ -52,41 +51,11 @@ func (r *RoleRepository) Update(role *model.Role) error {
 
 func (r *RoleRepository) Delete(id uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("role_id = ?", id).Delete(&model.RolePermission{}).Error; err != nil {
-			return err
-		}
 		if err := tx.Where("role_id = ?", id).Delete(&model.UserRole{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&model.Role{}, id).Error
 	})
-}
-
-func (r *RoleRepository) ReplacePermissions(roleID uint, permissions []string) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("role_id = ?", roleID).Delete(&model.RolePermission{}).Error; err != nil {
-			return err
-		}
-		for _, p := range permissions {
-			if p == "" {
-				continue
-			}
-			row := model.RolePermission{RoleID: roleID, Permission: p}
-			if err := tx.Create(&row).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-func (r *RoleRepository) ListPermissionsByUserID(userID uint) ([]string, error) {
-	var perms []string
-	err := r.db.Model(&model.RolePermission{}).
-		Joins("JOIN user_roles ON user_roles.role_id = role_permissions.role_id").
-		Where("user_roles.user_id = ?", userID).
-		Pluck("role_permissions.permission", &perms).Error
-	return perms, err
 }
 
 // ListDataScopesByUserID returns data_scope values of roles assigned to the user.
@@ -118,12 +87,6 @@ func (r *RoleRepository) ReplaceUserRoles(userID uint, roleIDs []uint) error {
 		}
 		return nil
 	})
-}
-
-func (r *RoleRepository) ListDistinctPermissions() ([]string, error) {
-	var perms []string
-	err := r.db.Model(&model.RolePermission{}).Distinct("permission").Pluck("permission", &perms).Error
-	return perms, err
 }
 
 func (r *RoleRepository) EnsureUserHasRole(userID, roleID uint) error {

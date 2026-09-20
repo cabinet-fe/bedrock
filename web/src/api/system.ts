@@ -10,7 +10,6 @@ import type {
   MenuGroup,
   NotificationItem,
   PageResult,
-  PermissionCatalogGroup,
   RbacResource,
   RestoreBackupParams,
   RestoreBackupResult,
@@ -62,19 +61,8 @@ export async function updateRole(id: number, body: Record<string, unknown>): Pro
   return data;
 }
 
-export async function setRolePermissions(id: number, permissions: string[]): Promise<Role> {
-  const { body } = await http.put<Role>(`/roles/${id}/permissions`, { permissions });
-  return body;
-}
-
 export async function deleteRole(id: number): Promise<void> {
   await http.delete(`/roles/${id}`);
-}
-
-/** Three-level catalog for role permission editor. */
-export async function getPermissionCatalog(): Promise<{ items: PermissionCatalogGroup[] }> {
-  const { body } = await http.get<{ items: PermissionCatalogGroup[] }>("/roles/permission-catalog");
-  return body;
 }
 
 export async function listMenuGroups(): Promise<{ items: MenuGroup[] }> {

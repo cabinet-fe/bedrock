@@ -6,11 +6,13 @@ import (
 	"strings"
 
 	"bedrock/internal/pkg"
-	"bedrock/internal/rbac"
 	"bedrock/internal/rbac/model"
 	"bedrock/internal/rbac/repository"
 )
 
+// RoleService manages roles. Permissions are fixed system-wide: every role
+// carries all feature permissions except super_admin_only ones, so only
+// identity fields and data_scope are editable here.
 type RoleService struct {
 	roles     *repository.RoleRepository
 	resources *repository.ResourceRepository
@@ -20,7 +22,7 @@ func NewRoleService(roles *repository.RoleRepository, resources *repository.Reso
 	return &RoleService{roles: roles, resources: resources}
 }
 
-func (s *RoleService) Create(name, code, description, dataScope string, permissions []string) (*model.Role, error) {
+func (s *RoleService) Create(name, code, description, dataScope string) (*model.Role, error) {
 	name = strings.TrimSpace(name)
 	code = strings.TrimSpace(code)
 	if name == "" || code == "" {
@@ -33,18 +35,12 @@ func (s *RoleService) Create(name, code, description, dataScope string, permissi
 	if err != nil {
 		return nil, err
 	}
-	if err := s.validateBindablePermissions(permissions); err != nil {
-		return nil, err
-	}
 	role := &model.Role{
 		Name: name, Code: code, Description: description,
 		Type: model.RoleTypeCustom, DataScope: scope,
 	}
 	if err := s.roles.Create(role); err != nil {
 		return nil, fmt.Errorf("创建角色失败: %w", err)
-	}
-	if err := s.roles.ReplacePermissions(role.ID, permissions); err != nil {
-		return nil, err
 	}
 	return s.roles.FindByID(role.ID)
 }
@@ -93,23 +89,6 @@ func (s *RoleService) Delete(id uint) error {
 	return s.roles.Delete(id)
 }
 
-func (s *RoleService) SetPermissions(id uint, permissions []string) (*model.Role, error) {
-	role, err := s.roles.FindByID(id)
-	if err != nil {
-		return nil, err
-	}
-	if role.IsBuiltin() {
-		return nil, errors.New("不能修改内置角色权限")
-	}
-	if err := s.validateBindablePermissions(permissions); err != nil {
-		return nil, err
-	}
-	if err := s.roles.ReplacePermissions(id, permissions); err != nil {
-		return nil, err
-	}
-	return s.roles.FindByID(id)
-}
-
 func (s *RoleService) SetUserRoles(userID uint, roleIDs []uint) error {
 	filtered, err := s.filterAssignableRoleIDs(roleIDs)
 	if err != nil {
@@ -155,35 +134,6 @@ func (s *RoleService) filterAssignableRoleIDs(roleIDs []uint) ([]uint, error) {
 		out = append(out, id)
 	}
 	return out, nil
-}
-
-func (s *RoleService) validateBindablePermissions(permissions []string) error {
-	for _, p := range permissions {
-		if p == "" {
-			continue
-		}
-		if _, _, ok := rbac.SplitPermission(p); !ok {
-			return fmt.Errorf("无效权限码: %s", p)
-		}
-		res, err := s.resources.FindByFullCode(p)
-		if err != nil {
-			return fmt.Errorf("权限资源不存在: %s", p)
-		}
-		if !res.IsFeature() {
-			return fmt.Errorf("只能绑定功能权限: %s", p)
-		}
-		if res.SuperAdminOnly {
-			return fmt.Errorf("不能绑定仅超级管理员功能: %s", p)
-		}
-		only, err := s.resources.IsSuperAdminOnly(p)
-		if err != nil {
-			return err
-		}
-		if only {
-			return fmt.Errorf("不能绑定仅超级管理员功能: %s", p)
-		}
-	}
-	return nil
 }
 
 func normalizeDataScope(raw, fallback string) (string, error) {

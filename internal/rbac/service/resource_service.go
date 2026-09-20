@@ -223,8 +223,6 @@ func (s *ResourceService) Update(id uint, in UpdateResourceInput, actorIsSuperAd
 		if err := s.cascadeMenuCodeChange(res, oldFullCode); err != nil {
 			return nil, err
 		}
-	} else if codeChanged && res.IsFeature() && oldFullCode != res.FullCode {
-		_ = s.resources.DeleteRolePermissionsByFullCodes([]string{oldFullCode})
 	}
 
 	return s.resources.FindByID(id)
@@ -235,9 +233,7 @@ func (s *ResourceService) cascadeMenuCodeChange(menu *model.RbacResource, oldMen
 	if err != nil {
 		return err
 	}
-	stale := []string{oldMenuFullCode}
 	for _, child := range children {
-		stale = append(stale, child.FullCode)
 		child.FullCode = rbac.FeatureFullCode(menu.Code, child.Code)
 		if menu.SuperAdminOnly {
 			child.SuperAdminOnly = true
@@ -246,7 +242,7 @@ func (s *ResourceService) cascadeMenuCodeChange(menu *model.RbacResource, oldMen
 			return err
 		}
 	}
-	return s.resources.DeleteRolePermissionsByFullCodes(stale)
+	return nil
 }
 
 func (s *ResourceService) Delete(id uint) error {
@@ -256,13 +252,6 @@ func (s *ResourceService) Delete(id uint) error {
 	}
 	if n > 0 {
 		return errors.New("请先删除子资源")
-	}
-	res, err := s.resources.FindByID(id)
-	if err != nil {
-		return err
-	}
-	if err := s.resources.DeleteRolePermissionsByFullCodes([]string{res.FullCode}); err != nil {
-		return err
 	}
 	return s.resources.Delete(id)
 }

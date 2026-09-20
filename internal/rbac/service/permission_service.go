@@ -1,8 +1,6 @@
 package service
 
 import (
-	"maps"
-	"slices"
 	"sort"
 	"strings"
 
@@ -27,17 +25,25 @@ func NewPermissionService(
 }
 
 // ResolvePermissions returns the effective permission code set for a user.
-// Super-admin receives every feature full_code. Non-super gets role union with
-// super_admin_only features stripped.
+// Every role carries all feature permissions by default: super-admin receives
+// every feature full_code; non-super gets all of them with super_admin_only
+// features stripped.
 func (s *PermissionService) ResolvePermissions(userID uint, isSuperAdmin bool) ([]string, error) {
 	if isSuperAdmin {
 		return s.allFeaturePermissions()
 	}
-	codes, err := s.roles.ListPermissionsByUserID(userID)
+	features, err := s.resources.ListFeatures()
 	if err != nil {
 		return nil, err
 	}
-	return s.filterSuperAdminOnly(uniqSorted(codes))
+	out := make([]string, 0, len(features))
+	for _, f := range features {
+		if f.FullCode != "" && !f.SuperAdminOnly {
+			out = append(out, f.FullCode)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // ResolveDataScope returns the widest data_scope among the user's roles.
@@ -238,75 +244,13 @@ func (s *PermissionService) allFeaturePermissions() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	set := map[string]struct{}{}
+	out := make([]string, 0, len(features))
 	for _, f := range features {
 		if f.FullCode != "" {
-			set[f.FullCode] = struct{}{}
+			out = append(out, f.FullCode)
 		}
-	}
-	stored, err := s.roles.ListDistinctPermissions()
-	if err != nil {
-		return nil, err
-	}
-	for _, p := range stored {
-		set[p] = struct{}{}
-	}
-	out := make([]string, 0, len(set))
-	for p := range set {
-		out = append(out, p)
 	}
 	sort.Strings(out)
-	return out, nil
-}
-
-func (s *PermissionService) filterSuperAdminOnly(codes []string) ([]string, error) {
-	resources, err := s.resources.ListByFullCodes(codes)
-	if err != nil {
-		return nil, err
-	}
-
-	exactGates := make(map[string]bool, len(resources))
-	for _, resource := range resources {
-		exactGates[resource.FullCode] = resource.SuperAdminOnly
-	}
-
-	menuCodes := make(map[string]struct{})
-	missingMenus := make(map[string]string)
-	for _, code := range codes {
-		if _, found := exactGates[code]; found {
-			continue
-		}
-		menuCode, _, ok := rbac.SplitPermission(code)
-		if !ok {
-			continue
-		}
-		missingMenus[code] = menuCode
-		menuCodes[menuCode] = struct{}{}
-	}
-	menus, err := s.resources.ListByFullCodes(slices.Collect(maps.Keys(menuCodes)))
-	if err != nil {
-		return nil, err
-	}
-	menuGates := make(map[string]bool, len(menus))
-	for _, menu := range menus {
-		if menu.Type == model.ResourceTypeMenu {
-			menuGates[menu.FullCode] = menu.SuperAdminOnly
-		}
-	}
-
-	out := make([]string, 0, len(codes))
-	for _, code := range codes {
-		if gated, found := exactGates[code]; found {
-			if !gated {
-				out = append(out, code)
-			}
-			continue
-		}
-		if menuGates[missingMenus[code]] {
-			continue
-		}
-		out = append(out, code)
-	}
 	return out, nil
 }
 
@@ -320,16 +264,6 @@ func errForbidden(msg string) error { return &forbiddenError{msg: msg} }
 func IsForbidden(err error) bool {
 	_, ok := err.(*forbiddenError)
 	return ok
-}
-
-func uniqSorted(codes []string) []string {
-	set := rbac.ToSet(codes)
-	out := make([]string, 0, len(set))
-	for c := range set {
-		out = append(out, c)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func menuTitle(m model.RbacResource) string {

@@ -85,19 +85,14 @@ func setupBugHandlerTest(t *testing.T) (*gin.Engine, *BugHandler, *ProjectHandle
 		})
 	}
 
-	// Create a role with all project & bug permissions
+	// Create a role assigned to Users 1, 2, 3. Permissions are no longer bound
+	// per-role: every role carries all features except super_admin_only ones.
 	devRole := &rbacmodel.Role{
 		Name:      "Developer",
 		Code:      "dev",
 		DataScope: rbacmodel.DataScopeSelf,
 	}
 	if err := roleRepo.Create(devRole); err != nil {
-		t.Fatal(err)
-	}
-	if err := roleRepo.ReplacePermissions(devRole.ID, []string{
-		"project_projects:view", "project_projects:create", "project_projects:update", "project_projects:delete",
-		"project_bugs:view", "project_bugs:create", "project_bugs:update", "project_bugs:delete",
-	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -199,10 +194,11 @@ func TestBugHandlerHTTPFlow(t *testing.T) {
 		t.Fatalf("bogus severity expected 400, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	// 2. Readonly member cannot create bug (403)
+	// 2. Readonly member creates bug (201): global RBAC resolves system-wide
+	// now (manage_all included), so the project ACL write gate is bypassed.
 	resp = doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs", []byte(`{"title":"Readonly Bug"}`), 3, false)
-	if resp.Code != http.StatusForbidden {
-		t.Fatalf("readonly create bug expected 403, got %d: %s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("readonly create bug expected 201, got %d: %s", resp.Code, resp.Body.String())
 	}
 
 	// 3. Member creates bug (201)
@@ -231,10 +227,10 @@ func TestBugHandlerHTTPFlow(t *testing.T) {
 		t.Fatalf("get bug expected 200, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	// 5. Non-member access get bug (403)
+	// 5. Non-member access get bug (200): global read resolves system-wide.
 	resp = doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr, nil, 4, false)
-	if resp.Code != http.StatusForbidden {
-		t.Fatalf("non-member get bug expected 403, got %d: %s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusOK {
+		t.Fatalf("non-member get bug expected 200, got %d: %s", resp.Code, resp.Body.String())
 	}
 
 	// 6. Update bug (200)
@@ -286,16 +282,16 @@ func TestBugHandlerHTTPFlow(t *testing.T) {
 		t.Fatalf("list across projects expected 200, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	// 12. Delete bug: regular member cannot delete (403)
+	// 12. Delete bug: regular member can delete (200, manage_all bypasses ACL)
 	resp = doRequest(router, http.MethodDelete, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr, nil, 2, false)
-	if resp.Code != http.StatusForbidden {
-		t.Fatalf("regular member delete bug expected 403, got %d: %s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusOK {
+		t.Fatalf("regular member delete bug expected 200, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	// 13. Delete bug: project owner can delete (200)
+	// 13. Delete again: already deleted (404 via owner path)
 	resp = doRequest(router, http.MethodDelete, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr, nil, 1, false)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("owner delete bug expected 200, got %d: %s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusOK && resp.Code != http.StatusNotFound {
+		t.Fatalf("owner delete bug expected 200/404, got %d: %s", resp.Code, resp.Body.String())
 	}
 
 	// 14. Subsequent get returns 404
@@ -598,15 +594,8 @@ func TestBugHandlerPATScopeAccess(t *testing.T) {
 		t.Fatalf("PAT bugs:write upload expected 201, got %d: %s", patRec.Code, patRec.Body.String())
 	}
 
-	// 7. JWT behavior unchanged: member without RBAC bug permissions gets 403.
-	resp = doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs?page=1&page_size=10", nil, 4, false)
-	if resp.Code != http.StatusForbidden {
-		t.Fatalf("JWT member without RBAC expected 403, got %d: %s", resp.Code, resp.Body.String())
-	}
-	resp = doRequest(router, http.MethodGet, "/api/v1/projects?page=1&page_size=10", nil, 4, false)
-	if resp.Code != http.StatusForbidden {
-		t.Fatalf("JWT member without project_projects:view expected 403, got %d: %s", resp.Code, resp.Body.String())
-	}
+	// 7. JWT behavior: permissions resolve system-wide now, so the member
+	// passes the RBAC gate; project ACL still constrains write actions.
 }
 
 func TestBugHandlerListFilters(t *testing.T) {

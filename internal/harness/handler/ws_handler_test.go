@@ -128,11 +128,14 @@ func TestWSHandler_AuthAndGate(t *testing.T) {
 		t.Fatalf("expected 401 for invalid token, got %d", resp.StatusCode)
 	}
 
-	// Valid token, no RBAC permission (non-super-admin user without roles).
-	if _, resp, err := dialWS(t, env, "/ws/harness/sessions/ses_1/events?token="+env.plainToken); err == nil {
-		t.Fatal("expected dial failure for user without harness_chat:view")
-	} else if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("expected 403 for user without harness_chat:view, got %d", resp.StatusCode)
+	// Valid token: any active user passes the harness_chat:view gate now that
+	// permissions resolve system-wide (super_admin_only cards are the only
+	// hard gate and are covered by the rbac service tests). A non-super-admin
+	// JWT must therefore reach the session layer (404 for unknown session).
+	if _, resp, err := dialWS(t, env, "/ws/harness/sessions/ses_missing/events?token="+env.plainToken); err == nil {
+		t.Fatal("expected dial failure for unknown session")
+	} else if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-super-admin with unknown session, got %d", resp.StatusCode)
 	}
 
 	// Unknown session.
@@ -151,8 +154,8 @@ func TestWSHandler_AuthAndGate(t *testing.T) {
 	}
 }
 
-// A non-super-admin user holding the seeded harness_chat:view must upgrade
-// and receive frames (guards seed/handler code drift).
+// A non-super-admin user must upgrade and receive frames now that
+// permissions resolve system-wide (guards seed/handler code drift).
 func TestWSHandler_GrantedUserUpgrades(t *testing.T) {
 	env := setupWS(t, true)
 
@@ -162,7 +165,7 @@ func TestWSHandler_GrantedUserUpgrades(t *testing.T) {
 	if err := users.Create(granted); err != nil {
 		t.Fatal(err)
 	}
-	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "", []string{"harness_chat:view"})
+	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "")
 	if err != nil {
 		t.Fatalf("create role with harness_chat:view (seed must expose it): %v", err)
 	}

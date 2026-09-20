@@ -150,9 +150,9 @@ web/                      # Vue 3 前端
 
 ### 4.1 身份模型
 
-- **User**：可禁用；绑定 **多个 Role**；权限 = 各角色权限码并集。
-- **Super Admin**：`users.is_super_admin` 为鉴权真源；内置角色 `code=super_admin`（`type=builtin`）与唯一超管用户 1:1 同步；不可删、不可改权限、不可通过用户角色绑定 API 赋给他人。
-- **自定义 Role**：`type=custom`；绑定功能 `full_code` 集合。
+- **User**：可禁用；绑定 **多个 Role**；权限为系统级集合：除 `super_admin_only` 功能外全部功能 `full_code`（角色不再绑定权限，角色仅决定 `data_scope`）。
+- **Super Admin**：`users.is_super_admin` 为鉴权真源；内置角色 `code=super_admin`（`type=builtin`）与唯一超管用户 1:1 同步；不可删、不可通过用户角色绑定 API 赋给他人。
+- **自定义 Role**：`type=custom`；仅含名称、编码、描述与 `data_scope`（`self`/`all`），权限不可编辑。
 - **PAT**：属于 User；scope ⊆ {`skills:read`,`agents:run`,`docs:read`,`docs:write`,`dev_docs:read`,`dev_docs:write`,`builds:run`,`pipelines:run`,`scripts:run`}；明文前缀 `br_`+hex；存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 `GET .../reveal` 返回密文，前端解密）；列表仅元数据 + `copyable`；历史无密文不可复制。属主可更新名称、scope、过期与吊销（`revoked_at`），**不轮换**明文/哈希/密文。
 
 ### 4.2 权限码
@@ -173,7 +173,7 @@ RbacResource
 - 登录 / `GET /auth/me` 返回两层菜单（分组 → 菜单项），对齐侧栏 `u-group-nav`；过滤 `hidden`、未启用、非超管的 `super_admin_only`，且需具备 `{menuCode}:view`。
 - 前端**只渲染**下发菜单，不硬编码全量再隐藏。
 - 图标：原始体积 ≤ 32KB；超限 400。
-- `super_admin_only`：服务端拒绝写入角色权限；生效时非超管一律拒绝（不再硬编码 `ops` 前缀）。
+- `super_admin_only`：仅超级管理员可访问；seed 每次启动强制回写仪表盘「系统信息」「系统状态」卡片为 `super_admin_only`，资源 API 手动翻转不能持久。
 
 ### 4.4 项目 ACL 与角色数据权限
 

@@ -49,12 +49,6 @@ export interface PageResult<T> {
   total_pages: number;
 }
 
-interface RolePermission {
-  id: number;
-  role_id: number;
-  permission: string;
-}
-
 type RoleType = "builtin" | "custom";
 
 export interface Role {
@@ -64,7 +58,6 @@ export interface Role {
   description: string;
   type?: RoleType;
   data_scope?: "self" | "all";
-  permissions?: RolePermission[];
 }
 
 export interface MenuGroup {
@@ -96,34 +89,6 @@ export interface RbacResource {
   icon_base64?: string;
   icon_mime?: string;
   children?: RbacResource[];
-}
-
-export interface PermissionCatalogFeature {
-  id: number;
-  code: string;
-  full_code: string;
-  type: string;
-  title?: string;
-  super_admin_only: boolean;
-  enabled: boolean;
-}
-
-export interface PermissionCatalogMenu {
-  id: number;
-  code: string;
-  full_code: string;
-  title: string;
-  super_admin_only: boolean;
-  hidden: boolean;
-  enabled: boolean;
-  features: PermissionCatalogFeature[];
-}
-
-export interface PermissionCatalogGroup {
-  id: number;
-  name: string;
-  code: string;
-  menus: PermissionCatalogMenu[];
 }
 
 export interface Dictionary {

@@ -63,7 +63,7 @@ func setupRBAC(t *testing.T) (*service.PermissionService, *service.RoleService, 
 		roles
 }
 
-func TestPermissionUnion(t *testing.T) {
+func TestResolvePermissionsIgnoresRoles(t *testing.T) {
 	perm, roles, _, users, _ := setupRBAC(t)
 
 	hash, _ := pkg.HashPassword("pass")
@@ -72,15 +72,23 @@ func TestPermissionUnion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r1, err := roles.Create("A", "role_a", "", "", []string{"system_users:view", "resource_repositories:view"})
+	if _, err := roles.Create("A", "role_a", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	all, _, err := roles.List(pkg.ListQuery{Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := roles.Create("B", "role_b", "", "", []string{"system_roles:view", "resource_repositories:create"})
-	if err != nil {
-		t.Fatal(err)
+	var roleAID uint
+	for _, r := range all {
+		if r.Code == "role_a" {
+			roleAID = r.ID
+		}
 	}
-	if err := roles.SetUserRoles(u.ID, []uint{r1.ID, r2.ID}); err != nil {
+	if roleAID == 0 {
+		t.Fatal("role_a not created")
+	}
+	if err := roles.SetUserRoles(u.ID, []uint{roleAID}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -96,6 +104,36 @@ func TestPermissionUnion(t *testing.T) {
 			t.Fatalf("missing %s in %v", want, codes)
 		}
 	}
+	for _, gated := range []string{"dashboard:system_info", "dashboard:system_status"} {
+		if rbac.HasPermission(set, gated) {
+			t.Fatalf("super_admin_only %s leaked to non-super", gated)
+		}
+	}
+	if _, err := perm.ResolvePermissions(u.ID, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDashboardCardsAreSuperAdminOnly(t *testing.T) {
+	perm, _, _, users, _ := setupRBAC(t)
+
+	hash, _ := pkg.HashPassword("pass")
+	u := &authmodel.User{Username: "cardfan", PasswordHash: hash, IsActive: true}
+	if err := users.Create(u); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, code := range []string{"dashboard:system_info", "dashboard:system_status"} {
+		if err := perm.CheckAccess(u.ID, false, code); err == nil || !service.IsForbidden(err) {
+			t.Fatalf("expected 403 for %s, got %v", code, err)
+		}
+		if err := perm.CheckAccess(u.ID, true, code); err != nil {
+			t.Fatalf("super-admin should pass %s: %v", code, err)
+		}
+	}
+	if err := perm.CheckAccess(u.ID, false, "system_users:view"); err != nil {
+		t.Fatalf("system_users:view should pass without any role: %v", err)
+	}
 }
 
 func TestResolveDataScopeWidestWins(t *testing.T) {
@@ -107,7 +145,7 @@ func TestResolveDataScopeWidestWins(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	selfRole, err := roles.Create("SelfOnly", "self_only", "", model.DataScopeSelf, []string{"system_users:view"})
+	selfRole, err := roles.Create("SelfOnly", "self_only", "", model.DataScopeSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +157,7 @@ func TestResolveDataScopeWidestWins(t *testing.T) {
 		t.Fatalf("expected self, got %q err=%v", scope, err)
 	}
 
-	allRole, err := roles.Create("AllScope", "all_scope", "", model.DataScopeAll, []string{"system_roles:view"})
+	allRole, err := roles.Create("AllScope", "all_scope", "", model.DataScopeAll)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +176,7 @@ func TestResolveDataScopeWidestWins(t *testing.T) {
 }
 
 func TestProjectScopeActionsAreSeededAndResolvable(t *testing.T) {
-	perm, roles, resources, users, _ := setupRBAC(t)
+	perm, _, resources, users, _ := setupRBAC(t)
 
 	tree, err := resources.ListTree(service.ListResourcesFilter{})
 	if err != nil {
@@ -167,18 +205,6 @@ func TestProjectScopeActionsAreSeededAndResolvable(t *testing.T) {
 	if err := users.Create(user); err != nil {
 		t.Fatal(err)
 	}
-	role, err := roles.Create("项目范围管理员", "project_scope_admin", "", "", []string{
-		"project_projects:view",
-		"project_projects:view_all",
-		"project_projects:update",
-		"project_projects:manage_all",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := roles.SetUserRoles(user.ID, []uint{role.ID}); err != nil {
-		t.Fatal(err)
-	}
 
 	resolved, err := perm.ResolvePermissions(user.ID, false)
 	if err != nil {
@@ -195,7 +221,7 @@ func TestProjectScopeActionsAreSeededAndResolvable(t *testing.T) {
 }
 
 func TestSuperAdminOnlyGate(t *testing.T) {
-	perm, roles, _, users, roleRepo := setupRBAC(t)
+	perm, roles, _, users, _ := setupRBAC(t)
 
 	hash, _ := pkg.HashPassword("pass")
 	u := &authmodel.User{Username: "opsfan", PasswordHash: hash, IsActive: true}
@@ -203,26 +229,23 @@ func TestSuperAdminOnlyGate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Binding super_admin_only features must be rejected.
-	if _, err := roles.Create("OpsMistaken", "ops_mistaken", "", "", []string{
-		"ops_processes:view", "system_users:view",
-	}); err == nil {
-		t.Fatal("expected reject binding ops_processes:view")
+	if _, err := roles.Create("Ops", "ops_role", "", ""); err != nil {
+		t.Fatal(err)
 	}
-
-	r, err := roles.Create("OpsMistaken", "ops_mistaken", "", "", []string{"system_users:view"})
+	all, _, err := roles.List(pkg.ListQuery{Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a stale grant that slipped into role_permissions.
-	if err := roleRepo.ReplacePermissions(r.ID, []string{
-		"ops_processes:view",
-		"ops_processes:removed_legacy",
-		"system_users:view",
-	}); err != nil {
-		t.Fatal(err)
+	var opsRoleID uint
+	for _, r := range all {
+		if r.Code == "ops_role" {
+			opsRoleID = r.ID
+		}
 	}
-	if err := roles.SetUserRoles(u.ID, []uint{r.ID}); err != nil {
+	if opsRoleID == 0 {
+		t.Fatal("ops_role not created")
+	}
+	if err := roles.SetUserRoles(u.ID, []uint{opsRoleID}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -254,43 +277,25 @@ func TestMenuTrimTwoLevelGroups(t *testing.T) {
 	if err := users.Create(u); err != nil {
 		t.Fatal(err)
 	}
-	r, err := roles.Create("Viewer", "viewer", "", "", []string{"system_users:view"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := roles.SetUserRoles(u.ID, []uint{r.ID}); err != nil {
-		t.Fatal(err)
-	}
 
 	menus, err := perm.TrimMenus(u.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(menus) != 1 || menus[0].Title != "系统管理" {
-		t.Fatalf("expected 系统管理 group, got %+v", menus)
+	if len(menus) == 0 {
+		t.Fatal("expected non-empty nav for any user")
 	}
-	if len(menus[0].Children) != 1 || menus[0].Children[0].Title != "用户" || menus[0].Children[0].Path != "/system/users" {
-		t.Fatalf("expected 用户 leaf, got %+v", menus[0].Children)
+	superUser := &authmodel.User{Username: "superviewer", PasswordHash: hash, IsActive: true}
+	if err := users.Create(superUser); err != nil {
+		t.Fatal(err)
 	}
-
-	r2, err := roles.Create("NoView", "noview", "", "", []string{"system_users:create"})
+	_ = roles.SetUserRoles(superUser.ID, []uint{1})
+	superMenus, err := perm.TrimMenus(superUser.ID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	u2 := &authmodel.User{Username: "noview", PasswordHash: hash, IsActive: true}
-	if err := users.Create(u2); err != nil {
-		t.Fatal(err)
-	}
-	_ = roles.SetUserRoles(u2.ID, []uint{r2.ID})
-	menus2, err := perm.TrimMenus(u2.ID, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(menus2) != 0 {
-		t.Fatalf("expected empty menus without :view, got %+v", menus2)
-	}
-	if err := perm.CheckAccess(u2.ID, false, "system_users:view"); err == nil {
-		t.Fatal("expected 403 without :view")
+	if len(superMenus) == 0 {
+		t.Fatal("expected non-empty nav for super admin")
 	}
 }
 
@@ -437,9 +442,6 @@ func TestBuiltinRoleGuards(t *testing.T) {
 	if err := roles.Delete(builtin.ID); err == nil {
 		t.Fatal("expected delete builtin reject")
 	}
-	if _, err := roles.SetPermissions(builtin.ID, []string{"system_users:view"}); err == nil {
-		t.Fatal("expected set permissions on builtin reject")
-	}
 
 	hash, _ := pkg.HashPassword("pass")
 	u := &authmodel.User{Username: "normal", PasswordHash: hash, IsActive: true}
@@ -448,40 +450,6 @@ func TestBuiltinRoleGuards(t *testing.T) {
 	}
 	if err := roles.SetUserRoles(u.ID, []uint{builtin.ID}); err == nil {
 		t.Fatal("expected reject binding super_admin role")
-	}
-}
-
-func TestPermissionCatalog(t *testing.T) {
-	perm, _, _, _, _ := setupRBAC(t)
-	catalog, err := perm.PermissionCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(catalog) == 0 {
-		t.Fatal("expected catalog groups")
-	}
-	var foundSystemUsers bool
-	for _, g := range catalog {
-		for _, m := range g.Menus {
-			if m.Code == "system_users" && len(m.Features) > 0 {
-				foundSystemUsers = true
-			}
-			if m.Code == "ops_processes" && !m.SuperAdminOnly {
-				t.Fatal("ops_processes should be super_admin_only")
-			}
-		}
-	}
-	if !foundSystemUsers {
-		t.Fatal("expected system_users in catalog")
-	}
-}
-
-func TestValidCode(t *testing.T) {
-	if !rbac.ValidCode("system_users") {
-		t.Fatal("system_users should be valid")
-	}
-	if rbac.ValidCode("system.users") {
-		t.Fatal("dotted code should be invalid")
 	}
 }
 

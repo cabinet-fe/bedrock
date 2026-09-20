@@ -176,14 +176,15 @@ func TestBackupHandler_CRUD_And_Permissions(t *testing.T) {
 		}
 	}
 
-	// 2. Normal user without permission -> 403
+	// 2. Normal user passes RBAC now (permissions resolve system-wide; the
+	// backup list route is not super_admin_only).
 	{
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/system/backups", nil)
 		req.Header.Set("X-Test-User", "normal")
 		rec := httptest.NewRecorder()
 		env.router.ServeHTTP(rec, req)
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("expected 403 for unauthorized normal user, got %d: %s", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 for normal user, got %d: %s", rec.Code, rec.Body.String())
 		}
 	}
 

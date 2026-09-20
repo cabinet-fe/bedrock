@@ -121,21 +121,8 @@ func TestMailHandler_Permissions(t *testing.T) {
 		t.Fatalf("expected 401 for unauthenticated, got %d", w.Code)
 	}
 
-	// Normal user without permission -> 403 on all three endpoints
-	for _, tc := range []struct {
-		method, path string
-		body         any
-	}{
-		{http.MethodGet, "/api/v1/system/mail/smtp", nil},
-		{http.MethodPut, "/api/v1/system/mail/smtp", map[string]any{"host": "smtp.example.com", "port": 465, "from_address": "noreply@example.com"}},
-		{http.MethodPost, "/api/v1/system/mail/smtp/test", map[string]any{"to": "me@example.com"}},
-	} {
-		if w := doMailJSON(r, "normal", tc.method, tc.path, tc.body); w.Code != http.StatusForbidden {
-			t.Fatalf("%s %s as normal user: expected 403, got %d: %s", tc.method, tc.path, w.Code, w.Body.String())
-		}
-	}
-
 	// Super admin reads the not-yet-configured entry -> 200 without data
+	// (kept before the normal-user PUT so the store is still empty).
 	{
 		w := doMailJSON(r, "admin", http.MethodGet, "/api/v1/system/mail/smtp", nil)
 		if w.Code != http.StatusOK {
@@ -150,6 +137,21 @@ func TestMailHandler_Permissions(t *testing.T) {
 		}
 		if resp.Data != nil {
 			t.Fatalf("expected no data before first save, got %+v", resp.Data)
+		}
+	}
+
+	// Normal user passes RBAC now on all three endpoints (permissions resolve
+	// system-wide; mail settings are not super_admin_only)
+	for _, tc := range []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodGet, "/api/v1/system/mail/smtp", nil},
+		{http.MethodPut, "/api/v1/system/mail/smtp", map[string]any{"host": "smtp.example.com", "port": 465, "from_address": "noreply@example.com"}},
+		{http.MethodPost, "/api/v1/system/mail/smtp/test", map[string]any{"to": "me@example.com"}},
+	} {
+		if w := doMailJSON(r, "normal", tc.method, tc.path, tc.body); w.Code != http.StatusOK {
+			t.Fatalf("%s %s as normal user: expected 200, got %d: %s", tc.method, tc.path, w.Code, w.Body.String())
 		}
 	}
 
@@ -196,8 +198,9 @@ func TestMailHandler_Permissions(t *testing.T) {
 		}
 	}
 
-	// Normal user still rejected after the config exists
-	if w := doMailJSON(r, "normal", http.MethodGet, "/api/v1/system/mail/smtp", nil); w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for normal GET after save, got %d", w.Code)
+	// Normal user can still read after the config exists (RBAC passes
+	// system-wide now; masking rules apply equally to any viewer).
+	if w := doMailJSON(r, "normal", http.MethodGet, "/api/v1/system/mail/smtp", nil); w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for normal GET after save, got %d", w.Code)
 	}
 }

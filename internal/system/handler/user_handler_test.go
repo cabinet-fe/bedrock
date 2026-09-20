@@ -29,7 +29,7 @@ func setupProfileRouter(t *testing.T, userID uint) (*gin.Engine, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&authmodel.User{}, &rbacmodel.Role{}, &rbacmodel.RolePermission{}, &rbacmodel.UserRole{}); err != nil {
+	if err := db.AutoMigrate(&authmodel.User{}, &rbacmodel.Role{}, &rbacmodel.UserRole{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	users := service.NewUserService(

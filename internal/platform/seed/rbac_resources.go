@@ -31,9 +31,10 @@ type seedMenu struct {
 }
 
 type seedCard struct {
-	Code    string
-	Title   string
-	SortKey int
+	Code           string
+	Title          string
+	SortKey        int
+	SuperAdminOnly bool
 }
 
 var standardCRUD = []string{"view", "create", "update", "delete"}
@@ -51,8 +52,8 @@ func EnsureRBACResources(db *gorm.DB) error {
 					Cards: []seedCard{
 						{Code: "build_summary", Title: "构建任务", SortKey: 10},
 						{Code: "agent_run_summary", Title: "智能体运行", SortKey: 20},
-						{Code: "system_info", Title: "系统信息", SortKey: 30},
-						{Code: "system_status", Title: "系统状态", SortKey: 40},
+						{Code: "system_info", Title: "系统信息", SortKey: 30, SuperAdminOnly: true},
+						{Code: "system_status", Title: "系统状态", SortKey: 40, SuperAdminOnly: true},
 						{Code: "script_run_summary", Title: "脚本运行", SortKey: 50},
 						{Code: "pipeline_run_summary", Title: "流水线运行", SortKey: 60},
 						{Code: "cicd_task_overview", Title: "任务概览", SortKey: 70},
@@ -160,6 +161,11 @@ func EnsureRBACResources(db *gorm.DB) error {
 				return err
 			}
 		}
+		// System cards are reserved for the super admin. Re-asserted on every
+		// boot so manual flips via the resource API cannot stick.
+		if err := enforceSuperAdminOnly(tx, "dashboard:system_info", "dashboard:system_status"); err != nil {
+			return err
+		}
 		if err := hideMenus(tx,
 			"project_requirements", "project_docs", "project_dev_docs", "harness_chat",
 			// Retired record-list menus: history moved into per-task dialogs
@@ -170,6 +176,18 @@ func EnsureRBACResources(db *gorm.DB) error {
 		}
 		return removeRetiredMenus(tx, "dashboard_system_info", "dashboard_system_status", "resource_clis")
 	})
+}
+
+// enforceSuperAdminOnly force-marks resources as super_admin_only; the seed
+// ensure path otherwise leaves existing rows untouched (admin edits preserved).
+func enforceSuperAdminOnly(tx *gorm.DB, fullCodes ...string) error {
+	res := tx.Model(&model.RbacResource{}).
+		Where("full_code IN ?", fullCodes).
+		Updates(map[string]any{"super_admin_only": true, "updated_at": time.Now().UTC()})
+	if res.Error != nil {
+		return fmt.Errorf("enforce super_admin_only %v: %w", fullCodes, res.Error)
+	}
+	return nil
 }
 
 // hideMenus marks existing menus as hidden (seed ensure leaves existing rows untouched).
@@ -202,8 +220,6 @@ func removeRetiredMenus(tx *gorm.DB, fullCodes ...string) error {
 		if err := tx.Delete(&menu).Error; err != nil {
 			return fmt.Errorf("delete menu %s: %w", code, err)
 		}
-		_ = tx.Where("permission LIKE ?", code+":%").Delete(&model.RolePermission{}).Error
-		_ = tx.Where("permission = ?", code).Delete(&model.RolePermission{}).Error
 	}
 	return nil
 }
@@ -255,7 +271,7 @@ func ensureMenu(tx *gorm.DB, groupID uint, m seedMenu, now time.Time) error {
 		}
 	}
 	for _, card := range m.Cards {
-		if err := ensureFeature(tx, res, card.Code, model.ResourceTypeCard, card.Title, card.SortKey, m.SuperAdminOnly, now); err != nil {
+		if err := ensureFeature(tx, res, card.Code, model.ResourceTypeCard, card.Title, card.SortKey, m.SuperAdminOnly || card.SuperAdminOnly, now); err != nil {
 			return err
 		}
 	}

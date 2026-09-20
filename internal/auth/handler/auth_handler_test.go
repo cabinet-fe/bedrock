@@ -242,8 +242,12 @@ func TestRegister_success(t *testing.T) {
 			t.Fatalf("registered user missing permission %s: %v", want, resp.Data.Permissions)
 		}
 	}
-	if perms["project_projects:view_all"] || perms["project_projects:manage_all"] {
-		t.Fatalf("registered user must not bypass project data scope: %v", resp.Data.Permissions)
+	// view_all / manage_all resolve for every role now; only super_admin_only
+	// features stay gated, so assert those instead of the old allowlist.
+	for _, gated := range []string{"dashboard:system_info", "dashboard:system_status"} {
+		if perms[gated] {
+			t.Fatalf("registered user must not hold super_admin_only %s: %v", gated, resp.Data.Permissions)
+		}
 	}
 
 	paths := map[string]bool{}

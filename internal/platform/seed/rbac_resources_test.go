@@ -282,9 +282,8 @@ func TestEnsureRBACResources_HarnessChat(t *testing.T) {
 		}
 	}
 
-	// A custom role carrying the codes must be creatable (permission codes must
-	// exist as features) and must keep them after super-admin-only filtering,
-	// i.e. non-super-admin holders can pass CheckAccess.
+	// A user bound to a custom role must resolve the harness_chat permissions
+	// (all features resolve system-wide except super_admin_only ones).
 	roles := rbacrepo.NewRoleRepository(gdb)
 	resources := rbacrepo.NewResourceRepository(gdb)
 	groups := rbacrepo.NewMenuGroupRepository(gdb)
@@ -295,9 +294,9 @@ func TestEnsureRBACResources_HarnessChat(t *testing.T) {
 		t.Fatal(err)
 	}
 	granted := []string{"harness_chat:view", "harness_chat:send", "harness_chat:approve"}
-	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "", granted)
+	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "")
 	if err != nil {
-		t.Fatalf("create role with harness_chat permissions: %v", err)
+		t.Fatalf("create role: %v", err)
 	}
 	if err := roleSvc.SetUserRoles(user.ID, []uint{role.ID}); err != nil {
 		t.Fatal(err)
@@ -312,7 +311,7 @@ func TestEnsureRBACResources_HarnessChat(t *testing.T) {
 	}
 	for _, fullCode := range granted {
 		if !permSet[fullCode] {
-			t.Errorf("granted role lost permission after filtering: %s", fullCode)
+			t.Errorf("expected harness permission resolved: %s", fullCode)
 		}
 	}
 }

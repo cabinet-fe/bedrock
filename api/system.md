@@ -73,10 +73,10 @@
 ### POST /roles — 创建角色
 
 权限：`system_roles:create`
-请求：{ name*, code*, description, data_scope, permissions }
+请求：{ name*, code*, description, data_scope }
 响应 201：data = Role
 错误：400 / 403
-说明：`data_scope` 为 `self` | `all`，缺省 `self`。
+说明：`data_scope` 为 `self` | `all`，缺省 `self`。权限不可按角色分配：所有角色默认拥有除 `super_admin_only` 功能外的全部功能权限。
 
 ### GET /roles/{id} — 获取角色
 
@@ -102,21 +102,7 @@
 错误：400
 说明：内置角色（`type=builtin`）不可删除。
 
-### PUT /roles/{id}/permissions — 替换角色权限码
-
-权限：`system_roles:update`
-路径参数：id*: integer
-请求：{ permissions* }（功能 `full_code[]`）
-响应 200：data = Role
-错误：400 / 403
-说明：拒绝内置角色；拒绝写入不存在或 `super_admin_only` 的功能。
-
-### GET /roles/permission-catalog — 角色绑权目录（三层）
-
-权限：`system_roles:update`
-响应 200：data = { items: PermissionCatalogGroup[] }
-错误：403
-说明：分组 → 菜单 → 功能；分组不参与勾选。`super_admin_only` 项由前端禁勾选，服务端绑权亦拒绝。
+说明（角色权限模型）：权限不可按角色编辑。所有角色默认拥有除 `super_admin_only` 功能（运维菜单、仪表盘「系统信息」「系统状态」卡片等）外的全部功能权限；仅超级管理员可访问 `super_admin_only` 功能。角色仅区分 `data_scope` 数据可见范围。原 `PUT /roles/{id}/permissions` 与 `GET /roles/permission-catalog` 端点已移除。
 
 ## 菜单分组
 

@@ -295,29 +295,12 @@ func do(t *testing.T, r *gin.Engine, method, path, body string) *httptest.Respon
 	return w
 }
 
-func TestHandler_ForbiddenWithoutPermission(t *testing.T) {
-	env := setup(t, true)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/harness/sessions", nil)
-	req.Header.Set("X-Test-User-ID", "2")
-	req.Header.Set("X-Test-Is-Admin", "false")
-	w := httptest.NewRecorder()
-	env.router.ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for user without harness_chat:view, got %d body=%s", w.Code, w.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/harness/sessions", strings.NewReader(`{}`))
-	req.Header.Set("X-Test-User-ID", "2")
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	env.router.ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for user without harness_chat:send, got %d body=%s", w.Code, w.Body.String())
-	}
-}
-
-// A non-super-admin user holding the seeded harness_chat codes must pass the
-// enforced permission gates (guards seed/handler code drift).
+// Permissions are system-wide now (all features except super_admin_only), so a
+// plain user passes the harness_chat gates: the previous 403-without-grant
+// case no longer exists and the super_admin_only 403 path is covered in the
+// rbac permission service tests.
+// A non-super-admin user must pass the enforced harness_chat permission
+// gates now that permissions resolve system-wide (guards seed/handler drift).
 func TestHandler_AllowedWithGrantedPermission(t *testing.T) {
 	env := setup(t, true)
 
@@ -327,8 +310,7 @@ func TestHandler_AllowedWithGrantedPermission(t *testing.T) {
 	if err := users.Create(granted); err != nil {
 		t.Fatal(err)
 	}
-	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "",
-		[]string{"harness_chat:view", "harness_chat:send", "harness_chat:approve"})
+	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "")
 	if err != nil {
 		t.Fatalf("create role with harness_chat permissions (seed must expose them): %v", err)
 	}

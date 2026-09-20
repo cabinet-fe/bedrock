@@ -244,11 +244,16 @@ func TestCLINPMTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, item := range items {
+		// CLI installs stay on npm, not mise-managed; the trailing `mise
+		// reshim` is only shim registration when npm itself is mise-managed.
 		if strings.Contains(item.DetectCommand, "mise") ||
-			strings.Contains(item.InstallTemplate, "mise") ||
-			strings.Contains(item.UpgradeTemplate, "mise") ||
-			strings.Contains(item.UninstallTemplate, "mise") {
+			strings.Contains(item.InstallTemplate, "mise install") ||
+			strings.Contains(item.UpgradeTemplate, "mise install") ||
+			strings.Contains(item.UninstallTemplate, "mise uninstall") {
 			t.Fatalf("%s still uses mise: detect=%q install=%q", item.Key, item.DetectCommand, item.InstallTemplate)
+		}
+		if !strings.Contains(item.InstallTemplate, "mise reshim") {
+			t.Fatalf("%s install should rebuild shims after npm -g: %s", item.Key, item.InstallTemplate)
 		}
 		if !strings.Contains(item.DetectCommand, "command -v "+item.BinaryName) {
 			t.Fatalf("%s detect should use PATH binary: %s", item.Key, item.DetectCommand)
