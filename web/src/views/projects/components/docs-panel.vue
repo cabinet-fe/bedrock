@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, shallowRef, useTemplateRef, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import {
   message,
   messageConfirm,
@@ -11,8 +12,8 @@ import {
   ArrowLeft,
   ArrowRight,
   Books,
+  Checklist,
   Delete,
-  Download,
   FileAdd,
   Folder,
   FolderAdd,
@@ -59,12 +60,20 @@ const { hasPermission } = usePermission();
 const isDev = computed(() => props.docKind === "dev");
 const permPrefix = computed(() => (isDev.value ? "project_dev_docs" : "project_docs"));
 
+const route = useRoute();
+const router = useRouter();
+/** URL 查询参数名：记录当前查看的文档 id，刷新 / 切 tab 后可恢复 */
+const docQueryKey = props.docKind === "dev" ? "devDocId" : "docId";
+
 const tree = ref<ProjectDocNode[]>([]);
 const treeRef = useTemplateRef<TreeExposed>("treeRef");
 /** 当前是否全部展开；点击「展开/收起全部」时切换 */
 const allExpanded = ref(true);
+/** 当前选中的节点 id；与树单选双向绑定，并同步到 URL 查询参数 */
 const selectedID = ref<number>();
-/** 勾选的节点 id，用于批量删除；与右侧预览的单选独立 */
+/** 批量操作模式：进入后树才显示勾选框 */
+const batchMode = ref(false);
+/** 勾选的节点 id，批量模式下用于批量删除 */
 const checked = ref<number[]>([]);
 const selected = ref<ProjectDocNode | null>(null);
 const content = ref("");
@@ -167,12 +176,42 @@ function isMoveTargetDisabled(item: Record<string, any>) {
   return moveBlockedIds.value.has(item.id as number);
 }
 
+/** 读取 URL 查询参数里的文档 id（无参数或非法值返回 undefined） */
+function queryDocID(): number | undefined {
+  const raw = route.query[docQueryKey];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const id = typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+}
+
+/** 把当前选中的文档 id 同步到 URL 查询参数（replace 不产生历史记录） */
+function syncDocQuery(id?: number) {
+  const raw = route.query[docQueryKey];
+  const current = Array.isArray(raw) ? raw[0] : raw;
+  const next = id === undefined ? undefined : String(id);
+  if (current === next) return;
+  void router.replace({ query: { ...route.query, [docQueryKey]: next } });
+}
+
+/** 树加载后从 URL 恢复上次查看的文档；节点已不存在时清理参数 */
+function restoreSelectedFromQuery() {
+  const raw = route.query[docQueryKey];
+  if (raw === undefined) return;
+  const id = queryDocID();
+  if (id !== undefined && findNode(tree.value, id)) {
+    selectedID.value = id;
+    return;
+  }
+  void router.replace({ query: { ...route.query, [docQueryKey]: undefined } });
+}
+
 async function loadTree() {
   try {
     tree.value = isDev.value
       ? await listDevDocTree(props.project.id)
       : await listDocTree(props.project.id);
     contentCache.clear();
+    restoreSelectedFromQuery();
     if (allExpanded.value) {
       void nextTick(() => treeRef.value?.expandAll());
     }
@@ -215,6 +254,12 @@ async function runConcurrent<T>(items: T[], limit: number, worker: (item: T) => 
   );
 }
 
+/** 提取文档一级标题（第一个 `# ` 行），用于按标题搜索 */
+function firstHeading(id: number): string {
+  const match = (contentCache.get(id) ?? "").match(/^#\s+(.+)$/m);
+  return (match?.[1] ?? "").trim().toLowerCase();
+}
+
 async function applySearch() {
   const t = treeRef.value;
   if (!t) return;
@@ -229,10 +274,10 @@ async function applySearch() {
   );
   if (missing.length) await runConcurrent(missing, 6, fetchDocContent);
   t.filter((node) => {
-    const data = node.data as ProjectDocNode;
     if (node.label.toLowerCase().includes(kw)) return true;
+    const data = node.data as ProjectDocNode;
     if (data.kind !== "doc") return false;
-    return (contentCache.get(data.id) ?? "").toLowerCase().includes(kw);
+    return firstHeading(data.id).includes(kw);
   });
 }
 
@@ -243,17 +288,12 @@ watch(searchKeyword, () => {
   }, 250);
 });
 
-async function selectNode(id?: number) {
-  selectedID.value = id;
-  if (!id) {
-    selected.value = null;
-    content.value = "";
-    return;
-  }
+async function loadSelected(id: number) {
   try {
     const node = isDev.value
       ? await getDevDocNode(props.project.id, id)
       : await getDocNode(props.project.id, id);
+    if (selectedID.value !== id) return;
     selected.value = node;
     content.value = node.content ?? "";
     docPane.value = "preview";
@@ -261,6 +301,17 @@ async function selectNode(id?: number) {
     message.error(error instanceof Error ? error.message : "读取文档失败");
   }
 }
+
+/** 选中变化：同步 URL 参数并加载文档内容（树的点击选中与程序化选中统一走这里） */
+watch(selectedID, (id) => {
+  syncDocQuery(id);
+  if (id === undefined) {
+    selected.value = null;
+    content.value = "";
+    return;
+  }
+  void loadSelected(id);
+});
 
 function openCreate(kind: "dir" | "doc", parentID?: number | null) {
   creatingKind.value = kind;
@@ -286,7 +337,7 @@ async function createNode() {
       : await createDocNode(props.project.id, input);
     nodeDialogOpen.value = false;
     await loadTree();
-    await selectNode(node.id);
+    selectedID.value = node.id;
     message.success(creatingKind.value === "dir" ? "目录已创建" : "文档已创建");
   } catch (error) {
     message.error(error instanceof Error ? error.message : "创建失败");
@@ -323,7 +374,7 @@ async function removeNodes(nodes: { id: number }[]) {
     message.error(error instanceof Error ? error.message : "删除失败");
   }
   checked.value = [];
-  if (selectedID.value && removed.has(selectedID.value)) await selectNode();
+  if (selectedID.value && removed.has(selectedID.value)) selectedID.value = undefined;
   await loadTree();
 }
 
@@ -347,6 +398,12 @@ async function confirmRemove(nodes: { id: number; name: string }[]) {
 
 function confirmRemoveChecked() {
   void confirmRemove(checkedNodes());
+}
+
+/** 切换批量操作模式；退出时清空勾选 */
+function toggleBatchMode() {
+  batchMode.value = !batchMode.value;
+  if (!batchMode.value) checked.value = [];
 }
 
 function openMove(node: ProjectDocNode) {
@@ -421,7 +478,7 @@ async function move() {
     moveDialogOpen.value = false;
     movingNode.value = null;
     await loadTree();
-    await selectNode(nodeID);
+    selectedID.value = nodeID;
     message.success("节点已移动");
   } catch (error) {
     message.error(error instanceof Error ? error.message : "移动失败");
@@ -436,7 +493,7 @@ async function uploadMarkdownFile(files: File[]) {
       ? await uploadDevMarkdown(props.project.id, selectedDirectoryID(), file)
       : await uploadMarkdown(props.project.id, selectedDirectoryID(), file);
     await loadTree();
-    await selectNode(node.id);
+    selectedID.value = node.id;
     message.success("Markdown 已导入");
   } catch (error) {
     message.error(error instanceof Error ? error.message : "Markdown 导入失败");
@@ -451,11 +508,19 @@ async function importZIPFile(files: File[]) {
       ? await importDevDocsZIP(props.project.id, selectedDirectoryID(), file)
       : await importDocsZIP(props.project.id, selectedDirectoryID(), file);
     await loadTree();
-    if (items[0]) await selectNode(items[0].id);
+    if (items[0]) selectedID.value = items[0].id;
     message.success(`已导入 ${items.length} 个 Markdown`);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "ZIP 导入失败");
   }
+}
+
+/** 按扩展名分流：zip 走文档包导入，其余按 Markdown 导入 */
+async function importFile(files: File[]) {
+  const file = files[0];
+  if (!file) return;
+  if (/\.zip$/i.test(file.name)) await importZIPFile(files);
+  else await uploadMarkdownFile(files);
 }
 
 watch(
@@ -463,6 +528,7 @@ watch(
   () => {
     selected.value = null;
     selectedID.value = undefined;
+    batchMode.value = false;
     checked.value = [];
     void loadTree();
   },
@@ -514,12 +580,23 @@ watch(canUpdate, (ok) => {
               <u-icon :size="14"><ArrowRight /></u-icon>
             </u-button>
             <u-button
-              v-if="canDelete && checked.length"
+              v-if="canDelete"
+              plain
+              :type="batchMode ? 'primary' : undefined"
+              size="small"
+              aria-label="批量操作"
+              title="批量操作"
+              @click="toggleBatchMode"
+            >
+              <u-icon :size="14"><Checklist /></u-icon>
+            </u-button>
+            <u-button
+              v-if="batchMode && checked.length"
               plain
               type="danger"
               size="small"
-              aria-label="删除"
-              title="删除"
+              aria-label="删除选中项"
+              title="删除选中项"
               @click="confirmRemoveChecked"
             >
               <u-icon :size="14"><Delete /></u-icon>
@@ -541,7 +618,7 @@ watch(canUpdate, (ok) => {
       </div>
       <template v-if="!treeCollapsed">
         <div class="tree-search">
-          <u-input v-model="searchKeyword" placeholder="搜索文件名或内容" clearable>
+          <u-input v-model="searchKeyword" placeholder="搜索文件名或标题" clearable>
             <template #suffix>
               <u-icon :size="14"><Search /></u-icon>
             </template>
@@ -550,23 +627,22 @@ watch(canUpdate, (ok) => {
         <u-tree
           ref="treeRef"
           v-model:checked="checked"
+          v-model:selected="selectedID"
           class="doc-tree"
           :data="tree"
           label-key="name"
           value-key="id"
           children-key="children"
-          :checkable="canDelete"
+          selectable
+          scroll-to-view
+          :checkable="batchMode && canDelete"
           check-strictly
           :check-on-click-node="false"
           :expand-on-click-node="false"
           @node-contextmenu="onNodeContextMenu"
         >
           <template #default="{ data }">
-            <div
-              class="tree-node"
-              :class="data.kind === 'dir' ? 'is-dir' : 'is-doc'"
-              @click.stop="selectNode(data.id)"
-            >
+            <div class="tree-node" :class="data.kind === 'dir' ? 'is-dir' : 'is-doc'">
               <u-icon class="tree-node__icon" :size="14">
                 <Folder v-if="data.kind === 'dir'" />
                 <Books v-else />
@@ -576,14 +652,14 @@ watch(canUpdate, (ok) => {
           </template>
         </u-tree>
         <div v-if="canCreate" class="uploads">
-          <u-file-picker accept=".md,text/markdown" @pick="uploadMarkdownFile">
-            <u-button plain size="small" aria-label="导入 Markdown" title="导入 Markdown">
+          <u-file-picker accept=".md,text/markdown,.zip,application/zip" @pick="importFile">
+            <u-button
+              plain
+              size="small"
+              aria-label="导入 Markdown / ZIP"
+              title="导入 Markdown / ZIP"
+            >
               <u-icon :size="14"><Upload /></u-icon>
-            </u-button>
-          </u-file-picker>
-          <u-file-picker accept=".zip,application/zip" @pick="importZIPFile">
-            <u-button plain size="small" aria-label="导入 ZIP 文档包" title="导入 ZIP 文档包">
-              <u-icon :size="14"><Download /></u-icon>
             </u-button>
           </u-file-picker>
         </div>
