@@ -11,7 +11,7 @@
 # See .agents/docs/ops-handbook.md for the manual install path.
 set -euo pipefail
 
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.1.0"
 
 REPO="cabinet-fe/bedrock"
 RELEASE_BASE="${BEDROCK_RELEASE_BASE:-https://github.com/${REPO}}"
@@ -1071,6 +1071,9 @@ update_component() { # update_component <server|agent> <dir> ; 0 = ok / skip
   mv -f "$dir/.update/${asset}.new" "$bin"
   chmod +x "$bin"
 
+  # Refresh the service unit on every update so the service env (login PATH /
+  # HOME) follows the installed installer version, not the first-ever install.
+  svc_install "$comp" "$dir"
   info "启动..."
   svc_start "$comp" "$dir"
   health_url_for "$comp" "$dir"
