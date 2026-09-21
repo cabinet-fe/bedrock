@@ -7,26 +7,26 @@ type IconKind = "code" | "check" | "spec" | "rack" | "box" | "book" | "db" | "sc
 
 interface TerminalDef {
   label: string;
-  sub: string;
   icon: IconKind;
 }
 
 const SOURCES: TerminalDef[] = [
-  { label: "开发端", sub: "code", icon: "code" },
-  { label: "测试端", sub: "verify", icon: "check" },
-  { label: "产品端", sub: "spec", icon: "spec" },
-  { label: "运维端", sub: "ops", icon: "rack" },
+  { label: "开发端", icon: "code" },
+  { label: "测试端", icon: "check" },
+  { label: "产品端", icon: "spec" },
+  { label: "运维端", icon: "rack" },
 ];
 
 const TARGETS: TerminalDef[] = [
-  { label: "客户交付端", sub: "delivery", icon: "box" },
-  { label: "开发文档端", sub: "docs", icon: "book" },
-  { label: "制品库端", sub: "artifacts", icon: "db" },
-  { label: "生产环境端", sub: "production", icon: "screen" },
+  { label: "客户交付端", icon: "box" },
+  { label: "开发文档端", icon: "book" },
+  { label: "制品库端", icon: "db" },
+  { label: "生产环境端", icon: "screen" },
 ];
 
 const MIN_WIDTH = 760; // below this the card fills the stage: draw grid only
-const ICON_PAD = 10; // gap between icon edge and link start
+const ICON_SCALE = 1.5; // icons are authored in a ~15px box, drawn larger
+const ICON_PAD = 14; // gap between icon edge and link start
 const GRID_STEP = 34;
 const MAX_PARTICLES = 10;
 
@@ -37,7 +37,6 @@ interface Pt {
 
 interface FlowNode extends Pt {
   label: string;
-  sub: string;
   icon: IconKind;
   phase: number;
 }
@@ -72,7 +71,6 @@ interface Layout {
 
 interface Tokens {
   primary: string;
-  textMain: string;
   textAssist: string;
   grid: string;
 }
@@ -102,6 +100,8 @@ function linkLength(l: Link): number {
 
 /** Minimal stroke-only line icons, centered at the origin in a ~15px box. */
 function drawIcon(c: CanvasRenderingContext2D, kind: IconKind): void {
+  c.save();
+  c.scale(ICON_SCALE, ICON_SCALE);
   c.lineWidth = 1.3;
   c.lineCap = "round";
   c.lineJoin = "round";
@@ -191,6 +191,7 @@ function drawIcon(c: CanvasRenderingContext2D, kind: IconKind): void {
       c.fill();
     }
   }
+  c.restore();
 }
 
 /**
@@ -214,7 +215,6 @@ export function useLoginFlow(
   let layout: Layout | null = null;
   let tokens: Tokens = {
     primary: "#3d6b58",
-    textMain: "#403c34",
     textAssist: "#a89f8c",
     grid: "#d2c8ac",
   };
@@ -242,7 +242,7 @@ export function useLoginFlow(
     const links: Link[] = [];
 
     for (let i = 0; i < 4; i++) {
-      const y = Math.min(Math.max(hubCY + (i - 1.5) * gap, 36), h - 36);
+      const y = Math.min(Math.max(hubCY + (i - 1.5) * gap, 44), h - 64);
       const src = SOURCES[i]!;
       const dst = TARGETS[i]!;
       nodes.push({ x: colX, y, ...src, phase: i * 1.4 });
@@ -272,7 +272,6 @@ export function useLoginFlow(
     const style = getComputedStyle(canvasRef.value!);
     tokens = {
       primary: style.getPropertyValue("--u-color-primary").trim() || tokens.primary,
-      textMain: style.getPropertyValue("--u-text-color-main").trim() || tokens.textMain,
       textAssist: style.getPropertyValue("--u-text-color-assist").trim() || tokens.textAssist,
       grid: style.getPropertyValue("--u-border-muted-color").trim() || tokens.grid,
     };
@@ -319,18 +318,14 @@ export function useLoginFlow(
     }
     c.stroke();
 
-    // Terminal labels; source labels sit left of the icon
+    // Terminal labels, centered under the icon
     c.globalAlpha = 1;
+    c.textAlign = "center";
     c.textBaseline = "middle";
+    c.fillStyle = tokens.textAssist;
+    c.font = `600 12px ${MONO}`;
     for (const n of l.nodes) {
-      const left = n.x < l.w / 2;
-      c.textAlign = left ? "right" : "left";
-      c.fillStyle = tokens.textMain;
-      c.font = `600 12px ${MONO}`;
-      c.fillText(n.label, n.x + (left ? -12 : 12), n.y - 13);
-      c.fillStyle = tokens.textAssist;
-      c.font = `10px ${MONO}`;
-      c.fillText(n.sub, n.x + (left ? -12 : 12), n.y + 13);
+      c.fillText(n.label, n.x, n.y + 22);
     }
   }
 
