@@ -114,6 +114,7 @@ jobs:
           merge-multiple: true
       - name: Aggregate SHA256SUMS
         run: |
+          cp scripts/install.sh install.sh
           sha256sum \
             bedrock-linux-amd64 \
             bedrock-agent-linux-amd64 \
@@ -146,4 +147,5 @@ jobs:
           overwrite_files: true
           files: |
             bedrock-*
+            install.sh
             SHA256SUMS

@@ -401,6 +401,9 @@ svc_install() { # svc_install <component> <dir>
     if [ "$comp" = "server" ]; then timeout=45; else timeout=10; fi
     lpath=$(detect_login_path)
     lhome=${HOME:-}
+    if [ -z "$lhome" ]; then
+      lhome=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6 || true)
+    fi
     env_lines=""
     if [ -n "$lhome" ]; then
       env_lines="Environment=\"HOME=${lhome}\""$'\n'
