@@ -59,7 +59,20 @@ For mainland-China networks, prefix a mirror:
 curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
 ```
 
-The script downloads release artifacts with SHA256 verification, generates the config (random secrets and admin password), registers a systemd service (or falls back to nohup), and runs a health check. `update` follows download → graceful stop → SQLite backup → binary swap → restart, with automatic rollback on failure. See the [ops handbook](./.agents/docs/ops-handbook.md) for details.
+The script downloads the Go installer `bedctl` and hands over to it. bedctl downloads the release artifacts with SHA256 verification, generates the config (random secrets and admin password), registers a systemd service (or falls back to nohup), and runs a health check. `bedctl update` follows download → graceful stop → SQLite backup → binary swap → restart, with automatic rollback on failure.
+
+Once installed, the `bedctl` command is in place (it remembers the install directories and download source), so later operations need no further script downloads:
+
+```bash
+bedctl status                      # install state
+bedctl start|stop|restart          # service management (add server|agent to pick one)
+bedctl logs server -n 100          # recent logs
+bedctl doctor                      # health check: service / port / bind address / local health / firewall
+bedctl update                      # update (add --version to pin a release)
+bedctl self-update                 # upgrade bedctl itself
+```
+
+See the [ops handbook](./.agents/docs/ops-handbook.md) for details.
 
 ### Manual deploy
 
