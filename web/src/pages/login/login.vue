@@ -153,7 +153,7 @@ async function handleSubmit() {
         <span class="seal" aria-hidden="true">磐</span>
         <div class="brand-copy">
           <p class="brand-name">BEDROCK</p>
-          <p class="brand-motto">磐石 · 人机协作开发平台</p>
+          <p class="brand-motto">磐石 · 人-AI智能协作开发平台</p>
         </div>
       </header>
 
