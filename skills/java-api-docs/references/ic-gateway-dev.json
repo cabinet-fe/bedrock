@@ -19,6 +19,7 @@
       "prefix": "/personnel-repository"
     },
     { "label": "资产", "id": "ic-property", "service": "ic-property", "prefix": "/property" },
+    { "label": "业务", "id": "ic-business", "service": "ic-business", "prefix": "/business" },
     { "label": "报表", "id": "ic-bi-platform", "service": "ic-bi-platform", "prefix": "/bi" }
   ]
 }

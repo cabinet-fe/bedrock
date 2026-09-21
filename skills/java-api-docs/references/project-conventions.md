@@ -58,8 +58,8 @@
 
 在业务基类之上**增加嵌套对象字段** `_shared`（类型 `BaseShared`）。JSON 字段名就是 `_shared`（下划线开头）。
 
-| 字段     | 类型   | 说明                                      |
-| -------- | ------ | ----------------------------------------- |
+| 字段     | 类型   | 说明                                            |
+| -------- | ------ | ----------------------------------------------- |
 | \_shared | object | 共享上下文；见下方 `BaseShared`（**禁止摊平**） |
 
 另含父类 `BaseBusinessEntity` / `BaseEntity` 字段（见上）。保存接口请求体常以 `_shared` 携带模块/组织/操作/附件；顶层 `moduleCode` 等也可能被鉴权 SpEL（如 `#commonDTO.moduleCode`）读取——以源码为准，两者勿混为一谈。
@@ -68,12 +68,12 @@
 
 ### `BaseShared`（`_shared` 的结构）
 
-| 字段        | 类型                     | 说明                              |
-| ----------- | ------------------------ | --------------------------------- |
-| moduleCode  | string                   | 模块编码                          |
-| taskUser    | Record\<string, string\> | 任务用户（提交流程时传入处理人）  |
-| action      | string                   | 操作：`DRAFT` / `SAVE` / `SUBMIT` |
-| orgCode     | string                   | 组织代码                          |
+| 字段        | 类型                     | 说明                                |
+| ----------- | ------------------------ | ----------------------------------- |
+| moduleCode  | string                   | 模块编码                            |
+| taskUser    | Record\<string, string\> | 任务用户（提交流程时传入处理人）    |
+| action      | string                   | 操作：`DRAFT` / `SAVE` / `SUBMIT`   |
+| orgCode     | string                   | 组织代码                            |
 | attachments | object[]                 | 附件分组：`groupId`、`categories[]` |
 
 `attachments[].categories[]`：`categoryId`（string）、`fileIds`（string[]）。
@@ -106,11 +106,15 @@
 ## 5. 认证与权限
 
 - 认证：OAuth2 JWT；请求头 `Authorization: Bearer {token}`
-- 两种常见写法（可并存）：
-  1. **类级 `@SecurityRequirement(name = HttpHeaders.AUTHORIZATION)`**（OpenAPI）：表示需登录，通常无具体权限码 → 文档写 `需要登录`
-  2. **`@HasPermission` / `@PreAuthorize` / `@Secured`**：权限码 `{resource}:{action}`（如 `tableInfo:view`），动态模块常用 `{moduleCode}:create|view|update|delete`
+- **默认口径：除明确标注 `@AnonymousAccess` 外，所有接口一律「需要登录」。** 未带 token 的请求由网关 / 资源服务器拒绝（401）。「没有权限注解」只代表没有细粒度权限码，**不代表匿名**。
+- 判定优先级（从高到低）：
+  1. **`@AnonymousAccess`**（类或方法）→ 匿名，文档写 `无需登录`，头部「是否需要认证」写 `否`
+  2. **`@HasPermission` / `@PreAuthorize` / `@Secured`**：权限码 `{resource}:{action}`（如 `tableInfo:view`），动态模块常用 `{moduleCode}:create|view|update|delete` → 写 `需要登录；权限 ...`
+  3. **类级 `@SecurityRequirement(name = HttpHeaders.AUTHORIZATION)`**（OpenAPI）：需登录、无具体权限码 → 写 `需要登录`
+  4. **没有任何鉴权注解** → 写 `需要登录（源码未标注权限码）`，头部写 `是`
+- 同一 Controller 内既有匿名方法又有需登录方法时，头部写 `部分需要`
 - 文档写法：`需要登录；权限 tableInfo:view` / `需要登录；权限 {moduleCode}:create`——**不要**贴 SpEL / OpenAPI 原文
-- 方法标 `@AnonymousAccess` 时可匿名；默认需认证
+- **禁止**把「无注解」写成 `无需登录` / `不需要认证` 或头部 `否`
 
 ## 6. 网关与服务
 

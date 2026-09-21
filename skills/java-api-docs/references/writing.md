@@ -18,9 +18,14 @@
 
 ## 鉴权
 
-写成可读摘要，例如：`需要登录；权限 {moduleCode}:create`。脚本提供 `authSummary`（可贴改）与原始 `auth`（仅供核对，勿贴正文）。
+**默认需要登录**：除 `@AnonymousAccess` 外，一切接口都写「需要登录」。
 
-类级 `@SecurityRequirement(name = HttpHeaders.AUTHORIZATION)` 等 OpenAPI 安全声明会被识别为「需要登录」（无具体权限码时）；与 `@HasPermission` / `@PreAuthorize` 并存时合并摘要，**勿**把 OpenAPI 原文堆进文档。
+脚本提供的 `authSummary` 仅供参考：旧版本对无注解接口会输出「无需登录（本接口无鉴权注解）」，属误判，**禁止照抄**；原始 `auth` 仅供核对，勿贴正文。
+
+- 有权限注解：`需要登录；权限 {moduleCode}:create`
+- 只有类级 `@SecurityRequirement(name = HttpHeaders.AUTHORIZATION)`：`需要登录`（与 `@HasPermission` 并存时合并摘要，**勿**把 OpenAPI 原文堆进文档）
+- **没有任何鉴权注解**：`需要登录（源码未标注权限码）`
+- `@AnonymousAccess`：`无需登录`
 
 ## 类型与表格
 
