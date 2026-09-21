@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 
 	"bedrock/internal/harness/provider/oc"
+	"bedrock/internal/pkg"
 )
 
 // Reported ProcessStatus states.
@@ -300,6 +301,34 @@ func (m *ProcessManager) Stop() {
 	m.wg.Wait()
 }
 
+// serveEnv builds the serve process environment with a completed PATH (login
+// tool dirs included) and resolves a bare bin name against it. exec.Command
+// looks up bare names via the server's own PATH, which systemd keeps minimal —
+// the backend must be findable regardless of who started the server.
+func serveEnv(bin, password string) ([]string, string) {
+	lookup := map[string]string{}
+	for _, e := range os.Environ() {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			lookup[k] = v
+		}
+	}
+	pkg.EnsurePATH(lookup, pkg.ResolveHomeDir())
+	env := make([]string, 0, len(lookup)+1)
+	for k, v := range lookup {
+		env = append(env, k+"="+v)
+	}
+	if !strings.ContainsAny(bin, `/\`) {
+		for _, dir := range filepath.SplitList(lookup["PATH"]) {
+			candidate := filepath.Join(dir, bin)
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+				bin = candidate
+				break
+			}
+		}
+	}
+	return append(env, "OPENCODE_SERVER_PASSWORD="+password), bin
+}
+
 // supervise keeps a serve process running: spawn, wait for exit, restart.
 // Crashes double the restart delay up to maxRestartDelay; a process that
 // stayed up resets the backoff.
@@ -307,16 +336,17 @@ func (m *ProcessManager) supervise() {
 	defer m.wg.Done()
 	delay := m.cfg.restartDelay()
 	for {
-		cmd := exec.Command(m.cfg.Bin, "serve", "--hostname", bindHost, "--port", strconv.Itoa(m.cfg.Port))
-		cmd.Env = append(os.Environ(), "OPENCODE_SERVER_PASSWORD="+m.Password())
+		env, bin := serveEnv(m.cfg.Bin, m.Password())
+		cmd := exec.Command(bin, "serve", "--hostname", bindHost, "--port", strconv.Itoa(m.cfg.Port))
+		cmd.Env = env
 		configureServeProc(cmd)
 		cmd.Stdout = m.serveOutputWriter()
 		cmd.Stderr = m.serveOutputWriter()
 		started := time.Now()
 		if err := cmd.Start(); err != nil {
-			m.setState(StatusDegraded, fmt.Sprintf("starting %s: %v", m.cfg.Bin, err))
+			m.setState(StatusDegraded, fmt.Sprintf("starting %s: %v", bin, err))
 			m.log.Warn("harness serve spawn failed; retrying",
-				zap.String("bin", m.cfg.Bin), zap.Error(err), zap.Duration("retry_in", delay))
+				zap.String("bin", bin), zap.Error(err), zap.Duration("retry_in", delay))
 			if !m.sleepRestartDelay(delay) {
 				return
 			}
