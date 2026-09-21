@@ -207,6 +207,22 @@ func TestEnsurePATH_SkipsHomeRelativeWhenHomeEmpty(t *testing.T) {
 	}
 }
 
+// systemd services often run without HOME; the fallback must still locate
+// home-relative tool dirs such as ~/.bun/bin.
+func TestResolveHomeDir_FallsBackWhenHomeUnset(t *testing.T) {
+	t.Setenv("HOME", "")
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", "")
+	}
+	home := resolveHomeDir()
+	if home == "" {
+		t.Fatal("resolveHomeDir must fall back to the passwd db when HOME is unset")
+	}
+	if !filepath.IsAbs(home) {
+		t.Fatalf("home not absolute: %q", home)
+	}
+}
+
 func TestMergeBuildEnv_CompletesPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip()

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 )
@@ -18,6 +19,18 @@ var toolPathDirs = []string{
 	".local/share/mise/shims",
 	"/opt/homebrew/bin",
 	"/usr/local/bin",
+}
+
+// resolveHomeDir returns the process user's home directory. systemd services
+// often run without HOME set, so fall back to the passwd database.
+func resolveHomeDir() string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return home
+	}
+	if u, err := user.Current(); err == nil {
+		return u.HomeDir
+	}
+	return ""
 }
 
 // ensurePATH appends missing tool dirs to env["PATH"] in place. Existing

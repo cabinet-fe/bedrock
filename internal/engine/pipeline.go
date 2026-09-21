@@ -670,8 +670,7 @@ func mergeBuildEnv(names []string, overrides map[string]string) []string {
 		}
 		merged[k] = v
 	}
-	home, _ := os.UserHomeDir()
-	ensurePATH(merged, home)
+	ensurePATH(merged, resolveHomeDir())
 	out := make([]string, 0, len(merged))
 	for k, v := range merged {
 		out = append(out, k+"="+v)
