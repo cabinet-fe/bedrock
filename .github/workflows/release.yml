@@ -78,7 +78,7 @@ jobs:
           path: cmd/server/dist
       - name: Verify embedded frontend
         run: test -f cmd/server/dist/index.html
-      - name: Build Server + Deploy Agent
+      - name: Build Server + Deploy Agent + bedctl
         env:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
@@ -91,6 +91,12 @@ jobs:
             -o bedrock-agent-${{ matrix.suffix }} ./cmd/agent
           sha256sum bedrock-${{ matrix.suffix }} bedrock-agent-${{ matrix.suffix }} \
             > bedrock-${{ matrix.suffix }}.sha256
+          if [ "${{ matrix.goos }}" = "linux" ]; then
+            # bedctl（安装/更新器）仅提供 linux；install.sh 引导下载
+            go build -ldflags "-s -w -X main.version=${VERSION}" \
+              -o bedctl-${{ matrix.suffix }} ./cmd/bedctl
+            sha256sum bedctl-${{ matrix.suffix }} >> bedrock-${{ matrix.suffix }}.sha256
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: bedrock-${{ matrix.suffix }}
@@ -98,6 +104,12 @@ jobs:
             bedrock-${{ matrix.suffix }}
             bedrock-agent-${{ matrix.suffix }}
             bedrock-${{ matrix.suffix }}.sha256
+      # bedctl 产物名保持 bedrock- 前缀，publish 侧按 bedrock-* 统一下载
+      - uses: actions/upload-artifact@v7
+        if: matrix.goos == 'linux'
+        with:
+          name: bedrock-bedctl-${{ matrix.suffix }}
+          path: bedctl-${{ matrix.suffix }}
 
   publish:
     needs: [gate, binaries]
@@ -122,6 +134,8 @@ jobs:
             bedrock-agent-linux-arm64 \
             bedrock-windows-amd64.exe \
             bedrock-agent-windows-amd64.exe \
+            bedctl-linux-amd64 \
+            bedctl-linux-arm64 \
             > SHA256SUMS
       - name: Generate release notes
         run: |
@@ -147,5 +161,6 @@ jobs:
           overwrite_files: true
           files: |
             bedrock-*
+            bedctl-*
             install.sh
             SHA256SUMS

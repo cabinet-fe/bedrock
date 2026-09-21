@@ -1,6 +1,7 @@
 .PHONY: dev build build-frontend build-backend \
 	build-linux build-linux-arm64 build-win \
 	build-agent-linux build-agent-linux-arm64 build-agent-win \
+	build-bedctl-linux build-bedctl-linux-arm64 \
 	clean \
 	smoke-fresh-install smoke-api-e2e smoke-three-db smoke-linux-package smoke-restart-recovery smoke \
 	checksums \
@@ -63,6 +64,13 @@ build-agent-linux-arm64:
 
 build-agent-win:
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bedrock-agent-windows-amd64.exe ./cmd/agent
+
+# bedctl 是安装/更新/服务管理器（无前端依赖），随 Release 附带并由 install.sh 引导下载
+build-bedctl-linux:
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bedctl-linux-amd64 ./cmd/bedctl
+
+build-bedctl-linux-arm64:
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bedctl-linux-arm64 ./cmd/bedctl
 
 checksums:
 	@sha256sum bedrock-linux-amd64 bedrock-linux-arm64 bedrock-agent-linux-amd64 bedrock-agent-linux-arm64 2>/dev/null || \

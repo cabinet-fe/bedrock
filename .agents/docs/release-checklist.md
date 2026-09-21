@@ -4,7 +4,7 @@
 
 ## 版本与产物
 
-**所有发版产物由 CI 构建**：`.github/workflows/release.yml` 由 push `v*` tag 触发，gate（测试，2 分片并行）与 frontend 构建同时跑；交叉编译 Server + Agent（`main.version` 注入 tag 名）只依赖 frontend 产物、与 gate 并行，最后 publish 等 gate 与 binaries 全绿后汇总 SHA256 并发布 GitHub Release。发版**禁止**本地构建待发布产物（`make build-linux` / `build-win` / `build-agent-*` / `checksums`），本地编出的二进制和校验和既不进 Release 也不进仓库。
+**所有发版产物由 CI 构建**：`.github/workflows/release.yml` 由 push `v*` tag 触发，gate（测试，2 分片并行）与 frontend 构建同时跑；交叉编译 Server + Agent + bedctl（`main.version` 注入 tag 名）只依赖 frontend 产物、与 gate 并行，最后 publish 等 gate 与 binaries 全绿后汇总 SHA256 并发布 GitHub Release。发版**禁止**本地构建待发布产物（`make build-linux` / `build-win` / `build-agent-*` / `build-bedctl-*` / `checksums`），本地编出的二进制和校验和既不进 Release 也不进仓库。
 
 发版步骤：
 
@@ -13,6 +13,8 @@
 3. 逐项核对 Release 产物：
    - [ ] Server 二进制：`bedrock-linux-amd64`、`bedrock-linux-arm64`、`bedrock-windows-amd64.exe`
    - [ ] Deploy Agent：`bedrock-agent-<os>-<arch>` 与 Server **同版本**
+   - [ ] 安装器：`bedctl-linux-amd64`、`bedctl-linux-arm64`（bedctl 已记入平台级 `bedrock-<suffix>.sha256` 与 `SHA256SUMS`）
+   - [ ] 引导脚本：`install.sh`（`scripts/install.sh` 副本，仅负责下载 bedctl 并转交；**保留文件头 `BEDROCK_ONE_LINE_INSTALLER` 标记**，旧脚本版 bedctl 靠它完成 self-update 迁移）
    - [ ] 每个产物附带 SHA256（CI 生成 `*.sha256` / `SHA256SUMS`）
    - [ ] Release notes 由 CI 从上一 tag 起的变更自动生成
    - [ ] 嵌入前端为 **web**（CI 先以 `FRONTEND_DIR=web` 构建前端再交叉编译）

@@ -61,6 +61,7 @@
 | D33 | ScriptJob | 无仓库/制品/部署的精简任务；工作区 `{workspace}/scripts/script-{id}/`；日志 `{log_dir}/script-{jobID}/run-{NNN}.log`；触发同 BuildJob（manual/cron/webhook，webhook 无分支匹配）；脚本执行前 `${{...}}` 替换 |
 | D34 | 脚本模板 `${{...}}` | 构建/构建后脚本执行前一次性文本替换；内置 `job.*` / `run.*` / `workspace`；用户变量 `${{ env.KEY }}`；未知变量失败；不二次展开 |
 | D35 | 构建流水线 | 独立 `BuildPipeline` 模块；VueFlow `graph_json` DAG（v2：start/end/buildJob/scriptJob/agent 节点，边带 `on_success`/`on_failure`/`always` 条件）；任务节点 AND-join（前驱全部终态且各有匹配入边才触发，否则 skipped 传播）；**到达任意 end 节点即 success**（OR-join，取消在飞分支），静止未到 end 则 failed；agent 节点**同步**等待 AgentRun 并按结果走分支；节点级 env 覆盖（AES-GCM 存于 graph_json，run > job）；**无**跨任务制品传递 |
+| D36 | 安装器 Go 化（bedctl） | 安装/更新/服务管理器为独立 Go 二进制 `bedctl`（`cmd/bedctl` + `internal/bedctl`，标准库 + yaml.v3，随 Release 附带 linux amd64/arm64）；`scripts/install.sh` 缩为引导脚本（下载 bedctl 后 `exec` 转交，保留 `BEDROCK_ONE_LINE_INSTALLER` 标记使 v1.x 脚本版 bedctl 经 self-update 无缝迁移）。行为要点：下载源写入状态文件并**记住**（已存源探测可达则不再询问，选直连显式清除旧值，实际命中镜像自动回写；Go HTTP 原生识别 `HTTPS_PROXY` 等环境变量）；版本比较用 semver；停机 = systemctl/SIGTERM 带超时 + 端口释放复查 + bedrock 孤儿进程 TERM→KILL 清理（外来进程占用端口报错不误杀）；`update --port` / `bedctl port` 用 yaml.Node 精准改 `server.port` 保留注释；状态文件沿用 v1.x `bedctl.env` 键名 |
 
 ### 1.4 已接受风险（必须对外声明）
 
@@ -605,7 +606,7 @@ web/src/
 
 ## 14. 发布、备份与回滚
 
-1. **发布物**：`bedrock` Server 单二进制（embed 前端）+ `bedrock-agent`；Linux amd64/arm64 命名 `bedrock-linux-amd64` / `bedrock-linux-arm64` 与对应 `bedrock-agent-*`；附带 SHA256。
+1. **发布物**：`bedrock` Server 单二进制（embed 前端）+ `bedrock-agent` + `bedctl` 安装器（D36）；Linux amd64/arm64 命名 `bedrock-linux-amd64` / `bedrock-linux-arm64` 与对应 `bedrock-agent-*`、`bedctl-*`；附带 SHA256。`install.sh` 为引导脚本产物。
 2. **全新安装**：空数据目录 + 配置 + 启动（migration + 种子超管）。见 [ops-handbook.md](./ops-handbook.md)。
 3. **备份**：SQLite 可用文件复制/专用备份命令；Postgres/MySQL 使用各自工具——平台可提供「备份指引」，**不假装统一物理备份**。
 4. **前端回滚**：保留上一版 `web` 产物 tag；替换 `cmd/server/dist` 后重打包。见 [release-checklist.md](./release-checklist.md)。

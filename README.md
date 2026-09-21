@@ -58,9 +58,9 @@ curl -fsSL https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/ins
 curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
 ```
 
-脚本会下载发布产物并校验 SHA256、生成配置（随机密钥与超管密码）、注册 systemd 服务（无 systemd 时以 nohup 托管）并完成健康检查；`update` 路径按「下载 → 优雅停机 → 备份 SQLite → 替换二进制 → 重启」执行，失败自动回滚。
+脚本会下载 Go 版安装器 `bedctl` 并由它完成安装：下载发布产物并校验 SHA256、生成配置（随机密钥与超管密码）、注册 systemd 服务（无 systemd 时以 nohup 托管）并完成健康检查；`bedctl update` 按「下载 → 优雅停机 → 备份 SQLite → 替换二进制 → 重启」执行，失败自动回滚。
 
-安装完成后，脚本会把自己安装为 `bedctl` 命令行工具（记住安装目录与下载源），后续运维无需再下载脚本：
+安装完成后，`bedctl` 命令行工具即已就位（记住安装目录与下载源），后续运维无需再下载脚本：
 
 ```bash
 bedctl status                      # 查看安装状态

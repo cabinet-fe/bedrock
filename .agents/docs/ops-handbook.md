@@ -6,9 +6,9 @@
 
 ## 1. 全新安装（默认 SQLite）
 
-### 1.1 一键安装与更新（install.sh，推荐）
+### 1.1 一键安装与更新（bedctl，推荐）
 
-Linux 服务器（amd64/arm64）执行：
+安装器是 **Go 编写的 `bedctl` 二进制**；`scripts/install.sh` 只是引导脚本：下载 bedctl → 装为命令 → 转交参数执行。Linux 服务器（amd64/arm64）执行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
@@ -16,23 +16,26 @@ curl -fsSL https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/ins
 curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/cabinet-fe/bedrock/main/scripts/install.sh | bash
 ```
 
-- 交互菜单：安装 **Bedrock Server（主体）** / **Deploy Agent（代理分发工具）** / 更新已安装组件 / 查看状态；子命令 + `--yes` 可全非交互（`--help` 查看参数）
-- 下载 GitHub Release 产物并校验 SHA256（平台级 `.sha256`）；GitHub 直连不可达时自动改走镜像（内置 `gh-proxy.com`、`ghfast.top`，`--mirror` / `BEDROCK_MIRROR` 可自定义，下载失败自动轮换源）
+- 交互菜单：安装 **Bedrock Server（主体）** / **Deploy Agent（代理分发工具）** / 更新已安装组件 / 查看状态；子命令 + `--yes` 可全非交互（`bedctl --help` 查看参数）
+- 下载 GitHub Release 产物并校验 SHA256（平台级 `bedrock-<os>-<arch>.sha256`）；GitHub 直连不可达时自动改走镜像。**下载源会被记住**：选择后写入状态文件，下次命令先探测已保存源，可达则直接使用、**不再重新询问**；选"直连"会显式清除旧记录；下载实际命中的镜像也会自动回写。`--mirror` / `BEDROCK_MIRROR` 临时指定，bedctl 自身走 Go 标准库 HTTP，原生识别 `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` 环境变量
 - Server 安装目录默认 `/opt/bedrock`（非 root 为 `~/bedrock`），Agent 为 `/opt/bedrock-agent`（`~/bedrock-agent`）；生成 `config.yaml`（`encryption.key`/`jwt.secret` 随机 64 hex、超管密码随机生成仅打印一次，文件权限 600），数据落 `<安装目录>/data`
-- 服务托管：root 且有 systemd 时安装 `bedrock` / `bedrock-agent` 单元（开机自启、`TimeoutStopSec=45` 匹配 Server 30s 优雅停机）；否则 nohup + `<目录>/.<name>.pid` 与 `<目录>/<name>.log`。安装/更新时把登录 shell 的 `PATH`（交互探测）与 `HOME` 固化进服务环境（systemd `Environment=` 行 / nohup `env PATH=`），构建脚本不依赖服务进程被谁启动；安装后新装的用户级工具由引擎执行时按常见目录兜底补全（`internal/engine/env_path.go`）
-- 更新（`install.sh update [--version TAG] [--dir DIR]`）：下载新版本并校验 → 优雅停机（SIGTERM，最长 60s，超时 SIGKILL 兜底）→ 停机窗口备份 SQLite 到 `<目录>/backups/`（保留 3 份）→ 替换二进制（旧版留存 `<bin>.bak`）→ **按当前安装器模板重写服务单元**（含登录 PATH/HOME 环境，v2.5.9 起）→ 重启 → 健康检查（Server `/api/v1/health`，Agent `/healthz`）；健康检查失败自动回滚 `.bak` 并恢复运行。**安装行为本身由 bedctl（install.sh 副本）执行**：涉及安装逻辑的变更需先 `bedctl self-update` 再 `update`，否则 update 仍按旧逻辑更新；Release 自 v2.5.8 起附加 `install.sh` 产物
-- 安装 / 重装（`server` / `agent` 子命令）同样先优雅停旧进程、预检端口占用（被绕过服务管理器的进程占用时报错退出，不动二进制）；健康检查失败会自动打印最近 30 行日志（journalctl 或 `<目录>/<name>.log`），进程启动即退时秒级报错不等满窗口，存在 `.bak` 时自动回滚恢复
-- `config.yaml` 永不覆盖（重装/更新均保留），已有配置时端口/管理员/token 以配置文件为准，`--port` 等参数与现配置冲突会明示不生效；版本对比依赖 `--version` 输出；`install.sh status` 查看版本/服务/健康
-- **bedctl 命令行工具**：安装/更新成功后脚本自动把自身装为 `bedctl`（root: `/usr/local/bin/bedctl`，非 root: `~/.local/bin/bedctl`），并把各组件安装目录与下载源记入状态文件（root: `/etc/bedrock/bedctl.env`，非 root: `~/.bedrock/bedctl.env`），后续命令无需重复 `--dir` / `--mirror`：
+- 服务托管：root 且有 systemd 时安装 `bedrock` / `bedrock-agent` 单元（开机自启、`TimeoutStopSec=45` 匹配 Server 30s 优雅停机）；否则 nohup + `<目录>/.<name>.pid` 与 `<目录>/<name>.log`。服务环境的 `PATH` 由登录 shell 探测 + 常见用户级工具目录（bun/cargo/mise 等，`internal/pkg/toolpath.go`）合并而成，连同 `HOME` 固化进 systemd `Environment=` 或 nohup 进程环境，构建脚本不依赖服务进程被谁启动
+- 更新（`bedctl update [--version TAG] [--dir DIR] [--port N] [--addr A]`）：下载新版本并校验（semver 比较，非字符串相等；`--version` 读失败视为旧版重装）→ **真优雅停机**：`systemctl stop`/SIGTERM 带超时上限，等待退出后**复查端口确已释放**；发现绕过服务管理器的 bedrock 残留进程（孤儿）自动 SIGTERM → 超时 SIGKILL 清理；**其他程序**占用端口则报错退出、不误杀 → 停机窗口备份 SQLite 到 `<目录>/backups/`（保留 3 份）→ 替换二进制（旧版留存 `<bin>.bak`）→ **按当前模板重写服务单元** → 重启 → 健康检查（Server `/api/v1/health`，Agent `/healthz`）；失败自动回滚 `.bak` 并恢复运行、打印最近 30 行日志
+- **改运行端口**：`bedctl update server --port 3000`（更新时顺带改）或 `bedctl port 3000`（单独改，服务在运行则自动重启生效）；用 `yaml.Node` 精准修改 `config.yaml` 的 `server.port`，保留注释与其余配置。Agent 同理 `bedctl update agent --addr :9100`
+- 安装 / 重装同样先优雅停旧进程、复查端口；进程启动即退时秒级报错不等满窗口；`config.yaml` 永不覆盖（重装/更新均保留），已有配置时端口/管理员/token 以配置文件为准并明示被忽略的参数
+- **bedctl 自身升级**：`bedctl self-update` 从 Release 下载 `bedctl-<os>-<arch>` 校验后原子替换自身。v1.x 时代安装的旧脚本版 bedctl 无缝迁移：旧版 `self-update` 拉取的 install.sh 已是引导脚本，下次运行任意命令即完成 Go 版替换；安装目录与下载源状态文件（root: `/etc/bedrock/bedctl.env`，非 root: `~/.bedrock/bedctl.env`）格式兼容、直接继承
+- bedctl 命令一览：
 
 ```bash
-bedctl install server|agent [选项]   # 安装（同 install.sh server|agent）
-bedctl update [server|agent]         # 更新
+bedctl install server|agent [选项]   # 安装（同引导脚本 server|agent 参数）
+bedctl server / bedctl agent         # 同上（快捷形式）
+bedctl update [server|agent]         # 更新（--port/--addr 可同时改监听）
+bedctl port <N>                      # 单独修改 Server 端口并重启
 bedctl status                        # 状态
 bedctl start|stop|restart [server|agent]  # 服务管理（缺省作用于全部已安装组件）
 bedctl logs [server|agent] [-n N]    # 最近日志（默认 100 行）
 bedctl doctor [server|agent]         # 体检：服务/端口/监听地址/本机健康/防火墙
-bedctl self-update                   # bedctl 自我升级
+bedctl self-update                   # bedctl 自我升级（下载自身二进制替换）
 ```
 
 ### 1.1.1 外部访问不通排查（bedctl doctor）
