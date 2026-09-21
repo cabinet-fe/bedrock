@@ -11,7 +11,7 @@
 # See .agents/docs/ops-handbook.md for the manual install path.
 set -euo pipefail
 
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.1.1"
 
 REPO="cabinet-fe/bedrock"
 RELEASE_BASE="${BEDROCK_RELEASE_BASE:-https://github.com/${REPO}}"
@@ -381,11 +381,13 @@ detect_login_path() {
   # The service env must not depend on whoever launched the installer: capture
   # the PATH an interactive login shell would have, so user-level tools (bun,
   # cargo, mise...) whose rc entries sit below the non-interactive early return
-  # (e.g. Ubuntu ~/.bashrc) stay visible to build scripts.
+  # (e.g. Ubuntu ~/.bashrc) stay visible to build scripts. stdin is detached so
+  # the probe can never touch the caller's terminal; a killed interactive shell
+  # would otherwise leave the tty in a broken state.
   local probe p
   for probe in "${SHELL:-/bin/bash}" /bin/bash; do
     command -v "$probe" >/dev/null 2>&1 || continue
-    p=$(timeout 5 "$probe" -l -i -c 'echo $PATH' 2>/dev/null | tail -n 1 || true)
+    p=$(timeout 5 "$probe" -l -i -c 'echo $PATH' </dev/null 2>/dev/null | tail -n 1 || true)
     if [ -n "$p" ]; then
       printf '%s' "$p"
       return 0
@@ -427,8 +429,9 @@ TimeoutStopSec=${timeout}
 [Install]
 WantedBy=multi-user.target
 EOF
-    systemctl daemon-reload
-    systemctl enable "${name}.service" >/dev/null 2>&1 || warn "设置开机自启失败: ${name}"
+    # A wedged systemd must not hang the updater: bound every systemctl call.
+    timeout 15 systemctl daemon-reload || warn "systemd daemon-reload 超时或失败，重启服务前请手动执行 systemctl daemon-reload"
+    timeout 15 systemctl enable "${name}.service" >/dev/null 2>&1 || warn "设置开机自启失败: ${name}"
   fi
 }
 
