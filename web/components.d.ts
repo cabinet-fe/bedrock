@@ -77,6 +77,7 @@ declare module 'vue' {
     UPopConfirm: typeof import('@veltra/desktop')['UPopConfirm']
     UProgress: typeof import('@veltra/desktop')['UProgress']
     URadioGroup: typeof import('@veltra/desktop')['URadioGroup']
+    URichTextEditor: typeof import('@veltra/desktop')['URichTextEditor']
     UScroll: typeof import('@veltra/desktop')['UScroll']
     USelect: typeof import('@veltra/desktop')['USelect']
     USteps: typeof import('@veltra/desktop')['USteps']

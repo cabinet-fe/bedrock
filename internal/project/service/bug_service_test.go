@@ -562,3 +562,77 @@ func TestBugAttachments(t *testing.T) {
 		t.Fatalf("expected 0 attachments after delete, got %d", len(atts))
 	}
 }
+
+func TestBugCommentAttachments(t *testing.T) {
+	bugSvc, projectSvc, _, _, _ := newTestEnv(t)
+	owner := actor(1, allBugPermissions()...)
+	project := createProject(t, projectSvc, owner, "bug-comment-attachment-project")
+
+	bug, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "Bug with Comment Attachment"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comment, err := bugSvc.CreateComment(owner, project.ID, bug.ID, "see screenshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pngContent := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRtest")
+
+	// 1. Disallowed file type rejected
+	disallowedFile := strings.NewReader("executable binary")
+	if _, err := bugSvc.AddCommentAttachment(owner, project.ID, bug.ID, comment.ID, "malware.exe", "application/x-msdownload", disallowedFile, int64(disallowedFile.Len())); !IsBadRequest(err) {
+		t.Fatalf("disallowed extension .exe should fail with bad request, got %v", err)
+	}
+
+	// 2. Comment of another bug rejected as not found
+	otherBug, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "Other Bug"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherComment, err := bugSvc.CreateComment(owner, project.ID, otherBug.ID, "elsewhere")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bugSvc.AddCommentAttachment(owner, project.ID, bug.ID, otherComment.ID, "wrong.png", "image/png", bytes.NewReader(pngContent), int64(len(pngContent))); !IsNotFound(err) {
+		t.Fatalf("comment of another bug should fail not found, got %v", err)
+	}
+
+	// 3. Upload comment attachment
+	att, err := bugSvc.AddCommentAttachment(owner, project.ID, bug.ID, comment.ID, "reply.png", "image/png", bytes.NewReader(pngContent), int64(len(pngContent)))
+	if err != nil {
+		t.Fatalf("add comment attachment failed: %v", err)
+	}
+	if att.CommentID == nil || *att.CommentID != comment.ID {
+		t.Fatalf("expected comment_id=%d, got %+v", comment.ID, att)
+	}
+
+	// 4. Comment listing carries its attachments
+	comments, err := bugSvc.ListComments(owner, project.ID, bug.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) != 1 || len(comments[0].Attachments) != 1 || comments[0].Attachments[0].Filename != "reply.png" {
+		t.Fatalf("expected comment with 1 attachment, got %+v", comments)
+	}
+
+	// 5. Bug-level attachment list includes comment attachments
+	atts, err := bugSvc.ListAttachments(owner, project.ID, bug.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(atts) != 1 {
+		t.Fatalf("expected 1 attachment on bug, got %d", len(atts))
+	}
+
+	// 6. Deleting the comment cascades its attachments
+	if err := bugSvc.DeleteComment(owner, project.ID, bug.ID, comment.ID); err != nil {
+		t.Fatalf("delete comment failed: %v", err)
+	}
+	atts, err = bugSvc.ListAttachments(owner, project.ID, bug.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(atts) != 0 {
+		t.Fatalf("expected 0 attachments after comment delete, got %d", len(atts))
+	}
+}

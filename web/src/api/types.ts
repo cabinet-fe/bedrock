@@ -730,6 +730,7 @@ export interface BugComment {
   id: number;
   bug_id: number;
   content: string;
+  attachments?: BugAttachment[];
   created_by: number;
   creator_name?: string;
   creator_username?: string;
@@ -741,6 +742,7 @@ export type ProjectBugComment = BugComment;
 export interface BugAttachment {
   id: number;
   bug_id: number;
+  comment_id?: number | null;
   storage_object_id: number;
   filename: string;
   file_size?: number;

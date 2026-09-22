@@ -360,6 +360,21 @@ export async function deleteProjectBugComment(
   await http.delete(`/projects/${projectID}/bugs/${bugID}/comments/${commentID}`);
 }
 
+export async function uploadProjectBugCommentAttachment(
+  projectID: number,
+  bugID: number,
+  commentID: number,
+  file: File,
+): Promise<BugAttachment> {
+  const form = new FormData();
+  form.append("file", file);
+  const { body } = await http.post<BugAttachment>(
+    `/projects/${projectID}/bugs/${bugID}/comments/${commentID}/attachments`,
+    form,
+  );
+  return body;
+}
+
 export async function listProjectBugAttachments(
   projectID: number,
   bugID: number,

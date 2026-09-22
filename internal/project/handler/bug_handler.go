@@ -2,6 +2,7 @@ package handler
 
 import (
 	"mime"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -43,6 +44,7 @@ func (h *BugHandler) RegisterRoutesOnGroup(g *gin.RouterGroup) {
 	g.GET("/:id/bugs/:bugID/activities", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:view", resourcemodel.ScopeBugsRead), h.ListBugActivities)
 	g.GET("/:id/bugs/:bugID/comments", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:view", resourcemodel.ScopeBugsRead), h.ListComments)
 	g.POST("/:id/bugs/:bugID/comments", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:create", resourcemodel.ScopeBugsWrite), h.CreateComment)
+	g.POST("/:id/bugs/:bugID/comments/:commentID/attachments", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:create", resourcemodel.ScopeBugsWrite), h.UploadCommentAttachment)
 	g.PUT("/:id/bugs/:bugID/comments/:commentID", rbacmw.RequirePermission(h.perm, "project_bugs:update"), h.UpdateComment)
 	g.DELETE("/:id/bugs/:bugID/comments/:commentID", rbacmw.RequirePermission(h.perm, "project_bugs:delete"), h.DeleteComment)
 	g.GET("/:id/bugs/:bugID/attachments", rbacmw.RequirePermissionOrPATScope(h.perm, "project_bugs:view", resourcemodel.ScopeBugsRead), h.ListAttachments)
@@ -366,24 +368,57 @@ func (h *BugHandler) ListAttachments(c *gin.Context) {
 	pkg.Success(c, attachments)
 }
 
+// attachmentFormFile extracts the multipart "file" part. Writes the error
+// response and returns false on failure.
+func attachmentFormFile(c *gin.Context) (multipart.File, *multipart.FileHeader, bool) {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "请提供附件 file")
+		return nil, nil, false
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "无法读取附件")
+		return nil, nil, false
+	}
+	return file, fileHeader, true
+}
+
 func (h *BugHandler) UploadAttachment(c *gin.Context) {
 	projectID, bugID, actor, ok := h.bugActor(c, "project_bugs:update")
 	if !ok {
 		return
 	}
-	fileHeader, err := c.FormFile("file")
-	if err != nil {
-		pkg.Error(c, http.StatusBadRequest, "请提供附件 file")
-		return
-	}
-	file, err := fileHeader.Open()
-	if err != nil {
-		pkg.Error(c, http.StatusBadRequest, "无法读取附件")
+	file, fileHeader, ok := attachmentFormFile(c)
+	if !ok {
 		return
 	}
 	defer file.Close()
 
 	attachment, err := h.svc.AddAttachment(actor, projectID, bugID, fileHeader.Filename, fileHeader.Header.Get("Content-Type"), file, fileHeader.Size)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	pkg.Created(c, attachment)
+}
+
+func (h *BugHandler) UploadCommentAttachment(c *gin.Context) {
+	projectID, bugID, actor, ok := h.bugActor(c, "project_bugs:create")
+	if !ok {
+		return
+	}
+	commentID, ok := parseID(c, "commentID")
+	if !ok {
+		return
+	}
+	file, fileHeader, ok := attachmentFormFile(c)
+	if !ok {
+		return
+	}
+	defer file.Close()
+
+	attachment, err := h.svc.AddCommentAttachment(actor, projectID, bugID, commentID, fileHeader.Filename, fileHeader.Header.Get("Content-Type"), file, fileHeader.Size)
 	if err != nil {
 		writeServiceError(c, err)
 		return

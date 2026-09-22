@@ -4,11 +4,19 @@ defineOptions({ name: "BugFormDialog" });
 import { computed, reactive, ref, useTemplateRef, watch } from "vue";
 import { message, type FormExposed } from "@veltra/desktop";
 
-import { createProjectBug, listMembers, updateProjectBug } from "@/api/projects";
+import {
+  createProjectBug,
+  listMembers,
+  updateProjectBug,
+  uploadProjectBugAttachment,
+} from "@/api/projects";
 import { listRepositoryBranches } from "@/api/resource";
 import type { BugPriority, BugSeverity, ProjectBug } from "@/api/types";
 import RepoSelect from "@/components/repo-select/repo-select.vue";
 import { BUG_PRIORITY_OPTIONS, BUG_SEVERITY_OPTIONS } from "@/lib/tag";
+import BugPendingFiles from "./bug-pending-files.vue";
+import { clipboardImages } from "./attachment-staging";
+import { richTextToPlain, toEditorHtml } from "./rich-text";
 
 const open = defineModel<boolean>({ required: true });
 
@@ -43,6 +51,7 @@ const form = reactive({ ...defaultForm });
 const memberOptions = ref<{ label: string; value: number }[]>([]);
 const branchOptions = ref<{ label: string; value: string }[]>([]);
 const loadingBranches = ref(false);
+const pendingFiles = ref<File[]>([]);
 
 async function loadMembers(pid?: number) {
   if (!pid) {
@@ -83,11 +92,12 @@ function handleRepoChange(repoId?: number) {
 }
 
 function resetForm() {
+  pendingFiles.value = [];
   if (props.bug) {
     Object.assign(form, defaultForm, {
       project_id: props.bug.project_id,
       title: props.bug.title,
-      description: props.bug.description || "",
+      description: toEditorHtml(props.bug.description || ""),
       severity: props.bug.severity,
       priority: props.bug.priority,
       assignee_id: props.bug.assignee_id ?? undefined,
@@ -131,6 +141,13 @@ watch(
   },
 );
 
+function handleFormPaste(event: ClipboardEvent) {
+  const images = clipboardImages(event);
+  if (!images) return;
+  pendingFiles.value.push(...images);
+  message.success(`已添加 ${images.length} 张截图，提交后自动上传`);
+}
+
 async function handleSubmit() {
   if (busy.value) return;
   const valid = await formRef.value?.validate();
@@ -146,7 +163,7 @@ async function handleSubmit() {
   try {
     const payload = {
       title: form.title.trim(),
-      description: form.description.trim() || undefined,
+      description: richTextToPlain(form.description) ? form.description : undefined,
       severity: form.severity,
       priority: form.priority,
       assignee_id: form.assignee_id ?? null,
@@ -163,6 +180,21 @@ async function handleSubmit() {
       message.success("缺陷创建成功");
     }
 
+    if (pendingFiles.value.length) {
+      let failed = 0;
+      for (const file of pendingFiles.value) {
+        try {
+          await uploadProjectBugAttachment(pid, saved.id, file);
+        } catch {
+          failed++;
+        }
+      }
+      if (failed > 0) {
+        message.warning(`${failed} 个附件上传失败，可稍后在缺陷详情中重新上传`);
+      }
+    }
+    pendingFiles.value = [];
+
     open.value = false;
     emit("saved", saved);
   } catch (error) {
@@ -177,13 +209,13 @@ async function handleSubmit() {
   <u-dialog
     v-model="open"
     :title="isEdit ? '编辑缺陷' : '新建缺陷'"
-    style="width: 680px; max-width: 95vw"
+    style="width: 860px; max-width: 95vw"
   >
     <div class="bug-form-header-bar">
       <span class="bug-form-header-tip">填写缺陷基本信息与协同责任人</span>
     </div>
 
-    <u-form ref="form" :model="form" label-width="96px" :cols="2">
+    <u-form ref="form" :model="form" label-width="96px" :cols="2" @paste="handleFormPaste">
       <u-select
         v-if="!props.projectId && projectOptions?.length"
         v-model="form.project_id"
@@ -254,14 +286,18 @@ async function handleSubmit() {
         "
       />
 
-      <u-textarea
+      <u-rich-text-editor
         v-model="form.description"
         label="缺陷描述"
         field="description"
-        :rows="6"
-        placeholder="详细描述缺陷现象、复现步骤、报错信息或期望表现..."
+        placeholder="详细描述缺陷现象、复现步骤、报错信息或期望表现，支持标题 / 加粗 / 列表 / 引用 / 链接..."
         span="full"
       />
+
+      <u-form-item label="附件截图" span="full">
+        <BugPendingFiles v-model="pendingFiles" />
+        <span class="attach-tip">可选择文件，或直接粘贴截图（Ctrl/⌘+V），提交后自动上传</span>
+      </u-form-item>
     </u-form>
 
     <template #footer="{ close }">
@@ -286,6 +322,11 @@ async function handleSubmit() {
 
 .bug-form-header-tip {
   font-size: 13px;
+  color: fn.use-var(text-color, secondary);
+}
+
+.attach-tip {
+  font-size: 12px;
   color: fn.use-var(text-color, secondary);
 }
 </style>

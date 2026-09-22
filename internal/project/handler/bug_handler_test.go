@@ -342,7 +342,26 @@ func TestBugHandlerComments(t *testing.T) {
 	_ = json.Unmarshal(resp.Body.Bytes(), &commentResp)
 	commentIDStr := strconv.Itoa(int(commentResp.Data.ID))
 
-	// 2. List comments (200)
+	// 2. Upload comment attachment via multipart (201)
+	bodyBuf := &bytes.Buffer{}
+	mw := multipart.NewWriter(bodyBuf)
+	fw, err := mw.CreateFormFile("file", "comment_shot.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = fw.Write([]byte("\x89PNG\r\n\x1a\n"))
+	_ = mw.Close()
+
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/comments/"+commentIDStr+"/attachments", bodyBuf)
+	uploadReq.Header.Set("Content-Type", mw.FormDataContentType())
+	uploadReq.Header.Set("X-User-ID", "2")
+	uploadRec := httptest.NewRecorder()
+	router.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusCreated {
+		t.Fatalf("upload comment attachment expected 201, got %d: %s", uploadRec.Code, uploadRec.Body.String())
+	}
+
+	// 3. List comments carries the attachment (200)
 	resp = doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/comments", nil, 2, false)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("list comments expected 200, got %d: %s", resp.Code, resp.Body.String())
@@ -354,8 +373,11 @@ func TestBugHandlerComments(t *testing.T) {
 	if len(listResp.Data) != 1 {
 		t.Fatalf("expected 1 comment, got %d", len(listResp.Data))
 	}
+	if len(listResp.Data[0].Attachments) != 1 || listResp.Data[0].Attachments[0].Filename != "comment_shot.png" {
+		t.Fatalf("expected comment with 1 attachment, got %+v", listResp.Data[0].Attachments)
+	}
 
-	// 3. Update comment (200)
+	// 4. Update comment (200)
 	resp = doRequest(router, http.MethodPut, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/comments/"+commentIDStr, jsonBytes(map[string]any{
 		"content": "Updated comment content",
 	}), 2, false)
@@ -363,10 +385,21 @@ func TestBugHandlerComments(t *testing.T) {
 		t.Fatalf("update comment expected 200, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	// 4. Delete comment (200)
+	// 5. Delete comment cascades its attachments (200)
 	resp = doRequest(router, http.MethodDelete, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/comments/"+commentIDStr, nil, 2, false)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("delete comment expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	resp = doRequest(router, http.MethodGet, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr+"/attachments", nil, 1, false)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("list attachments expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var attsResp struct {
+		Data []projectmodel.ProjectBugAttachment `json:"data"`
+	}
+	_ = json.Unmarshal(resp.Body.Bytes(), &attsResp)
+	if len(attsResp.Data) != 0 {
+		t.Fatalf("expected 0 attachments after comment delete, got %d", len(attsResp.Data))
 	}
 }
 

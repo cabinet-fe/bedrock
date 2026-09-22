@@ -80,14 +80,17 @@ type ProjectBugComment struct {
 	// Non-persisted view fields
 	CreatorName     string `json:"creator_name,omitempty" gorm:"-"`
 	CreatorUsername string `json:"creator_username,omitempty" gorm:"-"`
+	Attachments     []ProjectBugAttachment `json:"attachments,omitempty" gorm:"-"`
 }
 
 func (ProjectBugComment) TableName() string { return "project_bug_comments" }
 
-// ProjectBugAttachment links an uploaded storage object to a bug.
+// ProjectBugAttachment links an uploaded storage object to a bug, optionally
+// scoped to a single comment (comment_id nil = bug-level attachment).
 type ProjectBugAttachment struct {
 	ID              uint      `json:"id" gorm:"primaryKey"`
 	BugID           uint      `json:"bug_id" gorm:"not null;index"`
+	CommentID       *uint     `json:"comment_id,omitempty" gorm:"index"`
 	StorageObjectID uint      `json:"storage_object_id" gorm:"not null;index"`
 	Filename        string    `json:"filename" gorm:"size:500;not null"`
 	CreatedBy       uint      `json:"created_by" gorm:"index"`

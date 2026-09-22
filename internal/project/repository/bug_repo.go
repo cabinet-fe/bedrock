@@ -376,7 +376,7 @@ func (r *BugRepository) FindCommentByID(id uint) (*model.ProjectBugComment, erro
 		return nil, err
 	}
 	comments := []model.ProjectBugComment{comment}
-	if err := r.attachCommentUsers(comments); err != nil {
+	if err := r.attachCommentExtras(comments); err != nil {
 		return nil, err
 	}
 	return &comments[0], nil
@@ -388,7 +388,7 @@ func (r *BugRepository) ListComments(bugID uint) ([]model.ProjectBugComment, err
 	if err := r.db.Where("bug_id = ?", bugID).Order("created_at ASC, id ASC").Find(&comments).Error; err != nil {
 		return nil, err
 	}
-	if err := r.attachCommentUsers(comments); err != nil {
+	if err := r.attachCommentExtras(comments); err != nil {
 		return nil, err
 	}
 	return comments, nil
@@ -445,6 +445,45 @@ func (r *BugRepository) attachCommentUsers(comments []model.ProjectBugComment) e
 	return nil
 }
 
+// attachCommentExtras attaches creator info and comment-scoped attachments.
+func (r *BugRepository) attachCommentExtras(comments []model.ProjectBugComment) error {
+	if err := r.attachCommentUsers(comments); err != nil {
+		return err
+	}
+	return r.attachCommentAttachments(comments)
+}
+
+// attachCommentAttachments loads comment-scoped attachments and groups them
+// onto each comment's Attachments view field.
+func (r *BugRepository) attachCommentAttachments(comments []model.ProjectBugComment) error {
+	if len(comments) == 0 {
+		return nil
+	}
+	commentIDs := make([]uint, 0, len(comments))
+	for _, c := range comments {
+		commentIDs = append(commentIDs, c.ID)
+	}
+	var atts []model.ProjectBugAttachment
+	if err := r.db.Where("comment_id IN ?", commentIDs).Order("created_at ASC, id ASC").Find(&atts).Error; err != nil {
+		return err
+	}
+	if err := r.attachAttachmentDetails(atts); err != nil {
+		return err
+	}
+	grouped := make(map[uint][]model.ProjectBugAttachment, len(comments))
+	for _, a := range atts {
+		if a.CommentID != nil {
+			grouped[*a.CommentID] = append(grouped[*a.CommentID], a)
+		}
+	}
+	for i := range comments {
+		if list := grouped[comments[i].ID]; len(list) > 0 {
+			comments[i].Attachments = list
+		}
+	}
+	return nil
+}
+
 // CreateAttachment records a new bug attachment metadata record.
 func (r *BugRepository) CreateAttachment(att *model.ProjectBugAttachment) error {
 	return r.db.Create(att).Error
@@ -478,6 +517,15 @@ func (r *BugRepository) ListAttachments(bugID uint) ([]model.ProjectBugAttachmen
 // DeleteAttachment removes a bug attachment metadata record.
 func (r *BugRepository) DeleteAttachment(id uint) error {
 	return r.db.Delete(&model.ProjectBugAttachment{}, id).Error
+}
+
+// ListAttachmentsByCommentID returns raw attachment records linked to a comment.
+func (r *BugRepository) ListAttachmentsByCommentID(commentID uint) ([]model.ProjectBugAttachment, error) {
+	var atts []model.ProjectBugAttachment
+	if err := r.db.Where("comment_id = ?", commentID).Find(&atts).Error; err != nil {
+		return nil, err
+	}
+	return atts, nil
 }
 
 func (r *BugRepository) attachAttachmentDetails(atts []model.ProjectBugAttachment) error {

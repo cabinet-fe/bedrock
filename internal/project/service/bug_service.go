@@ -397,6 +397,20 @@ func (s *BugService) DeleteComment(actor AccessContext, projectID, bugID, commen
 		return NewForbidden("只能删除自己的评论")
 	}
 
+	// Cascade: purge comment-scoped attachments and their storage objects first.
+	atts, err := s.bugRepo.ListAttachmentsByCommentID(commentID)
+	if err != nil {
+		return err
+	}
+	for _, att := range atts {
+		if err := s.bugRepo.DeleteAttachment(att.ID); err != nil {
+			return err
+		}
+		if s.storage != nil {
+			_ = s.storage.Delete(att.StorageObjectID)
+		}
+	}
+
 	return s.bugRepo.DeleteComment(commentID)
 }
 
@@ -413,7 +427,27 @@ func (s *BugService) AddAttachment(actor AccessContext, projectID, bugID uint, f
 	if _, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:update", capBugEdit); err != nil {
 		return nil, err
 	}
+	return s.putAttachment(actor, bugID, nil, filename, contentType, source, size)
+}
 
+// AddCommentAttachment stores a file and links it to a bug comment.
+func (s *BugService) AddCommentAttachment(actor AccessContext, projectID, bugID, commentID uint, filename, contentType string, source io.Reader, size int64) (*model.ProjectBugAttachment, error) {
+	if _, err := s.CheckBugProject(actor, projectID, bugID, "project_bugs:create", capBugEdit); err != nil {
+		return nil, err
+	}
+	comment, err := s.bugRepo.FindCommentByID(commentID)
+	if errors.Is(err, gorm.ErrRecordNotFound) || comment == nil || comment.BugID != bugID {
+		return nil, NewNotFound("评论不存在")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.putAttachment(actor, bugID, &commentID, filename, contentType, source, size)
+}
+
+// putAttachment validates and stores a file, then records the attachment row
+// linked to the bug (and optionally the comment).
+func (s *BugService) putAttachment(actor AccessContext, bugID uint, commentID *uint, filename, contentType string, source io.Reader, size int64) (*model.ProjectBugAttachment, error) {
 	filename = safeFilename(filename)
 	if filename == "" {
 		return nil, NewBadRequest("附件文件名不能为空")
@@ -438,6 +472,7 @@ func (s *BugService) AddAttachment(actor AccessContext, projectID, bugID uint, f
 
 	att := &model.ProjectBugAttachment{
 		BugID:           bugID,
+		CommentID:       commentID,
 		StorageObjectID: object.ID,
 		Filename:        filename,
 		CreatedBy:       actor.UserID,

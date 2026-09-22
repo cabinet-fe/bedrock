@@ -262,6 +262,7 @@
 路径参数：id*: integer, bugID*: integer
 响应 200：data = ProjectBugComment[]
 错误：403 / 404
+说明：每条评论的 `attachments` 携带该评论的附件列表（响应附加，不落库）。
 
 ### POST /projects/{id}/bugs/{bugID}/comments — 添加缺陷评论
 
@@ -285,6 +286,16 @@
 路径参数：id*: integer, bugID*: integer, commentID*: integer
 响应 200：data = { id: integer }
 错误：403 / 404
+说明：级联删除该评论名下的附件（含其引用的存储对象）。
+
+### POST /projects/{id}/bugs/{bugID}/comments/{commentID}/attachments — 上传缺陷评论附件（默认限额 20MB）
+
+鉴权：JWT 需 `project_bugs:create` + 项目 ACL；或 PAT scope `bugs:write` + 项目 ACL
+路径参数：id*: integer, bugID*: integer, commentID*: integer
+请求：multipart: { file* }
+响应 201：data = ProjectBugAttachment
+错误：400 / 403 / 404 / 413
+说明：附件记录同时挂接缺陷（`bug_id`）与评论（`comment_id`），文件类型白名单与缺陷附件一致；下载/删除复用缺陷附件端点。
 
 ### GET /projects/{id}/bugs/{bugID}/attachments — 列出缺陷附件
 
@@ -741,6 +752,7 @@
 | --- | --- | --- | --- |
 | `id` | `integer` | 是 |  |
 | `bug_id` | `integer` | 是 |  |
+| `comment_id` | `integer` |  | 所属评论 ID，缺陷级附件为空 |
 | `storage_object_id` | `integer` | 是 |  |
 | `filename` | `string` | 是 |  |
 | `file_size` | `integer` |  | 附件体积（字节），响应附加，不落库 |
@@ -760,6 +772,7 @@
 | `created_by` | `integer` | 是 |  |
 | `creator_name` | `string` |  | 评论人姓名，响应附加，不落库 |
 | `creator_username` | `string` |  | 评论人用户名，响应附加，不落库 |
+| `attachments` | `ProjectBugAttachment[]` |  | 评论附件列表，响应附加，不落库 |
 | `created_at` | `string(date-time)` | 是 |  |
 | `updated_at` | `string(date-time)` | 是 |  |
 

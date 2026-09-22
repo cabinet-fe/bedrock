@@ -16,6 +16,7 @@ import {
   updateProjectBugComment,
   createProjectBugComment,
   uploadProjectBugAttachment,
+  uploadProjectBugCommentAttachment,
 } from "@/api/projects";
 import type {
   BugActivity,
@@ -39,6 +40,9 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { useRepositoryStore } from "@/stores/repositories";
 import BugAttachmentPreview from "./bug-attachment-preview.vue";
+import BugPendingFiles from "./bug-pending-files.vue";
+import { clipboardImages } from "./attachment-staging";
+import { isRichText } from "./rich-text";
 
 const open = defineModel<boolean>({ required: true });
 
@@ -113,6 +117,7 @@ const transitioning = ref(false);
 // 评论
 const newCommentText = ref("");
 const submittingComment = ref(false);
+const commentPendingFiles = ref<File[]>([]);
 const editingCommentId = ref<number | undefined>(undefined);
 const editingCommentContent = ref("");
 const savingComment = ref(false);
@@ -200,16 +205,37 @@ function canManageComment(c: BugComment) {
   return canUpdateBug.value && (canAdminProjectContent.value || c.created_by === auth.user?.id);
 }
 
+function handleCommentPaste(event: ClipboardEvent) {
+  const images = clipboardImages(event);
+  if (!images) return;
+  commentPendingFiles.value.push(...images);
+  message.success(`已添加 ${images.length} 张截图，随评论一起发送`);
+}
+
 async function handleAddComment() {
   if (!bug.value || !newCommentText.value.trim()) return;
   submittingComment.value = true;
   try {
-    const newComment = await createProjectBugComment(
-      bug.value.project_id,
-      bug.value.id,
-      newCommentText.value.trim(),
-    );
+    const pid = bug.value.project_id;
+    const bid = bug.value.id;
+    const newComment = await createProjectBugComment(pid, bid, newCommentText.value.trim());
+    newComment.attachments = [];
+    let failed = 0;
+    for (const file of commentPendingFiles.value) {
+      try {
+        newComment.attachments.push(
+          await uploadProjectBugCommentAttachment(pid, bid, newComment.id, file),
+        );
+      } catch {
+        failed++;
+      }
+    }
+    if (failed > 0) {
+      message.warning(`${failed} 个附件上传失败，可重新发表评论时再试`);
+    }
+    commentPendingFiles.value = [];
     comments.value.push(newComment);
+    attachments.value.push(...newComment.attachments);
     newCommentText.value = "";
     message.success("评论发表成功");
   } catch (error) {
@@ -255,6 +281,9 @@ async function handleDeleteComment(c: BugComment) {
   try {
     await deleteProjectBugComment(bug.value.project_id, bug.value.id, c.id);
     comments.value = comments.value.filter((item) => item.id !== c.id);
+    for (const att of c.attachments ?? []) {
+      forgetAttachment(att);
+    }
     message.success("评论已删除");
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除评论失败");
@@ -281,11 +310,22 @@ async function handleDownloadAttachment(att: BugAttachment) {
   }
 }
 
+// Removes an attachment from both the bug-level tab list and the owning
+// comment's inline list (the backend already purged the storage object).
+function forgetAttachment(att: BugAttachment) {
+  attachments.value = attachments.value.filter((item) => item.id !== att.id);
+  for (const c of comments.value) {
+    if (c.attachments?.length) {
+      c.attachments = c.attachments.filter((item) => item.id !== att.id);
+    }
+  }
+}
+
 async function handleDeleteAttachment(att: BugAttachment) {
   if (!bug.value) return;
   try {
     await deleteProjectBugAttachment(bug.value.project_id, bug.value.id, att.id);
-    attachments.value = attachments.value.filter((item) => item.id !== att.id);
+    forgetAttachment(att);
     message.success("附件已删除");
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除附件失败");
@@ -396,7 +436,13 @@ watch(
       <div class="detail-block">
         <div class="detail-block-title">缺陷描述</div>
         <div class="bug-description-box">
-          <pre class="bug-description-text">{{ bug.description || "暂无描述" }}</pre>
+          <!-- eslint-disable-next-line vue/no-v-html -- content is editor-generated whitelist HTML -->
+          <div
+            v-if="isRichText(bug.description)"
+            class="bug-description-rich"
+            v-html="bug.description"
+          />
+          <pre v-else class="bug-description-text">{{ bug.description || "暂无描述" }}</pre>
         </div>
       </div>
 
@@ -456,16 +502,30 @@ watch(
               <div v-else class="comment-body">
                 {{ c.content }}
               </div>
+
+              <div v-if="c.attachments?.length" class="comment-attachments">
+                <BugAttachmentPreview
+                  v-for="att in c.attachments"
+                  :key="att.id"
+                  :attachment="att"
+                  :project-id="bug.project_id"
+                  :bug-id="bug.id"
+                  :can-manage="canManageComment(c)"
+                  @download="handleDownloadAttachment"
+                  @delete="handleDeleteAttachment"
+                />
+              </div>
             </div>
           </div>
           <u-empty v-else text="暂无讨论评论，欢迎留下排查进展" />
 
-          <div v-if="canCreateComment" class="comment-input-area">
+          <div v-if="canCreateComment" class="comment-input-area" @paste="handleCommentPaste">
             <u-textarea
               v-model="newCommentText"
               :rows="3"
-              placeholder="发表评论或排查协同进展..."
+              placeholder="发表评论或排查协同进展...（支持粘贴截图）"
             />
+            <BugPendingFiles v-model="commentPendingFiles" />
             <div class="comment-submit-row">
               <u-button
                 type="primary"
@@ -650,6 +710,45 @@ watch(
   font-family: inherit;
 }
 
+.bug-description-rich {
+  font-size: 13px;
+  line-height: 1.6;
+  color: fn.use-var(text-color, default);
+  word-break: break-word;
+
+  :deep(p) {
+    margin: 0 0 4px;
+  }
+
+  :deep(h1, .u-rte-h1) {
+    margin: 8px 0 4px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  :deep(h2, h3, h4, .u-rte-h2, .u-rte-h3) {
+    margin: 8px 0 4px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  :deep(ul, ol) {
+    margin: 4px 0;
+    padding-left: 20px;
+  }
+
+  :deep(blockquote) {
+    margin: 4px 0;
+    padding: 2px 10px;
+    border-left: 3px solid fn.use-var(border-color, default);
+    color: fn.use-var(text-color, secondary);
+  }
+
+  :deep(a) {
+    color: fn.use-var(color, primary);
+  }
+}
+
 .collab-tabs-container {
   display: flex;
   flex-direction: column;
@@ -782,6 +881,13 @@ watch(
   flex-direction: column;
   gap: 8px;
   margin-top: 10px;
+}
+
+.comment-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .comment-submit-row {
