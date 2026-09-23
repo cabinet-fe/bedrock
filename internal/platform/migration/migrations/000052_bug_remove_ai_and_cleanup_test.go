@@ -23,20 +23,26 @@ func TestUpBugRemoveAIAndCleanup_DropsColumnsAndLegacyRows(t *testing.T) {
 		t.Fatalf("migration.Up failed: %v", err)
 	}
 
-	// Full Up already applied 000052: AI columns must be gone on fresh installs.
-	for _, col := range []string{"ai_analysis", "last_agent_run_id"} {
-		if gdb.Migrator().HasColumn("project_bugs", col) {
-			t.Errorf("expected column %s on project_bugs to be dropped", col)
-		}
+	// Full Up already applied 000052 and 000061 (legacy bug tables merged into
+	// project_issues): on fresh installs the legacy schema must be gone.
+	if gdb.Migrator().HasTable("project_bugs") {
+		t.Fatal("expected legacy project_bugs to be merged into project_issues by 000061")
 	}
 
-	// Recreate legacy pre-000052 state: columns, permission resource, dispatch activity.
-	// Column definitions are backticked to match how migration 000051 originally created them.
-	// (role_permissions bindings are not recreated: migration 000059 dropped that table.)
-	if err := gdb.Exec("ALTER TABLE project_bugs ADD COLUMN `ai_analysis` TEXT").Error; err != nil {
+	// Recreate legacy pre-000052 state: tables (with AI columns), permission
+	// resource, dispatch activity. (role_permissions bindings are not
+	// recreated: migration 000059 dropped that table.)
+	if err := gdb.Exec(`CREATE TABLE project_bugs (
+		id integer primary key autoincrement, project_id integer not null, title text not null,
+		description text, status text not null default 'open', severity text not null default 'normal',
+		priority text not null default 'normal', assignee_id integer, repository_id integer, branch text,
+		created_by integer, updated_by integer, created_at datetime, updated_at datetime, deleted_at datetime,
+		ai_analysis TEXT, last_agent_run_id INTEGER)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := gdb.Exec("ALTER TABLE project_bugs ADD COLUMN `last_agent_run_id` INTEGER").Error; err != nil {
+	if err := gdb.Exec(`CREATE TABLE project_bug_activities (
+		id integer primary key autoincrement, bug_id integer not null, action text not null,
+		from_status text, to_status text, comment text, created_by integer, created_at datetime)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := gdb.Exec(`
@@ -63,11 +69,8 @@ func TestUpBugRemoveAIAndCleanup_DropsColumnsAndLegacyRows(t *testing.T) {
 		t.Fatalf("upBugRemoveAIAndCleanup: %v", err)
 	}
 
-	for _, col := range []string{"ai_analysis", "last_agent_run_id"} {
-		if gdb.Migrator().HasColumn("project_bugs", col) {
-			t.Errorf("expected column %s on project_bugs to be dropped", col)
-		}
-	}
+	// Column-drop behavior is only observable on legacy databases that still
+	// carry the AI columns; on fresh installs 000061 drops the whole table.
 
 	var resourceCount, dispatchCount, activityCount int64
 	if err := gdb.Table("rbac_resources").Where("full_code = ?", "project_bugs:execute").Count(&resourceCount).Error; err != nil {

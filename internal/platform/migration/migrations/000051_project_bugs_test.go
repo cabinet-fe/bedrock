@@ -11,6 +11,9 @@ import (
 	_ "bedrock/internal/platform/migration/migrations"
 )
 
+// TestMigration000051_ProjectBugs runs the full chain: 000051 creates the
+// legacy bug tables, which 000061 later merges into the unified
+// project_issues tables (see TestMigration000061_UnifiedProjectIssues).
 func TestMigration000051_ProjectBugs(t *testing.T) {
 	gdb, err := db.Open(&config.DatabaseConfig{
 		Driver: "sqlite",
@@ -24,11 +27,12 @@ func TestMigration000051_ProjectBugs(t *testing.T) {
 		t.Fatalf("migration.Up failed: %v", err)
 	}
 
+	// The bug domain now persists in the unified issue tables (000061).
 	tables := []string{
-		"project_bugs",
-		"project_bug_comments",
-		"project_bug_attachments",
-		"project_bug_activities",
+		"project_issues",
+		"project_issue_comments",
+		"project_issue_attachments",
+		"project_issue_activities",
 	}
 
 	for _, table := range tables {
@@ -37,42 +41,41 @@ func TestMigration000051_ProjectBugs(t *testing.T) {
 		}
 	}
 
-	expectedBugCols := []string{
-		"id", "project_id", "title", "description", "status",
+	expectedIssueCols := []string{
+		"id", "project_id", "type", "title", "description", "status",
 		"severity", "priority", "assignee_id", "repository_id",
-		"branch", "created_by",
-		"updated_by", "created_at", "updated_at", "deleted_at",
+		"branch", "tags", "created_by", "updated_by", "created_at", "updated_at", "deleted_at",
 	}
-	for _, col := range expectedBugCols {
-		if !gdb.Migrator().HasColumn("project_bugs", col) {
-			t.Errorf("expected column %s on project_bugs", col)
+	for _, col := range expectedIssueCols {
+		if !gdb.Migrator().HasColumn("project_issues", col) {
+			t.Errorf("expected column %s on project_issues", col)
 		}
 	}
 
 	expectedCommentCols := []string{
-		"id", "bug_id", "content", "created_by", "created_at", "updated_at", "deleted_at",
+		"id", "issue_id", "content", "created_by", "created_at", "updated_at", "deleted_at",
 	}
 	for _, col := range expectedCommentCols {
-		if !gdb.Migrator().HasColumn("project_bug_comments", col) {
-			t.Errorf("expected column %s on project_bug_comments", col)
+		if !gdb.Migrator().HasColumn("project_issue_comments", col) {
+			t.Errorf("expected column %s on project_issue_comments", col)
 		}
 	}
 
 	expectedAttachmentCols := []string{
-		"id", "bug_id", "storage_object_id", "filename", "created_by", "created_at",
+		"id", "issue_id", "comment_id", "storage_object_id", "filename", "created_by", "created_at",
 	}
 	for _, col := range expectedAttachmentCols {
-		if !gdb.Migrator().HasColumn("project_bug_attachments", col) {
-			t.Errorf("expected column %s on project_bug_attachments", col)
+		if !gdb.Migrator().HasColumn("project_issue_attachments", col) {
+			t.Errorf("expected column %s on project_issue_attachments", col)
 		}
 	}
 
 	expectedActivityCols := []string{
-		"id", "bug_id", "action", "from_status", "to_status", "comment", "created_by", "created_at",
+		"id", "issue_id", "action", "field", "old_value", "new_value", "from_status", "to_status", "comment", "created_by", "created_at",
 	}
 	for _, col := range expectedActivityCols {
-		if !gdb.Migrator().HasColumn("project_bug_activities", col) {
-			t.Errorf("expected column %s on project_bug_activities", col)
+		if !gdb.Migrator().HasColumn("project_issue_activities", col) {
+			t.Errorf("expected column %s on project_issue_activities", col)
 		}
 	}
 }

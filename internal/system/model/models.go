@@ -53,6 +53,7 @@ type Notification struct {
 	Message    string    `json:"message" gorm:"size:500"`
 	BuildRunID *uint     `json:"build_run_id" gorm:"index"`
 	AgentRunID *uint     `json:"agent_run_id" gorm:"index"`
+	IssueID    *uint     `json:"issue_id" gorm:"index"`
 	IsRead     bool      `json:"is_read" gorm:"not null;default:false;index"`
 	CreatedAt  time.Time `json:"created_at" gorm:"index"`
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, useTemplateRef } from "vue";
+import { computed, onMounted, reactive, ref, useTemplateRef, watch } from "vue";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
 
@@ -10,22 +10,27 @@ import {
   deleteRequirementAttachment,
   deleteRequirementComment,
   downloadRequirementAttachment,
+  getProjectKanban,
   getRequirement,
   listRequirementAttachments,
   listRequirementComments,
   listRequirementStatuses,
+  transitionProjectIssueStatus,
   updateRequirement,
   updateRequirementComment,
   uploadRequirementAttachment,
 } from "@/api/projects";
 import type {
+  KanbanBoard,
   ProductProject,
+  ProjectIssue,
   ProjectRole,
   Requirement,
   RequirementAttachment,
   RequirementComment,
   RequirementStatusOption,
 } from "@/api/types";
+import KanbanBoardView from "@/views/projects/components/kanban-board.vue";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusyKey } from "@/composables/use-busy";
@@ -59,6 +64,10 @@ const { busyKey, bind } = useBusyKey();
 const auth = useAuthStore();
 const tableRef = useTemplateRef("table");
 const query = reactive({ keyword: "", status: "", priority: "" });
+const viewMode = ref<"kanban" | "table">("kanban");
+const includeTerminal = ref(false);
+const board = ref<KanbanBoard | null>(null);
+const boardLoading = ref(false);
 const dialogOpen = ref(false);
 const detailOpen = ref(false);
 const editing = ref<Requirement | null>(null);
@@ -189,7 +198,7 @@ async function save() {
       message.success("需求已创建");
     }
     dialogOpen.value = false;
-    await tableRef.value?.reload();
+    refreshAll();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "保存失败");
   }
@@ -199,7 +208,7 @@ const remove = bind(async (requirement: Requirement) => {
   try {
     await deleteRequirement(props.project.id, requirement.id);
     message.success("需求已删除");
-    await tableRef.value?.reload();
+    refreshAll();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除失败");
   }
@@ -305,12 +314,92 @@ async function download(attachment: RequirementAttachment) {
   }
 }
 
-onMounted(() => void loadRequirementStatuses());
+async function loadBoard() {
+  boardLoading.value = true;
+  try {
+    board.value = await getProjectKanban({
+      projectID: props.project.id,
+      type: "requirement",
+      includeTerminal: includeTerminal.value,
+      keyword: query.keyword || undefined,
+    });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "加载需求看板失败");
+  } finally {
+    boardLoading.value = false;
+  }
+}
+
+function refreshAll() {
+  if (viewMode.value === "kanban") {
+    void loadBoard();
+  } else {
+    void tableRef.value?.reload();
+  }
+}
+
+function showIssueDetail(issue: ProjectIssue) {
+  void showDetail({ id: issue.id } as Requirement);
+}
+
+async function onBoardTransition(issue: ProjectIssue, status: string) {
+  try {
+    await transitionProjectIssueStatus(props.project.id, issue.id, { status });
+    message.success("需求状态已流转");
+    await loadBoard();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "状态流转失败");
+  }
+}
+
+watch(
+  () => [includeTerminal.value, viewMode.value, query.keyword] as const,
+  () => {
+    if (viewMode.value === "kanban") {
+      void loadBoard();
+    }
+  },
+);
+
+onMounted(() => {
+  void loadRequirementStatuses();
+  void loadBoard();
+});
 </script>
 
 <template>
   <section class="panel">
+    <div class="panel-toolbar">
+      <u-radio-group
+        v-model="viewMode"
+        type="button"
+        size="small"
+        :items="[
+          { label: '看板', value: 'kanban' },
+          { label: '表格', value: 'table' },
+        ]"
+      />
+      <u-checkbox v-if="viewMode === 'kanban'" v-model="includeTerminal">
+        显示已完成/已取消
+      </u-checkbox>
+      <div class="panel-toolbar-spacer" />
+      <u-button v-if="canCreateRequirement" type="primary" @click.prevent="openCreate">
+        新建需求
+      </u-button>
+    </div>
+
+    <KanbanBoardView
+      v-show="viewMode === 'kanban'"
+      class="panel-kanban"
+      :board="board"
+      :draggable="canUpdateRequirement"
+      :loading="boardLoading"
+      @card-click="showIssueDetail"
+      @transition="onBoardTransition"
+    />
+
     <ProTable
+      v-if="viewMode === 'table'"
       ref="table"
       :url="`/projects/${project.id}/requirements`"
       :query="query"
@@ -333,11 +422,7 @@ onMounted(() => void loadRequirementStatuses());
           style="width: 120px"
         />
       </template>
-      <template #toolbar>
-        <u-button v-if="canCreateRequirement" type="primary" @click.prevent="openCreate">
-          新建需求
-        </u-button>
-      </template>
+
       <template #column:title="{ rowData }">
         <u-action @run="showDetail(rowData as Requirement)">
           {{ (rowData as Requirement).title }}
@@ -454,7 +539,19 @@ onMounted(() => void loadRequirementStatuses());
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  gap: 12px;
+}
+.panel-toolbar {
+  display: flex;
+  align-items: center;
   gap: 16px;
+}
+.panel-toolbar-spacer {
+  flex: 1;
+}
+.panel-kanban {
+  flex: 1;
+  min-height: 0;
 }
 .detail-head {
   display: flex;

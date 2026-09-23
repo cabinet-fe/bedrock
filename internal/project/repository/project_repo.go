@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 
 	"bedrock/internal/pkg"
@@ -11,11 +12,17 @@ import (
 )
 
 type ProjectRepository struct {
-	db *gorm.DB
+	db     *gorm.DB
+	issues *IssueRepository
 }
 
 func NewProjectRepository(db *gorm.DB) *ProjectRepository {
-	return &ProjectRepository{db: db}
+	return &ProjectRepository{db: db, issues: NewIssueRepository(db)}
+}
+
+// IssueRepo exposes the unified issue repository for shared services.
+func (r *ProjectRepository) IssueRepo() *IssueRepository {
+	return r.issues
 }
 
 func (r *ProjectRepository) CreateProject(project *model.ProductProject) error {
@@ -89,33 +96,29 @@ func (r *ProjectRepository) DeleteProject(id uint) error {
 		if err := tx.Where("project_id = ?", id).Delete(&model.ProjectMember{}).Error; err != nil {
 			return err
 		}
-		requirements := tx.Model(&model.Requirement{}).Select("id").Where("project_id = ?", id)
-		if err := tx.Where("requirement_id IN (?)", requirements).Delete(&model.RequirementComment{}).Error; err != nil {
+		issues := tx.Model(&model.ProjectIssue{}).Select("id").Where("project_id = ?", id)
+		if err := tx.Where("issue_id IN (?)", issues).Delete(&model.ProjectIssueComment{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("requirement_id IN (?)", requirements).Delete(&model.RequirementAttachment{}).Error; err != nil {
+		if err := tx.Where("issue_id IN (?)", issues).Delete(&model.ProjectIssueAttachment{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("project_id = ?", id).Delete(&model.Requirement{}).Error; err != nil {
+		if err := tx.Where("issue_id IN (?)", issues).Delete(&model.ProjectIssueActivity{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("issue_id IN (?)", issues).Delete(&model.ProjectIssueWatcher{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ?", id).Delete(&model.ProjectIssue{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ?", id).Delete(&model.ProjectIteration{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("project_id = ?", id).Delete(&model.ApiDocNode{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("project_id = ?", id).Delete(&model.DevDocNode{}).Error; err != nil {
-			return err
-		}
-		bugs := tx.Model(&model.ProjectBug{}).Select("id").Where("project_id = ?", id)
-		if err := tx.Where("bug_id IN (?)", bugs).Delete(&model.ProjectBugComment{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("bug_id IN (?)", bugs).Delete(&model.ProjectBugAttachment{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("bug_id IN (?)", bugs).Delete(&model.ProjectBugActivity{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("project_id = ?", id).Delete(&model.ProjectBug{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&model.ProductProject{}, id).Error
@@ -280,130 +283,238 @@ func (r *ProjectRepository) TransferOwner(projectID, previousOwnerID, nextOwnerI
 	})
 }
 
+// Requirement persistence is a type=requirement facade over the unified
+// IssueRepository (DESIGN D37), preserving the legacy surface for the
+// /requirements compatibility aliases.
+
+func requirementToIssue(requirement model.Requirement) model.ProjectIssue {
+	return model.ProjectIssue{
+		ID: requirement.ID, ProjectID: requirement.ProjectID, Type: model.IssueTypeRequirement,
+		Title: requirement.Title, Description: requirement.Description,
+		Status: requirement.Status, Priority: requirement.Priority,
+		AssigneeID: requirement.AssigneeID, RepositoryID: requirement.RepositoryID,
+		Tags: requirement.Tags, CreatedBy: requirement.CreatedBy, UpdatedBy: requirement.UpdatedBy,
+		CreatedAt: requirement.CreatedAt, UpdatedAt: requirement.UpdatedAt,
+	}
+}
+
+func issueToRequirement(issue model.ProjectIssue) model.Requirement {
+	return model.Requirement{
+		ID: issue.ID, ProjectID: issue.ProjectID,
+		Title: issue.Title, Description: issue.Description,
+		Status: issue.Status, Priority: issue.Priority,
+		AssigneeID: issue.AssigneeID, RepositoryID: issue.RepositoryID,
+		Tags: issue.Tags, CreatedBy: issue.CreatedBy, UpdatedBy: issue.UpdatedBy,
+		CreatedAt: issue.CreatedAt, UpdatedAt: issue.UpdatedAt,
+	}
+}
+
 func (r *ProjectRepository) CreateRequirement(requirement *model.Requirement) error {
-	return r.db.Create(requirement).Error
+	issue := requirementToIssue(*requirement)
+	if err := r.issues.Create(&issue); err != nil {
+		return err
+	}
+	*requirement = issueToRequirement(issue)
+	return nil
 }
 
 func (r *ProjectRepository) FindRequirement(id uint) (*model.Requirement, error) {
-	var requirement model.Requirement
-	if err := r.db.First(&requirement, id).Error; err != nil {
+	issue, err := r.issues.FindByID(id)
+	if err != nil {
 		return nil, err
 	}
+	if issue.Type != model.IssueTypeRequirement {
+		return nil, gorm.ErrRecordNotFound
+	}
+	requirement := issueToRequirement(*issue)
 	return &requirement, nil
 }
 
 func (r *ProjectRepository) ListRequirements(projectID uint, q pkg.ListQuery, keyword, status, priority, assignee string) ([]model.Requirement, int64, error) {
-	db := r.db.Model(&model.Requirement{}).Where("project_id = ?", projectID)
-	if keyword = strings.TrimSpace(keyword); keyword != "" {
-		like := "%" + keyword + "%"
-		db = db.Where("title LIKE ? OR tags LIKE ?", like, like)
-	}
-	if status = strings.TrimSpace(status); status != "" {
-		db = db.Where("status = ?", status)
-	}
-	if priority = strings.TrimSpace(priority); priority != "" {
-		db = db.Where("priority = ?", priority)
-	}
+	filter := IssueFilter{Type: model.IssueTypeRequirement, Keyword: keyword, Status: status, Priority: priority}
 	if assignee = strings.TrimSpace(assignee); assignee != "" {
-		db = db.Where("assignee_id = ?", assignee)
+		if id, err := strconv.ParseUint(assignee, 10, 64); err == nil {
+			uid := uint(id)
+			filter.AssigneeID = &uid
+		}
 	}
-	var total int64
-	if err := db.Count(&total).Error; err != nil {
+	issues, total, err := r.issues.ListByProject(projectID, filter, q)
+	if err != nil {
 		return nil, 0, err
 	}
-	order := pkg.OrderBy(q.Sort, map[string]string{
-		"title":      "title",
-		"priority":   "priority",
-		"created_at": "created_at",
-		"updated_at": "updated_at",
-	}, "id", "updated_at DESC, id DESC")
-	var requirements []model.Requirement
-	err := db.Order(order).Offset(q.Offset()).Limit(q.PageSize).Find(&requirements).Error
-	return requirements, total, err
+	requirements := make([]model.Requirement, 0, len(issues))
+	for _, issue := range issues {
+		requirements = append(requirements, issueToRequirement(issue))
+	}
+	return requirements, total, nil
 }
 
 func (r *ProjectRepository) UpdateRequirement(requirement *model.Requirement) error {
-	return r.db.Save(requirement).Error
+	issue := requirementToIssue(*requirement)
+	if err := r.issues.Update(&issue); err != nil {
+		return err
+	}
+	*requirement = issueToRequirement(issue)
+	return nil
 }
 
 func (r *ProjectRepository) DeleteRequirement(id uint) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("requirement_id = ?", id).Delete(&model.RequirementComment{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("requirement_id = ?", id).Delete(&model.RequirementAttachment{}).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&model.Requirement{}, id).Error
-	})
+	return r.issues.Delete(id)
 }
 
 func (r *ProjectRepository) CreateComment(comment *model.RequirementComment) error {
-	return r.db.Create(comment).Error
+	issueComment := &model.ProjectIssueComment{
+		IssueID: comment.RequirementID, Content: comment.Content, CreatedBy: comment.CreatedBy,
+		CreatedAt: comment.CreatedAt, UpdatedAt: comment.UpdatedAt,
+	}
+	if err := r.issues.CreateComment(issueComment); err != nil {
+		return err
+	}
+	comment.ID = issueComment.ID
+	return nil
 }
 
 func (r *ProjectRepository) FindComment(id uint) (*model.RequirementComment, error) {
-	var comment model.RequirementComment
-	if err := r.db.First(&comment, id).Error; err != nil {
+	issueComment, err := r.issues.FindCommentByID(id)
+	if err != nil {
 		return nil, err
 	}
-	return &comment, nil
+	return &model.RequirementComment{
+		ID:            issueComment.ID,
+		RequirementID: issueComment.IssueID,
+		Content:       issueComment.Content,
+		CreatedBy:     issueComment.CreatedBy,
+		CreatedAt:     issueComment.CreatedAt,
+		UpdatedAt:     issueComment.UpdatedAt,
+	}, nil
 }
 
 func (r *ProjectRepository) ListComments(requirementID uint) ([]model.RequirementComment, error) {
-	var comments []model.RequirementComment
-	err := r.db.Where("requirement_id = ?", requirementID).Order("created_at ASC, id ASC").Find(&comments).Error
-	return comments, err
+	comments, err := r.issues.ListComments(requirementID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]model.RequirementComment, 0, len(comments))
+	for _, c := range comments {
+		result = append(result, model.RequirementComment{
+			ID: c.ID, RequirementID: c.IssueID, Content: c.Content,
+			CreatedBy: c.CreatedBy, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		})
+	}
+	return result, nil
 }
 
 func (r *ProjectRepository) UpdateComment(comment *model.RequirementComment) error {
-	return r.db.Save(comment).Error
+	issueComment := &model.ProjectIssueComment{
+		ID: comment.ID, IssueID: comment.RequirementID, Content: comment.Content,
+		CreatedBy: comment.CreatedBy, CreatedAt: comment.CreatedAt, UpdatedAt: comment.UpdatedAt,
+	}
+	return r.issues.UpdateComment(issueComment)
 }
 
 func (r *ProjectRepository) DeleteComment(id uint) error {
-	return r.db.Delete(&model.RequirementComment{}, id).Error
+	return r.issues.DeleteComment(id)
 }
 
 func (r *ProjectRepository) CreateAttachment(attachment *model.RequirementAttachment) error {
-	return r.db.Create(attachment).Error
+	issueAtt := &model.ProjectIssueAttachment{
+		ID: attachment.ID, IssueID: attachment.RequirementID,
+		StorageObjectID: attachment.StorageObjectID, Filename: attachment.Filename,
+		CreatedBy: attachment.CreatedBy, CreatedAt: attachment.CreatedAt,
+	}
+	if err := r.issues.CreateAttachment(issueAtt); err != nil {
+		return err
+	}
+	attachment.ID = issueAtt.ID
+	return nil
 }
 
 func (r *ProjectRepository) FindAttachment(id uint) (*model.RequirementAttachment, error) {
-	var attachment model.RequirementAttachment
-	if err := r.db.First(&attachment, id).Error; err != nil {
+	att, err := r.issues.FindAttachmentByID(id)
+	if err != nil {
 		return nil, err
 	}
-	return &attachment, nil
+	return &model.RequirementAttachment{
+		ID: att.ID, RequirementID: att.IssueID, StorageObjectID: att.StorageObjectID,
+		Filename: att.Filename, CreatedBy: att.CreatedBy, CreatedAt: att.CreatedAt,
+	}, nil
 }
 
 func (r *ProjectRepository) ListAttachments(requirementID uint) ([]model.RequirementAttachment, error) {
-	var attachments []model.RequirementAttachment
-	err := r.db.Where("requirement_id = ?", requirementID).Order("id ASC").Find(&attachments).Error
-	return attachments, err
+	atts, err := r.issues.ListAttachments(requirementID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]model.RequirementAttachment, 0, len(atts))
+	for _, a := range atts {
+		result = append(result, model.RequirementAttachment{
+			ID: a.ID, RequirementID: a.IssueID, StorageObjectID: a.StorageObjectID,
+			Filename: a.Filename, CreatedBy: a.CreatedBy, CreatedAt: a.CreatedAt,
+		})
+	}
+	return result, nil
 }
 
 func (r *ProjectRepository) ListAttachmentsByProject(projectID uint) ([]model.RequirementAttachment, error) {
-	var attachments []model.RequirementAttachment
-	err := r.db.Model(&model.RequirementAttachment{}).
-		Joins("JOIN requirements ON requirements.id = requirement_attachments.requirement_id").
-		Where("requirements.project_id = ?", projectID).
-		Order("requirement_attachments.id ASC").
-		Find(&attachments).Error
-	return attachments, err
+	atts, err := r.issues.ListAttachmentsByProject(projectID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]model.RequirementAttachment, 0, len(atts))
+	for _, a := range atts {
+		result = append(result, model.RequirementAttachment{
+			ID: a.ID, RequirementID: a.IssueID, StorageObjectID: a.StorageObjectID,
+			Filename: a.Filename, CreatedBy: a.CreatedBy, CreatedAt: a.CreatedAt,
+		})
+	}
+	return result, nil
 }
 
 func (r *ProjectRepository) ListBugAttachmentsByProject(projectID uint) ([]model.ProjectBugAttachment, error) {
-	var attachments []model.ProjectBugAttachment
-	err := r.db.Model(&model.ProjectBugAttachment{}).
-		Joins("JOIN project_bugs ON project_bugs.id = project_bug_attachments.bug_id").
-		Where("project_bugs.project_id = ?", projectID).
-		Order("project_bug_attachments.id ASC").
-		Find(&attachments).Error
-	return attachments, err
+	atts, err := r.issues.ListAttachmentsByProject(projectID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]model.ProjectBugAttachment, 0, len(atts))
+	for _, a := range atts {
+		result = append(result, model.ProjectBugAttachment{
+			ID: a.ID, BugID: a.IssueID, StorageObjectID: a.StorageObjectID,
+			Filename: a.Filename, CreatedBy: a.CreatedBy, CreatedAt: a.CreatedAt,
+		})
+	}
+	return result, nil
 }
 
 func (r *ProjectRepository) DeleteAttachment(id uint) error {
-	return r.db.Delete(&model.RequirementAttachment{}, id).Error
+	return r.issues.DeleteAttachment(id)
+}
+
+// Iterations -----------------------------------------------------------------
+
+func (r *ProjectRepository) CreateIteration(iteration *model.ProjectIteration) error {
+	return r.db.Create(iteration).Error
+}
+
+func (r *ProjectRepository) FindIteration(id uint) (*model.ProjectIteration, error) {
+	var iteration model.ProjectIteration
+	if err := r.db.First(&iteration, id).Error; err != nil {
+		return nil, err
+	}
+	return &iteration, nil
+}
+
+func (r *ProjectRepository) ListIterations(projectID uint) ([]model.ProjectIteration, error) {
+	var iterations []model.ProjectIteration
+	err := r.db.Where("project_id = ?", projectID).Order("created_at DESC, id DESC").Find(&iterations).Error
+	return iterations, err
+}
+
+func (r *ProjectRepository) UpdateIteration(iteration *model.ProjectIteration) error {
+	return r.db.Save(iteration).Error
+}
+
+func (r *ProjectRepository) DeleteIteration(id uint) error {
+	return r.db.Delete(&model.ProjectIteration{}, id).Error
 }
 
 func (r *ProjectRepository) CreateDocNode(node *model.ApiDocNode) error {
@@ -479,20 +590,30 @@ func (r *ProjectRepository) DeleteDevDocNodes(ids []uint) error {
 }
 
 func (r *ProjectRepository) RequirementStatusExists(value string) (bool, error) {
+	return r.IssueStatusExists(model.IssueTypeRequirement, value)
+}
+
+func (r *ProjectRepository) ListRequirementStatuses() ([]model.RequirementStatusOption, error) {
+	return r.ListIssueStatuses(model.IssueTypeRequirement)
+}
+
+// IssueStatusExists checks whether value is an enabled status in the type's
+// status dictionary (requirement_status / bug_status; task reuses requirement).
+func (r *ProjectRepository) IssueStatusExists(issueType, value string) (bool, error) {
 	var count int64
 	err := r.db.Table("dict_items").
 		Joins("JOIN dictionaries ON dictionaries.id = dict_items.dictionary_id").
-		Where("dictionaries.code = ? AND dict_items.value = ? AND dict_items.enabled = ?", "requirement_status", value, true).
+		Where("dictionaries.code = ? AND dict_items.value = ? AND dict_items.enabled = ?", model.StatusDictCode(issueType), value, true).
 		Count(&count).Error
 	return count > 0, err
 }
 
-func (r *ProjectRepository) ListRequirementStatuses() ([]model.RequirementStatusOption, error) {
+func (r *ProjectRepository) ListIssueStatuses(issueType string) ([]model.RequirementStatusOption, error) {
 	var statuses []model.RequirementStatusOption
 	err := r.db.Table("dict_items").
 		Select("dict_items.label, dict_items.value, dict_items.sort_order, dict_items.enabled").
 		Joins("JOIN dictionaries ON dictionaries.id = dict_items.dictionary_id").
-		Where("dictionaries.code = ? AND dict_items.enabled = ?", "requirement_status", true).
+		Where("dictionaries.code = ? AND dict_items.enabled = ?", model.StatusDictCode(issueType), true).
 		Order("dict_items.sort_order ASC, dict_items.id ASC").
 		Scan(&statuses).Error
 	return statuses, err

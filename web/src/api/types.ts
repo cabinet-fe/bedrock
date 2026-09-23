@@ -664,6 +664,118 @@ export type BugStatus = "open" | "in_progress" | "resolved" | "closed" | "reject
 export type BugSeverity = "low" | "normal" | "high" | "critical";
 export type BugPriority = "low" | "normal" | "high" | "urgent";
 
+/** 统一工作项类型(需求/缺陷/任务共用一张表) */
+export type IssueType = "requirement" | "bug" | "task";
+
+export interface ProjectIssue {
+  id: number;
+  project_id: number;
+  type: IssueType;
+  title: string;
+  description?: string;
+  status: string;
+  severity?: string;
+  priority: "low" | "normal" | "high" | "urgent";
+  assignee_id?: number | null;
+  repository_id?: number | null;
+  branch?: string;
+  tags?: string;
+  iteration_id?: number | null;
+  created_by: number;
+  updated_by: number;
+  created_at: string;
+  updated_at: string;
+  project_name?: string;
+  assignee_name?: string;
+  assignee_username?: string;
+  creator_name?: string;
+  creator_username?: string;
+  repository_name?: string;
+  comment_count?: number;
+  watching?: boolean;
+}
+
+export interface IssueComment {
+  id: number;
+  issue_id: number;
+  content: string;
+  mention_ids?: string;
+  created_by: number;
+  creator_name?: string;
+  creator_username?: string;
+  attachments?: IssueAttachment[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IssueAttachment {
+  id: number;
+  issue_id: number;
+  comment_id?: number | null;
+  storage_object_id: number;
+  filename: string;
+  file_size?: number;
+  content_type?: string;
+  created_by: number;
+  creator_name?: string;
+  creator_username?: string;
+  created_at: string;
+}
+
+export interface IssueActivity {
+  id: number;
+  issue_id: number;
+  action: "create" | "comment" | "status_change" | "update";
+  field?: string;
+  old_value?: string;
+  new_value?: string;
+  from_status?: string;
+  to_status?: string;
+  comment?: string;
+  created_by: number;
+  creator_name?: string;
+  creator_username?: string;
+  created_at: string;
+}
+
+export interface KanbanColumn {
+  status: string;
+  label: string;
+  terminal: boolean;
+  cards: ProjectIssue[];
+}
+
+export interface KanbanBoard {
+  columns: KanbanColumn[];
+  total: number;
+}
+
+export interface ProjectIteration {
+  id: number;
+  project_id: number;
+  name: string;
+  goal?: string;
+  start_date?: string;
+  end_date?: string;
+  status: "planned" | "active" | "closed";
+  issue_counts?: Record<string, number>;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BurndownPoint {
+  date: string;
+  remaining: number;
+}
+
+export interface BurndownChart {
+  start_date: string;
+  end_date: string;
+  total: number;
+  points: BurndownPoint[];
+}
+
 export interface ProjectBug {
   id: number;
   project_id: number;

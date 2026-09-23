@@ -7,12 +7,19 @@ import type {
   BugAttachment,
   BugComment,
   BugStatusTransitionInput,
+  BurndownChart,
   DevDocNode,
+  IssueActivity,
+  IssueAttachment,
+  IssueComment,
+  KanbanBoard,
   PageResult,
   ProductProject,
   ProjectBug,
   ProjectBugCreateInput,
   ProjectBugUpdateInput,
+  ProjectIteration,
+  ProjectIssue,
   ProjectMember,
   ProjectRole,
   Requirement,
@@ -551,4 +558,316 @@ export async function importDevDocsZIP(
 ): Promise<DevDocNode[]> {
   const body = await uploadDocFile(`/projects/${projectID}/dev-docs/import-zip`, parentID, file);
   return "items" in body ? ((body.items ?? []) as DevDocNode[]) : [];
+}
+
+// ---------------------------------------------------------------------------
+// 统一工作项(需求/缺陷/任务)— /issues 系列端点
+// ---------------------------------------------------------------------------
+
+export type IssueCreateInput = {
+  type: "requirement" | "bug" | "task";
+  title: string;
+  description?: string;
+  status?: string;
+  severity?: string;
+  priority?: string;
+  assignee_id?: number | null;
+  repository_id?: number | null;
+  branch?: string;
+  tags?: string;
+  iteration_id?: number | null;
+};
+
+export type IssueUpdateInput = Partial<Omit<IssueCreateInput, "type">>;
+
+export async function listIssuesAcrossProjects(
+  params?: ListQuery,
+): Promise<PageResult<ProjectIssue>> {
+  const { body } = await http.get<PageResult<ProjectIssue>>("/projects/issues", {
+    query: toQuery(params),
+  });
+  return body;
+}
+
+export async function listProjectIssues(
+  projectID: number,
+  params?: ListQuery,
+): Promise<PageResult<ProjectIssue>> {
+  const { body } = await http.get<PageResult<ProjectIssue>>(`/projects/${projectID}/issues`, {
+    query: toQuery(params),
+  });
+  return body;
+}
+
+export async function getProjectIssue(projectID: number, issueID: number): Promise<ProjectIssue> {
+  const { body } = await http.get<ProjectIssue>(`/projects/${projectID}/issues/${issueID}`);
+  return body;
+}
+
+export async function createProjectIssue(
+  projectID: number,
+  input: IssueCreateInput,
+): Promise<ProjectIssue> {
+  const { body } = await http.post<ProjectIssue>(`/projects/${projectID}/issues`, input);
+  return body;
+}
+
+export async function updateProjectIssue(
+  projectID: number,
+  issueID: number,
+  input: IssueUpdateInput,
+): Promise<ProjectIssue> {
+  const { body } = await http.put<ProjectIssue>(`/projects/${projectID}/issues/${issueID}`, input);
+  return body;
+}
+
+export async function deleteProjectIssue(projectID: number, issueID: number): Promise<void> {
+  await http.delete(`/projects/${projectID}/issues/${issueID}`);
+}
+
+export async function transitionProjectIssueStatus(
+  projectID: number,
+  issueID: number,
+  input: { status: string; comment?: string },
+): Promise<ProjectIssue> {
+  const { body } = await http.put<ProjectIssue>(
+    `/projects/${projectID}/issues/${issueID}/status`,
+    input,
+  );
+  return body;
+}
+
+export async function listProjectIssueActivities(
+  projectID: number,
+  issueID: number,
+): Promise<IssueActivity[]> {
+  const { body } = await http.get<{ items?: IssueActivity[] } | IssueActivity[]>(
+    `/projects/${projectID}/issues/${issueID}/activities`,
+  );
+  return Array.isArray(body) ? body : (body.items ?? []);
+}
+
+export async function listProjectIssueComments(
+  projectID: number,
+  issueID: number,
+): Promise<IssueComment[]> {
+  const { body } = await http.get<{ items?: IssueComment[] } | IssueComment[]>(
+    `/projects/${projectID}/issues/${issueID}/comments`,
+  );
+  return Array.isArray(body) ? body : (body.items ?? []);
+}
+
+export async function createProjectIssueComment(
+  projectID: number,
+  issueID: number,
+  content: string,
+  mentionUserIds?: number[],
+): Promise<IssueComment> {
+  const { body } = await http.post<IssueComment>(
+    `/projects/${projectID}/issues/${issueID}/comments`,
+    { content, mention_user_ids: mentionUserIds ?? [] },
+  );
+  return body;
+}
+
+export async function updateProjectIssueComment(
+  projectID: number,
+  issueID: number,
+  commentID: number,
+  content: string,
+): Promise<IssueComment> {
+  const { body } = await http.put<IssueComment>(
+    `/projects/${projectID}/issues/${issueID}/comments/${commentID}`,
+    { content },
+  );
+  return body;
+}
+
+export async function deleteProjectIssueComment(
+  projectID: number,
+  issueID: number,
+  commentID: number,
+): Promise<void> {
+  await http.delete(`/projects/${projectID}/issues/${issueID}/comments/${commentID}`);
+}
+
+export async function listProjectIssueAttachments(
+  projectID: number,
+  issueID: number,
+): Promise<IssueAttachment[]> {
+  const { body } = await http.get<{ items?: IssueAttachment[] } | IssueAttachment[]>(
+    `/projects/${projectID}/issues/${issueID}/attachments`,
+  );
+  return Array.isArray(body) ? body : (body.items ?? []);
+}
+
+export async function uploadProjectIssueAttachment(
+  projectID: number,
+  issueID: number,
+  file: File,
+): Promise<IssueAttachment> {
+  const form = new FormData();
+  form.append("file", file);
+  const { body } = await http.post<IssueAttachment>(
+    `/projects/${projectID}/issues/${issueID}/attachments`,
+    form,
+  );
+  return body;
+}
+
+export async function uploadProjectIssueCommentAttachment(
+  projectID: number,
+  issueID: number,
+  commentID: number,
+  file: File,
+): Promise<IssueAttachment> {
+  const form = new FormData();
+  form.append("file", file);
+  const { body } = await http.post<IssueAttachment>(
+    `/projects/${projectID}/issues/${issueID}/comments/${commentID}/attachments`,
+    form,
+  );
+  return body;
+}
+
+export async function deleteProjectIssueAttachment(
+  projectID: number,
+  issueID: number,
+  attachmentID: number,
+): Promise<void> {
+  await http.delete(`/projects/${projectID}/issues/${issueID}/attachments/${attachmentID}`);
+}
+
+export async function downloadProjectIssueAttachment(
+  projectID: number,
+  issueID: number,
+  attachmentID: number,
+  filename: string,
+): Promise<void> {
+  const { body } = await http.get<Blob>(
+    `/projects/${projectID}/issues/${issueID}/attachments/${attachmentID}/download`,
+    { responseType: "blob" },
+  );
+  saveBlob(body, filename);
+}
+
+export async function watchProjectIssue(projectID: number, issueID: number): Promise<void> {
+  await http.post(`/projects/${projectID}/issues/${issueID}/watchers`, {});
+}
+
+export async function unwatchProjectIssue(projectID: number, issueID: number): Promise<void> {
+  await http.delete(`/projects/${projectID}/issues/${issueID}/watchers`);
+}
+
+export async function isWatchingProjectIssue(projectID: number, issueID: number): Promise<boolean> {
+  const { body } = await http.get<{ watching: boolean }>(
+    `/projects/${projectID}/issues/${issueID}/watchers`,
+  );
+  return body.watching;
+}
+
+// ---------------------------------------------------------------------------
+// 看板
+// ---------------------------------------------------------------------------
+
+export async function getProjectKanban(params: {
+  projectID: number;
+  type: "requirement" | "bug" | "task";
+  includeTerminal?: boolean;
+  iterationId?: number | null;
+  keyword?: string;
+}): Promise<KanbanBoard> {
+  const { projectID, ...query } = params;
+  const { body } = await http.get<KanbanBoard>(`/projects/${projectID}/issues/kanban`, {
+    query: toQuery({
+      type: query.type,
+      include_terminal: query.includeTerminal ?? false,
+      iteration_id: query.iterationId ?? undefined,
+      keyword: query.keyword || undefined,
+    }),
+  });
+  return body;
+}
+
+export async function getCrossProjectKanban(params: {
+  type: "requirement" | "bug" | "task";
+  projectID?: number;
+  includeTerminal?: boolean;
+  keyword?: string;
+}): Promise<KanbanBoard> {
+  const { body } = await http.get<KanbanBoard>("/projects/issues/kanban", {
+    query: toQuery({
+      type: params.type,
+      project_id: params.projectID,
+      include_terminal: params.includeTerminal ?? false,
+      keyword: params.keyword || undefined,
+    }),
+  });
+  return body;
+}
+
+export async function listIssueStatuses(
+  issueType: "requirement" | "bug" | "task",
+): Promise<RequirementStatusOption[]> {
+  const { body } = await http.get<{ items: RequirementStatusOption[] }>(
+    "/projects/meta/issue-statuses",
+    { query: { type: issueType } },
+  );
+  return body.items;
+}
+
+// ---------------------------------------------------------------------------
+// 迭代
+// ---------------------------------------------------------------------------
+
+export type IterationInput = {
+  name?: string;
+  goal?: string;
+  start_date?: string;
+  end_date?: string;
+  status?: "planned" | "active" | "closed";
+};
+
+export async function listProjectIterations(projectID: number): Promise<ProjectIteration[]> {
+  const { body } = await http.get<{ items: ProjectIteration[] }>(
+    `/projects/${projectID}/iterations`,
+  );
+  return body.items ?? [];
+}
+
+export async function createProjectIteration(
+  projectID: number,
+  input: IterationInput,
+): Promise<ProjectIteration> {
+  const { body } = await http.post<ProjectIteration>(`/projects/${projectID}/iterations`, input);
+  return body;
+}
+
+export async function updateProjectIteration(
+  projectID: number,
+  iterationID: number,
+  input: IterationInput,
+): Promise<ProjectIteration> {
+  const { body } = await http.put<ProjectIteration>(
+    `/projects/${projectID}/iterations/${iterationID}`,
+    input,
+  );
+  return body;
+}
+
+export async function deleteProjectIteration(
+  projectID: number,
+  iterationID: number,
+): Promise<void> {
+  await http.delete(`/projects/${projectID}/iterations/${iterationID}`);
+}
+
+export async function getIterationBurndown(
+  projectID: number,
+  iterationID: number,
+): Promise<BurndownChart> {
+  const { body } = await http.get<BurndownChart>(
+    `/projects/${projectID}/iterations/${iterationID}/burndown`,
+  );
+  return body;
 }

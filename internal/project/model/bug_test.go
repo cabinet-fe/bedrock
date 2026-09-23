@@ -7,17 +7,56 @@ import (
 )
 
 func TestBugModels_TableNames(t *testing.T) {
-	if (model.ProjectBug{}).TableName() != "project_bugs" {
-		t.Errorf("unexpected table name for ProjectBug")
+	// Bug persistence is unified into project_issues (DESIGN D37); the legacy
+	// ProjectBug* structs are wire DTOs only.
+	if (model.ProjectIssue{}).TableName() != "project_issues" {
+		t.Errorf("unexpected table name for ProjectIssue")
 	}
-	if (model.ProjectBugComment{}).TableName() != "project_bug_comments" {
-		t.Errorf("unexpected table name for ProjectBugComment")
+	if (model.ProjectIssueComment{}).TableName() != "project_issue_comments" {
+		t.Errorf("unexpected table name for ProjectIssueComment")
 	}
-	if (model.ProjectBugAttachment{}).TableName() != "project_bug_attachments" {
-		t.Errorf("unexpected table name for ProjectBugAttachment")
+	if (model.ProjectIssueAttachment{}).TableName() != "project_issue_attachments" {
+		t.Errorf("unexpected table name for ProjectIssueAttachment")
 	}
-	if (model.ProjectBugActivity{}).TableName() != "project_bug_activities" {
-		t.Errorf("unexpected table name for ProjectBugActivity")
+	if (model.ProjectIssueActivity{}).TableName() != "project_issue_activities" {
+		t.Errorf("unexpected table name for ProjectIssueActivity")
+	}
+	if (model.ProjectIssueWatcher{}).TableName() != "project_issue_watchers" {
+		t.Errorf("unexpected table name for ProjectIssueWatcher")
+	}
+	if (model.ProjectIteration{}).TableName() != "project_iterations" {
+		t.Errorf("unexpected table name for ProjectIteration")
+	}
+}
+
+func TestIssueHelpers(t *testing.T) {
+	if !model.IsValidIssueType(model.IssueTypeBug) || !model.IsValidIssueType(model.IssueTypeRequirement) || !model.IsValidIssueType(model.IssueTypeTask) {
+		t.Errorf("expected all issue types valid")
+	}
+	if model.IsValidIssueType("epic") {
+		t.Errorf("expected unknown issue type rejected")
+	}
+	for _, s := range []string{"closed", "rejected", "done", "cancelled"} {
+		if !model.IsTerminalStatus(s) {
+			t.Errorf("expected %s terminal", s)
+		}
+	}
+	for _, s := range []string{"open", "in_progress", "resolved", "todo", "doing"} {
+		if model.IsTerminalStatus(s) {
+			t.Errorf("expected %s non-terminal", s)
+		}
+	}
+	if model.StatusDictCode(model.IssueTypeBug) != "bug_status" {
+		t.Errorf("bug status dict code mismatch")
+	}
+	if model.StatusDictCode(model.IssueTypeRequirement) != "requirement_status" || model.StatusDictCode(model.IssueTypeTask) != "requirement_status" {
+		t.Errorf("requirement/task status dict code mismatch")
+	}
+	if model.DefaultIssueStatus(model.IssueTypeBug) != model.BugStatusOpen {
+		t.Errorf("bug default status mismatch")
+	}
+	if model.DefaultIssueStatus(model.IssueTypeTask) != model.RequirementStatusBacklog {
+		t.Errorf("task default status mismatch")
 	}
 }
 

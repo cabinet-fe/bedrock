@@ -27,6 +27,7 @@ type PushInput struct {
 	Message    string
 	BuildRunID *uint
 	AgentRunID *uint
+	IssueID    *uint
 }
 
 func (s *NotificationService) Push(in PushInput) (*model.Notification, error) {
@@ -37,12 +38,29 @@ func (s *NotificationService) Push(in PushInput) (*model.Notification, error) {
 		Message:    in.Message,
 		BuildRunID: in.BuildRunID,
 		AgentRunID: in.AgentRunID,
+		IssueID:    in.IssueID,
 	}
 	if err := s.repo.Create(n); err != nil {
 		return nil, err
 	}
 	s.broadcast(n)
 	return n, nil
+}
+
+// NotifyIssueEvent pushes a work-item collaboration event (DESIGN D39):
+// assignment / status change / comment / @mention.
+func (s *NotificationService) NotifyIssueEvent(userID, issueID uint, event, title, message string) {
+	if userID == 0 {
+		return
+	}
+	id := issueID
+	_, _ = s.Push(PushInput{
+		UserID:  userID,
+		Type:    event,
+		Title:   title,
+		Message: message,
+		IssueID: &id,
+	})
 }
 
 // NotifyBuildRun implements engine.TerminalNotifier.

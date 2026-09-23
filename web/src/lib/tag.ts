@@ -173,7 +173,7 @@ export const BUG_SEVERITY_TAG: Record<string, TagType> = {
   critical: "danger",
 };
 
-const BUG_SEVERITY_LABEL: Record<string, string> = {
+export const BUG_SEVERITY_LABEL: Record<string, string> = {
   low: "轻微",
   normal: "一般",
   high: "严重",
@@ -198,7 +198,7 @@ export const BUG_PRIORITY_TAG: Record<string, TagType> = {
   urgent: "danger",
 };
 
-const BUG_PRIORITY_LABEL: Record<string, string> = {
+export const BUG_PRIORITY_LABEL: Record<string, string> = {
   low: "低",
   normal: "普通",
   high: "高",

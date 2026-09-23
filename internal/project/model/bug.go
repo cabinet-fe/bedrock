@@ -2,11 +2,9 @@ package model
 
 import (
 	"time"
-
-	"gorm.io/gorm"
 )
 
-// Bug status constants.
+// Bug status constants (values seeded in the bug_status dictionary).
 const (
 	BugStatusOpen       = "open"
 	BugStatusInProgress = "in_progress"
@@ -31,30 +29,31 @@ const (
 	BugPriorityUrgent = "urgent"
 )
 
-// Bug activity action constants.
+// Bug activity action constants (legacy values kept for compatibility).
 const (
 	BugActivityStatusChange = "status_change"
 	BugActivityCreate       = "create"
 	BugActivityComment      = "comment"
 )
 
-// ProjectBug represents a bug entity in a project.
+// ProjectBug and friends are legacy wire DTOs for the /bugs compatibility
+// aliases; persistence lives in ProjectIssue (gorm:"-" prevents accidental
+// table binding).
 type ProjectBug struct {
-	ID           uint           `json:"id" gorm:"primaryKey"`
-	ProjectID    uint           `json:"project_id" gorm:"not null;index"`
-	Title        string         `json:"title" gorm:"size:500;not null"`
-	Description  string         `json:"description" gorm:"type:text"`
-	Status       string         `json:"status" gorm:"size:50;not null;default:open;index"`
-	Severity     string         `json:"severity" gorm:"size:30;not null;default:normal;index"`
-	Priority     string         `json:"priority" gorm:"size:30;not null;default:normal;index"`
-	AssigneeID   *uint          `json:"assignee_id,omitempty" gorm:"index"`
-	RepositoryID *uint          `json:"repository_id,omitempty" gorm:"index"`
-	Branch       string         `json:"branch,omitempty" gorm:"size:255"`
-	CreatedBy    uint           `json:"created_by" gorm:"index"`
-	UpdatedBy    uint           `json:"updated_by" gorm:"index"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`
+	ID           uint      `json:"id" gorm:"-"`
+	ProjectID    uint      `json:"project_id"`
+	Title        string    `json:"title" gorm:"-"`
+	Description  string    `json:"description"`
+	Status       string    `json:"status"`
+	Severity     string    `json:"severity"`
+	Priority     string    `json:"priority"`
+	AssigneeID   *uint     `json:"assignee_id,omitempty"`
+	RepositoryID *uint     `json:"repository_id,omitempty"`
+	Branch       string    `json:"branch,omitempty"`
+	CreatedBy    uint      `json:"created_by"`
+	UpdatedBy    uint      `json:"updated_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 
 	// Non-persisted view fields
 	ProjectName      string `json:"project_name,omitempty" gorm:"-"`
@@ -65,35 +64,29 @@ type ProjectBug struct {
 	RepositoryName   string `json:"repository_name,omitempty" gorm:"-"`
 }
 
-func (ProjectBug) TableName() string { return "project_bugs" }
-
-// ProjectBugComment represents a user comment on a bug.
+// ProjectBugComment is a legacy wire DTO for bug comments.
 type ProjectBugComment struct {
-	ID        uint           `json:"id" gorm:"primaryKey"`
-	BugID     uint           `json:"bug_id" gorm:"not null;index"`
-	Content   string         `json:"content" gorm:"type:text;not null"`
-	CreatedBy uint           `json:"created_by" gorm:"index"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
+	ID        uint      `json:"id" gorm:"-"`
+	BugID     uint      `json:"bug_id"`
+	Content   string    `json:"content"`
+	CreatedBy uint      `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 
 	// Non-persisted view fields
-	CreatorName     string `json:"creator_name,omitempty" gorm:"-"`
-	CreatorUsername string `json:"creator_username,omitempty" gorm:"-"`
+	CreatorName     string                 `json:"creator_name,omitempty" gorm:"-"`
+	CreatorUsername string                 `json:"creator_username,omitempty" gorm:"-"`
 	Attachments     []ProjectBugAttachment `json:"attachments,omitempty" gorm:"-"`
 }
 
-func (ProjectBugComment) TableName() string { return "project_bug_comments" }
-
-// ProjectBugAttachment links an uploaded storage object to a bug, optionally
-// scoped to a single comment (comment_id nil = bug-level attachment).
+// ProjectBugAttachment is a legacy wire DTO for bug attachments.
 type ProjectBugAttachment struct {
-	ID              uint      `json:"id" gorm:"primaryKey"`
-	BugID           uint      `json:"bug_id" gorm:"not null;index"`
-	CommentID       *uint     `json:"comment_id,omitempty" gorm:"index"`
-	StorageObjectID uint      `json:"storage_object_id" gorm:"not null;index"`
-	Filename        string    `json:"filename" gorm:"size:500;not null"`
-	CreatedBy       uint      `json:"created_by" gorm:"index"`
+	ID              uint      `json:"id" gorm:"-"`
+	BugID           uint      `json:"bug_id"`
+	CommentID       *uint     `json:"comment_id,omitempty"`
+	StorageObjectID uint      `json:"storage_object_id"`
+	Filename        string    `json:"filename"`
+	CreatedBy       uint      `json:"created_by"`
 	CreatedAt       time.Time `json:"created_at"`
 
 	// Non-persisted view fields
@@ -103,25 +96,21 @@ type ProjectBugAttachment struct {
 	CreatorUsername string `json:"creator_username,omitempty" gorm:"-"`
 }
 
-func (ProjectBugAttachment) TableName() string { return "project_bug_attachments" }
-
-// ProjectBugActivity logs lifecycle and transition events of a bug.
+// ProjectBugActivity is a legacy wire DTO for bug activities.
 type ProjectBugActivity struct {
-	ID         uint      `json:"id" gorm:"primaryKey"`
-	BugID      uint      `json:"bug_id" gorm:"not null;index"`
-	Action     string    `json:"action" gorm:"size:50;not null;index"`
-	FromStatus string    `json:"from_status,omitempty" gorm:"size:50"`
-	ToStatus   string    `json:"to_status,omitempty" gorm:"size:50"`
-	Comment    string    `json:"comment,omitempty" gorm:"type:text"`
-	CreatedBy  uint      `json:"created_by" gorm:"index"`
+	ID         uint      `json:"id" gorm:"-"`
+	BugID      uint      `json:"bug_id"`
+	Action     string    `json:"action"`
+	FromStatus string    `json:"from_status,omitempty"`
+	ToStatus   string    `json:"to_status,omitempty"`
+	Comment    string    `json:"comment,omitempty"`
+	CreatedBy  uint      `json:"created_by"`
 	CreatedAt  time.Time `json:"created_at"`
 
 	// Non-persisted view fields
 	CreatorName     string `json:"creator_name,omitempty" gorm:"-"`
 	CreatorUsername string `json:"creator_username,omitempty" gorm:"-"`
 }
-
-func (ProjectBugActivity) TableName() string { return "project_bug_activities" }
 
 // IsValidBugStatus checks whether the given status string is valid.
 func IsValidBugStatus(status string) bool {

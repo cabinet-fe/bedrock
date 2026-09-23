@@ -74,7 +74,7 @@ bedrock
 | engine | `internal/engine` | 流水线执行引擎（调度、构建、分发） | `engine/pipeline_distribute.go` 等 |
 | deployer | `internal/deployer` | 部署传输（SSH / rsync / SFTP / local / agent） | deployer 包 |
 | ops | `internal/ops` | 进程管理、开发环境 | ops handler |
-| project | `internal/project` | 项目、需求、缺陷、文档 | `project/handler.RegisterRoutes` |
+| project | `internal/project` | 项目、成员、统一工作项（project_issues：需求/缺陷/任务，含评论/附件/字段级活动/关注者）、看板（终态默认不入板）、迭代与燃尽、文档；旧 `/bugs`、`/requirements` 路径为兼容别名（repository 层 type 固定 facade） | `project/handler.RegisterRoutes`、`issue_handler.RegisterRoutes` |
 | ai | `internal/ai` | AI Agent / Skill / Run / 服务商与模型 / 对话；Agent 运行经 harness 会话执行（run↔会话状态机 / interrupt / final_output / 模型与 agent 定义目录透传，`harness.enabled=false` 时执行类端点 503，不回退 CLI）；BYOK：启用的服务商/模型渲染为各会话目录 `opencode.json`（`HarnessConfigService`，提供商 id `bedrock-p*`，baseURL 指向本机 ChatProxy + loopback token，agent 默认推理强度写模型 options，CRUD 后刷新根锚点） | `ai/handler.RegisterRoutes` |
 | harness | `internal/harness` | 会话底座：Provider 接口与统一帧模型、opencode 适配器（REST + SSE 回放续流 / 总线）、serve 进程托管（127.0.0.1 / 随机密码持久化 / 启动预检清理残留与外来占用 / 探活重启 / 快速崩溃指数退避 / degraded）、会话服务（CRUD 透传 / 懒恢复 / 归档上限 / `CreateAgentSession` 内部入口 / 用户聊天会话入口 / 目录配置 prep + 默认模型防冷启动回退）、agent 定义编译（`bedrock-*.md` 原子写 + 对账清理）、BYOK 工作区配置渲染（`opencode.json` 原子写 / 空目录清理）与技能注入（`.agents/skills/` 规范化同步）、流桥（单事件流去重 / 统一帧分发 / pending 审批提问 + TTL / auto 自动应答 / ring buffer 200 / active 探测合成 idle + 连接空闲快照）、REST `/api/v1/harness/*` + WS `/ws/harness/sessions/:id/events`（应答审计落库，`harness.enabled=false` 时 503） | `harness/process.go`、`harness/provider`、`harness/provider/oc`、`harness/service`、`harness/handler` |
 | dsh | `internal/dsh` | DSH 交互会话：进程内 JSON-RPC / SSE 客户端 | `dsh/service` |

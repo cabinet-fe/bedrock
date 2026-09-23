@@ -1,12 +1,24 @@
 <script setup lang="ts">
 defineOptions({ name: "ProjectBugsPanel" });
 
-import { computed, onMounted, reactive, ref, useTemplateRef } from "vue";
+import { computed, onMounted, reactive, ref, useTemplateRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { message } from "@veltra/desktop";
 
-import { deleteProjectBug, listProjectBugs } from "@/api/projects";
-import type { ProductProject, ProjectBug, ProjectRole } from "@/api/types";
+import {
+  deleteProjectBug,
+  getProjectKanban,
+  listProjectBugs,
+  transitionProjectIssueStatus,
+} from "@/api/projects";
+import type {
+  KanbanBoard,
+  ProductProject,
+  ProjectBug,
+  ProjectIssue,
+  ProjectRole,
+} from "@/api/types";
+import KanbanBoardView from "@/views/projects/components/kanban-board.vue";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
@@ -49,6 +61,10 @@ const formDialogOpen = ref(false);
 const detailDialogOpen = ref(false);
 const editingBug = ref<ProjectBug | null>(null);
 const detailBugId = ref<number | undefined>(undefined);
+const viewMode = ref<"kanban" | "table">("kanban");
+const includeTerminal = ref(false);
+const board = ref<KanbanBoard | null>(null);
+const boardLoading = ref(false);
 
 const stats = reactive({
   total: 0,
@@ -136,8 +152,7 @@ const removeBug = bind(async (bug: ProjectBug) => {
   try {
     await deleteProjectBug(props.project.id, bug.id);
     message.success("缺陷已删除");
-    await tableRef.value?.reload();
-    void loadStats();
+    refreshAll();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除缺陷失败");
   }
@@ -167,13 +182,11 @@ function onDetailEdit(bug: ProjectBug) {
 }
 
 async function onBugSaved() {
-  await tableRef.value?.reload();
-  void loadStats();
+  refreshAll();
 }
 
 async function onDetailRefresh() {
-  await tableRef.value?.reload();
-  void loadStats();
+  refreshAll();
 }
 
 function resolveRepoBranch(bug: ProjectBug): string {
@@ -188,7 +201,58 @@ function resolveRepoBranch(bug: ProjectBug): string {
   return "—";
 }
 
+async function loadBoard() {
+  boardLoading.value = true;
+  try {
+    board.value = await getProjectKanban({
+      projectID: props.project.id,
+      type: "bug",
+      includeTerminal: includeTerminal.value,
+      keyword: query.keyword || undefined,
+    });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "加载缺陷看板失败");
+  } finally {
+    boardLoading.value = false;
+  }
+}
+
+function refreshAll() {
+  if (viewMode.value === "kanban") {
+    void loadBoard();
+  } else {
+    void tableRef.value?.reload();
+  }
+  void loadStats();
+}
+
+function handleIssueView(issue: ProjectIssue) {
+  detailBugId.value = issue.id;
+  detailDialogOpen.value = true;
+}
+
+async function onBoardTransition(issue: ProjectIssue, status: string) {
+  try {
+    await transitionProjectIssueStatus(props.project.id, issue.id, { status });
+    message.success("缺陷状态已流转");
+    await loadBoard();
+    void loadStats();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "状态流转失败");
+  }
+}
+
+watch(
+  () => [includeTerminal.value, viewMode.value, query.keyword] as const,
+  () => {
+    if (viewMode.value === "kanban") {
+      void loadBoard();
+    }
+  },
+);
+
 onMounted(() => {
+  void loadBoard();
   void loadStats();
   void repoStore.load();
   if (route.query.bug_id) {
@@ -252,8 +316,35 @@ onMounted(() => {
       </button>
     </div>
 
+    <div class="bugs-panel__toolbar">
+      <u-radio-group
+        v-model="viewMode"
+        type="button"
+        size="small"
+        :items="[
+          { label: '看板', value: 'kanban' },
+          { label: '表格', value: 'table' },
+        ]"
+      />
+      <u-checkbox v-if="viewMode === 'kanban'" v-model="includeTerminal">
+        显示已关闭/已拒绝
+      </u-checkbox>
+    </div>
+
+    <KanbanBoardView
+      v-show="viewMode === 'kanban'"
+      class="bugs-panel__kanban"
+      :board="board"
+      :draggable="canUpdateBug"
+      :show-severity="true"
+      :loading="boardLoading"
+      @card-click="handleIssueView"
+      @transition="onBoardTransition"
+    />
+
     <!-- 缺陷列表表格 -->
     <ProTable
+      v-if="viewMode === 'table'"
       ref="table"
       :url="`/projects/${project.id}/bugs`"
       :query="query"
@@ -369,6 +460,17 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+}
+
+.bugs-panel__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bugs-panel__kanban {
+  flex: 1;
+  min-height: 320px;
 }
 
 .bugs-panel__stats {

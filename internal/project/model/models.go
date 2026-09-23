@@ -67,47 +67,41 @@ type RequirementStatusOption struct {
 	Enabled   bool   `json:"enabled"`
 }
 
+// Requirement and its comment/attachment are legacy wire DTOs for the
+// /requirements compatibility aliases; persistence lives in ProjectIssue.
 type Requirement struct {
-	ID           uint           `json:"id" gorm:"primaryKey"`
-	ProjectID    uint           `json:"project_id" gorm:"not null;index"`
-	Title        string         `json:"title" gorm:"size:500;not null"`
-	Description  string         `json:"description" gorm:"type:text"`
-	Status       string         `json:"status" gorm:"size:100;not null;index"`
-	Priority     string         `json:"priority" gorm:"size:30;not null;default:normal;index"`
-	AssigneeID   *uint          `json:"assignee_id,omitempty" gorm:"index"`
-	RepositoryID *uint          `json:"repository_id,omitempty" gorm:"index"`
+	ID           uint           `json:"id" gorm:"-"`
+	ProjectID    uint           `json:"project_id"`
+	Title        string         `json:"title" gorm:"-"`
+	Description  string         `json:"description"`
+	Status       string         `json:"status"`
+	Priority     string         `json:"priority"`
+	AssigneeID   *uint          `json:"assignee_id,omitempty"`
+	RepositoryID *uint          `json:"repository_id,omitempty"`
 	Tags         string         `json:"tags"`
-	CreatedBy    uint           `json:"created_by" gorm:"index"`
-	UpdatedBy    uint           `json:"updated_by" gorm:"index"`
+	CreatedBy    uint           `json:"created_by"`
+	UpdatedBy    uint           `json:"updated_by"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`
 }
-
-func (Requirement) TableName() string { return "requirements" }
 
 type RequirementComment struct {
-	ID            uint           `json:"id" gorm:"primaryKey"`
-	RequirementID uint           `json:"requirement_id" gorm:"not null;index"`
-	Content       string         `json:"content" gorm:"type:text;not null"`
-	CreatedBy     uint           `json:"created_by" gorm:"index"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`
+	ID            uint      `json:"id" gorm:"-"`
+	RequirementID uint      `json:"requirement_id"`
+	Content       string    `json:"content"`
+	CreatedBy     uint      `json:"created_by"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
-
-func (RequirementComment) TableName() string { return "requirement_comments" }
 
 type RequirementAttachment struct {
-	ID              uint      `json:"id" gorm:"primaryKey"`
-	RequirementID   uint      `json:"requirement_id" gorm:"not null;index"`
-	StorageObjectID uint      `json:"storage_object_id" gorm:"not null;uniqueIndex"`
-	Filename        string    `json:"filename" gorm:"size:500;not null"`
-	CreatedBy       uint      `json:"created_by" gorm:"index"`
+	ID              uint      `json:"id" gorm:"-"`
+	RequirementID   uint      `json:"requirement_id"`
+	StorageObjectID uint      `json:"storage_object_id"`
+	Filename        string    `json:"filename"`
+	CreatedBy       uint      `json:"created_by"`
 	CreatedAt       time.Time `json:"created_at"`
 }
-
-func (RequirementAttachment) TableName() string { return "requirement_attachments" }
 
 // ApiDocNode models both directory and Markdown document nodes.
 // Document bodies live in Content (no draft/published split, no version).
@@ -151,19 +145,18 @@ type DevDocNode struct {
 
 func (DevDocNode) TableName() string { return "dev_doc_nodes" }
 
-// AllProjectModels returns all domain model instances in the project package.
+// AllProjectModels returns all persisted model instances in the project package.
 func AllProjectModels() []any {
 	return []any{
 		&ProductProject{},
 		&ProjectMember{},
-		&Requirement{},
-		&RequirementComment{},
-		&RequirementAttachment{},
 		&ApiDocNode{},
 		&DevDocNode{},
-		&ProjectBug{},
-		&ProjectBugComment{},
-		&ProjectBugAttachment{},
-		&ProjectBugActivity{},
+		&ProjectIssue{},
+		&ProjectIssueComment{},
+		&ProjectIssueAttachment{},
+		&ProjectIssueActivity{},
+		&ProjectIteration{},
+		&ProjectIssueWatcher{},
 	}
 }

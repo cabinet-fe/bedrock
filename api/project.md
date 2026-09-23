@@ -102,12 +102,13 @@
 响应 200
 错误：403
 
-### GET /projects/{id}/requirements — 列出需求
+### GET /projects/{id}/requirements — 列出需求（兼容别名）
 
+说明：统一工作项模型的兼容别名，内部固定 `type=requirement`，持久化为 `project_issues`；响应保持原 Requirement 形状（统一端点 `GET /projects/{id}/issues` 返回 ProjectIssue）。
 权限：`project_requirements:view`
 路径参数：id*: integer
 查询参数：page: integer, page_size: integer, keyword: string, status: string, priority: 'low' | 'normal' | 'high' | 'urgent', assignee_id: integer, sort: string
-响应 200
+响应 200：data = ProjectIssuePage
 
 ### POST /projects/{id}/requirements — 创建需求
 
@@ -191,7 +192,203 @@
 路径参数：id*: integer, requirementID*: integer, attachmentID*: integer
 响应 200：data = binary
 
-## 缺陷
+## 工作项（统一模型）
+
+需求与缺陷共用 `project_issues`（`type` = `requirement` / `bug` / `task`）。旧 `/requirements`、`/bugs` 路径保留为兼容别名。终态集合：`closed` / `rejected` / `done` / `cancelled`（默认不入看板）。
+
+### GET /projects/meta/issue-statuses — 列出工作项状态选项
+
+权限：登录即可（选项为启用字典项）
+查询参数：type: 'requirement' | 'bug' | 'task'（默认 requirement；task 复用 requirement 字典）
+响应 200：data = { items: RequirementStatusOption[] }
+说明：看板列与状态选择的数据源；缺陷取 `bug_status` 字典。
+
+### GET /projects/issues — 列出跨项目工作项
+
+鉴权：JWT 需 `project_bugs:view` 或 `project_requirements:view`
+查询参数：page, page_size, keyword, type, project_id, status, severity, priority, assignee_id, assignee, exclude_closed, iteration_id, sort
+响应 200：data = ProjectIssuePage
+说明：跨项目聚合，数据范围与 `GET /projects/bugs` 相同。
+
+### GET /projects/{id}/issues — 列出项目工作项
+
+权限：对应类型域 `:view` + 项目 ACL
+路径参数：id*: integer
+查询参数：page, page_size, keyword, type, status, severity, priority, assignee_id, assignee, exclude_closed, iteration_id, sort
+响应 200：data = ProjectIssuePage
+
+### POST /projects/{id}/issues — 创建工作项
+
+权限：对应类型域 `:create` + 项目 ACL（task 使用 `project_requirements:create`）
+路径参数：id*: integer
+请求：ProjectIssueCreateRequest
+响应 201：data = ProjectIssue
+
+### GET /projects/{id}/issues/{issueID} — 获取工作项
+
+权限：对应类型域 `:view` + 项目 ACL
+路径参数：id*: integer, issueID*: integer
+响应 200：data = ProjectIssue
+
+### PUT /projects/{id}/issues/{issueID} — 更新工作项（字段级活动记录）
+
+权限：对应类型域 `:update` + 项目 ACL
+路径参数：id*: integer, issueID*: integer
+请求：ProjectIssueUpdateRequest
+响应 200：data = ProjectIssue
+说明：可追溯字段（status 之外）变更写入 `ProjectIssueActivity`（action=update，field/old_value/new_value）。
+
+### DELETE /projects/{id}/issues/{issueID} — 删除工作项
+
+权限：对应类型域 `:delete` + 项目 ACL
+路径参数：id*: integer, issueID*: integer
+响应 200
+
+### PUT /projects/{id}/issues/{issueID}/status — 流转状态
+
+权限：对应类型域 `:update` + 项目 ACL
+路径参数：id*: integer, issueID*: integer
+请求：{ status*, comment }
+响应 200：data = ProjectIssue
+说明：目标状态须在该类型状态字典（`requirement_status` / `bug_status`）中启用。
+
+### GET /projects/{id}/issues/{issueID}/activities — 列出活动记录
+
+权限：对应类型域 `:view` + 项目 ACL
+路径参数：id*: integer, issueID*: integer
+响应 200：data = ProjectIssueActivity[]
+
+### GET /projects/{id}/issues/{issueID}/comments — 列出评论
+
+权限：对应类型域 `:view` + 项目 ACL
+路径参数：id*: integer, issueID*: integer
+响应 200：data = ProjectIssueComment[]
+
+### POST /projects/{id}/issues/{issueID}/comments — 添加评论（可携带 @提及）
+
+权限：对应类型域 `:create` + 项目 ACL
+路径参数：id*: integer, issueID*: integer
+请求：{ content*, mention_user_ids?: integer[] }
+响应 201：data = ProjectIssueComment
+
+### PUT /projects/{id}/issues/{issueID}/comments/{commentID} — 编辑评论
+
+权限：对应类型域 `:update` + 项目 ACL（属主或项目管理员）
+路径参数：id*: integer, issueID*: integer, commentID*: integer
+请求：{ content* }
+响应 200
+
+### DELETE /projects/{id}/issues/{issueID}/comments/{commentID} — 删除评论
+
+权限：对应类型域 `:delete` + 项目 ACL（属主或项目管理员）
+路径参数：id*: integer, issueID*: integer, commentID*: integer
+响应 200
+
+### GET /projects/{id}/issues/{issueID}/attachments — 列出附件
+
+权限：对应类型域 `:view` + 项目 ACL
+路径参数：id*: integer, issueID*: integer
+响应 200：data = ProjectIssueAttachment[]
+
+### POST /projects/{id}/issues/{issueID}/attachments — 上传附件（默认限额 20MB）
+
+权限：对应类型域 `:update` + 项目 ACL
+路径参数：id*: integer, issueID*: integer
+请求：multipart: { file* }
+响应 201：data = ProjectIssueAttachment
+
+### POST /projects/{id}/issues/{issueID}/comments/{commentID}/attachments — 上传评论附件
+
+权限：对应类型域 `:create` + 项目 ACL
+路径参数：id*: integer, issueID*: integer, commentID*: integer
+请求：multipart: { file* }
+响应 201：data = ProjectIssueAttachment
+
+### DELETE /projects/{id}/issues/{issueID}/attachments/{attachmentID} — 删除附件
+
+权限：对应类型域 `:update` + 项目 ACL
+路径参数：id*: integer, issueID*: integer, attachmentID*: integer
+响应 200
+
+### GET /projects/{id}/issues/{issueID}/attachments/{attachmentID}/download — 下载附件
+
+权限：对应类型域 `:view` + 项目 ACL
+路径参数：id*: integer, issueID*: integer, attachmentID*: integer
+响应 200：data = binary
+
+### POST /projects/{id}/issues/{issueID}/watchers — 关注工作项
+
+权限：对应类型域 `:view`
+路径参数：id*: integer, issueID*: integer
+响应 200
+
+### DELETE /projects/{id}/issues/{issueID}/watchers — 取消关注
+
+权限：对应类型域 `:view`
+路径参数：id*: integer, issueID*: integer
+响应 200
+
+### GET /projects/{id}/issues/{issueID}/watchers — 关注状态
+
+权限：对应类型域 `:view`
+路径参数：id*: integer, issueID*: integer
+响应 200：data = { watching: boolean }
+
+## 看板
+
+### GET /projects/{id}/issues/kanban — 项目看板（列 + 卡片）
+
+权限：对应类型域 `:view` + 项目 ACL
+路径参数：id*: integer
+查询参数：type*: 'requirement' | 'bug' | 'task', include_terminal: boolean, iteration_id: integer, assignee_id: integer, keyword: string
+响应 200：data = KanbanBoard
+说明：列来自类型状态字典（按 sort_order）；**终态（closed/rejected/done/cancelled）默认不入看板**，`include_terminal=true` 时以折叠列附后。卡片按 `priority`、`updated_at` 排序。
+
+### GET /projects/issues/kanban — 跨项目看板
+
+鉴权：JWT 需 `project_bugs:view` 或 `project_requirements:view`
+查询参数：type*: 'requirement' | 'bug' | 'task', project_id: integer, include_terminal: boolean, keyword: string
+响应 200：data = KanbanBoard
+说明：数据范围同跨项目列表；卡片附加 `project_name`。
+
+## 迭代
+
+### GET /projects/{id}/iterations — 列出迭代
+
+权限：`project_projects:view`
+路径参数：id*: integer
+响应 200：data = ProjectIteration[]
+
+### POST /projects/{id}/iterations — 创建迭代
+
+权限：`project_projects:update` + 项目 ACL（管理员）
+路径参数：id*: integer
+请求：{ name*, goal, start_date, end_date }
+响应 201：data = ProjectIteration
+
+### PUT /projects/{id}/iterations/{iterationID} — 更新迭代（含启动/关闭）
+
+权限：`project_projects:update` + 项目 ACL（管理员）
+路径参数：id*: integer, iterationID*: integer
+请求：{ name, goal, start_date, end_date, status: 'planned' | 'active' | 'closed' }
+响应 200：data = ProjectIteration
+
+### DELETE /projects/{id}/iterations/{iterationID} — 删除迭代（须无关联工作项）
+
+权限：`project_projects:update` + 项目 ACL（管理员）
+路径参数：id*: integer, iterationID*: integer
+响应 200
+
+### GET /projects/{id}/iterations/{iterationID}/burndown — 燃尽图数据
+
+权限：`project_projects:view`
+路径参数：id*: integer, iterationID*: integer
+响应 200：data = BurndownChart
+说明：基于活动记录按日回算剩余工作项数。
+
+## 缺陷（兼容别名）
+
+说明：统一工作项模型的兼容别名，内部固定 `type=bug`，持久化为 `project_issues`；响应保持原 ProjectBug 形状（统一端点 `GET /projects/{id}/issues` 返回 ProjectIssue）。缺陷状态取值来自 `bug_status` 字典（种子 = open/in_progress/resolved/closed/rejected）。
 
 ### GET /projects/bugs — 列出跨项目缺陷
 
@@ -818,3 +1015,142 @@
 | `repository_id` | `integer` |  | 关联代码仓库 ID（传 0 可清空） |
 | `branch` | `string` |  | 关联分支名 |
 
+
+### ProjectIssue
+
+统一工作项（需求 / 缺陷 / 任务）。兼容别名端点（`/requirements`、`/bugs`）返回同一形状。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` | 是 |  |
+| `project_id` | `integer` | 是 |  |
+| `type` | `'requirement' \| 'bug' \| 'task'` | 是 |  |
+| `title` | `string` | 是 |  |
+| `description` | `string` |  | 富文本 |
+| `status` | `string` | 是 | 取自类型对应状态字典 |
+| `severity` | `string` |  | 仅 bug：low/normal/high/critical |
+| `priority` | `'low' \| 'normal' \| 'high' \| 'urgent'` | 是 |  |
+| `assignee_id` | `integer` |  | 经办人用户 ID |
+| `repository_id` | `integer` |  | 关联代码仓库 ID |
+| `branch` | `string` |  | 仅 bug：关联分支名 |
+| `tags` | `string` |  | 标签 |
+| `iteration_id` | `integer` |  | 所属迭代 ID，空 = Backlog |
+| `created_by` | `integer` | 是 |  |
+| `updated_by` | `integer` | 是 |  |
+| `created_at` | `string(date-time)` | 是 |  |
+| `updated_at` | `string(date-time)` | 是 |  |
+| `project_name` | `string` |  | 跨项目列表附加，不落库 |
+| `assignee_name` / `assignee_username` | `string` |  | 经办人，响应附加 |
+| `creator_name` / `creator_username` | `string` |  | 创建人，响应附加 |
+| `repository_name` | `string` |  | 响应附加 |
+| `comment_count` | `integer` |  | 评论数，响应附加 |
+
+### ProjectIssuePage
+
+组合：`Page` + `items: ProjectIssue[]`
+
+### ProjectIssueCreateRequest
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `type` | `'requirement' \| 'bug' \| 'task'` | 是 |  |
+| `title` | `string` | 是 |  |
+| `description` | `string` |  |  |
+| `status` | `string` |  | 默认取类型初始状态 |
+| `severity` | `string` |  | 仅 bug，默认 normal |
+| `priority` | `string` |  | 默认 normal |
+| `assignee_id` | `integer` |  |  |
+| `repository_id` | `integer` |  |  |
+| `branch` | `string` |  | 仅 bug |
+| `tags` | `string` |  |  |
+| `iteration_id` | `integer` |  |  |
+
+### ProjectIssueUpdateRequest
+
+同 CreateRequest，全部字段可选（指针语义：传 0 清空可空外键）；`status` 变更建议走 `/status` 流转端点以保留 from/to 活动。
+
+### ProjectIssueActivity
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` | 是 |  |
+| `issue_id` | `integer` | 是 |  |
+| `action` | `'create' \| 'comment' \| 'status_change' \| 'update'` | 是 |  |
+| `field` | `string` |  | update：assignee/priority/severity/tags/title/description/iteration |
+| `old_value` / `new_value` | `string` |  | update：变更前后值 |
+| `from_status` / `to_status` | `string` |  | status_change：前后状态 |
+| `comment` | `string` |  | 备注 |
+| `created_by` | `integer` | 是 | 操作人 |
+| `creator_name` / `creator_username` | `string` |  | 响应附加 |
+| `created_at` | `string(date-time)` | 是 |  |
+
+### ProjectIssueComment
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` | 是 |  |
+| `issue_id` | `integer` | 是 |  |
+| `content` | `string` | 是 |  |
+| `created_by` | `integer` | 是 |  |
+| `creator_name` / `creator_username` | `string` |  | 响应附加 |
+| `attachments` | `ProjectIssueAttachment[]` |  | 评论附件，响应附加 |
+| `created_at` / `updated_at` | `string(date-time)` | 是 |  |
+
+### ProjectIssueAttachment
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` | 是 |  |
+| `issue_id` | `integer` | 是 |  |
+| `comment_id` | `integer` |  | 所属评论 ID，工作项级附件为空 |
+| `storage_object_id` | `integer` | 是 |  |
+| `filename` | `string` | 是 |  |
+| `file_size` / `content_type` | `integer` / `string` |  | 响应附加 |
+| `created_by` | `integer` | 是 |  |
+| `creator_name` / `creator_username` | `string` |  | 响应附加 |
+| `created_at` | `string(date-time)` | 是 |  |
+
+### KanbanBoard
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `columns` | `KanbanColumn[]` | 是 | 按状态字典 sort_order 排序；include_terminal=true 时终态列附加在后 |
+| `total` | `integer` | 是 | 卡片总数 |
+
+### KanbanColumn
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `status` | `string` | 是 | 状态值 |
+| `label` | `string` | 是 | 状态显示名 |
+| `terminal` | `boolean` | 是 | 是否终态 |
+| `cards` | `ProjectIssue[]` | 是 | 卡片（统一形状） |
+
+### ProjectIteration
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` | 是 |  |
+| `project_id` | `integer` | 是 |  |
+| `name` | `string` | 是 |  |
+| `goal` | `string` |  | 迭代目标 |
+| `start_date` / `end_date` | `string(date)` |  | 起止日期 |
+| `status` | `'planned' \| 'active' \| 'closed'` | 是 |  |
+| `issue_counts` | `object` |  | 各状态工作项计数，响应附加 |
+| `created_by` | `integer` | 是 |  |
+| `created_at` / `updated_at` | `string(date-time)` | 是 |  |
+
+### BurndownChart
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `start_date` / `end_date` | `string(date)` | 是 | 迭代起止 |
+| `total` | `integer` | 是 | 迭代内工作项总数 |
+| `points` | `BurndownPoint[]` | 是 | 每日剩余 |
+
+### BurndownPoint
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `date` | `string(date)` | 是 |  |
+| `remaining` | `integer` | 是 | 当日终了剩余（非终态）工作项数 |

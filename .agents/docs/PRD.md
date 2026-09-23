@@ -409,15 +409,47 @@ database:
 - **读可见性**：持有 `project_projects:view` 的认证用户可列出并查看全部项目（含非成员）；非成员 `my_role` 为空、`permissions` 能力位全 false。`project_projects:view_all` 保留兼容。`manage_all` 可管理全部项目成员与内容且无需加入。普通 `project_projects:update` **不**隐含全局越权（与 DESIGN §4.4 一致）。
 - **项目内资源列表**：CI/CD 列表带 `?project_id=` 时可读该项目下 Job/Pipeline（仍需各域 `:view`）；智能体不按项目过滤。不带参数时全局列表仍受 CI/CD `data_scope` / `is_public` 等原规则约束。写/执行规则不变。
 
-### 8.2 需求管理（结构化列表）
+### 8.2 工作项（需求 / 缺陷 / 任务，统一模型）
 
-**字段：** 标题、描述、状态、优先级、负责人、标签、附件、评论、创建/更新时间。
+需求与缺陷共用一张 `project_issues` 表，以 `type` 区分（`requirement` / `bug` / `task`），评论、附件、活动记录统一挂在工作项上。旧的 `/requirements`、`/bugs` REST 路径保留为兼容别名（内部走统一服务，响应为统一工作项 JSON 超集）。
 
-**状态建议：** `backlog` / `todo` / `doing` / `done` / `cancelled`（可用数据字典扩展）。
+**字段（并集）：** 类型、标题、描述（富文本）、状态、优先级、严重程度（缺陷用）、经办人、代码仓库/分支（缺陷用）、标签、迭代（可空）、创建/更新时间。
 
-**能力：** 列表筛选分页、创建编辑删除、状态流转、评论、附件上传下载。
+**状态字典化：** 需求用 `requirement_status`、缺陷用 `bug_status` 数据字典（种子为原有枚举值），看板列从字典读取；任务沿用 `requirement_status`。终态约定：`closed` / `rejected` / `done` / `cancelled` 为终态，**默认不入看板**，可用 `include_terminal` 显式查看。
 
-### 8.3 接口文档（Markdown 目录树）
+**能力：** 列表筛选分页（含跨项目聚合）、创建编辑删除、状态流转、字段级活动记录（谁在何时把状态/优先级/严重度/经办人/标签从什么改成什么）、评论（含评论级附件）、附件上传下载。
+
+**兼容承诺：** Chrome 报单插件与 PAT `bugs:read` / `bugs:write` 不受合表影响。
+
+### 8.3 看板视图
+
+需求与缺陷的默认视图从表格升级为看板；保留「表格」切换以兼容存量筛选习惯。
+
+- 列 = 类型对应的状态字典（按 sort_order 排序）；卡片展示标题、优先级/严重程度、经办人、标签。
+- **已关闭（终态）工作项默认不出现在看板**，提供「显示终态」开关。
+- 拖拽卡片到目标列即发起状态流转（受编辑权限约束，只读角色禁拖）；流转写活动记录。
+- 缺陷工作台支持跨项目看板（卡片带所属项目）；项目详情内需求/缺陷面板为项目内看板。
+
+### 8.4 协作通知与关注
+
+工作项事件接入站内通知（复用 WebSocket 通道 `notifications:{userId}`）：
+
+| 事件         | 通知对象                     |
+| ------------ | ---------------------------- |
+| 指派 / 改派  | 新经办人                     |
+| 状态流转     | 经办人 + 创建人              |
+| 评论         | 经办人 + 创建人 + 关注者     |
+| @提及        | 被提及者（评论携带 mention 用户） |
+
+规则：不通知操作者本人；创建、评论自动关注；详情页提供关注/取消关注。邮件通知预留挂点，默认关闭。
+
+### 8.5 迭代管理
+
+**字段：** 名称、目标、起止日期、状态（`planned` / `active` / `closed`）。
+
+**能力：** 项目内创建/启动/关闭迭代；工作项可分配到迭代（可空 = Backlog）；看板按迭代过滤；基于活动记录按日回算剩余量的燃尽图（自绘 SVG，不引图表库）。任务类型（`task`）随迭代开放。
+
+### 8.6 接口文档（Markdown 目录树）
 
 **形态：**
 
@@ -735,7 +767,8 @@ flowchart TB
 | Dictionary / DictItem                              | 配置      | 枚举                                                                  |
 | OperationLog                                       | 运行      | 审计                                                                  |
 | ProductProject / ProjectMember                     | 配置      | 项目与成员                                                            |
-| Requirement / RequirementComment / Attachment      | 混合      | 需求协作                                                              |
+| ProjectIssue / IssueComment / IssueAttachment / IssueActivity / IssueWatcher | 混合 | 统一工作项协作（需求/缺陷/任务）、评论、附件、字段级活动、关注 |
+| ProjectIteration                                   | 配置      | 迭代（起止日期、状态）                                                |
 | ApiDocNode                                         | 配置/内容 | 目录或文档节点                                                        |
 | Repository                                         | 配置      | 代码仓库                                                              |
 | Credential                                         | 配置      | 凭证                                                                  |
@@ -755,7 +788,8 @@ flowchart TB
 
 - Repository 1—N BuildJob；BuildJob 1—N BuildRun；BuildRun 1—N BuildDeployRun。
 - BuildJob N—M DeployTarget（或内嵌有序列表）→ Server。
-- ProductProject 1—N Requirement；1—N ApiDocNode（树）。
+- ProductProject 1—N ProjectIssue（type = requirement/bug/task）；ProjectIssue 1—N IssueComment / IssueAttachment / IssueActivity / IssueWatcher。
+- ProductProject 1—N ProjectIteration；ProjectIssue 0..1—ProjectIteration；1—N ApiDocNode（树）。
 - ProductProject 0—N BuildJob / ScriptJob / BuildPipeline（可空 `project_id` 归属）；AiAgent 全局共用。
 - AiAgent N—M SkillPackage；AiAgent N—0..1 Repository（默认上下文）。
 - AgentTrigger 属于 AiAgent；可引用 BuildJob 事件过滤器。
@@ -853,8 +887,13 @@ flowchart TB
 | ---- | ------------------------------------------ | -------------- |
 | CRUD | `/projects`                                | 产品项目       |
 | CRUD | `/projects/:id/members`                    | 成员           |
-| CRUD | `/projects/:id/requirements`               | 需求           |
-| CRUD | `/projects/:id/requirements/:rid/comments` | 评论           |
+| CRUD | `/projects/:id/issues`                     | 统一工作项（type=requirement/bug/task） |
+| GET  | `/projects/issues`                         | 跨项目工作项聚合 |
+| GET  | `/projects/:id/issues/kanban`              | 看板（列+卡片，默认排除终态） |
+| PUT  | `/projects/:id/issues/:iid/status`         | 状态流转       |
+| CRUD | `/projects/:id/issues/:iid/comments`       | 评论（含 @提及） |
+| CRUD | `/projects/:id/iterations`                 | 迭代           |
+| CRUD | `/projects/:id/requirements` / `bugs`      | 兼容别名（统一 JSON） |
 | CRUD | `/projects/:id/docs/nodes`                 | 文档树节点     |
 | POST | `/projects/:id/docs/upload`                | 上传           |
 | POST | `/projects/:id/docs/generate`              | 触发智能体生成 |
@@ -922,7 +961,7 @@ flowchart TB
 | 仪表盘 | 可排序显隐；权限过滤 | — |
 | 运维 | 进程查询终止；开发环境检测安装升级卸载切版本；每环境源优先级回退 | 自定义脚本仅超管；同 UID 风险提示 |
 | CI/CD | 一仓多任务多执行；部署失败不改构建成功；凭证 RBAC | `distribution_summary`；禁止流水线内同步 Agent |
-| 项目 | 成员角色；需求 CRUD；文档树上传；智能体生成 | 文档单态 `content`；开放 push/pull |
+| 项目 | 成员角色；统一工作项 CRUD+字段级活动；看板（终态默认不入板）；通知闭环；迭代与燃尽；文档树上传；智能体生成 | 文档单态 `content`；开放 push/pull |
 | AI | 独立运行；手动/API/定时/构建事件；上下文=提示词+仓库；每 Agent 持久根工作区 + 固定产出目录跨 Run 复用；记录输入输出日志，不提供 Agent 文件制品 | AgentRun 独立状态机；失败不改 BuildRun；BuildRun 制品不受影响 |
 | Skills | 开放规范 ZIP；公私；覆盖更新；PAT 下载 | 无私有对象 ACL 外的非项目 ACL |
 | 系统 | 用户角色资源字典操作日志 | — |

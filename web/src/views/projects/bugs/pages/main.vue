@@ -1,12 +1,12 @@
 <script setup lang="ts">
 defineOptions({ name: "ProjectBugsWorkbench" });
 
-import { computed, onMounted, reactive, ref, useTemplateRef } from "vue";
+import { computed, onMounted, reactive, ref, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@veltra/desktop";
 
-import { listProjects } from "@/api/projects";
-import type { ProductProject, ProjectBug } from "@/api/types";
+import { getCrossProjectKanban, listProjects, transitionProjectIssueStatus } from "@/api/projects";
+import type { KanbanBoard, ProductProject, ProjectBug, ProjectIssue } from "@/api/types";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
@@ -24,6 +24,7 @@ import {
 } from "@/lib/tag";
 import BugDetailDialog from "@/views/projects/bugs/components/bug-detail-dialog.vue";
 import BugFormDialog from "@/views/projects/bugs/components/bug-form-dialog.vue";
+import KanbanBoardView from "@/views/projects/components/kanban-board.vue";
 
 const router = useRouter();
 const { hasPermission } = usePermission();
@@ -31,6 +32,11 @@ const tableRef = useTemplateRef("table");
 
 const canCreateBug = computed(() => hasPermission("project_bugs:create"));
 const canUpdateBug = computed(() => hasPermission("project_bugs:update"));
+
+const viewMode = ref<"kanban" | "table">("kanban");
+const includeTerminal = ref(false);
+const board = ref<KanbanBoard | null>(null);
+const boardLoading = ref(false);
 
 const formDialogOpen = ref(false);
 const detailDialogOpen = ref(false);
@@ -66,7 +72,33 @@ const columns = defineProTableColumns([
   { key: "action", name: "操作", width: 140, align: "center", fixed: "right" },
 ]);
 
+async function loadBoard() {
+  boardLoading.value = true;
+  try {
+    board.value = await getCrossProjectKanban({
+      type: "bug",
+      projectID: query.project_id,
+      includeTerminal: includeTerminal.value,
+      keyword: query.keyword || undefined,
+    });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "加载看板失败");
+  } finally {
+    boardLoading.value = false;
+  }
+}
+
+watch(
+  () => [query.project_id, query.keyword, includeTerminal.value, viewMode.value] as const,
+  () => {
+    if (viewMode.value === "kanban") {
+      void loadBoard();
+    }
+  },
+);
+
 onMounted(async () => {
+  void loadBoard();
   try {
     const res = await listProjects({ page: 1, page_size: 100 });
     projectOptions.value = (res.items ?? []).map((p: ProductProject) => ({
@@ -81,6 +113,12 @@ onMounted(async () => {
 function handleCreate() {
   currentBug.value = null;
   formDialogOpen.value = true;
+}
+
+function handleViewIssue(issue: ProjectIssue) {
+  detailProjectId.value = issue.project_id;
+  detailBugId.value = issue.id;
+  detailDialogOpen.value = true;
 }
 
 function handleViewBug(row: ProjectBug) {
@@ -100,11 +138,25 @@ function onDetailEdit(bug: ProjectBug) {
 }
 
 function onSaved() {
-  void tableRef.value?.reload();
+  if (viewMode.value === "kanban") {
+    void loadBoard();
+  } else {
+    void tableRef.value?.reload();
+  }
 }
 
 function onRefresh() {
-  void tableRef.value?.reload();
+  onSaved();
+}
+
+async function onTransition(issue: ProjectIssue, status: string) {
+  try {
+    await transitionProjectIssueStatus(issue.project_id, issue.id, { status });
+    message.success(`已流转到「${status}」`);
+    await loadBoard();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "状态流转失败");
+  }
 }
 
 function goToProject(projectId: number) {
@@ -117,7 +169,52 @@ function goToProject(projectId: number) {
 
 <template>
   <div class="project-bugs-main">
+    <div class="bugs-toolbar">
+      <u-radio-group
+        v-model="viewMode"
+        type="button"
+        size="small"
+        :items="[
+          { label: '看板', value: 'kanban' },
+          { label: '表格', value: 'table' },
+        ]"
+      />
+      <u-select
+        v-model="query.project_id"
+        :options="projectOptions"
+        placeholder="全部项目"
+        clearable
+        style="width: 160px"
+      />
+      <u-input
+        v-model="query.keyword"
+        placeholder="搜索标题/描述"
+        style="width: 200px"
+        @keyup.enter="viewMode === 'kanban' && loadBoard()"
+      />
+      <u-checkbox v-if="viewMode === 'kanban'" v-model="includeTerminal">
+        显示已关闭/已拒绝
+      </u-checkbox>
+      <div class="bugs-toolbar-spacer" />
+      <u-button v-if="canCreateBug" type="primary" @click.prevent="handleCreate">
+        新建缺陷
+      </u-button>
+    </div>
+
+    <KanbanBoardView
+      v-show="viewMode === 'kanban'"
+      class="bugs-kanban"
+      :board="board"
+      :draggable="canUpdateBug"
+      :show-severity="true"
+      :show-project="true"
+      :loading="boardLoading"
+      @card-click="handleViewIssue"
+      @transition="onTransition"
+    />
+
     <ProTable
+      v-if="viewMode === 'table'"
       ref="table"
       url="/projects/bugs"
       :query="query"
@@ -126,13 +223,6 @@ function goToProject(projectId: number) {
       pagination
     >
       <template #filters>
-        <u-select
-          v-model="query.project_id"
-          :options="projectOptions"
-          placeholder="全部项目"
-          clearable
-          style="width: 160px"
-        />
         <u-select
           v-model="query.status"
           :options="BUG_STATUS_OPTIONS"
@@ -154,13 +244,6 @@ function goToProject(projectId: number) {
           clearable
           style="width: 120px"
         />
-        <u-input v-model="query.keyword" placeholder="搜索标题/描述" style="width: 200px" />
-      </template>
-
-      <template #toolbar>
-        <u-button v-if="canCreateBug" type="primary" @click.prevent="handleCreate">
-          新建缺陷
-        </u-button>
       </template>
 
       <template #column:title="{ rowData }">
@@ -236,6 +319,24 @@ function goToProject(projectId: number) {
 
 .project-bugs-main {
   height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bugs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: fn.use-var(spacing, 3);
+  padding: fn.use-var(spacing, 3) fn.use-var(spacing, 3) 0;
+}
+
+.bugs-toolbar-spacer {
+  flex: 1;
+}
+
+.bugs-kanban {
+  flex: 1;
   min-height: 0;
 }
 

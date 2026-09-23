@@ -12,6 +12,7 @@ import { useTabsStore } from "@/stores/tabs";
 
 import BuildJobsPanel from "../../components/build-jobs-panel.vue";
 import BugsPanel from "../../components/bugs-panel.vue";
+import IterationsPanel from "../../components/iterations-panel.vue";
 import DocsPanel from "../../components/docs-panel.vue";
 import OverviewPanel from "../../components/overview-panel.vue";
 import PipelinesPanel from "../../components/pipelines-panel.vue";
@@ -43,6 +44,7 @@ const tabs = computed(
       { key: "overview", name: "概览" },
       hasPermission("project_requirements:view") ? { key: "requirements", name: "需求" } : null,
       hasPermission("project_bugs:view") ? { key: "bugs", name: "缺陷" } : null,
+      hasPermission("project_projects:view") ? { key: "iterations", name: "迭代" } : null,
       hasPermission("cicd_build_jobs:view") ? { key: "build-jobs", name: "构建任务" } : null,
       hasPermission("cicd_script_jobs:view") ? { key: "script-jobs", name: "脚本任务" } : null,
       hasPermission("cicd_pipelines:view") ? { key: "pipelines", name: "流水线" } : null,
@@ -116,6 +118,13 @@ watch(tab, (next) => {
       />
       <BugsPanel
         v-else-if="tab === 'bugs' && hasPermission('project_bugs:view')"
+        class="project-detail__panel"
+        :project="project"
+        :project-role="projectRole"
+        :manage-all="canManageAll"
+      />
+      <IterationsPanel
+        v-else-if="tab === 'iterations'"
         class="project-detail__panel"
         :project="project"
         :project-role="projectRole"

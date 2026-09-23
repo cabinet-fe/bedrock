@@ -62,6 +62,10 @@
 | D34 | 脚本模板 `${{...}}` | 构建/构建后脚本执行前一次性文本替换；内置 `job.*` / `run.*` / `workspace`；用户变量 `${{ env.KEY }}`；未知变量失败；不二次展开 |
 | D35 | 构建流水线 | 独立 `BuildPipeline` 模块；VueFlow `graph_json` DAG（v2：start/end/buildJob/scriptJob/agent 节点，边带 `on_success`/`on_failure`/`always` 条件）；任务节点 AND-join（前驱全部终态且各有匹配入边才触发，否则 skipped 传播）；**到达任意 end 节点即 success**（OR-join，取消在飞分支），静止未到 end 则 failed；agent 节点**同步**等待 AgentRun 并按结果走分支；节点级 env 覆盖（AES-GCM 存于 graph_json，run > job）；**无**跨任务制品传递 |
 | D36 | 安装器 Go 化（bedctl） | 安装/更新/服务管理器为独立 Go 二进制 `bedctl`（`cmd/bedctl` + `internal/bedctl`，标准库 + yaml.v3，随 Release 附带 linux amd64/arm64）；`scripts/install.sh` 缩为引导脚本（下载 bedctl 后 `exec` 转交，保留 `BEDROCK_ONE_LINE_INSTALLER` 标记使 v1.x 脚本版 bedctl 经 self-update 无缝迁移）。行为要点：下载源写入状态文件并**记住**（已存源探测可达则不再询问，选直连显式清除旧值，实际命中镜像自动回写；Go HTTP 原生识别 `HTTPS_PROXY` 等环境变量）；版本比较用 semver；停机 = systemctl/SIGTERM 带超时 + 端口释放复查 + bedrock 孤儿进程 TERM→KILL 清理（外来进程占用端口报错不误杀）；`update --port` / `bedctl port` 用 yaml.Node 精准改 `server.port` 保留注释；状态文件沿用 v1.x `bedctl.env` 键名 |
+| D37 | 统一工作项 | `requirements` 与 `project_bugs` 合并为 `project_issues`（`type` = requirement/bug/task），评论/附件/活动统一为 `project_issue_*` 三张表；迁移 000061 数据搬迁（子表经 oldID→newID 映射重挂，原表删除）；旧 REST 路径保留为兼容别名，响应为统一 JSON 超集（Chrome 插件与 PAT `bugs:*` 不受影响）；缺陷状态从硬编码枚举改为 `bug_status` 字典（种子=原 5 值），与 `requirement_status` 同机制 |
+| D38 | 看板与终态 | 看板列来自类型对应状态字典（按 sort_order）；终态集合按约定值 `closed/rejected/done/cancelled` 判定（自定义字典状态默认非终态），**终态默认不入看板**（`include_terminal` 显式开启）；拖拽即状态流转（走统一流转端点与活动记录）；看板组件原生 HTML5 拖拽、燃尽图自绘 SVG，**不引第三方 DnD/图表库** |
+| D39 | 工作项通知 | 事件（指派/流转/评论/@提及）→ 站内信，复用 WS 通道 `notifications:{userId}`；`Notification` 增加 `issue_id` 关联（与 BuildRunID/AgentRunID 并列，不做通用 ResourceType 泛化）；不通知操作者本人；创建/评论自动关注（`project_issue_watchers`）；@提及由前端从评论内容提取 `mention_user_ids` 随请求携带；邮件预留挂点默认关闭 |
+| D40 | 迭代 | `project_iterations`（planned/active/closed）+ `project_issues.iteration_id`（可空=Backlog）；燃尽图基于活动记录按日回算，不建每日快照表；任务类型 `task` 复用统一模型与 `requirement_status` 字典 |
 
 ### 1.4 已接受风险（必须对外声明）
 
@@ -248,7 +252,12 @@ flowchart TB
   MenuGroup --> RbacResource
   User --> ProjectMember
   ProductProject --> ProjectMember
-  ProductProject --> Requirement
+  ProductProject --> ProjectIssue
+  ProductIssue --> ProjectIteration
+  ProjectIssue --> IssueComment
+  ProjectIssue --> IssueAttachment
+  ProjectIssue --> IssueActivity
+  ProjectIssue --> IssueWatcher
   ProductProject --> ApiDocNode
   ProductProject --> DevDocNode
   Repository --> BuildJob
@@ -339,6 +348,27 @@ DevDocNode:
 - `public`：具备 Skills 查看权限的用户可见/可用。
 - `private`：仅创建者（及后续若扩展的显式授权——首期不做对象 ACL）可见。
 - 更新覆盖当前包，不保留历史版本；Run 快照保存 package digest。
+
+### 5.6 统一工作项（D37–D40）
+
+```text
+ProjectIssue:
+  type            # requirement | bug | task
+  status          # 来自类型对应状态字典（requirement_status / bug_status；task 复用 requirement_status）
+  severity        # 仅 bug 使用，其余为空串
+  branch          # 仅 bug 使用
+  tags / priority / assignee_id / repository_id / iteration_id(可空)
+ProjectIssueActivity:
+  action          # create | comment | status_change | update
+  field           # update 类：assignee/priority/severity/tags/title/description
+  old_value/new_value, from_status/to_status
+```
+
+- **状态字典化**：`bug_status` 种子 = 原 5 值（open/in_progress/resolved/closed/rejected）；终态判定按约定值 `closed/rejected/done/cancelled`（D38），自定义字典状态默认非终态。
+- **字段级活动**：更新接口对可追溯字段做 diff 记录；状态走独立流转端点（from/to + 备注）。
+- **评论/附件**：评论支持评论级附件（沿用缺陷附件白名单与限额）；@提及用户 ID 列表随评论请求携带，服务端仅校验存在性。
+- **通知目标**：指派/改派→新经办人；流转→经办人+创建人；评论→经办人+创建人+关注者；提及→被提及者；去重、不通知操作者本人（D39）。
+- **兼容别名**：`/projects/:id/bugs`、`/projects/:id/requirements` 路径保留，内部固定 type 调用统一服务，响应为统一 JSON。
 
 ---
 

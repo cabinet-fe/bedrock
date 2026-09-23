@@ -226,6 +226,9 @@ func main() {
 	bugRepo := projectrepo.NewBugRepository(gdb)
 	bugSvc := projectservice.NewBugService(bugRepo, projectRepo, storageSvc)
 	bugHandler := projecthandler.NewBugHandler(bugSvc, permSvc)
+	issueSvc := projectservice.NewIssueService(projectRepo.IssueRepo(), projectRepo, storageSvc)
+	iterationSvc := projectservice.NewIterationService(projectRepo.IssueRepo(), projectRepo)
+	issueHandler := projecthandler.NewIssueHandler(issueSvc, iterationSvc, permSvc)
 	projectHandler := projecthandler.NewProjectHandler(projectSvc, permSvc)
 	projectHandler.SetBugHandler(bugHandler)
 
@@ -239,6 +242,7 @@ func main() {
 	notifRepo := systemrepo.NewNotificationRepository(gdb)
 	notifSvc := systemservice.NewNotificationService(notifRepo, hub)
 	notifHandler := systemhandler.NewNotificationHandler(notifSvc)
+	issueSvc.SetNotificationService(notifSvc)
 
 	agentSvc := aiservice.NewAgentService(aiRepo, skillSvc, hub, logger, agentWorkDir, agentArtifactDir, cfg.Build.LogDir, auditSvc)
 	agentSvc.SetDocDraftWriter(projectSvc)
@@ -413,6 +417,7 @@ func main() {
 	dashboardHandler.RegisterRoutes(api, authMW)
 	opsHandler.RegisterRoutes(api, authMW)
 	projectHandler.RegisterRoutes(api, authMW)
+	issueHandler.RegisterRoutes(api, authMW)
 	aiHandler.RegisterRoutes(api, authMW)
 	harnessHandler.RegisterRoutes(api, authMW)
 	notifHandler.RegisterRoutes(api, authMW)
