@@ -12,10 +12,12 @@ export async function loginApi(username: string, passwordCipher: string): Promis
 export async function registerApi(
   username: string,
   passwordCipher: string,
+  roleCode: string,
 ): Promise<LoginResponse> {
   const { body } = await bareHttp.post<LoginResponse>("/auth/register", {
     username,
     password_cipher: passwordCipher,
+    role_code: roleCode,
   });
   return body;
 }

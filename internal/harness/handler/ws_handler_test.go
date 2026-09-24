@@ -54,6 +54,15 @@ func setupWS(t *testing.T, enabled bool) *wsEnv {
 	if err := seed.EnsureRBACResources(gdb); err != nil {
 		t.Fatalf("seed rbac resources: %v", err)
 	}
+	// Plain user (ID 2) passes the harness_chat:view gate via a bound role.
+	plainRoleSvc := rbacservice.NewRoleService(rbacrepo.NewRoleRepository(gdb), rbacrepo.NewResourceRepository(gdb))
+	plainRole, err := plainRoleSvc.Create("会话旁观用户", "harness_plain_user", "", "", []string{"harness_chat:view"})
+	if err != nil {
+		t.Fatalf("create plain user role: %v", err)
+	}
+	if err := plainRoleSvc.SetUserRoles(2, []uint{plainRole.ID}); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		if sqlDB, err := gdb.DB(); err == nil {
 			_ = sqlDB.Close()
@@ -165,7 +174,8 @@ func TestWSHandler_GrantedUserUpgrades(t *testing.T) {
 	if err := users.Create(granted); err != nil {
 		t.Fatal(err)
 	}
-	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "")
+	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "",
+		[]string{"harness_chat:view", "harness_chat:send", "harness_chat:approve"})
 	if err != nil {
 		t.Fatalf("create role with harness_chat:view (seed must expose it): %v", err)
 	}

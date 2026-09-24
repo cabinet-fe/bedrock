@@ -294,7 +294,7 @@ func TestEnsureRBACResources_HarnessChat(t *testing.T) {
 		t.Fatal(err)
 	}
 	granted := []string{"harness_chat:view", "harness_chat:send", "harness_chat:approve"}
-	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "")
+	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "", granted)
 	if err != nil {
 		t.Fatalf("create role: %v", err)
 	}

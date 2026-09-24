@@ -127,8 +127,8 @@ func main() {
 	if err := seed.EnsureRBACResources(gdb); err != nil {
 		logger.Fatal("Failed to seed RBAC resources", zap.Error(err))
 	}
-	if err := seed.EnsureDefaultUserRole(gdb); err != nil {
-		logger.Fatal("Failed to seed default user role", zap.Error(err))
+	if err := seed.EnsureBuiltinRoles(gdb); err != nil {
+		logger.Fatal("Failed to seed builtin roles", zap.Error(err))
 	}
 
 	userRepo := authrepo.NewUserRepository(gdb)

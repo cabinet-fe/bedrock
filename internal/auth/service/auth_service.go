@@ -157,9 +157,9 @@ func (s *AuthService) Authenticate(username, password string) (*model.User, erro
 	return user, nil
 }
 
-// Register creates a self-service account bound to the builtin user role
+// Register creates a self-service account bound to the chosen builtin role
 // (data scope self). Login-strength rules only apply to new passwords.
-func (s *AuthService) Register(username, password string) (*model.User, error) {
+func (s *AuthService) Register(username, password, roleCode string) (*model.User, error) {
 	username = strings.TrimSpace(username)
 	if n := len([]rune(username)); n < 3 || n > 50 {
 		return nil, errors.New("用户名长度需在 3-50 个字符之间")
@@ -167,6 +167,10 @@ func (s *AuthService) Register(username, password string) (*model.User, error) {
 	if len(password) < 8 {
 		return nil, errors.New("密码至少 8 位")
 	}
+	if !rbacmodel.IsSelectableBuiltinRoleCode(strings.TrimSpace(roleCode)) {
+		return nil, errors.New("无效的角色选择")
+	}
+	roleCode = strings.TrimSpace(roleCode)
 	if _, err := s.users.FindByUsername(username); err == nil {
 		return nil, errors.New("用户名已被占用")
 	}
@@ -185,8 +189,8 @@ func (s *AuthService) Register(username, password string) (*model.User, error) {
 		return nil, errors.New("创建用户失败")
 	}
 	if s.roles != nil {
-		if err := s.roles.EnsureDefaultUserRoleBound(user.ID); err != nil {
-			return nil, fmt.Errorf("绑定默认角色失败: %w", err)
+		if err := s.roles.EnsureBuiltinRoleBound(user.ID, roleCode); err != nil {
+			return nil, fmt.Errorf("绑定注册角色失败: %w", err)
 		}
 	}
 	return user, nil

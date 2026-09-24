@@ -11,13 +11,37 @@ const (
 	RoleTypeCustom  = "custom"
 
 	RoleCodeSuperAdmin = "super_admin"
-	RoleCodeUser       = "user"
+	// 注册可选的内置角色编码（数据权限均为 self）。
+	RoleCodeDeveloper   = "developer"
+	RoleCodeTester      = "tester"
+	RoleCodeOps         = "ops"
+	RoleCodeImplementer = "implementer"
+	RoleCodeProduct     = "product"
 
 	// DataScopeSelf：仅自己创建的数据（项目另含成员例外）
 	DataScopeSelf = "self"
 	// DataScopeAll：可读全部（项目写权限仍靠成员 / manage_all）
 	DataScopeAll = "all"
 )
+
+// SelectableBuiltinRoleCodes lists the builtin roles a self-registered user
+// may pick from, in display order.
+func SelectableBuiltinRoleCodes() []string {
+	return []string{
+		RoleCodeDeveloper, RoleCodeTester, RoleCodeOps,
+		RoleCodeImplementer, RoleCodeProduct,
+	}
+}
+
+// IsSelectableBuiltinRoleCode reports whether code is registration-selectable.
+func IsSelectableBuiltinRoleCode(code string) bool {
+	for _, c := range SelectableBuiltinRoleCodes() {
+		if c == code {
+			return true
+		}
+	}
+	return false
+}
 
 // MenuGroup organizes menus for navigation and resource admin (not permission-checked).
 type MenuGroup struct {
@@ -34,22 +58,33 @@ type MenuGroup struct {
 func (MenuGroup) TableName() string { return "menu_groups" }
 
 // Role is a permission bundle. Builtin super_admin is synced 1:1 with is_super_admin.
-// Permissions are not role-bound: every role carries all feature permissions
-// except super_admin_only ones.
+// Feature permissions are bound per role via RolePermission.
 type Role struct {
-	ID          uint      `json:"id" gorm:"primaryKey"`
-	Name        string    `json:"name" gorm:"size:100;uniqueIndex;not null"`
-	Code        string    `json:"code" gorm:"size:100;uniqueIndex;not null"`
-	Description string    `json:"description" gorm:"size:500"`
-	Type        string    `json:"type" gorm:"size:20;not null;default:custom"`
-	DataScope   string    `json:"data_scope" gorm:"size:20;not null;default:self"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          uint             `json:"id" gorm:"primaryKey"`
+	Name        string           `json:"name" gorm:"size:100;uniqueIndex;not null"`
+	Code        string           `json:"code" gorm:"size:100;uniqueIndex;not null"`
+	Description string           `json:"description" gorm:"size:500"`
+	Type        string           `json:"type" gorm:"size:20;not null;default:custom"`
+	DataScope   string           `json:"data_scope" gorm:"size:20;not null;default:self"`
+	CreatedAt   time.Time        `json:"created_at"`
+	UpdatedAt   time.Time        `json:"updated_at"`
+	Permissions []RolePermission `json:"permissions,omitempty" gorm:"foreignKey:RoleID"`
 }
 
 func (Role) TableName() string { return "roles" }
 
 func (r Role) IsBuiltin() bool { return r.Type == RoleTypeBuiltin }
+
+func (r Role) IsSuperAdmin() bool { return r.Code == RoleCodeSuperAdmin }
+
+// RolePermission binds a feature full_code to a role.
+type RolePermission struct {
+	ID         uint   `json:"id" gorm:"primaryKey"`
+	RoleID     uint   `json:"role_id" gorm:"index;not null"`
+	Permission string `json:"permission" gorm:"size:200;not null;index"`
+}
+
+func (RolePermission) TableName() string { return "role_permissions" }
 
 // UserRole is the user↔role M2M join row.
 type UserRole struct {

@@ -193,7 +193,8 @@ func TestProjectACLUsesResolvedRolePermissions(t *testing.T) {
 	if err := users.Create(user); err != nil {
 		t.Fatal(err)
 	}
-	role, err := roleService.Create("项目范围管理员", "project_scope_admin", "", "")
+	role, err := roleService.Create("项目范围管理员", "project_scope_admin", "", "",
+		[]string{"project_projects:view", "project_projects:view_all", "project_projects:manage_all", "project_projects:update"})
 	if err != nil {
 		t.Fatal(err)
 	}

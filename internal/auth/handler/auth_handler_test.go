@@ -61,7 +61,7 @@ func setupAuthRouter(t *testing.T, allowRegister bool) *gin.Engine {
 	if err := seed.EnsureRBACResources(gdb); err != nil {
 		t.Fatal(err)
 	}
-	if err := seed.EnsureDefaultUserRole(gdb); err != nil {
+	if err := seed.EnsureBuiltinRoles(gdb); err != nil {
 		t.Fatal(err)
 	}
 
@@ -195,7 +195,7 @@ func TestRegister_success(t *testing.T) {
 	r := setupAuthRouter(t, true)
 
 	w := postJSON(r, "/api/v1/auth/register", map[string]string{
-		"username": "alice", "password": "password123",
+		"username": "alice", "password": "password123", "role_code": "tester",
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
@@ -292,12 +292,14 @@ func TestRegister_rejections(t *testing.T) {
 		body          map[string]string
 		wantStatus    int
 	}{
-		{"disabled", false, map[string]string{"username": "bob", "password": "password123"}, http.StatusForbidden},
-		{"duplicate username", true, map[string]string{"username": "admin", "password": "password123"}, http.StatusBadRequest},
-		{"short username", true, map[string]string{"username": "ab", "password": "password123"}, http.StatusBadRequest},
-		{"short password", true, map[string]string{"username": "bob", "password": "short"}, http.StatusBadRequest},
-		{"missing password", true, map[string]string{"username": "bob"}, http.StatusBadRequest},
-		{"missing username", true, map[string]string{"password": "password123"}, http.StatusBadRequest},
+		{"disabled", false, map[string]string{"username": "bob", "password": "password123", "role_code": "tester"}, http.StatusForbidden},
+		{"duplicate username", true, map[string]string{"username": "admin", "password": "password123", "role_code": "tester"}, http.StatusBadRequest},
+		{"short username", true, map[string]string{"username": "ab", "password": "password123", "role_code": "tester"}, http.StatusBadRequest},
+		{"short password", true, map[string]string{"username": "bob", "password": "short", "role_code": "tester"}, http.StatusBadRequest},
+		{"missing password", true, map[string]string{"username": "bob", "role_code": "tester"}, http.StatusBadRequest},
+		{"missing username", true, map[string]string{"password": "password123", "role_code": "tester"}, http.StatusBadRequest},
+		{"missing role", true, map[string]string{"username": "bob", "password": "password123"}, http.StatusBadRequest},
+		{"bogus role", true, map[string]string{"username": "bob", "password": "password123", "role_code": "hacker"}, http.StatusBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

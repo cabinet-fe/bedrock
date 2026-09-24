@@ -17,6 +17,8 @@ import (
 	aihandler "bedrock/internal/ai/handler"
 	airepo "bedrock/internal/ai/repository"
 	aiservice "bedrock/internal/ai/service"
+	authmodel "bedrock/internal/auth/model"
+	authrepo "bedrock/internal/auth/repository"
 	"bedrock/internal/pkg"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
@@ -50,6 +52,23 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	}
 	if err := seed.EnsureRBACResources(gdb); err != nil {
 		t.Fatalf("seed rbac resources: %v", err)
+	}
+
+	// User 2 (plain account) gets provider permissions via a bound role.
+	userRepo := authrepo.NewUserRepository(gdb)
+	for _, name := range []string{"u1", "u2"} {
+		if err := userRepo.Create(&authmodel.User{Username: name, PasswordHash: "hash", IsActive: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	roleSvc := rbacservice.NewRoleService(rbacrepo.NewRoleRepository(gdb), rbacrepo.NewResourceRepository(gdb))
+	providerRole, err := roleSvc.Create("服务商管理", "provider_admin", "", "",
+		[]string{"ai_providers:view", "ai_providers:create", "ai_providers:update", "ai_providers:delete"})
+	if err != nil {
+		t.Fatalf("create provider role: %v", err)
+	}
+	if err := roleSvc.SetUserRoles(2, []uint{providerRole.ID}); err != nil {
+		t.Fatal(err)
 	}
 
 	permSvc := rbacservice.NewPermissionService(

@@ -20,10 +20,19 @@ const mode = ref<"login" | "register">("login");
 // 嵌入部署由服务端注入；dev / 未注入时视为开放
 const allowRegister = window.__BEDROCK_ALLOW_REGISTER__ !== false;
 const loading = ref(false);
+// 注册可选的系统内置角色（与后端 seed 一一对应）
+const ROLE_OPTIONS = [
+  { label: "开发", value: "developer" },
+  { label: "测试", value: "tester" },
+  { label: "运维", value: "ops" },
+  { label: "实施", value: "implementer" },
+  { label: "产品", value: "product" },
+];
 const formData = reactive({
   username: "",
   password: "",
   confirm: "",
+  role: "developer",
 });
 const errors = reactive({
   username: "",
@@ -125,7 +134,7 @@ async function handleSubmit() {
   loading.value = true;
   try {
     if (mode.value === "register") {
-      await auth.register(formData.username, formData.password);
+      await auth.register(formData.username, formData.password, formData.role);
     } else {
       await auth.login(formData.username, formData.password);
     }
@@ -205,6 +214,15 @@ async function handleSubmit() {
         />
       </label>
       <p v-if="mode === 'register' && errors.confirm" class="term-error">✗ {{ errors.confirm }}</p>
+
+      <label v-if="mode === 'register'" class="term-line term-field">
+        <span class="term-prompt">role:</span>
+        <select v-model="formData.role" class="term-select">
+          <option v-for="opt in ROLE_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+      </label>
 
       <button class="term-submit" type="submit" :disabled="loading">
         <template v-if="loading">{{ mode === "login" ? "[ 验证中 … ]" : "[ 创建中 … ]" }}</template>
@@ -407,6 +425,31 @@ async function handleSubmit() {
   &:focus {
     border-bottom-color: var(--seal);
     border-bottom-style: solid;
+  }
+}
+
+.term-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0 0 2px;
+  font: inherit;
+  color: var(--u-text-color-title);
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--u-border-color);
+  border-radius: 0;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+
+  &:focus {
+    border-bottom-color: var(--seal);
+    border-bottom-style: solid;
+  }
+
+  option {
+    color: initial;
+    background: initial;
   }
 }
 

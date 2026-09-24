@@ -310,7 +310,8 @@ func TestHandler_AllowedWithGrantedPermission(t *testing.T) {
 	if err := users.Create(granted); err != nil {
 		t.Fatal(err)
 	}
-	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "")
+	role, err := roleSvc.Create("会话用户", "harness_chat_user", "", "",
+		[]string{"harness_chat:view", "harness_chat:send", "harness_chat:approve"})
 	if err != nil {
 		t.Fatalf("create role with harness_chat permissions (seed must expose them): %v", err)
 	}

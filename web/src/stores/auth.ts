@@ -27,8 +27,8 @@ export const useAuthStore = defineStore("auth", () => {
     await establishSession(data);
   }
 
-  async function register(username: string, password: string): Promise<void> {
-    const data = await registerApi(username, await encryptLoginPassword(password));
+  async function register(username: string, password: string, roleCode: string): Promise<void> {
+    const data = await registerApi(username, await encryptLoginPassword(password), roleCode);
     await establishSession(data);
   }
 

@@ -70,11 +70,12 @@ func (h *AuthHandler) readRefreshToken(c *gin.Context) string {
 }
 
 // credentialsPayload is the shared login/register body: cipher preferred,
-// plaintext password allowed for debug only.
+// plaintext password allowed for debug only. RoleCode is register-only.
 type credentialsPayload struct {
 	Username       string `json:"username" binding:"required"`
 	Password       string `json:"password"`
 	PasswordCipher string `json:"password_cipher"`
+	RoleCode       string `json:"role_code"`
 }
 
 // resolvePassword decrypts password_cipher, falling back to plaintext password.
@@ -150,7 +151,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "注册参数无效")
 		return
 	}
-	user, err := h.auth.Register(req.Username, password)
+	user, err := h.auth.Register(req.Username, password, req.RoleCode)
 	if err != nil {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return

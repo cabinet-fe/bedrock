@@ -37,7 +37,7 @@ const formGroups = [
 
 const roleOptions = computed(() =>
   roles.value
-    .filter((r) => r.type !== "builtin" && r.code !== "super_admin")
+    .filter((r) => r.code !== "super_admin")
     .map((r) => ({ label: `${r.name} (${r.code})`, value: r.id })),
 );
 

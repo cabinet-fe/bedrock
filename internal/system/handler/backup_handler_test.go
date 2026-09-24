@@ -103,7 +103,7 @@ func setupHandlerTestEnv(t *testing.T) *handlerTestEnv {
 		t.Fatalf("create admin: %v", err)
 	}
 
-	// Create normal user (no permissions)
+	// Create normal user with a backup-viewer role (per-role authorization)
 	normal := &authmodel.User{
 		Username:     "normaluser",
 		PasswordHash: pwdHash,
@@ -112,6 +112,14 @@ func setupHandlerTestEnv(t *testing.T) *handlerTestEnv {
 	}
 	if err := userRepo.Create(normal); err != nil {
 		t.Fatalf("create normal user: %v", err)
+	}
+	roleSvc := rbacservice.NewRoleService(roleRepo, resourceRepo)
+	viewerRole, err := roleSvc.Create("备份查看", "backup_viewer", "", "", []string{"system_backup:view"})
+	if err != nil {
+		t.Fatalf("create backup viewer role: %v", err)
+	}
+	if err := roleSvc.SetUserRoles(normal.ID, []uint{viewerRole.ID}); err != nil {
+		t.Fatal(err)
 	}
 
 	backupRepo := repository.NewBackupRepository(gdb)

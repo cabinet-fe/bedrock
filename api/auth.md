@@ -19,13 +19,13 @@
 ### POST /auth/register — 注册
 
 认证：不需要
-请求：{ username*, password_cipher, password }
+请求：{ username*, password_cipher, password, role_code* }
 前置：`auth.allow_register`（默认 true）控制注册开放；关闭时一律 403
-校验：用户名 3-50 字符（去首尾空白后）；密码 ≥ 8 位
+校验：用户名 3-50 字符（去首尾空白后）；密码 ≥ 8 位；`role_code` 必填，须为注册可选内置角色（`developer` / `tester` / `ops` / `implementer` / `product`），非法值 400
 响应头：写入 HttpOnly `refresh_token`（同登录）
 响应 200：data = LoginResponse（注册即登录）
-错误：400（参数无效 / 用户名已被占用）/ 403（注册未开放）
-说明：新用户自动绑定内置「普通用户」角色（数据范围 self）：可见构建、脚本、流水线、项目、缺陷、智能体、技能模块，数据仅限自己创建的（公开资源按 D3 仍可读）；更多权限由管理员分配角色。
+错误：400（参数无效 / 用户名已被占用 / 无效角色）/ 403（注册未开放）
+说明：新用户绑定所选内置角色（数据范围均为 self）：数据默认仅自己可见，协作模块（项目/工作项）按创建人、成员、负责人或关注人可见他人内容；权限矩阵由系统预置，管理员可后续调整或换绑其它角色。
 
 ### POST /auth/refresh — 刷新访问令牌
 

@@ -73,10 +73,10 @@
 ### POST /roles — 创建角色
 
 权限：`system_roles:create`
-请求：{ name*, code*, description, data_scope }
+请求：{ name*, code*, description, data_scope, permissions: string[] }
 响应 201：data = Role
 错误：400 / 403
-说明：`data_scope` 为 `self` | `all`，缺省 `self`。权限不可按角色分配：所有角色默认拥有除 `super_admin_only` 功能外的全部功能权限。
+说明：`data_scope` 为 `self` | `all`，缺省 `self`；`permissions` 为功能 full_code 数组，须为已存在、非 `super_admin_only` 的功能资源。
 
 ### GET /roles/{id} — 获取角色
 
@@ -92,7 +92,23 @@
 请求：{ name, description, data_scope }
 响应 200：data = Role
 错误：400
-说明：内置角色不可改；`data_scope` 为 `self` | `all`。
+说明：自定义角色可改名；内置角色（除 `super_admin`）名称与编码锁定，仅可改 `description` 与 `data_scope`；`super_admin` 角色完全不可改。
+
+### PUT /roles/{id}/permissions — 替换角色权限
+
+权限：`system_roles:update`
+路径参数：id*: integer
+请求：{ permissions*: string[] }
+响应 200：data = Role
+错误：400
+说明：整体替换该角色绑定的功能权限码。拒绝 `super_admin` 角色；拒绝不存在、非功能型或 `super_admin_only` 的权限码。
+
+### GET /roles/permission-catalog — 角色绑权目录
+
+权限：`system_roles:view`
+响应 200：data = { items: PermissionCatalogGroup[] }
+错误：403
+说明：分组 → 菜单 → 功能三层目录，供角色权限编辑器渲染勾选树；`super_admin_only` 项前端禁选。
 
 ### DELETE /roles/{id} — 删除角色
 
@@ -102,7 +118,7 @@
 错误：400
 说明：内置角色（`type=builtin`）不可删除。
 
-说明（角色权限模型）：权限不可按角色编辑。所有角色默认拥有除 `super_admin_only` 功能（运维菜单、仪表盘「系统信息」「系统状态」卡片等）外的全部功能权限；仅超级管理员可访问 `super_admin_only` 功能。角色仅区分 `data_scope` 数据可见范围。原 `PUT /roles/{id}/permissions` 与 `GET /roles/permission-catalog` 端点已移除。
+说明（角色权限模型）：功能权限按角色绑定（`role_permissions` 表），用户的有效权限为其各角色绑定权限的并集，并剔除 `super_admin_only` 功能；超级管理员（`is_super_admin`）恒为全量。内置角色：`super_admin`（全量，不可编辑）与注册可选的 开发 `developer` / 测试 `tester` / 运维 `ops` / 实施 `implementer` / 产品 `product`（`data_scope=self`，权限矩阵由种子初始化，管理员可调整）。仅仪表盘「系统信息」「系统状态」卡片保持 `super_admin_only` 强制标记。
 
 ## 菜单分组
 

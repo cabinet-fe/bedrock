@@ -24,26 +24,18 @@ func NewPermissionService(
 	return &PermissionService{roles: roles, resources: resources, groups: groups}
 }
 
-// ResolvePermissions returns the effective permission code set for a user.
-// Every role carries all feature permissions by default: super-admin receives
-// every feature full_code; non-super gets all of them with super_admin_only
-// features stripped.
+// ResolvePermissions returns the effective permission code set for a user:
+// the union of the permissions bound to the user's roles, with
+// super_admin_only features stripped. Super-admin receives every full_code.
 func (s *PermissionService) ResolvePermissions(userID uint, isSuperAdmin bool) ([]string, error) {
 	if isSuperAdmin {
 		return s.allFeaturePermissions()
 	}
-	features, err := s.resources.ListFeatures()
+	codes, err := s.roles.ListPermissionsByUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, len(features))
-	for _, f := range features {
-		if f.FullCode != "" && !f.SuperAdminOnly {
-			out = append(out, f.FullCode)
-		}
-	}
-	sort.Strings(out)
-	return out, nil
+	return s.filterSuperAdminOnly(uniqSorted(codes))
 }
 
 // ResolveDataScope returns the widest data_scope among the user's roles.
@@ -252,6 +244,40 @@ func (s *PermissionService) allFeaturePermissions() ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// filterSuperAdminOnly drops super_admin_only codes: feature rows carry the
+// flag themselves, and stale codes are cleaned up when resources are deleted
+// or renamed.
+func (s *PermissionService) filterSuperAdminOnly(codes []string) ([]string, error) {
+	if len(codes) == 0 {
+		return codes, nil
+	}
+	resources, err := s.resources.ListByFullCodes(codes)
+	if err != nil {
+		return nil, err
+	}
+	gated := make(map[string]bool, len(resources))
+	for _, resource := range resources {
+		gated[resource.FullCode] = resource.SuperAdminOnly
+	}
+	out := make([]string, 0, len(codes))
+	for _, code := range codes {
+		if !gated[code] {
+			out = append(out, code)
+		}
+	}
+	return out, nil
+}
+
+func uniqSorted(codes []string) []string {
+	set := rbac.ToSet(codes)
+	out := make([]string, 0, len(set))
+	for c := range set {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
 }
 
 type forbiddenError struct{ msg string }

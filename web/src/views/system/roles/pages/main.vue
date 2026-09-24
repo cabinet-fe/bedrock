@@ -5,18 +5,32 @@ import { computed, reactive, ref, useTemplateRef } from "vue";
 import { o } from "@cat-kit/core";
 import { message } from "@veltra/desktop";
 
-import { createRole, deleteRole, updateRole } from "@/api/system";
-import type { Role } from "@/api/types";
+import {
+  createRole,
+  deleteRole,
+  getPermissionCatalog,
+  setRolePermissions,
+  updateRole,
+} from "@/api/system";
+import type {
+  PermissionCatalogFeature,
+  PermissionCatalogGroup,
+  PermissionCatalogMenu,
+  Role,
+} from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusy, useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
+import { useAuthStore } from "@/stores/auth";
 
 const { hasPermission } = usePermission();
 const { busyKey, bind } = useBusyKey();
+const { busy: permBusy, run: runPerm } = useBusy();
+const auth = useAuthStore();
 const listRef = useTemplateRef("list");
 const dialogOpen = ref(false);
-const permsOpen = ref(false);
+const permOpen = ref(false);
 const editing = ref<Role | null>(null);
 const form = reactive({
   name: "",
@@ -24,6 +38,8 @@ const form = reactive({
   description: "",
   data_scope: "self" as "self" | "all",
 });
+const catalog = ref<PermissionCatalogGroup[]>([]);
+const checked = ref<Set<string>>(new Set());
 
 const DATA_SCOPE_OPTIONS = [
   { label: "仅自己", value: "self" },
@@ -41,13 +57,17 @@ const columns = defineProTableColumns([
   { key: "data_scope", name: "数据权限", width: 100, align: "center" },
   { key: "type", name: "类型", width: 90, align: "center" },
   { key: "description", name: "描述" },
-  { key: "action", name: "操作", width: 200, align: "center", fixed: "right" },
+  { key: "action", name: "操作", width: 280, align: "center", fixed: "right" },
 ]);
 
 const isBuiltin = computed(() => editing.value?.type === "builtin");
 
 function isBuiltinRole(row: Role) {
   return row.type === "builtin" || row.code === "super_admin";
+}
+
+function isSuperAdminRole(row: Role) {
+  return row.code === "super_admin";
 }
 
 function openCreate() {
@@ -57,15 +77,62 @@ function openCreate() {
 }
 
 function openEdit(row: Role) {
-  if (isBuiltinRole(row)) return;
+  if (isSuperAdminRole(row)) return;
   editing.value = row;
   o(form).extend(row);
   dialogOpen.value = true;
 }
 
-function openPerms(row: Role) {
+const openPerms = bind(async (row: Role) => {
   editing.value = row;
-  permsOpen.value = true;
+  if (isSuperAdminRole(row)) {
+    permOpen.value = true;
+    return;
+  }
+  if (!catalog.value.length) {
+    const res = await getPermissionCatalog();
+    catalog.value = res.items ?? [];
+  }
+  checked.value = new Set((row.permissions ?? []).map((p) => p.permission));
+  permOpen.value = true;
+});
+
+function isChecked(code: string) {
+  return checked.value.has(code);
+}
+
+function isFeatureBindable(feat: PermissionCatalogFeature) {
+  return !feat.super_admin_only && feat.enabled;
+}
+
+function bindableFeatures(menu: PermissionCatalogMenu) {
+  return (menu.features ?? []).filter(isFeatureBindable);
+}
+
+function menuCheckState(menu: PermissionCatalogMenu): boolean | "indeterminate" {
+  const feats = bindableFeatures(menu);
+  if (!feats.length) return false;
+  const n = feats.filter((f) => checked.value.has(f.full_code)).length;
+  if (n === 0) return false;
+  if (n === feats.length) return true;
+  return "indeterminate";
+}
+
+function toggleFeature(feat: PermissionCatalogFeature, on: boolean) {
+  if (!isFeatureBindable(feat)) return;
+  const next = new Set(checked.value);
+  if (on) next.add(feat.full_code);
+  else next.delete(feat.full_code);
+  checked.value = next;
+}
+
+function toggleMenu(menu: PermissionCatalogMenu, on: boolean) {
+  const next = new Set(checked.value);
+  for (const feat of bindableFeatures(menu)) {
+    if (on) next.add(feat.full_code);
+    else next.delete(feat.full_code);
+  }
+  checked.value = next;
 }
 
 async function save() {
@@ -78,7 +145,7 @@ async function save() {
       });
       message.success("已更新");
     } else {
-      await createRole({ ...form });
+      await createRole({ ...form, permissions: [] });
       message.success("已创建");
     }
     dialogOpen.value = false;
@@ -86,6 +153,21 @@ async function save() {
   } catch (err) {
     message.error(err instanceof Error ? err.message : "保存失败");
   }
+}
+
+async function savePerms() {
+  if (!editing.value || isSuperAdminRole(editing.value)) return;
+  await runPerm(async () => {
+    try {
+      await setRolePermissions(editing.value!.id, [...checked.value]);
+      message.success("权限已保存");
+      permOpen.value = false;
+      await listRef.value?.reload();
+      await auth.refreshMe(true);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "保存失败");
+    }
+  });
 }
 
 const remove = bind(async (row: Role) => {
@@ -123,13 +205,13 @@ const remove = bind(async (row: Role) => {
       <template #column:action="{ rowData }">
         <u-action-group :max="4" :loading="busyKey === (rowData as Role).id">
           <u-action
-            v-if="hasPermission('system_roles:update') && !isBuiltinRole(rowData as Role)"
+            v-if="hasPermission('system_roles:update') && !isSuperAdminRole(rowData as Role)"
             @run="openEdit(rowData as Role)"
           >
             编辑
           </u-action>
           <u-action v-if="hasPermission('system_roles:view')" @run="openPerms(rowData as Role)">
-            权限
+            {{ isSuperAdminRole(rowData as Role) ? "全部权限" : "权限" }}
           </u-action>
           <u-action
             v-if="hasPermission('system_roles:delete') && !isBuiltinRole(rowData as Role)"
@@ -151,7 +233,7 @@ const remove = bind(async (row: Role) => {
       style="width: 480px"
       @submit="save"
     >
-      <u-input label="名称" field="name" :rules="{ required: '必填' }" />
+      <u-input label="名称" field="name" :disabled="isBuiltin" :rules="{ required: '必填' }" />
       <u-input
         label="编码"
         field="code"
@@ -164,21 +246,63 @@ const remove = bind(async (row: Role) => {
         field="data_scope"
         :options="DATA_SCOPE_OPTIONS"
         :rules="{ required: '必填' }"
-        tips="仅自己：项目可见成员所在项目，CI/CD 仅自己创建的任务；全部：可读全部项目/任务（写权限仍靠成员角色或 manage_all）。与 view_all 并存，多角色取最宽"
+        tips="仅自己：项目可见成员所在项目，CI/CD 仅自己创建的任务；全部：可读全部项目/任务（写权限仍靠成员角色或 manage_all）。多角色取最宽"
       />
       <u-input label="描述" field="description" />
     </FormDialog>
 
-    <u-dialog v-model="permsOpen" title="角色权限" style="width: 560px">
-      <p class="perm-hint">
-        所有角色默认拥有除「系统信息」「系统状态」外的全部功能权限，无需也无法按角色分配。
+    <u-dialog v-model="permOpen" title="角色权限" style="width: 780px">
+      <p v-if="editing && isSuperAdminRole(editing)" class="perm-hint">
+        内置超级管理员拥有全部权限，不可修改绑定。
       </p>
-      <p class="perm-hint">
-        仅超级管理员可访问系统信息与系统状态；角色仅用于区分数据可见范围（见上表「数据权限」）。
-      </p>
-      <p v-if="isBuiltin" class="perm-hint">内置超级管理员拥有全部权限。</p>
+      <template v-else>
+        <p class="perm-hint">
+          勾选该角色可使用的功能权限；标注「仅超管」的功能不可绑定。保存后立即生效。
+        </p>
+        <div class="perm-catalog">
+          <section v-for="group in catalog" :key="group.id" class="perm-group">
+            <h3 class="perm-group__title">{{ group.name }}</h3>
+            <div v-for="menu in group.menus" :key="menu.id" class="perm-menu">
+              <div class="perm-menu__head">
+                <u-checkbox
+                  :model-value="menuCheckState(menu) === true"
+                  :indeterminate="menuCheckState(menu) === 'indeterminate'"
+                  :disabled="!bindableFeatures(menu).length"
+                  @change="(on) => toggleMenu(menu, on)"
+                >
+                  <span class="perm-menu__title">{{ menu.title }}</span>
+                  <code class="perm-menu__code">{{ menu.code }}</code>
+                  <u-tag v-if="menu.hidden" size="small" type="info">隐藏</u-tag>
+                  <u-tag v-if="menu.super_admin_only" size="small" type="warning">仅超管</u-tag>
+                </u-checkbox>
+              </div>
+              <div class="perm-features">
+                <u-checkbox
+                  v-for="feat in menu.features"
+                  :key="feat.id"
+                  class="perm-check"
+                  :model-value="isChecked(feat.full_code)"
+                  :disabled="!isFeatureBindable(feat)"
+                  @change="(on) => toggleFeature(feat, on)"
+                >
+                  <span>{{ feat.title || feat.code }}</span>
+                  <u-tag v-if="feat.super_admin_only" size="small" type="warning">仅超管</u-tag>
+                </u-checkbox>
+              </div>
+            </div>
+          </section>
+        </div>
+      </template>
       <template #footer="{ close }">
-        <u-button type="primary" @click="close()">知道了</u-button>
+        <u-button text :disabled="permBusy" @click="close()">取消</u-button>
+        <u-button
+          v-if="editing && !isSuperAdminRole(editing)"
+          type="primary"
+          :loading="permBusy"
+          @click="savePerms"
+        >
+          保存权限
+        </u-button>
       </template>
     </u-dialog>
   </div>
@@ -190,5 +314,47 @@ const remove = bind(async (row: Role) => {
 .perm-hint {
   margin: 0 0 fn.use-var(gap, small);
   color: fn.use-var(text-color, second);
+}
+
+.perm-catalog {
+  max-height: 480px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: fn.use-var(gap, large);
+}
+
+.perm-group__title {
+  margin: 0 0 fn.use-var(gap, small);
+  font-size: fn.use-var(font-size-main, default);
+  font-weight: 600;
+  color: fn.use-var(text-color, title);
+}
+
+.perm-menu {
+  padding: fn.use-var(gap, small) 0;
+  border-bottom: fn.use-var(border);
+}
+
+.perm-menu__head {
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.perm-menu__code {
+  margin-left: 6px;
+  color: fn.use-var(text-color, assist);
+  font-size: 12px;
+}
+
+.perm-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding-left: 22px;
+}
+
+.perm-check {
+  font-size: 13px;
 }
 </style>

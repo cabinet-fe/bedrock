@@ -155,9 +155,11 @@ web/                      # Vue 3 前端
 
 ### 4.1 身份模型
 
-- **User**：可禁用；绑定 **多个 Role**；权限为系统级集合：除 `super_admin_only` 功能外全部功能 `full_code`（角色不再绑定权限，角色仅决定 `data_scope`）。
-- **Super Admin**：`users.is_super_admin` 为鉴权真源；内置角色 `code=super_admin`（`type=builtin`）与唯一超管用户 1:1 同步；不可删、不可通过用户角色绑定 API 赋给他人。
-- **自定义 Role**：`type=custom`；仅含名称、编码、描述与 `data_scope`（`self`/`all`），权限不可编辑。
+- **User**：可禁用；绑定 **多个 Role**；有效权限为各角色绑定功能 `full_code` 的**并集**（剔除 `super_admin_only`）；`data_scope` 取最宽（见 §4.4）。
+- **Super Admin**：`users.is_super_admin` 为鉴权真源；恒持有全部功能权限；内置角色 `code=super_admin`（`type=builtin`）与唯一超管用户 1:1 同步；不可删、不可改权限、不可通过用户角色绑定 API 赋给他人。
+- **内置业务 Role**（注册可选，`type=builtin`，`data_scope=self`）：开发 `developer` / 测试 `tester` / 运维 `ops` / 实施 `implementer` / 产品 `product`；名称与编码锁定，权限绑定、描述与 `data_scope` 可由管理员调整，不可删除；权限矩阵由 seed 首启初始化（已有绑定时不动）。
+- **自定义 Role**：`type=custom`；名称、编码、描述、`data_scope` 与功能权限均可编辑。
+- **RolePermission**：角色 ↔ 功能 `full_code` 绑定表（`role_permissions`，000063 重建）；资源删除/改码时级联清理失效授权。
 - **PAT**：属于 User；scope ⊆ {`skills:read`,`agents:run`,`docs:read`,`docs:write`,`dev_docs:read`,`dev_docs:write`,`builds:run`,`pipelines:run`,`scripts:run`}；明文前缀 `br_`+hex；存 SHA-256 哈希（鉴权）与 AES-GCM 密文（属主 `GET .../reveal` 返回密文，前端解密）；列表仅元数据 + `copyable`；历史无密文不可复制。属主可更新名称、scope、过期与吊销（`revoked_at`），**不轮换**明文/哈希/密文。
 
 ### 4.2 权限码
@@ -209,6 +211,7 @@ RbacResource
 ```
 
 - **项目域读**：持有 `project_projects:view`（及子域 `:view`）且满足上述数据范围；`data_scope=self` 时须为成员或创建人。非成员 `my_role` 为空，`permissions` 能力位全 false。
+- **工作项条目级读范围**：缺陷/需求/任务在项目内再做协作人过滤——member/readonly 项目角色（及 `data_scope=self` 非成员的可读路径）仅见 `created_by=自己` 或 `assignee_id=自己` 的条目，覆盖列表、看板、详情、状态统计与评论/附件读取；越权读详情返回 404。Owner/Admin 项目角色与全数据权限（超管、`data_scope=all`、`manage_all`）不受限。
 - **项目域写**：仍需成员角色允许，或 `manage_all` / 超管；普通 `:update` **不**隐含全局越权。
 - `manage_all`：可管理全部项目成员与内容，**无需**加入项目。
 - Owner 转让：仅当前 Owner 或 `manage_all`。

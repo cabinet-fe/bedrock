@@ -84,6 +84,15 @@ func (r *ResourceRepository) CountChildren(parentID uint) (int64, error) {
 	return n, err
 }
 
+// DeleteRolePermissionsByFullCodes removes stale role bindings left behind by
+// deleted or renamed permission resources.
+func (r *ResourceRepository) DeleteRolePermissionsByFullCodes(fullCodes []string) error {
+	if len(fullCodes) == 0 {
+		return nil
+	}
+	return r.db.Where("permission IN ?", fullCodes).Delete(&model.RolePermission{}).Error
+}
+
 // IsSuperAdminOnly reports whether the permission's resource (by full_code) is gated.
 // Falls back to looking up the menu code (left of ':') when the exact full_code is missing.
 func (r *ResourceRepository) IsSuperAdminOnly(fullCode string) (bool, error) {

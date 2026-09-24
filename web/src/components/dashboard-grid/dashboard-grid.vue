@@ -72,7 +72,7 @@ const gridOptions: GridStackOptions = {
   cellHeight: 80,
   margin: 10,
   animate: true,
-  float: false,
+  mode: "top",
   handle: ".dashboard-widget__drag",
   alwaysShowResizeHandle: true,
   minRow: 1,

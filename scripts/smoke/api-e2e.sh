@@ -299,9 +299,11 @@ AUDIT="$(curl -fsS "$BASE/api/v1/operation-logs?action=harness_permission_reply&
 json_get "$AUDIT" "any(i.get('resource_id')=='$SID' for i in o['data']['items'])" >/dev/null
 echo "harness permission reply audited"
 
-echo "==> harness RBAC: plain user has all non-super-admin-only features"
+echo "==> harness RBAC: developer-role user has its granted non-super-admin features"
+ROLES_JSON="$(curl -fsS "$BASE/api/v1/roles?page_size=100" "${AUTH[@]}")"
+DEV_ROLE_ID="$(json_get "$ROLES_JSON" "[r['id'] for r in o['data']['items'] if r['code']=='developer'][0]")"
 curl -fsS -X POST "$BASE/api/v1/users" "${AUTH[@]}" \
-  -d '{"username":"smoke-plain","password":"smoke-pass-123","display_name":"Plain User"}' >/dev/null
+  -d "{\"username\":\"smoke-plain\",\"password\":\"smoke-pass-123\",\"display_name\":\"Plain User\",\"role_ids\":[$DEV_ROLE_ID]}" >/dev/null
 PLAIN_LOGIN="$(curl -fsS -X POST "$BASE/api/v1/auth/login" -H 'Content-Type: application/json' \
   -d '{"username":"smoke-plain","password":"smoke-pass-123"}')"
 PLAIN_TOKEN="$(json_get "$PLAIN_LOGIN" "o['data']['access_token']")"

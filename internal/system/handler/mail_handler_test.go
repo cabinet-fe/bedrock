@@ -73,6 +73,15 @@ func setupMailHandlerRouter(t *testing.T) *gin.Engine {
 	if err := userRepo.Create(normal); err != nil {
 		t.Fatalf("create normal user: %v", err)
 	}
+	roleSvc := rbacservice.NewRoleService(roleRepo, resourceRepo)
+	settingsRole, err := roleSvc.Create("邮件设置", "mail_settings", "", "",
+		[]string{"system_settings:view", "system_settings:update"})
+	if err != nil {
+		t.Fatalf("create mail settings role: %v", err)
+	}
+	if err := roleSvc.SetUserRoles(normal.ID, []uint{settingsRole.ID}); err != nil {
+		t.Fatal(err)
+	}
 
 	mailSvc := service.NewMailService(repository.NewMailRepository(gdb))
 	mailSvc.SetSender(func(model.MailSMTPConfig, string, string, string, string) error { return nil })

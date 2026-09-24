@@ -67,14 +67,12 @@ func EnsureRBACResources(db *gorm.DB) error {
 			Code: "ops", Name: "运维", RoutePrefix: "/ops", SortKey: 20,
 			Menus: []seedMenu{
 				{
-					Code: "ops_processes", Title: "进程", Route: "/ops/processes", SortKey: 10,
-					SuperAdminOnly: true,
-					Actions:        []string{"view", "execute"},
+					Code:    "ops_processes", Title: "进程", Route: "/ops/processes", SortKey: 10,
+					Actions: []string{"view", "execute"},
 				},
 				{
-					Code: "ops_dev_environments", Title: "开发环境", Route: "/ops/dev-environments", SortKey: 20,
-					SuperAdminOnly: true,
-					Actions:        []string{"view", "create", "update", "delete", "execute"},
+					Code:    "ops_dev_environments", Title: "开发环境", Route: "/ops/dev-environments", SortKey: 20,
+					Actions: []string{"view", "create", "update", "delete", "execute"},
 				},
 			},
 		},
