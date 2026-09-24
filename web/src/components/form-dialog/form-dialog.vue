@@ -2,54 +2,52 @@
 import { ref, toRaw, useTemplateRef, watch } from "vue";
 import type { FormExposed } from "@veltra/desktop";
 
-/** 分组表单配置：传入后默认插槽失效，改用 `group:${key}` 具名插槽 */
+/** Grouped form config: when set, the default slot is disabled; use the `group:${key}` named slots instead */
 export interface FormDialogGroup {
   title: string;
   key: string;
 }
 
+const model = defineModel<boolean>({ default: false });
+
 const props = withDefaults(
   defineProps<{
-    modelValue?: boolean;
     title?: string;
     /**
-     * 表单 model。组件挂载时深拷贝为默认值；关闭时自动恢复默认值。
-     * 编辑打开前直接写入 model，再打开弹框即可。
-     * 分组模式下同一个 model 传入各分组表单。
+     * Form model. Deep-copied as defaults at mount; restored automatically on close.
+     * For editing, write into model before opening the dialog.
+     * In grouped mode, the same model is passed to every group form.
      */
     model: Record<string, any>;
-    /** 分组配置。传入后按分组渲染多个表单，插槽名为 `group:${key}` */
+    /** Group config. When set, renders multiple forms per group, with slot names `group:${key}` */
     groups?: FormDialogGroup[];
     labelWidth?: string | number;
     confirmText?: string;
     /**
-     * 校验通过后调用。父组件写 `@submit="save"` 即可；
-     * 若返回 Promise，确认按钮自动进入 loading 并防连点。
+     * Called after validation passes. Parents write `@submit="save"`;
+     * if it returns a Promise, the confirm button auto-loads and double clicks are guarded.
      */
     onSubmit?: () => void | Promise<void>;
   }>(),
   {
-    modelValue: false,
-
     labelWidth: "88px",
     confirmText: "保存",
   },
 );
 
 const emit = defineEmits<{
-  "update:modelValue": [value: boolean];
   closed: [];
 }>();
 
 const formRef = useTemplateRef("form");
-/** 分组模式下的表单实例（v-for 自动收集为数组） */
+/** Form instances in grouped mode (v-for collects them into an array) */
 const groupFormRefs = useTemplateRef<FormExposed[]>("group-forms");
-/** 每次打开递增，让表单按当前 model 重新快照（供会话内 u-form.reset） */
+/** Increments per open so forms re-snapshot the current model (for in-session u-form.reset) */
 const sessionKey = ref(0);
-/** 提交中：确认按钮 loading，取消按钮 disabled，并防连点 */
+/** Submitting: confirm button loading, cancel disabled, double-clicks guarded */
 const busy = ref(false);
 
-/** 挂载时的默认值快照（保留 undefined） */
+/** Default-value snapshot at mount (keeps undefined) */
 const defaults = plainClone(props.model);
 
 function plainClone(value: unknown): unknown {
@@ -63,12 +61,12 @@ function plainClone(value: unknown): unknown {
   return out;
 }
 
-/** 当前生效的表单实例：分组模式多个，默认模式单个 */
+/** The active form instance(s): one per group in grouped mode, one in default mode */
 function forms(): FormExposed[] {
   return groupFormRefs.value ?? (formRef.value ? [formRef.value] : []);
 }
 
-/** 将 model 恢复为挂载时默认值，并清除校验 */
+/** Restores model to the mount-time defaults and clears validation */
 function reset() {
   const next = plainClone(defaults) as Record<string, unknown>;
   for (const key of Object.keys(props.model)) {
@@ -77,20 +75,17 @@ function reset() {
   forms().forEach((form) => form.clearValidate());
 }
 
-watch(
-  () => props.modelValue,
-  (open, wasOpen) => {
-    if (open) {
-      sessionKey.value += 1;
-      return;
-    }
-    // 同步恢复默认值，避免关闭动画结束前再次打开编辑时脏数据残留
-    if (wasOpen) {
-      busy.value = false;
-      reset();
-    }
-  },
-);
+watch(model, (open, wasOpen) => {
+  if (open) {
+    sessionKey.value += 1;
+    return;
+  }
+  // Restore defaults synchronously so reopening edit before the close animation ends never shows stale data
+  if (wasOpen) {
+    busy.value = false;
+    reset();
+  }
+});
 
 async function onConfirm() {
   if (busy.value) return;
@@ -110,12 +105,7 @@ function onClosed() {
 </script>
 
 <template>
-  <u-dialog
-    :model-value="modelValue"
-    :title="title"
-    @update:model-value="emit('update:modelValue', $event)"
-    @closed="onClosed"
-  >
+  <u-dialog v-model="model" :title="title" @closed="onClosed">
     <!-- 表单前置内容（提示、说明等） -->
     <slot name="prepend" />
 
@@ -164,18 +154,18 @@ function onClosed() {
   border-radius: fn.use-var(radius, default);
   padding: fn.use-var(gap, large);
 
-  // 组间距需容纳上一组底边到本组标题（标题上探出半边高度）
+  // Group spacing must fit the previous group's bottom edge to this group's title (title protrudes by half its height)
   & + & {
     margin-top: calc(fn.use-var(gap, large) * 2);
   }
 
-  // 首组与 dialog 顶边之间给标题留位
+  // Leave room for the title between the first group and the dialog top edge
   &:first-of-type {
     margin-top: fn.use-var(gap, large);
   }
 }
 
-// 标题压在分组框左上角边框上，背景与 dialog body 一致以"切开"边框
+// Title sits on the group box's top-left border; its bg matches the dialog body to "cut" the border
 .form-dialog__group-title {
   position: absolute;
   top: 0;

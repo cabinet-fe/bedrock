@@ -34,7 +34,7 @@ import RepoSelect from "@/components/repo-select";
 import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { tagType, triggerTypeLabel, type TagType } from "@/lib/tag";
-import RunHistoryDialog from "../components/run-history-dialog.vue";
+import RunHistoryDialog from "@/components/run-history-dialog/run-history-dialog.vue";
 import { repoBindingPath } from "../repo-dir-name";
 
 function parsePositiveInt(raw: unknown): number | undefined {

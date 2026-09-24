@@ -10,21 +10,23 @@ import type { PipelineNodeEnvVar } from "@/api/types";
 import { NODE_TYPE_LABEL, type PipelineNodeData } from "../graph";
 
 interface EnvRow {
+  /** Stable identity for v-for keys; rows can be deleted */
+  uid: number;
   key: string;
   value: string;
-  /** 节点已存密值（图上 env_vars 回显） */
+  /** Secrets already stored on the node (echoed back as env_vars on the graph) */
   has_value: boolean;
-  /** 自定义 key 行（非任务定义） */
+  /** Custom key rows (not from the task definition) */
   custom: boolean;
 }
 
+const model = defineModel<boolean>({ required: true });
+
 const props = defineProps<{
-  modelValue: boolean;
   node: Node | null;
 }>();
 
 const emit = defineEmits<{
-  "update:modelValue": [value: boolean];
   save: [data: PipelineNodeData];
 }>();
 
@@ -35,11 +37,12 @@ const drawerTitle = computed(() => `配置节点 · ${NODE_TYPE_LABEL[nodeType.v
 const form = reactive({ label: "", target_id: undefined as number | undefined });
 const envRows = ref<EnvRow[]>([]);
 const targetOptions = ref<{ label: string; value: number }[]>([]);
-/** 智能体列表加载失败（如无 ai_agents:view 权限）时降级为 ID 输入 */
+/** Falls back to ID input when the agent list fails to load (e.g. no ai_agents:view permission) */
 const agentListFailed = ref(false);
 
 let savedEnvVars: PipelineNodeEnvVar[] = [];
-/** 已完成初始化的目标 id；与 form.target_id 不一致时才视为用户切换目标 */
+let nextEnvRowUID = 1;
+/** The target id initialized already; only a mismatch with form.target_id counts as a user switch */
 let loadedTargetId: number | undefined;
 
 function targetIdOf(data: PipelineNodeData): number | undefined {
@@ -68,7 +71,7 @@ async function loadOptions() {
   }
 }
 
-/** 拉取任务定义的变量 key 列表，重建变量行；initial 时合并节点已存 env_vars */
+/** Fetches the task definition's variable keys to rebuild variable rows; merges the node's stored env_vars when initial */
 async function loadTargetDetail(id: number | undefined, initial: boolean) {
   loadedTargetId = id;
   envRows.value = [];
@@ -78,6 +81,7 @@ async function loadTargetDetail(id: number | undefined, initial: boolean) {
     const taskKeys = (detail.env_vars ?? []).map((e) => e.key);
     const saved = new Map(savedEnvVars.map((e) => [e.key, e]));
     const rows: EnvRow[] = taskKeys.map((key) => ({
+      uid: nextEnvRowUID++,
       key,
       value: "",
       has_value: initial ? (saved.get(key)?.has_value ?? false) : false,
@@ -86,7 +90,13 @@ async function loadTargetDetail(id: number | undefined, initial: boolean) {
     if (initial) {
       for (const e of savedEnvVars) {
         if (!taskKeys.includes(e.key)) {
-          rows.push({ key: e.key, value: "", has_value: e.has_value ?? false, custom: true });
+          rows.push({
+            uid: nextEnvRowUID++,
+            key: e.key,
+            value: "",
+            has_value: e.has_value ?? false,
+            custom: true,
+          });
         }
       }
     }
@@ -97,7 +107,7 @@ async function loadTargetDetail(id: number | undefined, initial: boolean) {
 }
 
 watch(
-  () => props.modelValue,
+  () => model.value,
   async (open) => {
     if (!open || !props.node) return;
     const data = (props.node.data ?? {}) as PipelineNodeData;
@@ -110,7 +120,7 @@ watch(
   },
 );
 
-// 切换目标时清空该节点已填的变量行，按新任务重建
+// Clearing the node's filled variable rows when switching targets; rebuilt from the new task
 watch(
   () => form.target_id,
   (id) => {
@@ -120,7 +130,10 @@ watch(
 );
 
 function addCustomRow() {
-  envRows.value = [...envRows.value, { key: "", value: "", has_value: false, custom: true }];
+  envRows.value = [
+    ...envRows.value,
+    { uid: nextEnvRowUID++, key: "", value: "", has_value: false, custom: true },
+  ];
 }
 
 function buildEnvVars(): PipelineNodeEnvVar[] | undefined {
@@ -161,18 +174,12 @@ function save() {
     data.agent_id = form.target_id;
   }
   emit("save", data);
-  emit("update:modelValue", false);
+  model.value = false;
 }
 </script>
 
 <template>
-  <u-drawer
-    :model-value="modelValue"
-    :title="drawerTitle"
-    show-close
-    style="width: 440px"
-    @update:model-value="emit('update:modelValue', $event)"
-  >
+  <u-drawer v-model="model" :title="drawerTitle" show-close style="width: 440px">
     <div class="node-config">
       <div class="node-config__body">
         <u-form :model="form" label-position="top">
@@ -216,7 +223,7 @@ function save() {
         <template v-if="isJobType && form.target_id">
           <div class="node-config__env-title">变量覆盖</div>
           <div class="env-rows">
-            <div v-for="(row, i) in envRows" :key="i" class="env-row">
+            <div v-for="(row, i) in envRows" :key="row.uid" class="env-row">
               <template v-if="!row.custom">
                 <code class="env-row__key">{{ row.key }}</code>
                 <u-input
@@ -244,7 +251,7 @@ function save() {
       </div>
 
       <footer class="node-config__footer">
-        <u-button @click="emit('update:modelValue', false)">取消</u-button>
+        <u-button @click="model.value = false">取消</u-button>
         <u-button type="primary" @click="save">保存</u-button>
       </footer>
     </div>

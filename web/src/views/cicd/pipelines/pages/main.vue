@@ -18,7 +18,7 @@ import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import ProjectSelect from "@/components/project-select";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
-import RunHistoryDialog from "@/views/projects/components/run-history-dialog.vue";
+import RunHistoryDialog from "@/components/run-history-dialog/run-history-dialog.vue";
 
 function parsePositiveInt(raw: unknown): number | undefined {
   const value = Array.isArray(raw) ? raw[0] : raw;

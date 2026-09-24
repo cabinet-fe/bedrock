@@ -23,7 +23,7 @@ function scriptTypeLabel(type: string) {
 
 import { isRunTerminal, useRunPoll } from "../composables/use-run-poll";
 import RunCard from "./run-card.vue";
-import RunHistoryDialog from "./run-history-dialog.vue";
+import RunHistoryDialog from "@/components/run-history-dialog/run-history-dialog.vue";
 
 const props = defineProps<{ project: ProductProject }>();
 
@@ -79,7 +79,7 @@ async function loadRecentStatus() {
       (res.items ?? []).map((r) => ({ entityId: r.script_job_id, runId: r.id, status: r.status })),
     );
   } catch {
-    /* 状态降级为无 */
+    /* Status falls back to none */
   }
 }
 
