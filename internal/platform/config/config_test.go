@@ -41,18 +41,6 @@ build:
 	if cfg.Database.Path != filepath.Join(tmpDir, "data", "db.sqlite") {
 		t.Fatalf("path=%q", cfg.Database.Path)
 	}
-	if cfg.Dsh.Enabled {
-		t.Fatal("dsh.enabled should be false when dsh section is omitted")
-	}
-	if cfg.Dsh.Bin != "dsh" || cfg.Dsh.Port != 17800 || cfg.Dsh.MaxSessions != 64 {
-		t.Fatalf("dsh defaults: bin=%q port=%d max_sessions=%d", cfg.Dsh.Bin, cfg.Dsh.Port, cfg.Dsh.MaxSessions)
-	}
-	if cfg.Dsh.StartupTimeout != "60s" || cfg.Dsh.HealthInterval != "10s" || cfg.Dsh.PendingTTL != "10m" || cfg.Dsh.SessionIdleTTL != "72h" {
-		t.Fatalf("dsh duration defaults: %+v", cfg.Dsh)
-	}
-	if !cfg.Dsh.AutoRestart || cfg.Dsh.ApprovalMode != "manual" || cfg.Dsh.LogDir != "" {
-		t.Fatalf("dsh other defaults: %+v", cfg.Dsh)
-	}
 	if cfg.Harness.Enabled {
 		t.Fatal("harness.enabled should be false when harness section is omitted")
 	}
@@ -103,87 +91,6 @@ encryption:
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for missing host")
-	}
-}
-
-func TestLoad_dshEnabledReadsKeys(t *testing.T) {
-	dir, path := writeConfig(t, `
-dsh:
-  enabled: true
-  bin: "/usr/local/bin/dsh"
-  home: "./data/dsh"
-  workspace_root: "./data/dsh-workspaces"
-  port: 17800
-  startup_timeout: "60s"
-  health_interval: "10s"
-  auto_restart: true
-  approval_mode: "manual"
-  pending_ttl: "10m"
-  session_idle_ttl: "72h"
-  log_dir: ""
-  max_sessions: 64
-`)
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.Dsh.Enabled {
-		t.Fatal("enabled")
-	}
-	if cfg.Dsh.Bin != "/usr/local/bin/dsh" {
-		t.Fatalf("bin=%q", cfg.Dsh.Bin)
-	}
-	if cfg.Dsh.Home != filepath.Join(dir, "data", "dsh") {
-		t.Fatalf("home=%q", cfg.Dsh.Home)
-	}
-	if cfg.Dsh.WorkspaceRoot != filepath.Join(dir, "data", "dsh-workspaces") {
-		t.Fatalf("workspace_root=%q", cfg.Dsh.WorkspaceRoot)
-	}
-	if cfg.Dsh.Port != 17800 || cfg.Dsh.MaxSessions != 64 {
-		t.Fatalf("port=%d max_sessions=%d", cfg.Dsh.Port, cfg.Dsh.MaxSessions)
-	}
-	if cfg.Dsh.StartupTimeout != "60s" || cfg.Dsh.HealthInterval != "10s" || cfg.Dsh.PendingTTL != "10m" || cfg.Dsh.SessionIdleTTL != "72h" {
-		t.Fatalf("durations: %+v", cfg.Dsh)
-	}
-	if !cfg.Dsh.AutoRestart || cfg.Dsh.ApprovalMode != "manual" || cfg.Dsh.LogDir != "" {
-		t.Fatalf("other: %+v", cfg.Dsh)
-	}
-}
-
-func TestLoad_dshEnvOverrides(t *testing.T) {
-	_, path := writeConfig(t, `
-dsh:
-  enabled: false
-  port: 17800
-  max_sessions: 64
-`)
-	t.Setenv("BEDROCK_DSH_ENABLED", "true")
-	t.Setenv("BEDROCK_DSH_PORT", "17900")
-	t.Setenv("BEDROCK_DSH_MAX_SESSIONS", "32")
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.Dsh.Enabled {
-		t.Fatal("BEDROCK_DSH_ENABLED should override enabled")
-	}
-	if cfg.Dsh.Port != 17900 {
-		t.Fatalf("port=%d", cfg.Dsh.Port)
-	}
-	if cfg.Dsh.MaxSessions != 32 {
-		t.Fatalf("max_sessions=%d", cfg.Dsh.MaxSessions)
-	}
-}
-
-func TestLoad_dshInvalidDuration(t *testing.T) {
-	_, path := writeConfig(t, `
-dsh:
-  enabled: false
-  startup_timeout: "not-a-duration"
-`)
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected invalid duration error")
 	}
 }
 
