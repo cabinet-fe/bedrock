@@ -190,7 +190,9 @@ func concat(groups ...[]string) []string {
 // EnsureBuiltinRoles seeds the registration-selectable builtin roles and their
 // default permission matrix. Runs after EnsureRBACResources so the full_codes
 // exist. Permission rows are only written when the role currently has none
-// (first boot); later admin edits are preserved.
+// (first boot); later admin edits are preserved. A pre-existing role squatting
+// a builtin name (e.g. a custom role created before the builtin five shipped)
+// is absorbed: its code is backfilled and type flipped to builtin.
 func EnsureBuiltinRoles(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, s := range builtinRoleSeeds {
@@ -206,6 +208,10 @@ func ensureBuiltinRole(tx *gorm.DB, s builtinRoleSeed) error {
 	var role model.Role
 	err := tx.Where("code = ?", s.Code).First(&role).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = tx.Where("name = ?", s.Name).First(&role).Error
+	}
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
 		now := time.Now().UTC()
 		role = model.Role{
 			Name: s.Name, Code: s.Code, Description: s.Description,
@@ -215,8 +221,17 @@ func ensureBuiltinRole(tx *gorm.DB, s builtinRoleSeed) error {
 		if err := tx.Create(&role).Error; err != nil {
 			return fmt.Errorf("creating builtin role %s: %w", s.Code, err)
 		}
-	} else if err != nil {
+	case err != nil:
 		return fmt.Errorf("find builtin role %s: %w", s.Code, err)
+	case role.Code != s.Code || !role.IsBuiltin():
+		// Absorb the squatter into the builtin shape; keep its description and
+		// data scope (admin choices). Code is free: the by-code lookup above
+		// found nothing inside this transaction.
+		role.Code = s.Code
+		role.Type = model.RoleTypeBuiltin
+		if err := tx.Save(&role).Error; err != nil {
+			return fmt.Errorf("absorb builtin role %s: %w", s.Code, err)
+		}
 	}
 
 	var bound int64
