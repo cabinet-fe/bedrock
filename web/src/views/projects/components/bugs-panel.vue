@@ -60,9 +60,9 @@ const tableRef = useTemplateRef("table");
 const formDialogOpen = ref(false);
 const detailDialogOpen = ref(false);
 const editingBug = ref<ProjectBug | null>(null);
+const presetStatus = ref<string | undefined>(undefined);
 const detailBugId = ref<number | undefined>(undefined);
 const viewMode = ref<"kanban" | "table">("kanban");
-const includeTerminal = ref(false);
 const board = ref<KanbanBoard | null>(null);
 const boardLoading = ref(false);
 
@@ -158,8 +158,9 @@ const removeBug = bind(async (bug: ProjectBug) => {
   }
 });
 
-function handleCreate() {
+function handleCreate(status?: string) {
   editingBug.value = null;
+  presetStatus.value = status;
   formDialogOpen.value = true;
   emit("create");
 }
@@ -207,7 +208,8 @@ async function loadBoard() {
     board.value = await getProjectKanban({
       projectID: props.project.id,
       type: "bug",
-      includeTerminal: includeTerminal.value,
+      // 终态列交给看板内按列收起/展开，数据一次拉全
+      includeTerminal: true,
       keyword: query.keyword || undefined,
     });
   } catch (error) {
@@ -243,7 +245,7 @@ async function onBoardTransition(issue: ProjectIssue, status: string) {
 }
 
 watch(
-  () => [includeTerminal.value, viewMode.value, query.keyword] as const,
+  () => [viewMode.value, query.keyword] as const,
   () => {
     if (viewMode.value === "kanban") {
       void loadBoard();
@@ -326,9 +328,6 @@ onMounted(() => {
           { label: '表格', value: 'table' },
         ]"
       />
-      <u-checkbox v-if="viewMode === 'kanban'" v-model="includeTerminal">
-        显示已关闭/已拒绝
-      </u-checkbox>
     </div>
 
     <KanbanBoardView
@@ -336,10 +335,12 @@ onMounted(() => {
       class="bugs-panel__kanban"
       :board="board"
       :draggable="canUpdateBug"
+      :quick-create="canCreateBug"
       :show-severity="true"
       :loading="boardLoading"
       @card-click="handleIssueView"
       @transition="onBoardTransition"
+      @quick-create="handleCreate"
     />
 
     <!-- 缺陷列表表格 -->
@@ -378,7 +379,7 @@ onMounted(() => {
       </template>
 
       <template #toolbar>
-        <u-button v-if="canCreateBug" type="primary" @click.prevent="handleCreate">
+        <u-button v-if="canCreateBug" type="primary" @click.prevent="handleCreate()">
           新建缺陷
         </u-button>
       </template>
@@ -437,6 +438,7 @@ onMounted(() => {
       v-model="formDialogOpen"
       :project-id="project.id"
       :bug="editingBug"
+      :initial-status="presetStatus"
       @saved="onBugSaved"
     />
 

@@ -281,18 +281,14 @@ func TestBugACLAndDataScope(t *testing.T) {
 	}
 
 	// 4. ListAcrossProjects:
-	// - User 3 (member of ProjectA only, data_scope=self) sees only Bug in A
+	// - User 3 (member of ProjectA only, data_scope=self) sees only the bug
+	//   they created (newBug); the collaborator scope hides owner-created bugs.
 	bugsUser3, totalUser3, err := bugSvc.ListAcrossProjects(memberUser, projectrepo.BugFilter{}, pkg.ListQuery{Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatalf("list across projects for user3 failed: %v", err)
 	}
-	if totalUser3 != 2 || len(bugsUser3) != 2 { // bugA and newBug
-		t.Fatalf("expected user3 to see 2 bugs in ProjectA, got total=%d, len=%d", totalUser3, len(bugsUser3))
-	}
-	for _, b := range bugsUser3 {
-		if b.ProjectID != projectA.ID {
-			t.Fatalf("user3 must only see ProjectA bugs, got project %d", b.ProjectID)
-		}
+	if totalUser3 != 1 || len(bugsUser3) != 1 || bugsUser3[0].ID != newBug.ID {
+		t.Fatalf("expected user3 to only see their own bug %d, got total=%d items=%+v", newBug.ID, totalUser3, bugsUser3)
 	}
 
 	// - SuperAdmin sees all bugs across both projects
@@ -327,7 +323,7 @@ func TestBugLifecycleOnProjectDelete(t *testing.T) {
 	}
 
 	// Status counts should be empty
-	counts, err := bugRepo.CountByStatus(project.ID)
+	counts, err := bugRepo.CountByStatus(project.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,7 +409,10 @@ func TestBugComments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bug, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "Bug with Comments"})
+	// Bug is assigned to the member so they participate in it (collaborator
+	// read scope) and can comment.
+	assignee := uint(2)
+	bug, err := bugSvc.CreateBug(owner, project.ID, CreateBugInput{Title: "Bug with Comments", AssigneeID: &assignee})
 	if err != nil {
 		t.Fatal(err)
 	}

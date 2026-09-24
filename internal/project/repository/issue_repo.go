@@ -19,14 +19,17 @@ func NewIssueRepository(db *gorm.DB) *IssueRepository {
 
 // IssueFilter encapsulates query parameters for issue searches.
 type IssueFilter struct {
-	Keyword    string
-	ProjectID  *uint
-	Type       string
-	Status     string
-	Severity   string
-	Priority   string
-	AssigneeID *uint
+	Keyword     string
+	ProjectID   *uint
+	Type        string
+	Status      string
+	Severity    string
+	Priority    string
+	AssigneeID  *uint
 	IterationID *uint
+	// ParticipantID limits reads to issues the user created or is assigned
+	// to (collaborator data scope); nil means no restriction.
+	ParticipantID *uint
 	// ExcludeClosed drops the closed/rejected terminal statuses (legacy
 	// exclude_closed semantics keep only `closed` out for bugs).
 	ExcludeClosed bool
@@ -98,6 +101,12 @@ func applyIssueFilter(db *gorm.DB, filter IssueFilter) *gorm.DB {
 	}
 	if filter.IterationID != nil {
 		db = db.Where("project_issues.iteration_id = ?", *filter.IterationID)
+	}
+	if filter.ParticipantID != nil {
+		db = db.Where(
+			"(project_issues.created_by = ? OR project_issues.assignee_id = ?)",
+			*filter.ParticipantID, *filter.ParticipantID,
+		)
 	}
 	if filter.ExcludeClosed {
 		db = db.Where("project_issues.status <> ?", model.BugStatusClosed)
@@ -192,8 +201,9 @@ func (r *IssueRepository) ListForKanban(projectIDs []uint, filter IssueFilter) (
 	return issues, nil
 }
 
-// CountByStatus returns issue counts grouped by status for a type in a project.
-func (r *IssueRepository) CountByStatus(projectID uint, issueType string) (map[string]int64, error) {
+// CountByStatus returns issue counts grouped by status for a type in a project;
+// participantID applies the collaborator read scope when non-nil.
+func (r *IssueRepository) CountByStatus(projectID uint, issueType string, participantID *uint) (map[string]int64, error) {
 	type statusCount struct {
 		Status string
 		Count  int64
@@ -203,6 +213,9 @@ func (r *IssueRepository) CountByStatus(projectID uint, issueType string) (map[s
 		Where("project_id = ?", projectID)
 	if issueType != "" {
 		db = db.Where("type = ?", issueType)
+	}
+	if participantID != nil {
+		db = db.Where("(created_by = ? OR assignee_id = ?)", *participantID, *participantID)
 	}
 	var results []statusCount
 	if err := db.Group("status").Scan(&results).Error; err != nil {

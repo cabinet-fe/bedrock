@@ -77,16 +77,16 @@ type TransitionIssueStatusInput struct {
 }
 
 type CreateIssueCommentInput struct {
-	Content       string `json:"content"`
+	Content        string `json:"content"`
 	MentionUserIDs []uint `json:"mention_user_ids"`
 }
 
 // KanbanColumn is one board column; cards use the unified issue shape.
 type KanbanColumn struct {
-	Status   string                `json:"status"`
-	Label    string                `json:"label"`
-	Terminal bool                  `json:"terminal"`
-	Cards    []model.ProjectIssue  `json:"cards"`
+	Status   string               `json:"status"`
+	Label    string               `json:"label"`
+	Terminal bool                 `json:"terminal"`
+	Cards    []model.ProjectIssue `json:"cards"`
 }
 
 type KanbanBoard struct {
@@ -126,6 +126,14 @@ func (s *IssueService) requireIssueProject(actor AccessContext, projectID, issue
 	member, err := s.acl.Require(projectID, actor, permPrefix+":"+action, capability)
 	if err != nil {
 		return nil, nil, err
+	}
+	// Collaborator read scope: member/readonly (and data-scope-self
+	// non-members) can only open issues they created or are assigned to.
+	if action == "view" {
+		if scope := issueReadScope(actor, member); scope != nil &&
+			!issueInvolvesUser(issue.CreatedBy, issue.AssigneeID, *scope) {
+			return nil, nil, NewNotFound("工作项不存在")
+		}
 	}
 	return issue, member, nil
 }
@@ -210,6 +218,10 @@ func (s *IssueService) ListAcrossProjects(actor AccessContext, filter repository
 			return []model.ProjectIssue{}, 0, nil
 		}
 		projectIDs = ids
+		// Cross-project boards are personal views: collaborators only see
+		// their own or assigned items in every listed project.
+		userID := actor.UserID
+		filter.ParticipantID = &userID
 	}
 	return s.issueRepo.ListAcrossProjects(projectIDs, filter, q)
 }
@@ -222,18 +234,22 @@ func (s *IssueService) ListProjectIssues(actor AccessContext, projectID uint, fi
 		if !actor.Has("project_bugs:view") && !actor.Has("project_requirements:view") {
 			return nil, 0, NewForbidden("缺少全局权限: project_bugs:view / project_requirements:view")
 		}
-		if _, err := s.acl.Require(projectID, actor, "project_projects:view", capProjectView); err != nil {
+		member, err := s.acl.Require(projectID, actor, "project_projects:view", capProjectView)
+		if err != nil {
 			return nil, 0, err
 		}
+		filter.ParticipantID = issueReadScope(actor, member)
 		return s.issueRepo.ListByProject(projectID, filter, q)
 	}
 	if !model.IsValidIssueType(issueType) {
 		return nil, 0, NewBadRequest("无效工作项类型")
 	}
 	permPrefix, viewCap, _, _ := issueDomain(issueType)
-	if _, err := s.acl.Require(projectID, actor, permPrefix+":view", viewCap); err != nil {
+	member, err := s.acl.Require(projectID, actor, permPrefix+":view", viewCap)
+	if err != nil {
 		return nil, 0, err
 	}
+	filter.ParticipantID = issueReadScope(actor, member)
 	return s.issueRepo.ListByProject(projectID, filter, q)
 }
 
@@ -451,16 +467,18 @@ func (s *IssueService) ListIssueActivities(actor AccessContext, projectID, issue
 // CountByStatus returns issue counts grouped by status for a type in a project.
 func (s *IssueService) CountByStatus(actor AccessContext, projectID uint, issueType string) (map[string]int64, error) {
 	if issueType == "" {
-		if _, err := s.acl.Require(projectID, actor, "project_projects:view", capProjectView); err != nil {
+		member, err := s.acl.Require(projectID, actor, "project_projects:view", capProjectView)
+		if err != nil {
 			return nil, err
 		}
-		return s.issueRepo.CountByStatus(projectID, "")
+		return s.issueRepo.CountByStatus(projectID, "", issueReadScope(actor, member))
 	}
 	permPrefix, viewCap, _, _ := issueDomain(issueType)
-	if _, err := s.acl.Require(projectID, actor, permPrefix+":view", viewCap); err != nil {
+	member, err := s.acl.Require(projectID, actor, permPrefix+":view", viewCap)
+	if err != nil {
 		return nil, err
 	}
-	return s.issueRepo.CountByStatus(projectID, issueType)
+	return s.issueRepo.CountByStatus(projectID, issueType, issueReadScope(actor, member))
 }
 
 // Kanban renders a board for a type: columns come from the status dictionary
@@ -473,10 +491,12 @@ func (s *IssueService) Kanban(actor AccessContext, projectID *uint, issueType st
 
 	var projectIDs []uint
 	if projectID != nil {
-		if _, err := s.acl.Require(*projectID, actor, permPrefix+":view", viewCap); err != nil {
+		member, err := s.acl.Require(*projectID, actor, permPrefix+":view", viewCap)
+		if err != nil {
 			return nil, err
 		}
 		projectIDs = []uint{*projectID}
+		filter.ParticipantID = issueReadScope(actor, member)
 	} else {
 		if !actor.Has(permPrefix + ":view") {
 			return nil, NewForbidden("缺少全局权限: " + permPrefix + ":view")
@@ -490,6 +510,9 @@ func (s *IssueService) Kanban(actor AccessContext, projectID *uint, issueType st
 				return s.emptyBoard(issueType, includeTerminal)
 			}
 			projectIDs = ids
+			// Cross-project boards are personal views for collaborators.
+			userID := actor.UserID
+			filter.ParticipantID = &userID
 		}
 	}
 

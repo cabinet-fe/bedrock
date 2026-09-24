@@ -65,7 +65,6 @@ const auth = useAuthStore();
 const tableRef = useTemplateRef("table");
 const query = reactive({ keyword: "", status: "", priority: "" });
 const viewMode = ref<"kanban" | "table">("kanban");
-const includeTerminal = ref(false);
 const board = ref<KanbanBoard | null>(null);
 const boardLoading = ref(false);
 const dialogOpen = ref(false);
@@ -178,6 +177,13 @@ async function loadRequirementStatuses() {
 function openCreate() {
   editing.value = null;
   form.status = defaultStatus();
+  dialogOpen.value = true;
+}
+
+// 看板列快捷新建：直接以该列状态预设打开表单
+function quickCreate(status: string) {
+  editing.value = null;
+  form.status = status || defaultStatus();
   dialogOpen.value = true;
 }
 
@@ -320,7 +326,8 @@ async function loadBoard() {
     board.value = await getProjectKanban({
       projectID: props.project.id,
       type: "requirement",
-      includeTerminal: includeTerminal.value,
+      // 终态列交给看板内按列收起/展开，数据一次拉全
+      includeTerminal: true,
       keyword: query.keyword || undefined,
     });
   } catch (error) {
@@ -353,7 +360,7 @@ async function onBoardTransition(issue: ProjectIssue, status: string) {
 }
 
 watch(
-  () => [includeTerminal.value, viewMode.value, query.keyword] as const,
+  () => [viewMode.value, query.keyword] as const,
   () => {
     if (viewMode.value === "kanban") {
       void loadBoard();
@@ -379,9 +386,6 @@ onMounted(() => {
           { label: '表格', value: 'table' },
         ]"
       />
-      <u-checkbox v-if="viewMode === 'kanban'" v-model="includeTerminal">
-        显示已完成/已取消
-      </u-checkbox>
       <div class="panel-toolbar-spacer" />
       <u-button v-if="canCreateRequirement" type="primary" @click.prevent="openCreate">
         新建需求
@@ -393,9 +397,11 @@ onMounted(() => {
       class="panel-kanban"
       :board="board"
       :draggable="canUpdateRequirement"
+      :quick-create="canCreateRequirement"
       :loading="boardLoading"
       @card-click="showIssueDetail"
       @transition="onBoardTransition"
+      @quick-create="quickCreate"
     />
 
     <ProTable

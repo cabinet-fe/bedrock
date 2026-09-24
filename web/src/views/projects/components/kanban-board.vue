@@ -1,4 +1,12 @@
 <script setup lang="ts">
+import { UKanban } from "@veltra/desktop";
+import "@veltra/desktop/components/kanban/style.js";
+import type { KanbanColumnItem } from "@veltra/desktop";
+
+import { Plus } from "@veltra/icons/normal";
+
+import { ref, watch } from "vue";
+
 import type { KanbanBoard, ProjectIssue } from "@/api/types";
 import {
   BUG_PRIORITY_LABEL,
@@ -8,129 +16,152 @@ import {
   tagType,
 } from "@/lib/tag";
 
+defineOptions({ name: "KanbanBoard" });
+
+const props = defineProps<{
+  board: KanbanBoard | null;
+  /** Whether cards can be dragged to change status (edit permission). */
+  draggable?: boolean;
+  /** Show a quick-create button on each column header (create permission). */
+  quickCreate?: boolean;
+  /** Show severity tag on cards (bug boards). */
+  showSeverity?: boolean;
+  /** Show project name on cards (cross-project board). */
+  showProject?: boolean;
+  loading?: boolean;
+}>();
+
+const emit = defineEmits<{
+  (e: "card-click", issue: ProjectIssue): void;
+  (e: "transition", issue: ProjectIssue, status: string): void;
+  (e: "quick-create", status: string): void;
+}>();
+
+// The board prop is the single source of truth: in-column order has no
+// backend persistence, so local reorders are kept until the next reload.
+const columns = ref<KanbanColumnItem[]>([]);
+
+watch(
+  () => props.board,
+  (board) => {
+    columns.value = toColumns(board);
+  },
+  { immediate: true },
+);
+
+function toColumns(board: KanbanBoard | null): KanbanColumnItem[] {
+  return (board?.columns ?? []).map((column) => ({
+    key: column.status,
+    title: column.label,
+    terminal: column.terminal,
+    items: column.cards,
+  }));
+}
+
+function onCardClick(card: Record<string, any>) {
+  emit("card-click", card as ProjectIssue);
+}
+
+function onQuickCreate(column: KanbanColumnItem) {
+  emit("quick-create", String(column.key));
+}
+
+function onChange(next: KanbanColumnItem[]) {
+  const truth = new Map<string, string>();
+  for (const column of props.board?.columns ?? []) {
+    for (const card of column.cards) truth.set(String(card.id), column.status);
+  }
+
+  let moved = false;
+  for (const column of next) {
+    for (const card of column.items) {
+      const from = truth.get(String(card.id));
+      if (from !== undefined && from !== column.key) {
+        moved = true;
+        emit("transition", card as ProjectIssue, column.key);
+      }
+    }
+  }
+
+  // Cross-column drops roll back to server state: the parent reloads the
+  // board after a successful transition, a failure keeps the original column.
+  if (moved) columns.value = toColumns(props.board);
+}
+
 function bugSeverityLabel(value: string | undefined): string {
   if (!value) return "";
   return BUG_SEVERITY_LABEL[value] ?? value;
 }
 
-defineOptions({ name: "KanbanBoard" });
-
-const props = withDefaults(
-  defineProps<{
-    board: KanbanBoard | null;
-    /** 是否允许拖拽流转(编辑权限) */
-    draggable?: boolean;
-    /** 卡片是否展示严重程度(缺陷) */
-    showSeverity?: boolean;
-    /** 卡片是否展示所属项目(跨项目看板) */
-    showProject?: boolean;
-    loading?: boolean;
-  }>(),
-  { draggable: false, showSeverity: false, showProject: false, loading: false },
-);
-
-const emit = defineEmits<{
-  (e: "card-click", issue: ProjectIssue): void;
-  (e: "transition", issue: ProjectIssue, status: string): void;
-}>();
-
-let draggingIssue: ProjectIssue | null = null;
-
-function onDragStart(issue: ProjectIssue, event: DragEvent) {
-  draggingIssue = issue;
-  event.dataTransfer?.setData("text/plain", String(issue.id));
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = "move";
-  }
+function assigneeLabel(card: Record<string, any>): string {
+  return card.assignee_name || card.assignee_username || "未指派";
 }
 
-function onDragEnd() {
-  draggingIssue = null;
-}
-
-function onDrop(status: string) {
-  const issue = draggingIssue;
-  draggingIssue = null;
-  if (issue && issue.status !== status) {
-    emit("transition", issue, status);
-  }
-}
-
-function assigneeLabel(issue: ProjectIssue): string {
-  return issue.assignee_name || issue.assignee_username || "未指派";
-}
-
-function cardTag(issue: string): string | undefined {
-  const parts = (issue ?? "").split(/[,，\s]+/).filter(Boolean);
+function cardTags(tags: string): string | undefined {
+  const parts = (tags ?? "").split(/[,，\s]+/).filter(Boolean);
   return parts.slice(0, 3).join(" · ");
 }
 </script>
 
 <template>
-  <div class="kanban-board" :class="{ 'is-loading': loading }">
+  <div class="kanban-board">
     <div v-if="!board || board.columns.length === 0" class="kanban-empty">
       {{ loading ? "看板加载中…" : "暂无看板数据" }}
     </div>
-    <div v-else class="kanban-columns">
-      <div
-        v-for="column in board.columns"
-        :key="column.status"
-        class="kanban-column"
-        :class="{ 'is-terminal': column.terminal }"
-        @dragover.prevent
-        @drop.prevent="onDrop(column.status)"
-      >
-        <div class="kanban-column-header">
-          <span class="kanban-column-title">
-            {{ column.label }}
-            <span v-if="column.terminal" class="kanban-terminal-mark">终态</span>
-          </span>
-          <span class="kanban-column-count">{{ column.cards.length }}</span>
-        </div>
-        <div class="kanban-column-body">
-          <div
-            v-for="card in column.cards"
-            :key="card.id"
-            class="kanban-card"
-            :draggable="draggable"
-            @dragstart="onDragStart(card, $event)"
-            @dragend="onDragEnd"
-            @click="emit('card-click', card)"
-          >
-            <div class="kanban-card-title">{{ card.title }}</div>
-            <div class="kanban-card-meta">
-              <u-tag
-                v-if="showSeverity && card.severity"
-                size="small"
-                :type="tagType(card.severity, BUG_SEVERITY_TAG)"
-              >
-                {{ bugSeverityLabel(card.severity) }}
-              </u-tag>
-              <u-tag size="small" :type="tagType(card.priority, BUG_PRIORITY_TAG)">
-                {{ BUG_PRIORITY_LABEL[card.priority] ?? card.priority }}
-              </u-tag>
-              <span class="kanban-card-comments" v-if="card.comment_count">
-                💬 {{ card.comment_count }}
-              </span>
-            </div>
-            <div class="kanban-card-footer">
-              <span class="kanban-card-project" v-if="showProject && card.project_name">
-                {{ card.project_name }}
-              </span>
-              <span v-if="cardTag(card.tags ?? '')" class="kanban-card-tags">
-                {{ cardTag(card.tags ?? "") }}
-              </span>
-              <span class="kanban-card-assignee" :title="assigneeLabel(card)">
-                {{ assigneeLabel(card) }}
-              </span>
-            </div>
+    <UKanban
+      v-else
+      v-model:columns="columns"
+      :disabled="!draggable"
+      :placeholder="draggable ? '拖拽卡片到这里' : '暂无工作项'"
+      @change="onChange"
+    >
+      <template #header="{ column, count }">
+        <span class="kanban-column-title">
+          {{ column.title }}<span v-if="column.terminal" class="kanban-terminal-mark">终态</span>
+        </span>
+        <span class="kanban-column-count">{{ count }}</span>
+        <button
+          v-if="quickCreate"
+          type="button"
+          class="kanban-column-add"
+          :title="`在此列快捷新建（状态：${column.title}）`"
+          @click="onQuickCreate(column)"
+        >
+          <u-icon :size="14"><Plus /></u-icon>
+        </button>
+      </template>
+      <template #card="{ card }">
+        <div class="kanban-card-content" @click="onCardClick(card)">
+          <div class="kanban-card-title">{{ card.title }}</div>
+          <div class="kanban-card-meta">
+            <u-tag
+              v-if="showSeverity && card.severity"
+              size="small"
+              :type="tagType(card.severity, BUG_SEVERITY_TAG)"
+            >
+              {{ bugSeverityLabel(card.severity) }}
+            </u-tag>
+            <u-tag size="small" :type="tagType(card.priority, BUG_PRIORITY_TAG)">
+              {{ BUG_PRIORITY_LABEL[card.priority] ?? card.priority }}
+            </u-tag>
+            <span v-if="card.comment_count" class="kanban-card-comments">
+              💬 {{ card.comment_count }}
+            </span>
           </div>
-          <div v-if="column.cards.length === 0" class="kanban-column-placeholder">
-            {{ draggable ? "拖拽卡片到这里" : "暂无工作项" }}
+          <div class="kanban-card-footer">
+            <span v-if="showProject && card.project_name" class="kanban-card-project">
+              {{ card.project_name }}
+            </span>
+            <span v-if="cardTags(card.tags ?? '')" class="kanban-card-tags">
+              {{ cardTags(card.tags ?? "") }}
+            </span>
+            <span class="kanban-card-assignee" :title="assigneeLabel(card)">
+              {{ assigneeLabel(card) }}
+            </span>
           </div>
         </div>
-      </div>
-    </div>
+      </template>
+    </UKanban>
   </div>
 </template>
 
@@ -140,8 +171,6 @@ function cardTag(issue: string): string | undefined {
 .kanban-board {
   height: 100%;
   min-height: 0;
-  overflow: auto;
-  padding: fn.use-var(spacing, 3);
 }
 
 .kanban-empty {
@@ -152,33 +181,22 @@ function cardTag(issue: string): string | undefined {
   color: fn.use-var(color, text-secondary);
 }
 
-.kanban-columns {
-  display: flex;
-  align-items: flex-start;
-  gap: fn.use-var(spacing, 3);
-  min-height: 100%;
+// 列内独立滚动，列头保持可见
+:deep(.u-kanban) {
+  height: 100%;
 }
 
-.kanban-column {
-  display: flex;
-  flex-direction: column;
-  width: 280px;
-  min-width: 280px;
+:deep(.u-kanban__column) {
   max-height: 100%;
-  border-radius: fn.use-var(radius, md);
-  background: fn.use-var(color, fill-light);
-  padding: fn.use-var(spacing, 2);
 }
 
-.kanban-column.is-terminal {
-  opacity: 0.85;
+:deep(.u-kanban__cards) {
+  overflow-y: auto;
 }
 
-.kanban-column-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: fn.use-var(spacing, 1) fn.use-var(spacing, 2);
+.kanban-column-title {
+  flex: 1 1 0%;
+  min-width: 0;
   font-weight: 600;
 }
 
@@ -190,6 +208,7 @@ function cardTag(issue: string): string | undefined {
 }
 
 .kanban-column-count {
+  flex: none;
   min-width: 20px;
   text-align: center;
   border-radius: 10px;
@@ -199,39 +218,28 @@ function cardTag(issue: string): string | undefined {
   padding: 0 6px;
 }
 
-.kanban-column-body {
-  display: flex;
-  flex-direction: column;
-  gap: fn.use-var(spacing, 2);
-  overflow-y: auto;
-  padding: fn.use-var(spacing, 2);
-  min-height: 60px;
-}
-
-.kanban-column-placeholder {
-  border: 1px dashed fn.use-var(color, border);
-  border-radius: fn.use-var(radius, sm);
+.kanban-column-add {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: 0 -2px 0 0;
+  border: none;
+  border-radius: fn.use-var(radius, default);
+  background: transparent;
   color: fn.use-var(color, text-secondary);
-  font-size: 12px;
-  text-align: center;
-  padding: fn.use-var(spacing, 4) fn.use-var(spacing, 2);
-}
-
-.kanban-card {
-  background: fn.use-var(color, bg);
-  border: 1px solid fn.use-var(color, border-light);
-  border-radius: fn.use-var(radius, sm);
-  padding: fn.use-var(spacing, 2);
   cursor: pointer;
-  transition: box-shadow 0.15s ease;
 
   &:hover {
-    box-shadow: fn.use-var(shadow, sm);
+    background: fn.use-var(color, primary);
+    color: fn.use-var(color, white);
   }
 }
 
-.kanban-card[draggable="true"] {
-  cursor: grab;
+.kanban-card-content {
+  cursor: pointer;
 }
 
 .kanban-card-title {

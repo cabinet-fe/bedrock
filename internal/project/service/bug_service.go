@@ -20,6 +20,7 @@ import (
 type CreateBugInput struct {
 	Title        string `json:"title"`
 	Description  string `json:"description"`
+	Status       string `json:"status"`
 	Severity     string `json:"severity"`
 	Priority     string `json:"priority"`
 	AssigneeID   *uint  `json:"assignee_id"`
@@ -59,6 +60,8 @@ func NewBugService(bugRepo *repository.BugRepository, projectRepo *repository.Pr
 }
 
 // CheckBugProject verifies that a bug exists, belongs to projectID, and actor has required permissions.
+// Read checks additionally enforce the collaborator scope: member/readonly
+// roles only reach bugs they created or are assigned to.
 func (s *BugService) CheckBugProject(actor AccessContext, projectID, bugID uint, globalPermission string, capability aclCapability) (*model.ProjectBug, error) {
 	bug, err := s.bugRepo.FindByID(bugID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -70,8 +73,15 @@ func (s *BugService) CheckBugProject(actor AccessContext, projectID, bugID uint,
 	if bug.ProjectID != projectID {
 		return nil, NewNotFound("缺陷不存在")
 	}
-	if _, err := s.acl.Require(projectID, actor, globalPermission, capability); err != nil {
+	member, err := s.acl.Require(projectID, actor, globalPermission, capability)
+	if err != nil {
 		return nil, err
+	}
+	if capability == capBugView {
+		if scope := issueReadScope(actor, member); scope != nil &&
+			!issueInvolvesUser(bug.CreatedBy, bug.AssigneeID, *scope) {
+			return nil, NewNotFound("缺陷不存在")
+		}
 	}
 	return bug, nil
 }
@@ -110,6 +120,10 @@ func (s *BugService) ListAcrossProjects(actor AccessContext, filter repository.B
 			return []model.ProjectBug{}, 0, nil
 		}
 		projectIDs = ids
+		// Cross-project views are personal: collaborators only see their own
+		// or assigned bugs in every listed project.
+		userID := actor.UserID
+		filter.ParticipantID = &userID
 	}
 
 	return s.bugRepo.ListAcrossProjects(projectIDs, filter, q)
@@ -117,9 +131,11 @@ func (s *BugService) ListAcrossProjects(actor AccessContext, filter repository.B
 
 // ListProjectBugs queries bugs belonging to a single project.
 func (s *BugService) ListProjectBugs(actor AccessContext, projectID uint, filter repository.BugFilter, q pkg.ListQuery) ([]model.ProjectBug, int64, error) {
-	if _, err := s.acl.Require(projectID, actor, "project_bugs:view", capBugView); err != nil {
+	member, err := s.acl.Require(projectID, actor, "project_bugs:view", capBugView)
+	if err != nil {
 		return nil, 0, err
 	}
+	filter.ParticipantID = issueReadScope(actor, member)
 	return s.bugRepo.ListByProject(projectID, filter, q)
 }
 
@@ -148,11 +164,24 @@ func (s *BugService) CreateBug(actor AccessContext, projectID uint, input Create
 		return nil, NewBadRequest("无效优先级")
 	}
 
+	status := strings.ToLower(strings.TrimSpace(input.Status))
+	if status == "" {
+		status = model.BugStatusOpen
+	} else {
+		exists, err := s.projectRepo.IssueStatusExists(model.IssueTypeBug, status)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, NewBadRequest("无效缺陷状态")
+		}
+	}
+
 	bug := &model.ProjectBug{
 		ProjectID:    projectID,
 		Title:        title,
 		Description:  strings.TrimSpace(input.Description),
-		Status:       model.BugStatusOpen,
+		Status:       status,
 		Severity:     severity,
 		Priority:     priority,
 		AssigneeID:   input.AssigneeID,
@@ -292,10 +321,11 @@ func (s *BugService) ListBugActivities(actor AccessContext, projectID, bugID uin
 
 // CountByStatus returns bug counts grouped by status.
 func (s *BugService) CountByStatus(actor AccessContext, projectID uint) (map[string]int64, error) {
-	if _, err := s.acl.Require(projectID, actor, "project_bugs:view", capBugView); err != nil {
+	member, err := s.acl.Require(projectID, actor, "project_bugs:view", capBugView)
+	if err != nil {
 		return nil, err
 	}
-	return s.bugRepo.CountByStatus(projectID)
+	return s.bugRepo.CountByStatus(projectID, issueReadScope(actor, member))
 }
 
 // ListComments retrieves all comments for a bug.

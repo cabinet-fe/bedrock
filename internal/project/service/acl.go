@@ -143,6 +143,31 @@ func isReadCapability(capability aclCapability) bool {
 	}
 }
 
+// issueReadScope returns the user ID that an actor's bug/requirement reads are
+// limited to: collaborators (project member/readonly roles, or data-scope-self
+// non-members) only see items they created or are assigned to. Project
+// owner/admin and actors with full data scope (super admin, data_scope=all,
+// manage_all) see everything, so nil is returned unrestricted.
+func issueReadScope(actor AccessContext, member *model.ProjectMember) *uint {
+	if actor.bypassProjectListFilter() {
+		return nil
+	}
+	if member != nil && (member.Role == model.ProjectRoleOwner || member.Role == model.ProjectRoleAdmin) {
+		return nil
+	}
+	userID := actor.UserID
+	return &userID
+}
+
+// issueInvolvesUser reports whether a bug/requirement was created by or
+// assigned to the user (the collaborator read scope).
+func issueInvolvesUser(createdBy uint, assigneeID *uint, userID uint) bool {
+	if createdBy == userID {
+		return true
+	}
+	return assigneeID != nil && *assigneeID == userID
+}
+
 func roleAllows(role string, capability aclCapability) bool {
 	switch capability {
 	case capProjectView, capMemberView, capRequirementView, capDocView, capDevDocView, capBugView:

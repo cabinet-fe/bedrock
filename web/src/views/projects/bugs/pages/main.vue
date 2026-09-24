@@ -34,13 +34,13 @@ const canCreateBug = computed(() => hasPermission("project_bugs:create"));
 const canUpdateBug = computed(() => hasPermission("project_bugs:update"));
 
 const viewMode = ref<"kanban" | "table">("kanban");
-const includeTerminal = ref(false);
 const board = ref<KanbanBoard | null>(null);
 const boardLoading = ref(false);
 
 const formDialogOpen = ref(false);
 const detailDialogOpen = ref(false);
 const currentBug = ref<ProjectBug | null>(null);
+const presetStatus = ref<string | undefined>(undefined);
 const detailProjectId = ref<number | undefined>(undefined);
 const detailBugId = ref<number | undefined>(undefined);
 
@@ -78,7 +78,8 @@ async function loadBoard() {
     board.value = await getCrossProjectKanban({
       type: "bug",
       projectID: query.project_id,
-      includeTerminal: includeTerminal.value,
+      // 终态列交给看板内按列收起/展开，数据一次拉全
+      includeTerminal: true,
       keyword: query.keyword || undefined,
     });
   } catch (error) {
@@ -89,7 +90,7 @@ async function loadBoard() {
 }
 
 watch(
-  () => [query.project_id, query.keyword, includeTerminal.value, viewMode.value] as const,
+  () => [query.project_id, query.keyword, viewMode.value] as const,
   () => {
     if (viewMode.value === "kanban") {
       void loadBoard();
@@ -110,8 +111,9 @@ onMounted(async () => {
   }
 });
 
-function handleCreate() {
+function handleCreate(status?: string) {
   currentBug.value = null;
+  presetStatus.value = status;
   formDialogOpen.value = true;
 }
 
@@ -192,11 +194,8 @@ function goToProject(projectId: number) {
         style="width: 200px"
         @keyup.enter="viewMode === 'kanban' && loadBoard()"
       />
-      <u-checkbox v-if="viewMode === 'kanban'" v-model="includeTerminal">
-        显示已关闭/已拒绝
-      </u-checkbox>
       <div class="bugs-toolbar-spacer" />
-      <u-button v-if="canCreateBug" type="primary" @click.prevent="handleCreate">
+      <u-button v-if="canCreateBug" type="primary" @click.prevent="handleCreate()">
         新建缺陷
       </u-button>
     </div>
@@ -206,11 +205,13 @@ function goToProject(projectId: number) {
       class="bugs-kanban"
       :board="board"
       :draggable="canUpdateBug"
+      :quick-create="canCreateBug"
       :show-severity="true"
       :show-project="true"
       :loading="boardLoading"
       @card-click="handleViewIssue"
       @transition="onTransition"
+      @quick-create="handleCreate"
     />
 
     <ProTable
@@ -300,6 +301,7 @@ function goToProject(projectId: number) {
       v-model="formDialogOpen"
       :project-id="query.project_id"
       :bug="currentBug"
+      :initial-status="presetStatus"
       :project-options="projectOptions"
       @saved="onSaved"
     />

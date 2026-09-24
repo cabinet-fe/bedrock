@@ -330,8 +330,8 @@ func (r *ProjectRepository) FindRequirement(id uint) (*model.Requirement, error)
 	return &requirement, nil
 }
 
-func (r *ProjectRepository) ListRequirements(projectID uint, q pkg.ListQuery, keyword, status, priority, assignee string) ([]model.Requirement, int64, error) {
-	filter := IssueFilter{Type: model.IssueTypeRequirement, Keyword: keyword, Status: status, Priority: priority}
+func (r *ProjectRepository) ListRequirements(projectID uint, q pkg.ListQuery, keyword, status, priority, assignee string, participantID *uint) ([]model.Requirement, int64, error) {
+	filter := IssueFilter{Type: model.IssueTypeRequirement, Keyword: keyword, Status: status, Priority: priority, ParticipantID: participantID}
 	if assignee = strings.TrimSpace(assignee); assignee != "" {
 		if id, err := strconv.ParseUint(assignee, 10, 64); err == nil {
 			uid := uint(id)

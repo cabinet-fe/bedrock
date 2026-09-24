@@ -463,12 +463,14 @@ type RequirementFilter struct {
 }
 
 func (s *ProjectService) ListRequirements(actor AccessContext, projectID uint, filter RequirementFilter) ([]projectmodel.Requirement, int64, error) {
-	if _, err := s.acl.Require(projectID, actor, "project_requirements:view", capRequirementView); err != nil {
+	member, err := s.acl.Require(projectID, actor, "project_requirements:view", capRequirementView)
+	if err != nil {
 		return nil, 0, err
 	}
 	return s.repo.ListRequirements(
 		projectID, filter.ListQuery,
 		filter.Keyword, filter.Status, filter.Priority, filter.Assignee,
+		issueReadScope(actor, member),
 	)
 }
 
@@ -480,15 +482,21 @@ func (s *ProjectService) GetRequirement(actor AccessContext, id uint) (*projectm
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.acl.Require(requirement.ProjectID, actor, "project_requirements:view", capRequirementView); err != nil {
+	member, err := s.acl.Require(requirement.ProjectID, actor, "project_requirements:view", capRequirementView)
+	if err != nil {
 		return nil, err
+	}
+	if scope := issueReadScope(actor, member); scope != nil &&
+		!issueInvolvesUser(requirement.CreatedBy, requirement.AssigneeID, *scope) {
+		return nil, NewNotFound("需求不存在")
 	}
 	return requirement, nil
 }
 
 // CheckRequirementProject verifies that a nested route's requirement belongs to
 // its project without accidentally requiring the separate :view permission for
-// an update/create/delete endpoint.
+// an update/create/delete endpoint. Read checks additionally enforce the
+// collaborator scope (member/readonly only reach their own or assigned items).
 func (s *ProjectService) CheckRequirementProject(actor AccessContext, projectID, requirementID uint, globalPermission string, write bool) error {
 	requirement, err := s.repo.FindRequirement(requirementID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -504,8 +512,17 @@ func (s *ProjectService) CheckRequirementProject(actor AccessContext, projectID,
 	if write {
 		capability = capRequirementEdit
 	}
-	_, err = s.acl.Require(projectID, actor, globalPermission, capability)
-	return err
+	member, err := s.acl.Require(projectID, actor, globalPermission, capability)
+	if err != nil {
+		return err
+	}
+	if capability == capRequirementView {
+		if scope := issueReadScope(actor, member); scope != nil &&
+			!issueInvolvesUser(requirement.CreatedBy, requirement.AssigneeID, *scope) {
+			return NewNotFound("需求不存在")
+		}
+	}
+	return nil
 }
 
 func (s *ProjectService) CheckCommentRequirementProject(actor AccessContext, projectID, requirementID, commentID uint, globalPermission string, write bool) error {

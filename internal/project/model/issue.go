@@ -26,9 +26,9 @@ const (
 // issues in these statuses are excluded from kanban boards by default.
 // Custom dictionary statuses default to non-terminal.
 var terminalStatuses = map[string]struct{}{
-	BugStatusClosed:     {},
-	BugStatusRejected:   {},
-	"done":              {},
+	BugStatusClosed:            {},
+	BugStatusRejected:          {},
+	"done":                     {},
 	RequirementStatusCancelled: {},
 }
 
@@ -111,18 +111,18 @@ func (ProjectIssue) TableName() string { return "project_issues" }
 // ProjectIssueComment is a user comment on an issue, optionally carrying
 // @mentioned user IDs (JSON array) for notification and highlight.
 type ProjectIssueComment struct {
-	ID          uint           `json:"id" gorm:"primaryKey"`
-	IssueID     uint           `json:"issue_id" gorm:"not null;index"`
-	Content     string         `json:"content" gorm:"type:text;not null"`
-	MentionIDs  string         `json:"mention_ids,omitempty" gorm:"size:500"`
-	CreatedBy   uint           `json:"created_by" gorm:"index"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
+	ID         uint           `json:"id" gorm:"primaryKey"`
+	IssueID    uint           `json:"issue_id" gorm:"not null;index"`
+	Content    string         `json:"content" gorm:"type:text;not null"`
+	MentionIDs string         `json:"mention_ids,omitempty" gorm:"size:500"`
+	CreatedBy  uint           `json:"created_by" gorm:"index"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	DeletedAt  gorm.DeletedAt `json:"-" gorm:"index"`
 
 	// Non-persisted view fields
-	CreatorName     string                 `json:"creator_name,omitempty" gorm:"-"`
-	CreatorUsername string                 `json:"creator_username,omitempty" gorm:"-"`
+	CreatorName     string                   `json:"creator_name,omitempty" gorm:"-"`
+	CreatorUsername string                   `json:"creator_username,omitempty" gorm:"-"`
 	Attachments     []ProjectIssueAttachment `json:"attachments,omitempty" gorm:"-"`
 }
 

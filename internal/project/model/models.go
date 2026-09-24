@@ -70,19 +70,19 @@ type RequirementStatusOption struct {
 // Requirement and its comment/attachment are legacy wire DTOs for the
 // /requirements compatibility aliases; persistence lives in ProjectIssue.
 type Requirement struct {
-	ID           uint           `json:"id" gorm:"-"`
-	ProjectID    uint           `json:"project_id"`
-	Title        string         `json:"title" gorm:"-"`
-	Description  string         `json:"description"`
-	Status       string         `json:"status"`
-	Priority     string         `json:"priority"`
-	AssigneeID   *uint          `json:"assignee_id,omitempty"`
-	RepositoryID *uint          `json:"repository_id,omitempty"`
-	Tags         string         `json:"tags"`
-	CreatedBy    uint           `json:"created_by"`
-	UpdatedBy    uint           `json:"updated_by"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID           uint      `json:"id" gorm:"-"`
+	ProjectID    uint      `json:"project_id"`
+	Title        string    `json:"title" gorm:"-"`
+	Description  string    `json:"description"`
+	Status       string    `json:"status"`
+	Priority     string    `json:"priority"`
+	AssigneeID   *uint     `json:"assignee_id,omitempty"`
+	RepositoryID *uint     `json:"repository_id,omitempty"`
+	Tags         string    `json:"tags"`
+	CreatedBy    uint      `json:"created_by"`
+	UpdatedBy    uint      `json:"updated_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type RequirementComment struct {

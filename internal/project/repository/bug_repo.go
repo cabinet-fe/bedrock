@@ -31,6 +31,7 @@ type BugFilter struct {
 	Severity      string
 	Priority      string
 	AssigneeID    *uint
+	ParticipantID *uint
 	ExcludeClosed bool
 }
 
@@ -43,6 +44,7 @@ func bugToIssueFilter(filter BugFilter) IssueFilter {
 		Severity:      filter.Severity,
 		Priority:      filter.Priority,
 		AssigneeID:    filter.AssigneeID,
+		ParticipantID: filter.ParticipantID,
 		ExcludeClosed: filter.ExcludeClosed,
 	}
 }
@@ -157,8 +159,8 @@ func (r *BugRepository) ListActivities(bugID uint) ([]model.ProjectBugActivity, 
 	return result, nil
 }
 
-func (r *BugRepository) CountByStatus(projectID uint) (map[string]int64, error) {
-	return r.issues.CountByStatus(projectID, model.IssueTypeBug)
+func (r *BugRepository) CountByStatus(projectID uint, participantID *uint) (map[string]int64, error) {
+	return r.issues.CountByStatus(projectID, model.IssueTypeBug, participantID)
 }
 
 // CreateComment persists a new bug comment.

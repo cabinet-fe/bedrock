@@ -85,8 +85,8 @@ func setupBugHandlerTest(t *testing.T) (*gin.Engine, *BugHandler, *ProjectHandle
 		})
 	}
 
-	// Create a role assigned to Users 1, 2, 3. Permissions are no longer bound
-	// per-role: every role carries all features except super_admin_only ones.
+	// Create a role assigned to Users 1, 2, 3 with the project-domain
+	// permissions the flow exercises (bug CRUD, comments, attachments).
 	devRole := &rbacmodel.Role{
 		Name:      "Developer",
 		Code:      "dev",
@@ -95,12 +95,37 @@ func setupBugHandlerTest(t *testing.T) (*gin.Engine, *BugHandler, *ProjectHandle
 	if err := roleRepo.Create(devRole); err != nil {
 		t.Fatal(err)
 	}
+	if err := roleRepo.ReplacePermissions(devRole.ID, []string{
+		"project_projects:view", "project_projects:create", "project_projects:update",
+		"project_bugs:view", "project_bugs:create", "project_bugs:update", "project_bugs:delete",
+		"project_requirements:view", "project_requirements:create", "project_requirements:update",
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Assign devRole to User 1, 2, 3
 	for uid := uint(1); uid <= 3; uid++ {
 		if err := roleRepo.ReplaceUserRoles(uid, []uint{devRole.ID}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// User 4 is a non-member auditor with data_scope=all: cross-project read
+	// still works for wide-scope viewers.
+	viewerRole := &rbacmodel.Role{
+		Name:      "Viewer",
+		Code:      "viewer",
+		DataScope: rbacmodel.DataScopeAll,
+	}
+	if err := roleRepo.Create(viewerRole); err != nil {
+		t.Fatal(err)
+	}
+	if err := roleRepo.ReplacePermissions(viewerRole.ID, []string{
+		"project_projects:view", "project_projects:view_all", "project_bugs:view",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := roleRepo.ReplaceUserRoles(4, []uint{viewerRole.ID}); err != nil {
+		t.Fatal(err)
 	}
 
 	gin.SetMode(gin.TestMode)
@@ -194,11 +219,11 @@ func TestBugHandlerHTTPFlow(t *testing.T) {
 		t.Fatalf("bogus severity expected 400, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	// 2. Readonly member creates bug (201): global RBAC resolves system-wide
-	// now (manage_all included), so the project ACL write gate is bypassed.
+	// 2. Readonly member cannot create a bug: the project ACL write gate holds
+	// unless the global role carries project_projects:manage_all.
 	resp = doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs", []byte(`{"title":"Readonly Bug"}`), 3, false)
-	if resp.Code != http.StatusCreated {
-		t.Fatalf("readonly create bug expected 201, got %d: %s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("readonly create bug expected 403, got %d: %s", resp.Code, resp.Body.String())
 	}
 
 	// 3. Member creates bug (201)
@@ -282,13 +307,17 @@ func TestBugHandlerHTTPFlow(t *testing.T) {
 		t.Fatalf("list across projects expected 200, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	// 12. Delete bug: regular member can delete (200, manage_all bypasses ACL)
+	// 12. Delete bug: regular member cannot delete (admin capability required)
 	resp = doRequest(router, http.MethodDelete, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr, nil, 2, false)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("regular member delete bug expected 200, got %d: %s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("regular member delete bug expected 403, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	// 13. Delete again: already deleted (404 via owner path)
+	// 13. Owner deletes (200), then again (404)
+	resp = doRequest(router, http.MethodDelete, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr, nil, 1, false)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("owner delete bug expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
 	resp = doRequest(router, http.MethodDelete, "/api/v1/projects/"+projIDStr+"/bugs/"+bugIDStr, nil, 1, false)
 	if resp.Code != http.StatusOK && resp.Code != http.StatusNotFound {
 		t.Fatalf("owner delete bug expected 200/404, got %d: %s", resp.Code, resp.Body.String())
@@ -316,9 +345,10 @@ func TestBugHandlerComments(t *testing.T) {
 	// Add member 2
 	_, _ = projectSvc.AddMember(owner, proj.ID, projectservice.MemberInput{UserID: 2, Role: projectmodel.ProjectRoleMember})
 
-	// Create a bug
+	// Create a bug assigned to member 2 (collaborator read scope)
 	resp := doRequest(router, http.MethodPost, "/api/v1/projects/"+projIDStr+"/bugs", jsonBytes(map[string]any{
-		"title": "Bug for Comment Test",
+		"title":       "Bug for Comment Test",
+		"assignee_id": 2,
 	}), 1, false)
 	if resp.Code != http.StatusCreated {
 		t.Fatalf("create bug failed: %s", resp.Body.String())

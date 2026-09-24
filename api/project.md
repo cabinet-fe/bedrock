@@ -104,7 +104,7 @@
 
 ### GET /projects/{id}/requirements — 列出需求（兼容别名）
 
-说明：统一工作项模型的兼容别名，内部固定 `type=requirement`，持久化为 `project_issues`；响应保持原 Requirement 形状（统一端点 `GET /projects/{id}/issues` 返回 ProjectIssue）。
+说明：统一工作项模型的兼容别名，内部固定 `type=requirement`，持久化为 `project_issues`；响应保持原 Requirement 形状（统一端点 `GET /projects/{id}/issues` 返回 ProjectIssue）。数据范围：项目协作人（member/readonly 角色）仅返回自己创建或被指派的需求；项目 owner/admin 及全数据权限（超管、`data_scope=all`、`manage_all`）返回全部。
 权限：`project_requirements:view`
 路径参数：id*: integer
 查询参数：page: integer, page_size: integer, keyword: string, status: string, priority: 'low' | 'normal' | 'high' | 'urgent', assignee_id: integer, sort: string
@@ -124,6 +124,7 @@
 路径参数：id*: integer, requirementID*: integer
 响应 200
 错误：404
+说明：数据范围：协作人（member/readonly 角色）仅能打开自己创建或被指派的需求，越权返回 404。
 
 ### PUT /projects/{id}/requirements/{requirementID} — 更新需求
 
@@ -208,7 +209,7 @@
 鉴权：JWT 需 `project_bugs:view` 或 `project_requirements:view`
 查询参数：page, page_size, keyword, type, project_id, status, severity, priority, assignee_id, assignee, exclude_closed, iteration_id, sort
 响应 200：data = ProjectIssuePage
-说明：跨项目聚合，数据范围与 `GET /projects/bugs` 相同。
+说明：跨项目聚合，数据范围与 `GET /projects/bugs` 相同：协作人（member/readonly 角色）仅返回自己创建或被指派的工作项，跨项目视图对非全数据权限者一律按本人参与过滤；项目 owner/admin 及全数据权限（超管、`data_scope=all`、`manage_all`）返回全部。
 
 ### GET /projects/{id}/issues — 列出项目工作项
 
@@ -216,6 +217,7 @@
 路径参数：id*: integer
 查询参数：page, page_size, keyword, type, status, severity, priority, assignee_id, assignee, exclude_closed, iteration_id, sort
 响应 200：data = ProjectIssuePage
+说明：数据范围：项目协作人（member/readonly 角色）仅返回自己创建或被指派的工作项；项目 owner/admin 及全数据权限返回全部。
 
 ### POST /projects/{id}/issues — 创建工作项
 
@@ -229,6 +231,7 @@
 权限：对应类型域 `:view` + 项目 ACL
 路径参数：id*: integer, issueID*: integer
 响应 200：data = ProjectIssue
+说明：数据范围：协作人（member/readonly 角色）仅能打开自己创建或被指派的工作项，越权返回 404。
 
 ### PUT /projects/{id}/issues/{issueID} — 更新工作项（字段级活动记录）
 
@@ -342,14 +345,14 @@
 路径参数：id*: integer
 查询参数：type*: 'requirement' | 'bug' | 'task', include_terminal: boolean, iteration_id: integer, assignee_id: integer, keyword: string
 响应 200：data = KanbanBoard
-说明：列来自类型状态字典（按 sort_order）；**终态（closed/rejected/done/cancelled）默认不入看板**，`include_terminal=true` 时以折叠列附后。卡片按 `priority`、`updated_at` 排序。
+说明：列来自类型状态字典（按 sort_order）；**终态（closed/rejected/done/cancelled）默认不入看板**，`include_terminal=true` 时以折叠列附后。卡片按 `priority`、`updated_at` 排序。数据范围：协作人（member/readonly 角色）的卡片仅含自己创建或被指派的工作项；owner/admin 及全数据权限含全部。
 
 ### GET /projects/issues/kanban — 跨项目看板
 
 鉴权：JWT 需 `project_bugs:view` 或 `project_requirements:view`
 查询参数：type*: 'requirement' | 'bug' | 'task', project_id: integer, include_terminal: boolean, keyword: string
 响应 200：data = KanbanBoard
-说明：数据范围同跨项目列表；卡片附加 `project_name`。
+说明：数据范围同跨项目列表（非全数据权限者按本人参与过滤卡片）；卡片附加 `project_name`。
 
 ## 迭代
 
@@ -396,7 +399,7 @@
 查询参数：page: integer, page_size: integer, keyword: string, project_id: integer, status: 'open' | 'in_progress' | 'resolved' | 'closed' | 'rejected', severity: 'low' | 'normal' | 'high' | 'critical', priority: 'low' | 'normal' | 'high' | 'urgent', assignee_id: integer, assignee: string, exclude_closed: boolean, sort: string
 响应 200：data = ProjectBugPage
 错误：400 / 403
-说明：跨项目聚合查询，按用户项目访问权限及 `project_bugs:view` 权限过滤数据。`data_scope=self` 且非超管时仅列出本人为成员或创建人的项目的缺陷；`data_scope=all`、超管或 `manage_all` 可列出全部。`assignee` 为用户名或用户 ID（解析失败返回 400），与 `assignee_id` 同时传时以 `assignee` 为准。`exclude_closed=true` 一次拉取「未关闭」口径（排除 `closed`）。
+说明：跨项目聚合查询，按用户项目访问权限及 `project_bugs:view` 权限过滤数据。`data_scope=self` 且非超管时仅列出本人为成员或创建人的项目的缺陷，且项目内再按协作人范围过滤（仅自己创建或被指派）；`data_scope=all`、超管或 `manage_all` 可列出全部。`assignee` 为用户名或用户 ID（解析失败返回 400），与 `assignee_id` 同时传时以 `assignee` 为准。`exclude_closed=true` 一次拉取「未关闭」口径（排除 `closed`）。
 
 ### GET /projects/{id}/bugs — 列出项目缺陷
 
@@ -405,7 +408,7 @@
 查询参数：page: integer, page_size: integer, keyword: string, status: 'open' | 'in_progress' | 'resolved' | 'closed' | 'rejected', severity: 'low' | 'normal' | 'high' | 'critical', priority: 'low' | 'normal' | 'high' | 'urgent', assignee_id: integer, assignee: string, exclude_closed: boolean, sort: string
 响应 200：data = ProjectBugPage
 错误：400 / 403 / 404
-说明：`assignee` 为用户名或用户 ID（解析失败返回 400），与 `assignee_id` 同时传时以 `assignee` 为准。`exclude_closed=true` 一次拉取「未关闭」口径（排除 `closed`）。
+说明：`assignee` 为用户名或用户 ID（解析失败返回 400），与 `assignee_id` 同时传时以 `assignee` 为准。`exclude_closed=true` 一次拉取「未关闭」口径（排除 `closed`）。数据范围：项目协作人（member/readonly 角色）仅返回自己创建或被指派的缺陷；项目 owner/admin 及全数据权限返回全部。
 
 ### POST /projects/{id}/bugs — 创建缺陷
 
@@ -421,6 +424,7 @@
 路径参数：id*: integer, bugID*: integer
 响应 200：data = ProjectBug
 错误：403 / 404
+说明：数据范围：协作人（member/readonly 角色）仅能打开自己创建或被指派的缺陷，越权返回 404。
 
 ### PUT /projects/{id}/bugs/{bugID} — 更新缺陷
 
@@ -985,6 +989,7 @@
 | --- | --- | --- | --- |
 | `title` | `string` | 是 | 缺陷标题 |
 | `description` | `string` |  | 缺陷详细描述或复现步骤 |
+| `status` | `string` |  | 初始状态，取值来自 `bug_status` 字典；缺省为 open（看板列快捷新增使用） |
 | `severity` | `'low' \| 'normal' \| 'high' \| 'critical'` |  | 严重程度，默认 normal |
 | `priority` | `'low' \| 'normal' \| 'high' \| 'urgent'` |  | 优先级，默认 normal |
 | `assignee_id` | `integer` |  | 经办人用户 ID |

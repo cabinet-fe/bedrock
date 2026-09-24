@@ -13,10 +13,11 @@ import {
 import { listRepositoryBranches } from "@/api/resource";
 import type { BugPriority, BugSeverity, ProjectBug } from "@/api/types";
 import RepoSelect from "@/components/repo-select/repo-select.vue";
-import { BUG_PRIORITY_OPTIONS, BUG_SEVERITY_OPTIONS } from "@/lib/tag";
+import { BUG_PRIORITY_OPTIONS, BUG_SEVERITY_OPTIONS, BUG_STATUS_OPTIONS } from "@/lib/tag";
 import BugPendingFiles from "./bug-pending-files.vue";
 import { clipboardImages } from "./attachment-staging";
-import { richTextToPlain, toEditorHtml } from "./rich-text";
+import { compressImageToDataUrl } from "./image-data-url";
+import { hasRichContent, toEditorHtml } from "./rich-text";
 
 const open = defineModel<boolean>({ required: true });
 
@@ -24,6 +25,8 @@ const props = defineProps<{
   projectId?: number;
   bug?: ProjectBug | null;
   projectOptions?: { label: string; value: number }[];
+  /** Preset status for quick-create from a kanban column. */
+  initialStatus?: string;
 }>();
 
 const emit = defineEmits<{
@@ -31,6 +34,9 @@ const emit = defineEmits<{
 }>();
 
 const formRef = useTemplateRef<FormExposed>("form");
+const descEditor = useTemplateRef<{
+  uploadImages: (upload: (file: File) => Promise<string>) => Promise<string>;
+}>("descEditor");
 const busy = ref(false);
 
 const isEdit = computed(() => !!props.bug);
@@ -40,6 +46,7 @@ const defaultForm = {
   project_id: undefined as number | undefined,
   title: "",
   description: "",
+  status: "open",
   severity: "normal" as BugSeverity,
   priority: "normal" as BugPriority,
   assignee_id: undefined as number | undefined,
@@ -111,6 +118,7 @@ function resetForm() {
   } else {
     Object.assign(form, defaultForm, {
       project_id: props.projectId,
+      status: props.initialStatus || defaultForm.status,
     });
     if (props.projectId) {
       void loadMembers(props.projectId);
@@ -142,6 +150,9 @@ watch(
 );
 
 function handleFormPaste(event: ClipboardEvent) {
+  // The rich text editor consumes image pastes itself (defaultPrevented);
+  // only images pasted outside it fall back to the attachment staging list.
+  if (event.defaultPrevented) return;
   const images = clipboardImages(event);
   if (!images) return;
   pendingFiles.value.push(...images);
@@ -161,9 +172,21 @@ async function handleSubmit() {
 
   busy.value = true;
   try {
+    // Embed pasted/dropped images as compressed data URLs and take the
+    // final HTML back from the editor (blob previews are meaningless after save).
+    let description = form.description;
+    try {
+      description =
+        (await descEditor.value?.uploadImages(compressImageToDataUrl)) ?? form.description;
+    } catch {
+      message.warning("截图处理失败，请移除后重新粘贴");
+      return;
+    }
+
     const payload = {
       title: form.title.trim(),
-      description: richTextToPlain(form.description) ? form.description : undefined,
+      description: hasRichContent(description) ? description : undefined,
+      status: isEdit.value ? undefined : form.status,
       severity: form.severity,
       priority: form.priority,
       assignee_id: form.assignee_id ?? null,
@@ -237,6 +260,13 @@ async function handleSubmit() {
       />
 
       <u-select
+        v-if="!isEdit"
+        v-model="form.status"
+        label="状态"
+        field="status"
+        :options="BUG_STATUS_OPTIONS"
+      />
+      <u-select
         v-model="form.severity"
         label="严重程度"
         field="severity"
@@ -259,7 +289,6 @@ async function handleSubmit() {
         clearable
         filterable
         placeholder="指派经办人 (可选)"
-        span="full"
       />
 
       <u-form-item label="关联代码仓" field="repository_id">
@@ -287,16 +316,17 @@ async function handleSubmit() {
       />
 
       <u-rich-text-editor
+        ref="descEditor"
         v-model="form.description"
         label="缺陷描述"
         field="description"
-        placeholder="详细描述缺陷现象、复现步骤、报错信息或期望表现，支持标题 / 加粗 / 列表 / 引用 / 链接..."
+        placeholder="描述现象、复现步骤与期望表现；支持标题 / 列表 / 引用 / 链接，可直接粘贴或拖入截图"
         span="full"
       />
 
-      <u-form-item label="附件截图" span="full">
+      <u-form-item label="附件" span="full">
         <BugPendingFiles v-model="pendingFiles" />
-        <span class="attach-tip">可选择文件，或直接粘贴截图（Ctrl/⌘+V），提交后自动上传</span>
+        <span class="attach-tip">描述里直接粘贴的截图会内嵌保存；这里添加的文件作为附件上传</span>
       </u-form-item>
     </u-form>
 

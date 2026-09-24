@@ -697,7 +697,7 @@ watch(
   border: fn.use-var(border, muted);
   border-radius: fn.use-var(radius, default);
   background: fn.use-var(bg-color, top);
-  max-height: 200px;
+  max-height: 320px;
   overflow-y: auto;
 }
 
@@ -746,6 +746,15 @@ watch(
 
   :deep(a) {
     color: fn.use-var(color, primary);
+  }
+
+  // Embedded screenshots (compressed data URLs written by the editor)
+  :deep(img.u-rte-image) {
+    display: block;
+    max-width: 100%;
+    margin: 6px 0;
+    border: fn.use-var(border, muted);
+    border-radius: fn.use-var(radius, default);
   }
 }
 
