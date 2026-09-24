@@ -38,7 +38,11 @@ func (s *PipelineWebhookService) Receive(
 	if err != nil {
 		return nil, NewNotFound("流水线不存在")
 	}
-	if p.WebhookSecret == "" || !secureEqual(p.WebhookSecret, urlSecret) {
+	secret, err := decryptWebhookSecret(p.WebhookSecret)
+	if err != nil {
+		return nil, err
+	}
+	if secret == "" || !secureEqual(secret, urlSecret) {
 		return nil, errUnauthorized("无效的 webhook secret")
 	}
 	if !p.Enabled || !p.TriggerWebhook {
@@ -48,7 +52,7 @@ func (s *PipelineWebhookService) Receive(
 	asJob := &model.BuildJob{WebhookType: p.WebhookType}
 	platform := detectWebhookPlatform(headers, asJob)
 	if hasSignatureHeaders(headers) {
-		if err := verifyPlatformSignature(platform, headers, body, p.WebhookSecret); err != nil {
+		if err := verifyPlatformSignature(platform, headers, body, secret); err != nil {
 			return nil, errUnauthorized("签名校验失败")
 		}
 	}

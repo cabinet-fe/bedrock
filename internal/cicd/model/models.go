@@ -80,7 +80,7 @@ type BuildJob struct {
 	TriggerManual      bool         `json:"trigger_manual" gorm:"not null"` // no gorm default: must persist false
 	TriggerWebhook     bool         `json:"trigger_webhook" gorm:"not null;default:false"`
 	TriggerCron        bool         `json:"trigger_cron" gorm:"not null;default:false"`
-	WebhookSecret      string       `json:"webhook_secret,omitempty" gorm:"size:64"`
+	WebhookSecret      string       `json:"webhook_secret,omitempty" gorm:"type:text"`
 	WebhookType        string       `json:"webhook_type" gorm:"size:20;default:auto"`
 	WebhookRefPath     string       `json:"webhook_ref_path" gorm:"size:300"`
 	WebhookCommitPath  string       `json:"webhook_commit_path" gorm:"size:300"`
@@ -186,7 +186,7 @@ type ScriptJob struct {
 	TriggerManual   bool         `json:"trigger_manual" gorm:"not null"`
 	TriggerWebhook  bool         `json:"trigger_webhook" gorm:"not null;default:false"`
 	TriggerCron     bool         `json:"trigger_cron" gorm:"not null;default:false"`
-	WebhookSecret   string       `json:"webhook_secret,omitempty" gorm:"size:64"`
+	WebhookSecret   string       `json:"webhook_secret,omitempty" gorm:"type:text"`
 	WebhookType     string       `json:"webhook_type" gorm:"size:20;default:generic"`
 	CronExpression  string       `json:"cron_expression" gorm:"size:100"`
 	CronTimezone    string       `json:"cron_timezone" gorm:"size:100;default:UTC"`
@@ -240,7 +240,7 @@ type BuildPipeline struct {
 	TriggerManual      bool      `json:"trigger_manual" gorm:"not null"`
 	TriggerWebhook     bool      `json:"trigger_webhook" gorm:"not null;default:false"`
 	TriggerCron        bool      `json:"trigger_cron" gorm:"not null;default:false"`
-	WebhookSecret      string    `json:"webhook_secret,omitempty" gorm:"size:64"`
+	WebhookSecret      string    `json:"webhook_secret,omitempty" gorm:"type:text"`
 	WebhookType        string    `json:"webhook_type" gorm:"size:20;default:generic"`
 	WebhookRefPath     string    `json:"webhook_ref_path" gorm:"size:300"`
 	WebhookCommitPath  string    `json:"webhook_commit_path" gorm:"size:300"`

@@ -130,6 +130,10 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 	if err != nil {
 		return nil, err
 	}
+	secretCipher, err := encryptWebhookSecret(secret)
+	if err != nil {
+		return nil, err
+	}
 	whType := strings.TrimSpace(in.WebhookType)
 	if whType == "" {
 		whType = "auto"
@@ -150,7 +154,7 @@ func (s *BuildJobService) Create(createdBy uint, in CreateBuildJobInput) (*model
 		TriggerManual:      boolOr(in.TriggerManual, true),
 		TriggerWebhook:     boolOr(in.TriggerWebhook, false),
 		TriggerCron:        boolOr(in.TriggerCron, false),
-		WebhookSecret:      secret,
+		WebhookSecret:      secretCipher,
 		WebhookType:        whType,
 		WebhookRefPath:     strings.TrimSpace(in.WebhookRefPath),
 		WebhookCommitPath:  strings.TrimSpace(in.WebhookCommitPath),
@@ -387,7 +391,12 @@ func (s *BuildJobService) GetWithSecret(id uint, userID uint, dataScope string) 
 		return nil, err
 	}
 	hydrateJobEnv(job)
+	plain, err := decryptWebhookSecret(job.WebhookSecret)
+	if err != nil {
+		return nil, err
+	}
 	out := publicJob(job, true)
+	out.WebhookSecret = plain
 	s.attachWorkspacePath(out)
 	return out, nil
 }
@@ -404,10 +413,15 @@ func (s *BuildJobService) RotateWebhookSecret(id uint, userID uint, dataScope st
 	if err != nil {
 		return nil, err
 	}
-	job.WebhookSecret = secret
+	secretCipher, err := encryptWebhookSecret(secret)
+	if err != nil {
+		return nil, err
+	}
+	job.WebhookSecret = secretCipher
 	if err := s.jobs.Update(job); err != nil {
 		return nil, err
 	}
+	job.WebhookSecret = secret
 	hydrateJobEnv(job)
 	out := publicJob(job, true)
 	s.attachWorkspacePath(out)
@@ -416,7 +430,7 @@ func (s *BuildJobService) RotateWebhookSecret(id uint, userID uint, dataScope st
 
 func (s *BuildJobService) List(q pkg.ListQuery, repositoryID *uint, keyword, tag string, projectID *uint, userID uint, dataScope string) ([]model.BuildJob, int64, error) {
 	var createdBy *uint
-	// D3: 带 project_id 时跳过 created_by/is_public 数据范围过滤
+	// D3: with project_id, skip the created_by/is_public data scope filter
 	if projectID == nil && dataScope != rbacmodel.DataScopeAll {
 		createdBy = &userID
 	}
@@ -591,7 +605,7 @@ func requireJobRead(job *model.BuildJob, userID uint, dataScope string) error {
 	if dataScope == rbacmodel.DataScopeAll || job.IsPublic || job.CreatedBy == userID {
 		return nil
 	}
-	// D3: 已关联项目的资源对具备 view 权限的用户可读
+	// D3: project-linked resources are readable by users with view permission
 	if job.ProjectID != nil {
 		return nil
 	}

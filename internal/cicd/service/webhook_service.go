@@ -58,7 +58,11 @@ func (s *WebhookService) Receive(
 	if err != nil {
 		return nil, NewNotFound("构建任务不存在")
 	}
-	if job.WebhookSecret == "" || !secureEqual(job.WebhookSecret, urlSecret) {
+	secret, err := decryptWebhookSecret(job.WebhookSecret)
+	if err != nil {
+		return nil, err
+	}
+	if secret == "" || !secureEqual(secret, urlSecret) {
 		return nil, errUnauthorized("无效的 webhook secret")
 	}
 	if !job.Enabled || !job.TriggerWebhook {
@@ -71,7 +75,7 @@ func (s *WebhookService) Receive(
 
 	platform := detectWebhookPlatform(headers, job)
 	if hasSignatureHeaders(headers) {
-		if err := verifyPlatformSignature(platform, headers, body, job.WebhookSecret); err != nil {
+		if err := verifyPlatformSignature(platform, headers, body, secret); err != nil {
 			return nil, errUnauthorized("签名校验失败")
 		}
 	}

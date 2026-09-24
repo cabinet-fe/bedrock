@@ -99,6 +99,10 @@ func (s *BuildPipelineService) Create(createdBy uint, in CreateBuildPipelineInpu
 	if err != nil {
 		return nil, err
 	}
+	secretCipher, err := encryptWebhookSecret(secret)
+	if err != nil {
+		return nil, err
+	}
 	enabled := true
 	if in.Enabled != nil {
 		enabled = *in.Enabled
@@ -115,7 +119,7 @@ func (s *BuildPipelineService) Create(createdBy uint, in CreateBuildPipelineInpu
 		TriggerManual:      manual,
 		TriggerWebhook:     in.TriggerWebhook != nil && *in.TriggerWebhook,
 		TriggerCron:        in.TriggerCron != nil && *in.TriggerCron,
-		WebhookSecret:      secret,
+		WebhookSecret:      secretCipher,
 		WebhookType:        defaultStr(in.WebhookType, "generic"),
 		WebhookRefPath:     in.WebhookRefPath,
 		WebhookCommitPath:  in.WebhookCommitPath,
@@ -245,7 +249,13 @@ func (s *BuildPipelineService) GetWithSecret(id, userID uint, dataScope string) 
 	if err := requirePipelineWrite(p, userID, dataScope); err != nil {
 		return nil, err
 	}
-	return publicPipeline(p, true), nil
+	plain, err := decryptWebhookSecret(p.WebhookSecret)
+	if err != nil {
+		return nil, err
+	}
+	out := publicPipeline(p, true)
+	out.WebhookSecret = plain
+	return out, nil
 }
 
 func (s *BuildPipelineService) RotateWebhookSecret(id, userID uint, dataScope string) (*model.BuildPipeline, error) {
@@ -260,16 +270,21 @@ func (s *BuildPipelineService) RotateWebhookSecret(id, userID uint, dataScope st
 	if err != nil {
 		return nil, err
 	}
-	p.WebhookSecret = secret
+	secretCipher, err := encryptWebhookSecret(secret)
+	if err != nil {
+		return nil, err
+	}
+	p.WebhookSecret = secretCipher
 	if err := s.pipelines.Update(p); err != nil {
 		return nil, err
 	}
+	p.WebhookSecret = secret
 	return publicPipeline(p, true), nil
 }
 
 func (s *BuildPipelineService) List(q pkg.ListQuery, keyword string, projectID *uint, userID uint, dataScope string) ([]model.BuildPipeline, int64, error) {
 	var createdBy *uint
-	// D3: 带 project_id 时跳过 created_by/is_public 数据范围过滤
+	// D3: with project_id, skip the created_by/is_public data scope filter
 	if projectID == nil && dataScope != rbacmodel.DataScopeAll {
 		createdBy = &userID
 	}
@@ -340,7 +355,7 @@ func requirePipelineRead(p *model.BuildPipeline, userID uint, dataScope string) 
 	if dataScope == rbacmodel.DataScopeAll || p.IsPublic || p.CreatedBy == userID {
 		return nil
 	}
-	// D3: 已关联项目的资源对具备 view 权限的用户可读
+	// D3: project-linked resources are readable by users with view permission
 	if p.ProjectID != nil {
 		return nil
 	}
