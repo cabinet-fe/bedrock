@@ -57,6 +57,36 @@ function git(args) {
   return execSync(`git ${args.join(' ')}`, { cwd: ROOT, encoding: 'utf8' });
 }
 
+// 判断 handler 文件本次变更是否含真实接口改动：仅当新增了删除行中不存在的
+// 代码（忽略空白与注释）时才要求契约同步。删除死代码、gofmt 对齐、注释
+// 翻译不会改变接口契约，不应被拦截。
+function hasCodeChanges(file) {
+  let out;
+  try {
+    out = git(['diff', DIFF_BASE, '-U0', '--', file]);
+  } catch {
+    return true;
+  }
+  const isNoise = (code) =>
+    !code ||
+    code.startsWith('//') ||
+    code.startsWith('/*') ||
+    code.startsWith('*') ||
+    code.startsWith('import ') ||
+    /^[(){}[\],.;:'"`]+$/.test(code);
+  const added = [];
+  const removed = new Set();
+  for (const line of out.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) continue;
+    if (!line.startsWith('+') && !line.startsWith('-')) continue;
+    const code = line.slice(1).replace(/\s+/g, ' ').trim();
+    if (isNoise(code)) continue;
+    if (line.startsWith('+')) added.push(code);
+    else removed.add(code);
+  }
+  return added.some((code) => !removed.has(code));
+}
+
 function changedFiles() {
   return git(['diff', DIFF_BASE, '--name-only', '--diff-filter=ACMR'])
     .split('\n').map((s) => s.trim()).filter(Boolean);
@@ -168,6 +198,7 @@ function main() {
 
     const hm = file.match(/^internal\/([^/]+)\/handler\//);
     if (!hm) continue;
+    if (!hasCodeChanges(file)) continue; // 纯注释/格式变更不要求契约同步
     const docsFor = DOMAIN_DOCS[hm[1]];
     if (!docsFor) continue;
     if (!docsFor.some((d) => changed.has(d))) {
@@ -194,7 +225,7 @@ function main() {
     if (!file.endsWith('.go') || file.endsWith('_test.go')) continue;
     if (SOFT_PREFIXES.some((p) => file.startsWith(p))) {
       const sm = file.match(/^internal\/([^/]+)\//);
-      const docsFor = sm ? DOMAIN_DOCS[sm[1]] : [];
+      const docsFor = sm ? (DOMAIN_DOCS[sm[1]] || []) : [];
       warns.push(`${file} 已变更，建议核对契约：${docsFor.length ? docsFor.join('、') : 'api/*.md'}`);
       continue;
     }
