@@ -62,7 +62,7 @@ func (h *OperationLogHandler) Clear(c *gin.Context) {
 func (h *OperationLogHandler) List(c *gin.Context) {
 	var f repository.OperationLogFilters
 	q := pkg.BindList(c, &f)
-	// from/to 使用日期字符串，非 RFC3339，需单独解析
+	// from/to use date strings, not RFC3339; parse them separately
 	if from := c.Query("from"); from != "" {
 		if t, err := time.Parse("2006-01-02", from); err == nil {
 			f.From = &t

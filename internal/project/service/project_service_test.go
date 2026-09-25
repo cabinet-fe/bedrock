@@ -46,7 +46,7 @@ func TestProjectACLListAndGlobalBypass(t *testing.T) {
 		t.Fatalf("joined list = %#v total=%d err=%v", items, total, err)
 	}
 
-	// data_scope=self 时非成员不可见
+	// Non-members are invisible with data_scope=self
 	nonMember := actor(3, "project_projects:view")
 	items, total, err = svc.ListProjects(nonMember, ProjectListFilter{ListQuery: pkg.ListQuery{Page: 1, PageSize: 20}})
 	if err != nil || total != 0 || len(items) != 0 {
@@ -163,7 +163,7 @@ func TestRequirementStatusMetadataAllowsMemberWithoutDictionaryPermission(t *tes
 		t.Fatalf("requirement status values = %v, want %v", values, want)
 	}
 
-	// D2：非成员持有 project_requirements:view 亦可读状态元数据
+	// D2: non-members with project_requirements:view can also read status metadata
 	statuses, err = svc.ListRequirementStatuses(actor(3, "project_requirements:view"))
 	if err != nil {
 		t.Fatalf("non-member requirement reader must read metadata: %v", err)

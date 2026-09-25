@@ -1,12 +1,12 @@
 import { darkTheme, type UITheme } from "@veltra/styles/theme";
 
 /**
- * 黛夜主题 — 与磐石同源的深色古风：墨池底 / 宣纸银字 / 松烟绿主色。
- * 深色系下组件级 token 由 loadTheme 按系列注入，全局 token 在此定制。
+ * Dark-night theme — dark ancient style sharing Bedrock's roots: ink-pool bg / rice-paper silver text / pine smoke green accent.
+ * Component-level tokens for dark are injected by loadTheme per family; global tokens are customized here.
  */
 export const bedrockDarkTheme: UITheme = darkTheme.new({
   color: {
-    primary: "#5f9b82", // 松烟绿提亮一档，暗底上保持可读
+    primary: "#5f9b82", // pine smoke green one step brighter, readable on dark
     success: "#4d9e6f",
     warning: "#c99a4b",
     danger: "#c96a52",
@@ -16,7 +16,7 @@ export const bedrockDarkTheme: UITheme = darkTheme.new({
   },
   bg: {
     color: {
-      bottom: "#12140f", // 墨池底
+      bottom: "#12140f", // ink-pool base
       middle: "#1a1d16",
       top: "#22261d",
       hover: "#2b3026",
@@ -28,7 +28,7 @@ export const bedrockDarkTheme: UITheme = darkTheme.new({
     },
   },
   "text-color": {
-    title: "#ece8db", // 宣纸白
+    title: "#ece8db", // rice-paper white
     main: "#c9c4b4",
     second: "#98917f",
     assist: "#6b6555",

@@ -13,13 +13,13 @@ import (
 	"bedrock/internal/ws"
 )
 
-// DashboardWSHandler 推送仪表盘运行变更与系统状态（多频道订阅）。
+// DashboardWSHandler pushes dashboard run changes and system status (multi-channel subscription).
 type DashboardWSHandler struct {
-	auth   *authservice.AuthService
-	pat    authmiddleware.PATValidator
-	perm   *rbacservice.PermissionService
-	hub    *ws.Hub
-	cors   middleware.CORSConfig
+	auth *authservice.AuthService
+	pat  authmiddleware.PATValidator
+	perm *rbacservice.PermissionService
+	hub  *ws.Hub
+	cors middleware.CORSConfig
 }
 
 func NewDashboardWSHandler(

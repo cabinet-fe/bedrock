@@ -966,7 +966,8 @@ func parseID(c *gin.Context, name string) (uint, bool) {
 	return uint(value), true
 }
 
-// resolveProjectID 支持数字 ID 或项目 slug（供 docs/push、docs/pull、docs/export 开放 API）。
+// resolveProjectID accepts a numeric ID or project slug (for the docs/push,
+// docs/pull, docs/export open APIs).
 func (h *ProjectHandler) resolveProjectID(c *gin.Context) (uint, bool) {
 	id, err := h.svc.ResolveProjectRef(c.Param("id"))
 	if err != nil {

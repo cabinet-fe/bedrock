@@ -15,7 +15,7 @@ import (
 )
 
 // IssueHandler exposes the unified work-item API: /issues CRUD + kanban +
-// watchers + iterations (api/project.md 工作项/看板/迭代).
+// watchers + iterations (api/project.md work items / kanban / iterations).
 type IssueHandler struct {
 	svc       *projectservice.IssueService
 	iteration *projectservice.IterationService

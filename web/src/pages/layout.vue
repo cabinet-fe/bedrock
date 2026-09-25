@@ -220,11 +220,11 @@ function onNavClick(item: NavItem) {
   overflow: hidden;
   border: none;
   outline: none;
-  /* 侧栏底色随主题 nav 配置（--u-nav-bg-color），"侧栏=深/浅"切换时整体可复现 */
+  /* Sidebar bg follows the theme nav config (--u-nav-bg-color), reproducible across dark/light switches */
   background: var(--u-nav-bg-color);
   box-shadow: 4px 0 24px rgb(0 0 0 / 28%);
 
-  /* 品牌文字随侧栏前景色（--u-nav-*）走，与 group-nav 同源，深/浅侧栏均可读 */
+  /* Brand text follows the sidebar foreground (--u-nav-*), same source as group-nav, readable on both */
   :deep(.brand-logo__name) {
     color: var(--u-nav-second-color);
   }
@@ -242,7 +242,7 @@ function onNavClick(item: NavItem) {
   min-height: 68px;
   padding: 0 16px;
   border: none;
-  /* 品牌区铺一层极浅的绢面渐变，自上而淡，与导航拉开层次而不成卡片；
+  /* A very light silk gradient over the brand area, fading downward, layering it from nav without a card;
      以侧栏前景色淡调出，深浅侧栏下均有层次且不打架 */
   background: linear-gradient(
     180deg,
@@ -250,7 +250,7 @@ function onNavClick(item: NavItem) {
     transparent 100%
   );
 
-  /* 与导航共用同一底色，仅靠一条柔和发丝线区分，避免割裂感 */
+  /* Shares the nav's base color, separated only by a soft hairline, avoiding a disjointed feel */
   &::after {
     content: "";
     position: absolute;
@@ -268,7 +268,7 @@ function onNavClick(item: NavItem) {
   width: 100%;
   overflow: hidden;
   border: none;
-  /* 抵消 u-group-nav 自带的卡片样式，使其融入侧边栏底色 */
+  /* Cancels u-group-nav's built-in card styling so it blends into the sidebar bg */
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -387,7 +387,7 @@ function onNavClick(item: NavItem) {
 }
 
 .app-main {
-  /* 不能用 height: 100%：那会占满 .app-body 全高并顶出 rail 的高度，
+  /* Cannot use height: 100%: it would fill .app-body's full height and push out the rail,
      导致页面底部被 overflow:hidden 裁掉一截 */
   flex: 1;
   min-height: 0;

@@ -18,11 +18,6 @@ func NewBugRepository(db *gorm.DB) *BugRepository {
 	return &BugRepository{issues: NewIssueRepository(db)}
 }
 
-// IssueRepo exposes the underlying unified repository for shared services.
-func (r *BugRepository) IssueRepo() *IssueRepository {
-	return r.issues
-}
-
 // BugFilter encapsulates query parameters for bug searches.
 type BugFilter struct {
 	Keyword       string

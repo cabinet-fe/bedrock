@@ -28,7 +28,7 @@ type ProductProject struct {
 	OwnerID      uint   `json:"owner_id" gorm:"not null;index"`
 	RepositoryID *uint  `json:"repository_id,omitempty" gorm:"index"`
 	Tags         string `json:"tags"`
-	// IsPublic 不再影响读可见性（D2 全员可读），保留字段以兼容存量数据与 API。
+	// IsPublic no longer affects read visibility (D2: readable by all); kept for data/API compatibility.
 	IsPublic  bool           `json:"is_public" gorm:"not null;default:false;index"`
 	CreatedBy uint           `json:"created_by" gorm:"index"`
 	CreatedAt time.Time      `json:"created_at"`

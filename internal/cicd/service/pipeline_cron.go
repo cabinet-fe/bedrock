@@ -15,13 +15,13 @@ import (
 
 // PipelineCronScheduler schedules per-BuildPipeline cron with IANA timezone.
 type PipelineCronScheduler struct {
-	cron       *cron.Cron
-	entries    map[uint]cron.EntryID
-	mu         sync.Mutex
-	pipelines  *repository.BuildPipelineRepository
-	runs       *repository.PipelineRunRepository
+	cron         *cron.Cron
+	entries      map[uint]cron.EntryID
+	mu           sync.Mutex
+	pipelines    *repository.BuildPipelineRepository
+	runs         *repository.PipelineRunRepository
 	orchestrator *PipelineOrchestrator
-	logger     *zap.Logger
+	logger       *zap.Logger
 }
 
 func NewPipelineCronScheduler(

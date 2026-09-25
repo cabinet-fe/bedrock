@@ -99,7 +99,7 @@ func (s *NotificationService) NotifyAgentRun(userID uint, agentRunID, agentID ui
 	})
 }
 
-// ListByUser 分页查询用户通知；isRead 非 nil 时按已读状态过滤。
+// ListByUser paginates user notifications; a non-nil isRead filters by read state.
 func (s *NotificationService) ListByUser(userID uint, isRead *bool, q pkg.ListQuery) ([]model.Notification, int64, error) {
 	return s.repo.ListByUser(userID, isRead, q)
 }

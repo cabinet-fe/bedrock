@@ -80,7 +80,7 @@ onMounted(async () => {
       repoTypeOptions.value = opts;
     })
     .catch(() => {
-      /* 标签选项降级为空 */
+      /* Tag options fall back to empty */
     });
   if (hasPermission("resource_credentials:view") || hasPermission("resource_credentials:use")) {
     try {

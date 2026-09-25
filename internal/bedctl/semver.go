@@ -54,10 +54,6 @@ func ParseVersion(s string) Version {
 	return v
 }
 
-// String renders the parsed version back to a tag form (v-prefix kept off
-// Build/Pre formatting; Raw is what callers usually want to display).
-func (v Version) String() string { return v.Raw }
-
 // Compare returns -1, 0 or 1. Invalid versions sort below valid ones;
 // two invalid versions compare by raw string.
 func Compare(a, b Version) int {

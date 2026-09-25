@@ -19,7 +19,7 @@ func nilIfZero(p *uint) *uint {
 	return p
 }
 
-// resolveProjectID validates project exists (soft-deleted 视为不存在); 0/nil → nil.
+// resolveProjectID validates project exists (soft-deleted counts as missing); 0/nil → nil.
 func resolveProjectID(projects *projectrepo.ProjectRepository, id *uint) (*uint, error) {
 	id = nilIfZero(id)
 	if id == nil {

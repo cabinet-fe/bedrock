@@ -25,7 +25,7 @@ func NewDictionaryHandler(dicts *service.DictionaryService, perm *rbacservice.Pe
 func (h *DictionaryHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
 	g := rg.Group("/dictionaries", authMW)
 	g.GET("", rbacmw.RequirePermission(h.perm, "system_dictionaries:view"), h.List)
-	// code 路由须在 /:id 之前，供业务模块按编码读取选项（登录即可）
+	// The code route must precede /:id so business modules can read options by code (login only)
 	g.GET("/code/:code", h.GetByCode)
 	g.GET("/:id", rbacmw.RequirePermission(h.perm, "system_dictionaries:view"), h.Get)
 	g.POST("", rbacmw.RequirePermission(h.perm, "system_dictionaries:create"), h.Create)

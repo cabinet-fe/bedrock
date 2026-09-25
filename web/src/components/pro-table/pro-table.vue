@@ -16,9 +16,9 @@ import { restoreQuery, snapshotQuery, type ProTableColumn, type ProTableQuery } 
 
 type SortOrder = "asc" | "desc";
 
-/** 短请求不闪 loading；超过后再展示 */
+/** Short requests do not flash loading; only show it after a delay */
 const LOADING_DELAY_MS = 160;
-/** loading 一旦展示，最短可见时间，避免一闪而过 */
+/** Once loading is shown, keep it visible for at least this long, avoiding a flash */
 const MIN_VISIBLE_MS = 200;
 
 const props = withDefaults(
@@ -73,12 +73,12 @@ const items = shallowRef<T[]>([]);
 const page = ref(1);
 const pageSize = ref(100);
 const total = ref(0);
-/** 与后端 ParsePage maxPageSize=100 对齐，避免选项超出后被回写打回 */
+/** Aligns with the backend ParsePage maxPageSize=100 so oversized selections are not rejected on write-back */
 const pageSizeOptions = [20, 50, 100];
 
 let loadGen = 0;
 let loadingDelayTimer: ReturnType<typeof setTimeout> | undefined;
-/** 重置时跳过 autoQueryFields watch，避免与 search 重复请求 */
+/** Skip the autoQueryFields watch on reset to avoid duplicate requests with search */
 let suppressAutoQuery = false;
 const initialQuery = snapshotQuery(props.query);
 
@@ -228,7 +228,7 @@ async function load() {
 
     const body = (raw ?? {}) as Record<string, unknown>;
     const list = extractItems(body);
-    // 直接替换，不清空旧 rows，避免闪空白
+    // Replace directly without clearing old rows, avoiding a blank flash
     items.value = list;
 
     if (mode.value === "pagination") {
@@ -267,7 +267,7 @@ function search() {
   return load();
 }
 
-/** 恢复查询条件为初始值并重新请求 */
+/** Restores query fields to their initial values and re-requests */
 function reset() {
   suppressAutoQuery = true;
   restoreQuery(props.query, initialQuery);

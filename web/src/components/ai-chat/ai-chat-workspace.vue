@@ -33,7 +33,7 @@ const welcomeSuggestions = [
 
 const PANEL_MIN_WIDTH = 360;
 const MAIN_MIN_WIDTH = 360;
-/** 面板打开时默认给会话区保留的宽度（给会话留出默认宽度 800px + 边距多一点的空间，即 860px） */
+/** Width reserved for the conversation area when the panel opens (800px default + margin, i.e. 860px) */
 const MAIN_DEFAULT_WIDTH = 860;
 
 const layoutRef = ref<InstanceType<typeof ULayout> | null>(null);
@@ -52,13 +52,13 @@ const containerWidth = () => {
   return 1200;
 };
 
-/** 面板默认宽度：容器宽减去会话区保留宽度，尽可能大 */
+/** Panel default width: container width minus the reserved conversation width, as large as possible */
 const calculateDefaultPanelWidth = () => {
   const width = containerWidth();
   return Math.max(PANEL_MIN_WIDTH, width - MAIN_DEFAULT_WIDTH);
 };
 
-/** 钳位面板宽度在 [PANEL_MIN_WIDTH, 容器宽 - MAIN_MIN_WIDTH] 区间 */
+/** Clamp the panel width to [PANEL_MIN_WIDTH, container width - MAIN_MIN_WIDTH] */
 const clampPanelWidth = (width: number) => {
   const width0 = containerWidth();
   const maxWidth = Math.max(PANEL_MIN_WIDTH, width0 - MAIN_MIN_WIDTH);
@@ -69,7 +69,7 @@ const layoutCols = computed(() => {
   return chatStore.activeRightPanel ? ["1fr", `${panelWidth.value}px`] : ["1fr"];
 });
 
-// 当右侧面板从关闭变为打开时，自动赋予尽可能大的默认宽度
+// When the right panel goes from closed to open, auto-assign the largest sensible default width
 watch(
   () => chatStore.activeRightPanel,
   (panel, prevPanel) => {
@@ -188,7 +188,7 @@ const transport = computed(() => {
         : [{ id: "fallback-model", label: "暂无可用模型" }];
 
   const send: ChatTransport = async (request, handlers) => {
-    // 1. 草稿状态下发送首条消息时，前端自动调用创建会话接口完成持久化，会话进入左侧列表并按首条提问更新会话标题
+    // 1. Sending the first message in draft state auto-creates the session via API for persistence; it enters the left list and its title updates from the first question
     if (chatStore.isDraft && !chatStore.isTemporary) {
       try {
         isCreatingDraftSession.value = true;
@@ -205,7 +205,7 @@ const transport = computed(() => {
       }
     }
 
-    // 2. 临时会话不携带 X-Session-ID，后端不落库；普通持久化会话携带当前会话 ID
+    // 2. Temp sessions omit X-Session-ID so the backend does not persist them; normal persistent sessions carry the current session ID
     const headers: Record<string, string> = {};
     if (token) {
       headers.Authorization = `Bearer ${token}`;
@@ -534,14 +534,14 @@ onMounted(async () => {
   height: 100%;
   width: 100%;
 
-  /* 增加会话区域上下内边距，避免紧贴顶部横幅与底部视口边缘 */
+  /* Extra top/bottom padding for the conversation area, away from the top banner and viewport bottom edge */
   :deep(.u-ai-chat__main) {
     padding-top: 16px;
     padding-bottom: 16px;
     box-sizing: border-box;
   }
 
-  /* 关闭图片与文件附件上传入口，仅支持纯文本交互 */
+  /* No image/file attachment upload; text-only interaction */
   :deep(.u-ai-chat__input-attach),
   :deep(.u-file-picker) {
     display: none !important;

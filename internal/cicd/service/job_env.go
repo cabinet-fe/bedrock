@@ -12,7 +12,7 @@ import (
 )
 
 // EnvVarInput is one Key-Value env var in create/update payloads.
-// 带 value：设置/更新；已有键未带 value：保留；请求中消失的键删除。
+// With value: set/update; existing key without value: keep; keys missing from the request are deleted.
 type EnvVarInput struct {
 	Key   string  `json:"key"`
 	Value *string `json:"value"`
@@ -83,7 +83,8 @@ func validateEnvVarKey(key string) error {
 	return nil
 }
 
-// mergeJobEnvVars 按全量键列表合并：带 value 则写入；无 value 则保留旧值；缺键删除。
+// mergeJobEnvVars merges by the full key list: a value writes it; no value
+// keeps the old one; a missing key deletes it.
 func mergeJobEnvVars(existing map[string]string, inputs []EnvVarInput) (map[string]string, error) {
 	if existing == nil {
 		existing = map[string]string{}

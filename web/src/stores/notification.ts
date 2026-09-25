@@ -12,7 +12,7 @@ export const useNotificationStore = defineStore("notification", () => {
   const unreadCount = computed(() => items.value.filter((n) => !n.is_read).length);
 
   async function fetchNotifications(): Promise<void> {
-    // 铃铛面板是收件箱语义：只拉未读，已读不再回拉，避免列表随历史膨胀
+    // The bell panel is an inbox: only unread items are fetched; read ones are not re-pulled, so the list does not grow with history
     const page = await listNotifications({
       page: 1,
       page_size: NOTIFICATION_LIMIT,

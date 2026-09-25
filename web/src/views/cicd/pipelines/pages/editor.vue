@@ -43,7 +43,7 @@ const pipeline = ref<BuildPipeline | null>(null);
 const nodes = ref<Node[]>([]);
 const edges = ref<Edge[]>([]);
 
-/** 节点副标题所需的任务/智能体名映射（key: `${type}:${id}`） */
+/** Task/agent name map for node subtitles (key: `${type}:${id}`) */
 const targetNames = ref<Record<string, string>>({});
 provide(PIPELINE_TARGET_NAMES, targetNames);
 
@@ -78,7 +78,7 @@ async function load() {
     const p = await getBuildPipeline(pipelineId);
     pipeline.value = p;
     const graph = parseGraphJson(p.graph_json);
-    // 空图自动种子化 start + end
+    // Empty graphs are auto-seeded with start + end
     if (graph.nodes.length) {
       nodes.value = graph.nodes;
       edges.value = graph.edges;
@@ -135,7 +135,7 @@ function persist() {
 async function run() {
   running.value = true;
   try {
-    // 运行以画布当前状态为准：有编辑权限时先落库（避免跑到旧图/空图）
+    // Runs use the canvas state: with edit permission, persist first (avoid running an old/empty graph)
     if (canUpdate.value) {
       if (!validateGraph()) {
         running.value = false;
@@ -152,7 +152,7 @@ async function run() {
   }
 }
 
-// —— 节点配置抽屉 ——
+// —— Node config drawer ——
 const drawerOpen = ref(false);
 const configNode = ref<Node | null>(null);
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { Check, Setting } from "@veltra/icons/normal";
-// USegment 不在 @veltra/vite 的组件表（components.gen.ts 为旧版桌面生成），显式导入并带样式
+// USegment is not in @veltra/vite's component table (components.gen.ts was generated for the legacy desktop), so import it explicitly with styles
 import { USegment } from "@veltra/desktop";
 import "@veltra/desktop/components/segment/style.js";
 
@@ -50,7 +50,7 @@ const navVariantOptions = [
   { label: "浅色", value: "light" },
 ];
 
-/** 迷你页卡预览：从主题 token 取色，与目标主题同源 */
+/** Mini page-card preview: colors from theme tokens, same source as the target theme */
 function previewVars(item: ThemeOption) {
   const t = item.theme.theme;
   return {

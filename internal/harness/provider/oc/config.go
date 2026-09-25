@@ -48,17 +48,17 @@ type ProviderConfigInput struct {
 // workspaceConfigDoc mirrors the opencode.json subset bedrock generates.
 // Field order follows the struct; provider/model maps marshal sorted.
 type workspaceConfigDoc struct {
-	Schema   string                            `json:"$schema,omitempty"`
-	Model    string                            `json:"model,omitempty"`
-	SmallModel string                          `json:"small_model,omitempty"`
-	Provider map[string]workspaceProviderEntry `json:"provider,omitempty"`
+	Schema     string                            `json:"$schema,omitempty"`
+	Model      string                            `json:"model,omitempty"`
+	SmallModel string                            `json:"small_model,omitempty"`
+	Provider   map[string]workspaceProviderEntry `json:"provider,omitempty"`
 }
 
 type workspaceProviderEntry struct {
 	NPM     string                           `json:"npm"`
 	Name    string                           `json:"name,omitempty"`
-	Options workspaceProviderOptions          `json:"options"`
-	Models  map[string]workspaceModelOptions  `json:"models"`
+	Options workspaceProviderOptions         `json:"options"`
+	Models  map[string]workspaceModelOptions `json:"models"`
 }
 
 type workspaceProviderOptions struct {

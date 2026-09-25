@@ -33,7 +33,7 @@ async function loadData() {
     const res = await getProject(props.projectId);
     project.value = res;
 
-    // 并行读取相关资源计数
+    // Read related resource counts in parallel
     void Promise.allSettled([
       listBuildJobs({ project_id: props.projectId, page: 1, page_size: 1 }).then((r) => {
         buildJobCount.value = r.total;

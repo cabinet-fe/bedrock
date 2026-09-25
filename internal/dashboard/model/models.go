@@ -96,7 +96,7 @@ type RecentPipelineRun struct {
 	CreatedAt       time.Time `json:"created_at"`
 }
 
-// TaskOverview 按权限分项返回任务总数；无权限项为 null。
+// TaskOverview returns per-permission task totals; items without permission are null.
 type TaskOverview struct {
 	BuildJobs  *int64 `json:"build_jobs"`
 	ScriptJobs *int64 `json:"script_jobs"`

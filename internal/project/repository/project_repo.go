@@ -58,7 +58,7 @@ func (r *ProjectRepository) FindProjectBySlug(slug string) (*model.ProductProjec
 	return &project, nil
 }
 
-// ListProjects 列出项目；scopeUserID 非空时仅返回该用户为成员或创建人的项目。
+// ListProjects lists projects; a non-zero scopeUserID restricts results to projects where the user is a member or creator.
 func (r *ProjectRepository) ListProjects(q pkg.ListQuery, keyword, status string, scopeUserID *uint) ([]model.ProductProject, int64, error) {
 	db := r.db.Model(&model.ProductProject{})
 	if scopeUserID != nil {
@@ -535,7 +535,7 @@ func (r *ProjectRepository) ListDocNodes(projectID uint) ([]model.ApiDocNode, er
 	return nodes, err
 }
 
-// ListDocTreeNodes 仅供文档树：不加载 content，避免首屏拉全文。
+// ListDocTreeNodes is for the doc tree only: does not load content to keep the first paint light.
 func (r *ProjectRepository) ListDocTreeNodes(projectID uint) ([]model.ApiDocNode, error) {
 	var nodes []model.ApiDocNode
 	err := r.db.Omit("Content").Where("project_id = ?", projectID).Order("sort_order ASC, id ASC").Find(&nodes).Error
@@ -571,7 +571,7 @@ func (r *ProjectRepository) ListDevDocNodes(projectID uint) ([]model.DevDocNode,
 	return nodes, err
 }
 
-// ListDevDocTreeNodes 仅供开发文档树：不加载 content，避免首屏拉全文。
+// ListDevDocTreeNodes is for the dev doc tree only: does not load content to keep the first paint light.
 func (r *ProjectRepository) ListDevDocTreeNodes(projectID uint) ([]model.DevDocNode, error) {
 	var nodes []model.DevDocNode
 	err := r.db.Omit("Content").Where("project_id = ?", projectID).Order("sort_order ASC, id ASC").Find(&nodes).Error

@@ -24,14 +24,14 @@ import (
 )
 
 const (
-	CardBuildSummary        = "build_summary"
-	CardAgentRunSummary     = "agent_run_summary"
-	CardSystemInfo          = "system_info"
-	CardSystemStatus        = "system_status"
-	CardScriptRunSummary    = "script_run_summary"
-	CardPipelineRunSummary  = "pipeline_run_summary"
-	CardCICDTaskOverview    = "cicd_task_overview"
-	CardMyProjects          = "my_projects"
+	CardBuildSummary       = "build_summary"
+	CardAgentRunSummary    = "agent_run_summary"
+	CardSystemInfo         = "system_info"
+	CardSystemStatus       = "system_status"
+	CardScriptRunSummary   = "script_run_summary"
+	CardPipelineRunSummary = "pipeline_run_summary"
+	CardCICDTaskOverview   = "cicd_task_overview"
+	CardMyProjects         = "my_projects"
 
 	gridColumns = 12
 	minCardSize = 2
@@ -320,7 +320,7 @@ func directoryUsedBytes(root string) (uint64, error) {
 	return total, err
 }
 
-// StartStatusBroadcaster 在有订阅者时周期性采集系统状态并广播；无订阅者时跳过采样。
+// StartStatusBroadcaster periodically samples system status while subscribers exist; skips sampling when none.
 func (s *DashboardService) StartStatusBroadcaster(ctx context.Context, hub *ws.Hub, interval time.Duration) {
 	if hub == nil || interval <= 0 {
 		return

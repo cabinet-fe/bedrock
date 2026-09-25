@@ -108,13 +108,13 @@ const canCreateComment = computed(
 const ALL_STATUSES: BugStatus[] = ["open", "in_progress", "resolved", "closed", "rejected"];
 const transitionTargets = computed(() => ALL_STATUSES.filter((s) => s !== bug.value?.status));
 
-// 状态流转弹窗
+// Status transition dialog
 const transitionDialogOpen = ref(false);
 const targetStatus = ref<BugStatus>("open");
 const transitionComment = ref("");
 const transitioning = ref(false);
 
-// 评论
+// Comments
 const newCommentText = ref("");
 const submittingComment = ref(false);
 const commentPendingFiles = ref<File[]>([]);

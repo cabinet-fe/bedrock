@@ -19,21 +19,21 @@ const (
 // Custom scripts intentionally execute under the Bedrock process UID; this is
 // an administrator-only capability, not a sandbox.
 type DevEnvironment struct {
-	ID              uint      `json:"id" gorm:"primaryKey"`
-	Name            string    `json:"name" gorm:"size:100;not null;uniqueIndex"`
-	Kind            string    `json:"kind" gorm:"size:20;not null;default:builtin"`
-	Executable      string    `json:"executable" gorm:"size:200;not null"`
-	Description     string    `json:"description" gorm:"size:500"`
-	DetectScript    string    `json:"detect_script" gorm:"type:text"`
-	InstallScript   string    `json:"install_script" gorm:"type:text"`
-	UpgradeScript   string    `json:"upgrade_script" gorm:"type:text"`
-	UninstallScript string    `json:"uninstall_script" gorm:"type:text"`
-	VersionsScript  string    `json:"versions_script" gorm:"type:text"`
-	SwitchScript    string    `json:"switch_script" gorm:"type:text"`
-	DefaultVersion  string    `json:"default_version" gorm:"size:100"`
-	CreatedBy       uint      `json:"created_by" gorm:"index"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              uint                  `json:"id" gorm:"primaryKey"`
+	Name            string                `json:"name" gorm:"size:100;not null;uniqueIndex"`
+	Kind            string                `json:"kind" gorm:"size:20;not null;default:builtin"`
+	Executable      string                `json:"executable" gorm:"size:200;not null"`
+	Description     string                `json:"description" gorm:"size:500"`
+	DetectScript    string                `json:"detect_script" gorm:"type:text"`
+	InstallScript   string                `json:"install_script" gorm:"type:text"`
+	UpgradeScript   string                `json:"upgrade_script" gorm:"type:text"`
+	UninstallScript string                `json:"uninstall_script" gorm:"type:text"`
+	VersionsScript  string                `json:"versions_script" gorm:"type:text"`
+	SwitchScript    string                `json:"switch_script" gorm:"type:text"`
+	DefaultVersion  string                `json:"default_version" gorm:"size:100"`
+	CreatedBy       uint                  `json:"created_by" gorm:"index"`
+	CreatedAt       time.Time             `json:"created_at"`
+	UpdatedAt       time.Time             `json:"updated_at"`
 	Sources         []DevEnvInstallSource `json:"sources,omitempty" gorm:"foreignKey:EnvironmentID"`
 }
 

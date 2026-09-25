@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 )
 
 // Repo is the GitHub slug releases are downloaded from.
@@ -139,6 +138,3 @@ func Code(code string) string {
 // ErrSilent signals exit code 1 without printing an extra error line —
 // doctor already printed per-check details.
 var ErrSilent = errors.New("doctor found issues")
-
-// PlainPath is os.PathListSeparator as a string, for composing PATH values.
-func PlainPath(dirs []string) string { return strings.Join(dirs, string(os.PathListSeparator)) }

@@ -27,7 +27,7 @@ const navItems = handbookSections.map((s) => ({
   height: 100%;
   min-height: 0;
 
-  /* UTabs 单根插槽不会包 .u-tabs__content，需自行占满剩余高度 */
+  /* UTabs' single root slot is not wrapped in .u-tabs__content, so fill the remaining height ourselves */
   :deep(.u-scroll__content) {
     height: 100%;
   }

@@ -15,7 +15,7 @@ export function defineProTableColumns(
   return defineTableColumns(columns as TableColumn[], commonProps) as ProTableColumn[];
 }
 
-/** 浅拷贝查询对象；保留 `undefined`，数组另拷一份。 */
+/** Shallow-copies the query object; keeps `undefined` and re-copies arrays. */
 export function snapshotQuery(query: ProTableQuery): ProTableQuery {
   const out: ProTableQuery = {};
   for (const key of Object.keys(query)) {
@@ -25,7 +25,7 @@ export function snapshotQuery(query: ProTableQuery): ProTableQuery {
   return out;
 }
 
-/** 将 `target` 原地恢复为快照（删除快照中不存在的键）。 */
+/** Restores `target` in place from a snapshot (removes keys absent from the snapshot). */
 export function restoreQuery(target: ProTableQuery, snapshot: ProTableQuery) {
   for (const key of Object.keys(target)) {
     if (!(key in snapshot)) delete target[key];

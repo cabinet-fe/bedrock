@@ -180,7 +180,7 @@ function openCreate() {
   dialogOpen.value = true;
 }
 
-// 看板列快捷新建：直接以该列状态预设打开表单
+// Quick-create from a board column: open the form pre-set to that column's status
 function quickCreate(status: string) {
   editing.value = null;
   form.status = status || defaultStatus();
@@ -326,7 +326,7 @@ async function loadBoard() {
     board.value = await getProjectKanban({
       projectID: props.project.id,
       type: "requirement",
-      // 终态列交给看板内按列收起/展开，数据一次拉全
+      // Terminal columns are collapsed/expanded per column in the board; data is fetched once in full
       includeTerminal: true,
       keyword: query.keyword || undefined,
     });

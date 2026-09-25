@@ -49,7 +49,7 @@ const flowId = `pipeline-canvas-${useId()}`;
 const vf = useVueFlow(flowId);
 const wrapperRef = useTemplateRef("wrapper");
 
-// —— 右键菜单 ——
+// —— Context menu ——
 const menuOpen = ref(false);
 const menuPos = ref({ x: 0, y: 0 });
 const menuItems = shallowRef<ContextMenuItem[]>([]);
@@ -109,7 +109,7 @@ function onNodeClick({ node }: NodeMouseEvent) {
   emit("configureNode", node);
 }
 
-// —— 连线 ——
+// —— Edges ——
 function onConnect(connection: Connection) {
   if (props.readonly) return;
   const { source, target } = connection;
@@ -139,7 +139,7 @@ function onConnect(connection: Connection) {
   ];
 }
 
-// —— 边条件弹窗 ——
+// —— Edge condition dialog ——
 const CONDITION_OPTIONS = [
   { value: "on_success", label: "成功时继续" },
   { value: "on_failure", label: "失败时继续" },

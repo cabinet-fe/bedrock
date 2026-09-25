@@ -1,6 +1,6 @@
 import { ref, type Ref } from "vue";
 
-/** 单个异步操作的 loading（工具栏按钮、通知铃等） */
+/** Loading for a single async op (toolbar buttons, notification bell, etc.) */
 export function useBusy() {
   const busy = ref(false);
 
@@ -18,8 +18,8 @@ export function useBusy() {
 }
 
 /**
- * 按 key 互斥的异步操作 loading（表格行操作列等）。
- * 同一时刻只允许一个 key 处于 busy，避免连点。
+ * Per-key mutually exclusive async operation loading (table row action columns, etc.).
+ * Only one key may be busy at a time, preventing double clicks.
  */
 export function useBusyKey<K extends string | number = number>() {
   const busyKey = ref<K | null>(null) as Ref<K | null>;
@@ -38,7 +38,7 @@ export function useBusyKey<K extends string | number = number>() {
     }
   }
 
-  /** 包装首参含 `id` 的行操作，自动以 `row.id` 作为 busy key */
+  /** Wraps row actions whose first arg contains `id`, using `row.id` as the busy key automatically */
   function bind<T extends { id: K }>(fn: (row: T) => Promise<void>): (row: T) => Promise<void> {
     return (row) => run(row.id, () => fn(row));
   }

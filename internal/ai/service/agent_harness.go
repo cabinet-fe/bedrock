@@ -342,7 +342,7 @@ func (s *AgentService) runHarnessSession(
 			if !watch.sawFrame {
 				// Prompt queued but the project instance has not started the
 				// turn (cold opencode load). Killing here is the 1-minute
-				// "准备环境" interrupt; keep waiting until the run timeout.
+				// "prepare environment" interrupt; keep waiting until the run timeout.
 				writeLog("会话尚未开始执行，继续等待工作区加载")
 				fallbackTimer.Reset(noTerminal)
 				continue

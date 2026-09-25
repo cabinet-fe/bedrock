@@ -61,11 +61,6 @@ func NewBackupEngine(opts BackupEngineOptions) *BackupEngine {
 	}
 }
 
-// SetDB allows updating the DB instance if needed.
-func (e *BackupEngine) SetDB(db *gorm.DB) {
-	e.db = db
-}
-
 // BackupDir returns the directory where backups are stored.
 func (e *BackupEngine) BackupDir() string {
 	return e.backupDir

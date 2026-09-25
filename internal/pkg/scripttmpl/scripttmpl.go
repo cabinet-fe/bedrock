@@ -1,9 +1,10 @@
 // Package scripttmpl expands ${{...}} placeholders in CI/CD scripts.
 //
 // Syntax (one-shot text replace, not shell evaluation):
-//   ${{ workspace }}
-//   ${{ job.id }} / ${{ run.build_number }} / …
-//   ${{ env.KEY }}
+//
+//	${{ workspace }}
+//	${{ job.id }} / ${{ run.build_number }} / …
+//	${{ env.KEY }}
 //
 // Identifiers: [A-Za-z_][A-Za-z0-9_]* ; dotted paths allowed.
 // Unknown variables fail; values are not re-expanded.

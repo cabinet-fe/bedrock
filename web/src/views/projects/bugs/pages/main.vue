@@ -78,7 +78,7 @@ async function loadBoard() {
     board.value = await getCrossProjectKanban({
       type: "bug",
       projectID: query.project_id,
-      // 终态列交给看板内按列收起/展开，数据一次拉全
+      // Terminal columns are collapsed/expanded per column in the board; data is fetched once in full
       includeTerminal: true,
       keyword: query.keyword || undefined,
     });

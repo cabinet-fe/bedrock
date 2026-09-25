@@ -208,7 +208,7 @@ async function loadBoard() {
     board.value = await getProjectKanban({
       projectID: props.project.id,
       type: "bug",
-      // 终态列交给看板内按列收起/展开，数据一次拉全
+      // Terminal columns are collapsed/expanded per column in the board; data is fetched once in full
       includeTerminal: true,
       keyword: query.keyword || undefined,
     });

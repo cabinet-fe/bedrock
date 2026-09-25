@@ -12,21 +12,21 @@ export interface UseRunPollOptions {
   interval?: number;
 }
 
-/** CI 运行通用终态判定：queued / pending / running 之外均为终态 */
+/** Generic CI run terminal-state check: anything but queued / pending / running is terminal */
 export const isRunTerminal = (status: string): boolean =>
   !["queued", "pending", "running"].includes(status);
 
 /**
- * 「只运行」卡片的运行状态管理：入队后立即反映返回的 run 状态，
- * 非终态按 entityId 轮询至终态；同一实体重复触发时以最新一次为准。
+ * Run status management for "run only" cards: reflects the returned run state immediately after enqueue,
+ * polls by entityId until a terminal state; repeated triggers of the same entity use the latest one.
  */
 export function useRunPoll(options: UseRunPollOptions) {
   const interval = options.interval ?? 2000;
-  /** entityId → 最近运行状态 */
+  /** entityId → latest run status */
   const statusMap = ref(new Map<number, string>());
-  /** entityId → 入队失败信息（卡内反馈） */
+  /** entityId → enqueue failure (feedback inside the card) */
   const errorMap = ref(new Map<number, string>());
-  /** 入队请求进行中的实体 */
+  /** Entities with an enqueue request in flight */
   const pendingSet = ref(new Set<number>());
   const timers = new Map<number, ReturnType<typeof setInterval>>();
 
@@ -55,21 +55,21 @@ export function useRunPoll(options: UseRunPollOptions) {
           setStatus(entityId, run.status);
           if (options.isTerminal(run.status)) stopPoll(entityId);
         } catch {
-          /* 单次拉取失败留下一轮重试 */
+          /* A single fetch failure is left for the next retry round */
         }
       })();
     }, interval);
     timers.set(entityId, timer);
   }
 
-  /** 入队中，或最近 run 仍在排队/运行 */
+  /** Queued, or the latest run is still queued/running */
   function isBusy(entityId: number): boolean {
     if (pendingSet.value.has(entityId)) return true;
     const status = statusMap.value.get(entityId);
     return !!status && !options.isTerminal(status);
   }
 
-  /** 触发运行：入队成功即更新状态并轮询；失败写入卡内错误，不弹 toast */
+  /** Trigger a run: on successful enqueue update status and poll; failures write card errors without a toast */
   async function enqueue(entityId: number, run: () => Promise<{ id: number; status: string }>) {
     if (isBusy(entityId)) return;
     pendingSet.value = new Set(pendingSet.value).add(entityId);
@@ -90,7 +90,7 @@ export function useRunPoll(options: UseRunPollOptions) {
     }
   }
 
-  /** 初始最近状态：按 entityId 取首个（最新）run；进行中的 run 继续轮询 */
+  /** Initial latest status: first (newest) run per entityId; in-flight runs keep polling */
   function loadRecent(runs: TrackedRun[]) {
     for (const run of runs) {
       if (statusMap.value.has(run.entityId)) continue;

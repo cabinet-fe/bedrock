@@ -248,7 +248,7 @@ function onLinkClick(e: MouseEvent, url: string, rowData?: Record<string, any>) 
 function handleLinkNavigation(url: string, rowData?: Record<string, any>) {
   if (!url) return;
 
-  // 1. 项目详情链接：联动打开右侧抽屉面板
+  // 1. Project detail link: opens the right drawer panel
   const projectMatch = url.match(/\/projects?(?:\/projects)?\/(\d+)/);
   if (projectMatch && projectMatch[1]) {
     const projectId = Number(projectMatch[1]);
@@ -261,7 +261,7 @@ function handleLinkNavigation(url: string, rowData?: Record<string, any>) {
     return;
   }
 
-  // 2. 构建运行链接：联动打开右侧抽屉面板
+  // 2. Build run link: opens the right drawer panel
   const buildMatch = url.match(/\/cicd\/build-runs\/(\d+)/);
   if (buildMatch && buildMatch[1]) {
     const runId = Number(buildMatch[1]);
@@ -274,7 +274,7 @@ function handleLinkNavigation(url: string, rowData?: Record<string, any>) {
     return;
   }
 
-  // 3. 流水线运行链接：联动打开右侧抽屉面板
+  // 3. Pipeline run link: opens the right drawer panel
   const pipelineMatch = url.match(/\/cicd\/pipeline-runs\/(\d+)/);
   if (pipelineMatch && pipelineMatch[1]) {
     const runId = Number(pipelineMatch[1]);
@@ -287,7 +287,7 @@ function handleLinkNavigation(url: string, rowData?: Record<string, any>) {
     return;
   }
 
-  // 4. 文档链接：联动打开右侧抽屉面板
+  // 4. Doc link: opens the right drawer panel
   const docMatch = url.match(/\/projects?\/(dev-)?docs\/(\d+)/);
   if (docMatch && docMatch[2]) {
     const docId = Number(docMatch[2]);
@@ -302,13 +302,13 @@ function handleLinkNavigation(url: string, rowData?: Record<string, any>) {
     return;
   }
 
-  // 5. 外部链接在新窗口打开
+  // 5. External links open in a new window
   if (url.startsWith("http://") || url.startsWith("https://")) {
     window.open(url, "_blank");
     return;
   }
 
-  // 6. 常规页面跳转：切回经典模式并在主工作区跳转对应路由
+  // 6. Regular navigation: switch back to classic mode and route in the main workspace
   void chatStore.toggleAiMode(false);
   void router.push(url);
 }

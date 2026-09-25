@@ -63,10 +63,15 @@ const emit = defineEmits<{
 const gridRef = useTemplateRef("gridRef");
 let syncingFromGrid = false;
 
-/** 固定 12 列：列宽随容器等比缩放，w=6 始终占 50% 宽，避免降列后 w 不变导致单列留白。
- *  注意：options 必须保持静态引用 —— wrapper 会 watch options 并调用 updateOptions，
- *  而 updateOptions 会把 children 当作全量布局重新 load。若 options 随 editing 重建，
- *  每次进出编辑模式都会用过期的 children 覆盖当前布局。editing 改走 setStatic。 */
+/**
+ * Fixed 12 columns: widths scale with the container; w=6 always takes 50%,
+ * avoiding leftover space when columns are dropped.
+ * Note: options must keep a static reference — the wrapper watches options
+ * and calls updateOptions, and updateOptions reloads children as the full
+ * layout. If options are rebuilt with editing, entering/exiting edit mode
+ * would overwrite the current layout with stale children; editing uses
+ * setStatic instead.
+ */
 const gridOptions: GridStackOptions = {
   column: DASHBOARD_GRID_COLUMNS,
   cellHeight: 80,
@@ -77,11 +82,11 @@ const gridOptions: GridStackOptions = {
   alwaysShowResizeHandle: true,
   minRow: 1,
   staticGrid: !props.editing,
-  // children 仅在初始化时生效；后续可见性/布局变更走 watch → load()
+  // children only take effect at init; later visibility/layout changes go through watch → load()
   children: toGridWidgets(props.items.filter((card) => card.visible)),
 };
 
-/** 每个卡片 id 映射到同一个宿主组件，宿主内部按 id 分发具体卡片。 */
+/** Each card id maps to one host component; the host dispatches to the concrete card by id. */
 const components: ComponentMap = {
   build_summary: DashboardWidgetHost,
   agent_run_summary: DashboardWidgetHost,
@@ -93,7 +98,7 @@ const components: ComponentMap = {
   my_projects: DashboardWidgetHost,
 };
 
-/** 经 provide 共享给 Teleport 挂载的卡片宿主（Teleport 下注入链保持不变）。 */
+/** Shared via provide to Teleport-mounted card hosts (the injection chain survives Teleport). */
 const hostCtx = reactive<DashboardWidgetHostContext>({
   editing: false,
   buildSummary: null,

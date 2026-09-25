@@ -124,7 +124,7 @@ func TestMigration000061_UnifiedProjectIssues(t *testing.T) {
 		{"project_issue_attachments", &attachmentCount, "filename IN ('req.png', 'bug.log')"},
 		{"project_issue_activities", &activityCount, "1=1"},
 	} {
-		if err := gdb.Raw("SELECT count(*) FROM "+probe.table+" WHERE "+probe.where).Scan(probe.count).Error; err != nil {
+		if err := gdb.Raw("SELECT count(*) FROM " + probe.table + " WHERE " + probe.where).Scan(probe.count).Error; err != nil {
 			t.Fatal(err)
 		}
 	}

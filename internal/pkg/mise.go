@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// homeDir 先取 $HOME；服务进程（如 systemd 系统单元）常不设置 HOME，
-// 此时回退到 /etc/passwd 里当前用户的 home，保证 mise 路径可解析。
+// homeDir prefers $HOME; service processes (e.g. systemd units) often have
+// no HOME set, so fall back to the current user's home from /etc/passwd.
 func homeDir() string {
 	home, err := os.UserHomeDir()
 	if err == nil && home != "" {
@@ -22,7 +22,8 @@ func homeDir() string {
 	return ""
 }
 
-// ApplyMisePath 把 mise shims 与 ~/.local/bin 放到 PATH 前面，供开发语言环境与工具发现命令。
+// ApplyMisePath prepends mise shims and ~/.local/bin to PATH so dev language
+// environments and tools can find their commands.
 func ApplyMisePath(cmd *exec.Cmd) {
 	home := homeDir()
 	path := os.Getenv("PATH")
@@ -41,18 +42,20 @@ func ApplyMisePath(cmd *exec.Cmd) {
 		}
 		env = append(env, item)
 	}
-	// 显式注入 HOME：shell 侧 prelude 的 $HOME（profile 与 mise 路径）依赖它
+	// Inject HOME explicitly: the shell prelude's $HOME (profile and mise paths) relies on it
 	if home != "" && runtime.GOOS != "windows" {
 		env = append(env, "HOME="+home)
 	}
 	cmd.Env = append(env, "PATH="+path, "MISE_YES=1")
 }
 
-// WrapShellWithProfile 在命令执行前让非登录/非交互 shell 也能拿到用户配置的工具：
-// 先加载登录 profile（.bash_profile / .profile，非交互 shell 的正确入口），
-// 再显式发现 mise 并以 activate --shims 导出静态 PATH（无 hook，非交互安全）。
-// 不 source .bashrc：发行版默认带 `case $- in *i*) ;; *) return;; esac`
-// 交互守卫，非交互下在 mise activate 之前就 return，且可能污染 stdout。
+// WrapShellWithProfile makes non-login, non-interactive shells pick up the
+// user's configured tools before running a command: it loads the login profile
+// (.bash_profile / .profile, the right entry for non-interactive shells), then
+// discovers mise and exports a static PATH via activate --shims (no hooks,
+// safe for non-interactive use). It does not source .bashrc: distros ship
+// `case $- in *i*) ;; *) return;; esac` guards that return before mise
+// activate and may pollute stdout.
 func WrapShellWithProfile(command string) string {
 	if runtime.GOOS == "windows" {
 		return command
@@ -65,7 +68,8 @@ func WrapShellWithProfile(command string) string {
 	return prelude + command
 }
 
-// ParseVersionLines 从 mise ls-remote / 同类输出中取出版本号，最新的在前。
+// ParseVersionLines extracts version numbers from mise ls-remote / similar
+// output, newest first.
 func ParseVersionLines(output string, limit int) []string {
 	seen := make(map[string]struct{})
 	items := make([]string, 0, 32)

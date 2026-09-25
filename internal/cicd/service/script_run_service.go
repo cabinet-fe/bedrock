@@ -43,7 +43,7 @@ func (s *ScriptRunService) SetHub(hub *ws.Hub) {
 
 func (s *ScriptRunService) List(q pkg.ListQuery, scriptJobID *uint, status string, projectID *uint, userID uint, dataScope string) ([]model.ScriptRun, int64, error) {
 	var jobCreatedBy *uint
-	// D3: 带 project_id 时跳过 created_by/is_public 数据范围过滤
+	// D3: with project_id, skip the created_by/is_public data scope filter
 	if projectID == nil && dataScope != rbacmodel.DataScopeAll {
 		jobCreatedBy = &userID
 	}

@@ -13,7 +13,7 @@ const root = useTemplateRef<HTMLElement>("root");
 
 type MarkdownItWithHeadingIds = MarkdownIt & { __bedrockHeadingIds?: boolean };
 
-/** GitHub 风格 slug：去标点、空白→`-`、保留中文等字母数字 */
+/** GitHub-style slug: strip punctuation, whitespace → `-`, keep alphanumerics incl. CJK */
 function toGithubSlug(text: string): string {
   return text
     .trim()
@@ -22,7 +22,7 @@ function toGithubSlug(text: string): string {
     .replace(/\s+/g, "-");
 }
 
-/** 经 customMarkdownIt 给 heading_open 写入 id；attrs 经 attrsRecord 落到 HeadingNode */
+/** customMarkdownIt writes ids into heading_open; attrs land on HeadingNode via attrsRecord */
 function withHeadingIds(md: MarkdownIt): MarkdownIt {
   const inst = md as MarkdownItWithHeadingIds;
   if (inst.__bedrockHeadingIds) return md;
@@ -66,10 +66,10 @@ function onClick(e: MouseEvent) {
   const anchor = target.closest("a[href^='#']");
   if (!(anchor instanceof HTMLAnchorElement)) return;
   const href = anchor.getAttribute("href");
-  // 跳过空锚与路由 hash（如 #/path）
+  // Skip empty anchors and router hashes (e.g. #/path)
   if (!href || href === "#" || href.startsWith("#/")) return;
   e.preventDefault();
-  // 同 hash 不会触发 hashchange，需手动滚；否则改 location.hash 由 hashchange 统一处理
+  // Same-hash does not fire hashchange, so scroll manually; otherwise location.hash changes go through hashchange
   if (location.hash === href) {
     scrollToHash(href);
   } else {
@@ -134,7 +134,7 @@ onUnmounted(() => {
     margin-top: 0;
   }
 
-  /* 只兜底无 class 的原生 pre；markstream 的代码块（带 class）自带
+  /* Only backstop class-less native pre; markstream code blocks (with class) bring their own
      行号 gutter 与 padding-left 计算，覆盖 padding 会导致行号与代码重叠 */
   :deep(pre:not([class])) {
     overflow: auto;
@@ -143,14 +143,14 @@ onUnmounted(() => {
     background: var(--u-bg-color-middle, #f6f7f9);
   }
 
-  /* markstream 当前版本的 fallback pre 作用域样式有缺陷：scope 属性落在 pre 自身，
+  /* markstream's current fallback pre scoped styles are buggy: the scope attribute lands on pre itself,
      其 [data-v-xxx] pre.code-pre-fallback 选择器要求祖代携带，永远匹配不上，
      导致 padding-left 缺失、行号与代码重叠。在此按它自己的变量补回 gutter 留白 */
   :deep(pre.markstream-pre--line-numbers) {
     padding-left: var(--markstream-code-padding-left, 52px);
   }
 
-  /* fallback pre 无容器包裹，自带背景为 transparent，补回代码块底色与圆角 */
+  /* The fallback pre has no wrapper and a transparent background; restore the code block bg and radius */
   :deep(pre.code-pre-fallback) {
     border-radius: 6px;
     background: var(--u-bg-color-middle, #f6f7f9);

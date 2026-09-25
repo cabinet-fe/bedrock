@@ -4,7 +4,7 @@ import { defineStore } from "pinia";
 import { listRepositories } from "@/api/resource";
 import type { Repository } from "@/api/types";
 
-/** 与后端 ParsePage maxPageSize 对齐 */
+/** Aligned with the backend ParsePage maxPageSize */
 const PAGE_SIZE = 100;
 
 export const useRepositoryStore = defineStore("repositories", () => {
@@ -53,7 +53,7 @@ export const useRepositoryStore = defineStore("repositories", () => {
     return inflight;
   }
 
-  /** 增删改后刷新；从未加载过则跳过，避免无订阅方时白打列表 */
+  /** Refresh after mutations; skips when never loaded, avoiding pointless list calls with no subscribers */
   function refresh(): Promise<void> {
     if (!loaded && !inflight) return Promise.resolve();
     loaded = false;

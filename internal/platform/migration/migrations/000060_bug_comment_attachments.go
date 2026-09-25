@@ -30,4 +30,6 @@ type projectBugAttachmentCommentIDMigrationModel struct {
 	CommentID *uint `gorm:"index"`
 }
 
-func (projectBugAttachmentCommentIDMigrationModel) TableName() string { return "project_bug_attachments" }
+func (projectBugAttachmentCommentIDMigrationModel) TableName() string {
+	return "project_bug_attachments"
+}

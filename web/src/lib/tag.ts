@@ -1,6 +1,6 @@
 import type { ColorType } from "@veltra/utils";
 
-/** 省略 type 时为默认灰底标签 */
+/** Default gray label when type is omitted */
 export type TagType = ColorType | undefined;
 
 export function tagType(value: string | undefined | null, map: Record<string, TagType>): TagType {
@@ -8,7 +8,7 @@ export function tagType(value: string | undefined | null, map: Record<string, Ta
   return map[value];
 }
 
-/** 构建 / Agent / 安装任务等异步状态 */
+/** Async states: build / agent / install jobs, etc. */
 export const JOB_STATUS_TAG: Record<string, TagType> = {
   queued: "info",
   pending: "info",
@@ -64,7 +64,7 @@ export function triggerTypeLabel(value: string | undefined | null): string {
   return TRIGGER_TYPE_LABEL[value] ?? value;
 }
 
-/** 构建流水线阶段 */
+/** Build pipeline stages */
 export const BUILD_STAGE_TAG: Record<string, TagType> = {
   pending: undefined,
   cloning: "primary",
@@ -88,7 +88,7 @@ export function buildStageLabel(value: string | undefined | null): string {
   return BUILD_STAGE_LABEL[value] ?? value;
 }
 
-/** 构建分发汇总 */
+/** Build distribution summary */
 export const BUILD_DISTRIBUTION_TAG: Record<string, TagType> = {
   none: undefined,
   running: "primary",
@@ -121,8 +121,8 @@ export function splitCommaTags(raw?: string | null): string[] {
 }
 
 /**
- * 代码仓库、构建任务等类型标签（对应数据字典 repo_type）
- * 前端采用 danger，后端采用 info，其它都是 primary
+ * Type tags for repos, build jobs, etc. (corresponds to the repo_type dictionary)
+ * The frontend uses danger, the backend uses info, everything else is primary
  */
 export const REPO_TYPE_TAG: Record<string, TagType> = {
   frontend: "danger",
@@ -138,7 +138,7 @@ export function repoTagType(tag: string | undefined | null): TagType {
   return REPO_TYPE_TAG[lower] ?? REPO_TYPE_TAG[trimmed] ?? "primary";
 }
 
-/** 缺陷状态标签与文案 */
+/** Bug status labels and copy */
 export const BUG_STATUS_TAG: Record<string, TagType> = {
   open: "primary",
   in_progress: "warning",
@@ -165,7 +165,7 @@ export const BUG_STATUS_OPTIONS = Object.entries(BUG_STATUS_LABEL).map(([value, 
   label,
 }));
 
-/** 缺陷严重程度标签与文案 */
+/** Bug severity labels and copy */
 export const BUG_SEVERITY_TAG: Record<string, TagType> = {
   low: undefined,
   normal: "info",
@@ -190,7 +190,7 @@ export const BUG_SEVERITY_OPTIONS = Object.entries(BUG_SEVERITY_LABEL).map(([val
   label,
 }));
 
-/** 缺陷优先级标签与文案 */
+/** Bug priority labels and copy */
 export const BUG_PRIORITY_TAG: Record<string, TagType> = {
   low: undefined,
   normal: "info",

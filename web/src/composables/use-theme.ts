@@ -22,9 +22,9 @@ export interface ThemeOption {
 }
 
 /**
- * 浅色系预设官方默认深色侧栏（nav.variant 默认 dark = 深底浅字），而本应用
- * 布局为扁平浅色侧栏（layout.vue .app-nav 透明 + 侧栏底色随 --u-nav-bg-color），
- * 因此浅色预设需切 nav.variant: 'light'（浅底深字），并补上匹配的浅底色。
+ * Light presets default to the official dark sidebar (nav.variant defaults to dark = dark bg, light text), but this app's
+ * layout is a flat light sidebar (layout.vue .app-nav transparent + sidebar bg from --u-nav-bg-color),
+ * so light presets must switch nav.variant: 'light' (light bg, dark text) and add a matching light bg.
  */
 function withLightSidebar(theme: UITheme): UITheme {
   return theme.new({
@@ -32,7 +32,7 @@ function withLightSidebar(theme: UITheme): UITheme {
   });
 }
 
-/** 主题注册表：磐石（默认）为品牌主题，其余为 veltra 官方预设 */
+/** Theme registry: bedrock (default) is the brand theme, the rest are veltra official presets */
 export const THEME_OPTIONS: ThemeOption[] = [
   { id: "bedrock", name: "磐石", desc: "宣纸古风 · 亮", theme: bedrockTheme },
   { id: "bedrock-dark", name: "黛夜", desc: "墨池古风 · 暗", theme: bedrockDarkTheme },
@@ -59,7 +59,7 @@ function readStored<T extends string>(key: string, valid: readonly T[], fallback
   return fallback;
 }
 
-/* ── 可调配置：主题 / 组件尺寸 / 圆角 / 侧栏（侧栏外观由 nav.variant 决定） ── */
+/* ── Tunable config: theme / component size / radius / sidebar (sidebar look comes from nav.variant) ── */
 
 export const CURRENT_SIZE_OPTIONS = ["small", "default", "large"] as const;
 export type ThemeSize = (typeof CURRENT_SIZE_OPTIONS)[number];
@@ -87,7 +87,7 @@ export const currentNavVariant = ref<NavVariantMode>(
   readStored(NAV_VARIANT_STORAGE_KEY, CURRENT_NAV_VARIANT_OPTIONS, "follow"),
 );
 
-/** 组合当前配置得到生效主题（与 veltra playground 同逻辑） */
+/** Composes the current config into the active theme (same logic as the veltra playground) */
 export function buildEffectiveTheme(): UITheme {
   const option = THEME_OPTIONS.find((o) => o.id === currentThemeID.value) ?? THEME_OPTIONS[0]!;
   let base = option.theme;
@@ -100,8 +100,8 @@ export function buildEffectiveTheme(): UITheme {
   }
 
   if (currentNavVariant.value !== "follow") {
-    // 强制侧栏变体：展开整套变体 token 覆盖预设侧栏个性（如樱花深酒红底），
-    // 保证前景 / 底色 + 侧栏底（layout 用 --u-nav-bg-color）三处配套。
+    // Force the sidebar variant: expand the whole variant token set to override preset sidebar personality (e.g. cherry dark wine bg),
+    // keeping foreground / bg + sidebar base (layout uses --u-nav-bg-color) consistent.
     const nav: Record<string, string> = { variant: currentNavVariant.value };
     for (const [name, value] of Object.entries(
       navSidebarTokens(base.series, currentNavVariant.value),
@@ -113,7 +113,7 @@ export function buildEffectiveTheme(): UITheme {
   return base;
 }
 
-/** 应用配置：注入 token + 组件尺寸 + 持久化 */
+/** Applies config: inject tokens + component size + persistence */
 export function applySettings(): void {
   loadTheme(buildEffectiveTheme());
   setConfig({ size: currentSize.value });
@@ -133,15 +133,15 @@ function persistSettings(): void {
 
 const { setConfig } = useConfig();
 
-/** 任一配置变化时立即生效（含组件尺寸、主题、圆角、侧栏） */
+/** Any config change takes effect immediately (size, theme, radius, sidebar) */
 watch([currentThemeID, currentSize, currentRadiusMode, currentNavVariant], applySettings);
 
-/** 入口启动时恢复用户上次选择的配置 */
+/** Restores the user's last config at startup */
 export function initTheme(): void {
   applySettings();
 }
 
-/** 全量恢复默认（主题=磐石，尺寸=中，圆角=默认，侧栏=跟随主题） */
+/** Restores everything to defaults (theme=bedrock, size=medium, radius=default, sidebar=follow theme) */
 export function resetThemeSettings(): void {
   currentThemeID.value = DEFAULT_THEME_ID;
   currentSize.value = "default";

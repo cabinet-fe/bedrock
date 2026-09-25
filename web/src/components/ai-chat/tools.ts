@@ -45,7 +45,7 @@ function formatTreeSummary(nodes: ProjectDocNode[], indent = ""): string {
 }
 
 export const aiChatTools: ChatTool[] = [
-  // 1. 项目列表查询
+  // 1. list projects
   {
     name: "list_projects",
     label: "查询项目列表",
@@ -102,7 +102,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 2. 代码仓库列表查询
+  // 2. list repos
   {
     name: "list_repositories",
     label: "查询代码仓库",
@@ -152,7 +152,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 3. 服务器列表查询
+  // 3. list servers
   {
     name: "list_servers",
     label: "查询服务器",
@@ -211,7 +211,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 4. 凭证列表查询
+  // 4. list credentials
   {
     name: "list_credentials",
     label: "查询凭证",
@@ -268,7 +268,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 5. CI/CD 构建任务列表查询
+  // 5. list CI/CD build jobs
   {
     name: "list_build_jobs",
     label: "查询构建任务",
@@ -318,7 +318,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 6. CI/CD 流水线列表查询
+  // 6. list CI/CD pipelines
   {
     name: "list_pipelines",
     label: "查询流水线",
@@ -366,7 +366,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 7. CI/CD 构建运行记录列表查询
+  // 7. list CI/CD build runs
   {
     name: "list_build_runs",
     label: "查询构建记录",
@@ -450,7 +450,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 8. 触发 CI/CD 构建任务（敏感，需确认，会话内确认 + 触发后自动打开右侧面板）
+  // 8. trigger a CI/CD build job (sensitive; confirmed in-session + opens the right panel after trigger)
   {
     name: "trigger_build_job",
     label: "触发构建任务",
@@ -499,7 +499,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 9. 触发 CI/CD 流水线（敏感，需确认，会话内确认 + 触发后自动打开右侧面板）
+  // 9. trigger a CI/CD pipeline (sensitive; confirmed in-session + opens the right panel after trigger)
   {
     name: "trigger_pipeline",
     label: "触发流水线",
@@ -541,7 +541,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 10. 查看构建/流水线详情与实时日志
+  // 10. view build/pipeline detail and live logs
   {
     name: "view_build_run",
     label: "查看运行详情",
@@ -597,7 +597,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 11. AI 智能体列表查询
+  // 11. list AI agents
   {
     name: "list_ai_agents",
     label: "查询智能体",
@@ -645,7 +645,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 12. AI 智能体运行记录查询
+  // 12. list AI agent runs
   {
     name: "list_agent_runs",
     label: "查询智能体运行",
@@ -722,7 +722,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 13. 手动触发 AI 智能体（敏感，需确认）
+  // 13. manually trigger an AI agent (sensitive; needs confirmation)
   {
     name: "trigger_ai_agent",
     label: "触发智能体",
@@ -754,7 +754,7 @@ export const aiChatTools: ChatTool[] = [
     },
   },
 
-  // 14. 查看项目开发/接口文档
+  // 14. view project dev/API docs
   {
     name: "view_project_doc",
     label: "查看项目文档",

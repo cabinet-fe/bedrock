@@ -130,7 +130,7 @@ type EnqueuePipelineInput struct {
 
 func (o *PipelineOrchestrator) List(q pkg.ListQuery, pipelineID *uint, status string, projectID *uint, userID uint, dataScope string) ([]model.PipelineRun, int64, error) {
 	var createdBy *uint
-	// D3: 带 project_id 时跳过 created_by/is_public 数据范围过滤
+	// D3: with project_id, skip the created_by/is_public data scope filter
 	if projectID == nil && dataScope != rbacmodel.DataScopeAll {
 		createdBy = &userID
 	}
@@ -544,13 +544,6 @@ func (o *PipelineOrchestrator) fireStage(pr *model.PipelineRun, stage model.Pipe
 		return false, "running", nil
 	}
 	return markFailed("unknown node type: " + node.NodeType())
-}
-
-func (o *PipelineOrchestrator) failPipeline(pipelineRunID uint, msg string) error {
-	lock := o.runLock(pipelineRunID)
-	lock.Lock()
-	defer lock.Unlock()
-	return o.failPipelineLocked(pipelineRunID, msg)
 }
 
 func (o *PipelineOrchestrator) cancelPipeline(pipelineRunID uint, msg string) error {

@@ -23,7 +23,7 @@ onMounted(() => {
       typeLabelMap.value = map;
     })
     .catch(() => {
-      /* 标签降级为原始值 */
+      /* Label falls back to the raw value */
     });
 });
 </script>

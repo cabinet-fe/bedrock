@@ -56,10 +56,6 @@ func NewHandler(
 // (harness.enabled=false leaves it unset: the endpoints answer 503).
 func (h *Handler) SetHarnessCatalog(c HarnessCatalog) { h.harness = c }
 
-func (h *Handler) SetChatHandler(chat *ChatHandler) {
-	h.chat = chat
-}
-
 // SetChatCompletionsAuth overrides auth for POST /ai/chat/completions (JWT/PAT
 // or loopback harness token). When unset, RegisterRoutes uses authMW.
 func (h *Handler) SetChatCompletionsAuth(mw gin.HandlerFunc) {

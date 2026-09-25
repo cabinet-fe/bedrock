@@ -13,8 +13,8 @@ import { setOnAuthExpired } from "./api/http";
 import { useAuthStore } from "./stores/auth";
 import { initTheme } from "./composables/use-theme";
 
-// loadTheme 会按主题系列写入 html[data-theme=light]，Veltra 据此注入浅色组件 CSS 变量。
-// 从 localStorage 恢复用户上次选择的主题（默认磐石古风亮色）。
+// loadTheme writes html[data-theme=light] per theme family; Veltra injects light component CSS vars from it.
+// Restore the user's last theme from localStorage (default: ancient-style light).
 initTheme();
 
 const app = createApp(App);

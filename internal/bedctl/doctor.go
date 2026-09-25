@@ -11,7 +11,7 @@ import (
 // CmdDoctor runs the health diagnosis for the selected components:
 // service state, configured port/host, local health endpoint, enablement
 // and — when everything is locally healthy — a firewall/security-group
-// checklist for "外部连不上" cases.
+// checklist for "unreachable from outside" cases.
 func CmdDoctor(ctx context.Context, a *App) error {
 	comps := PickComponent(a)
 	if len(comps) == 0 {

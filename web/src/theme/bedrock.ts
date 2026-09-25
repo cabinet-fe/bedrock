@@ -1,19 +1,19 @@
 import { ancientTheme, type UITheme } from "@veltra/styles/theme";
 
 /**
- * 磐石主题 — 宣纸 / 黛墨 / 松烟绿的古风亮色系，与登录页同源。
- * 基于官方 ancientTheme 派生，补齐 1.7 主题模型新增 token：
- * shadow.sm / shadow.lg 按古风赭墨阴影定制，shadow.color 用 hex+alpha
- * （旧 rgba 写法无法生成 --u-shadow-color-a-* 系列 token）。
- * 全局颜色均经 Veltra token 由 loadTheme 注入；业务侧勿为配色硬编码色值。
+ * Bedrock theme — an ancient-style light palette of rice paper / ink / pine smoke green, same source as the login page.
+ * Derived from the official ancientTheme, filling in the tokens added by the 1.7 theme model:
+ * shadow.sm / shadow.lg tuned as ancient ochre-ink shadows; shadow.color uses hex+alpha
+ * (the old rgba syntax cannot generate the --u-shadow-color-a-* token series).
+ * All global colors are injected via Veltra tokens by loadTheme; do not hard-code palette values in business code.
  */
 export const bedrockTheme: UITheme = ancientTheme.new({
   nav: {
-    // 侧栏由 nav.variant 决定前景色系：light = 浅底深字（默认 dark 为深底浅字）。
-    // 本应用布局把 group-nav 侧栏压平成宣纸浅底（layout.vue .app-nav 透明 + 侧栏底色），
-    // 因此必须同时声明 light variant 与匹配的浅底，否则前景仍是深色侧栏的白字（不可读）。
+    // The sidebar foreground scheme comes from nav.variant: light = light bg, dark text (default dark = dark bg, light text).
+    // This app's layout flattens the group-nav sidebar onto a rice-paper light bg (layout.vue .app-nav transparent + sidebar bg),
+    // so the light variant and a matching light bg must be declared together, or the foreground stays the dark sidebar's white text (unreadable).
     variant: "light",
-    "bg-color": "#f1ede0", // 宣纸底，与 .app-sidebar 底色一致
+    "bg-color": "#f1ede0", // rice-paper base, matching .app-sidebar bg
   },
   shadow: {
     color: "#40362024",

@@ -181,7 +181,7 @@ export const useAiChatStore = defineStore("ai-chat", () => {
           if (hasCached) {
             currentModelId.value = cachedModel;
           } else {
-            // 如果未设置或由于更改服务商导致模型 ID 失效，回退到默认模型（首个可用模型）
+            // If unset or the model ID became invalid after a provider change, fall back to the default model (first available)
             currentModelId.value = list[0]!.model_id;
             setCachedModelId(currentModelId.value);
           }

@@ -69,9 +69,3 @@ func (p *Prompts) AskChoice(prompt, valid, def string) string {
 		Warn("无效输入: %s", in)
 	}
 }
-
-// Confirm asks a yes/no question; def is "y" or "n".
-func (p *Prompts) Confirm(prompt, def string) bool {
-	in := p.AskChoice(prompt+" [y/n]", `^[yYnN]$`, def)
-	return in == "y" || in == "Y"
-}

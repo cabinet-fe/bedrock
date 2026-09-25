@@ -13,7 +13,7 @@ import (
 )
 
 // EnvVarInput is one env var in create/update payloads.
-// 带 value：设置/更新；已有键未带 value：保留；请求中消失的键删除。
+// With value: set/update; existing key without value: keep; keys missing from the request are deleted.
 type EnvVarInput struct {
 	Key   string  `json:"key"`
 	Value *string `json:"value"`
@@ -35,7 +35,7 @@ func projectAgentEnvVars(agent *model.AiAgent) {
 	sort.Strings(keys)
 	out := make([]model.EnvVarView, 0, len(keys))
 	for _, k := range keys {
-		// 键存在即 has_value=true，前端用占位符表示「留空保留」
+		// Key present means has_value=true; the frontend uses a placeholder for "keep existing"
 		out = append(out, model.EnvVarView{Key: k, HasValue: true})
 	}
 	agent.EnvVars = out
@@ -85,7 +85,8 @@ func validateEnvVarKey(key string) error {
 	return nil
 }
 
-// mergeAgentEnvVars 按全量键列表合并：带 value 则写入；无 value 则保留旧值；缺键删除。
+// mergeAgentEnvVars merges by the full key list: a value writes it; no value
+// keeps the old one; a missing key deletes it.
 func mergeAgentEnvVars(existing map[string]string, inputs []EnvVarInput) (map[string]string, error) {
 	if existing == nil {
 		existing = map[string]string{}
@@ -147,7 +148,9 @@ func envVarKeys(agent *model.AiAgent) []string {
 	return keys
 }
 
-// writeAgentEnvFile 解密环境变量，写入 {agentRoot}/.env（权限固定 0600，纠正历史残留的宽权限），返回绝对路径与明文 map。
+// writeAgentEnvFile decrypts env vars, writes {agentRoot}/.env (mode 0600,
+// correcting historically too-wide permissions), and returns the absolute
+// path plus the plaintext map.
 func (s *AgentService) writeAgentEnvFile(agent *model.AiAgent, agentRoot string) (envFile string, vars map[string]string, err error) {
 	vars, err = decryptAgentEnvVars(agent.EnvVarsCipher)
 	if err != nil {
@@ -184,7 +187,8 @@ func formatDotEnv(vars map[string]string) string {
 	return b.String()
 }
 
-// escapeDotEnvValue 对含空白/特殊字符的值做双引号基础转义。
+// escapeDotEnvValue applies basic double-quote escaping to values with
+// whitespace or special characters.
 func escapeDotEnvValue(value string) string {
 	if value == "" {
 		return `""`

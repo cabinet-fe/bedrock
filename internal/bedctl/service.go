@@ -147,24 +147,6 @@ func runCmd(ctx context.Context, timeout time.Duration, name string, args ...str
 	return string(out), err
 }
 
-// HealthOK probes a health endpoint once, accepting only HTTP 200.
-func HealthOK(url string, bearer string) bool {
-	client := &http.Client{Timeout: 3 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return false
-	}
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
-}
-
 // WaitHealthy polls the health endpoint for tries seconds, bailing out early
 // when the process is gone or crash-looping. Returns the last HTTP status
 // code (000 = no response) for diagnostics.

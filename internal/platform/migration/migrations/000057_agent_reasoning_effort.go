@@ -32,7 +32,7 @@ func upAgentReasoningEffort(ctx context.Context, db *gorm.DB, driver migration.D
 }
 
 type aiAgentReasoningEffortModel struct {
-	ID             uint   `gorm:"primaryKey"`
+	ID              uint   `gorm:"primaryKey"`
 	ReasoningEffort string `gorm:"column:reasoning_effort;size:40;not null;default:''"`
 }
 

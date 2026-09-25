@@ -468,7 +468,6 @@ func TestStreamLazyModeResolution(t *testing.T) {
 	})
 }
 
-
 func TestStreamRingBufferEvictsOldest(t *testing.T) {
 	svc := NewStreamService(newFakeBusProvider(), StreamConfig{RingSize: 5}, nil)
 	for seq := int64(1); seq <= 8; seq++ {

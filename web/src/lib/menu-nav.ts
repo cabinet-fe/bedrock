@@ -24,7 +24,7 @@ import type { Component } from "vue";
 
 import type { MenuGroupNode } from "@/api/types";
 
-/** 后端 icon 为空时按 path 回退；仅前端展示预设，菜单仍以后端下发为准 */
+/** Falls back by path when the backend icon is empty; display-only preset, menus still follow the backend */
 const MENU_DEFAULT_ICONS: Record<string, Component> = {
   "/": House,
   "/handbook": Books,
@@ -70,10 +70,10 @@ export function menuGroupsToGroupNav(groups: MenuGroupNode[] | undefined | null)
 }
 
 /**
- * 匹配路由对应的菜单图标：
- * 1. 优先在当前菜单树中通过最长前缀匹配（让详情页如 /project/projects/1 与其入口 /project/projects 图标保持一致）；
- * 2. 降级匹配内置默认菜单图标映射表 MENU_DEFAULT_ICONS（同样支持最长前缀匹配）；
- * 3. 根路径回退 House，其它回退 List。
+ * Matches the menu icon for a route:
+ * 1. Prefer the longest prefix match in the current menu tree (keeps detail pages like /project/projects/1 on the same icon as their entry /project/projects);
+ * 2. Fall back to the built-in MENU_DEFAULT_ICONS map (also longest-prefix);
+ * 3. Root paths fall back to House, others to List.
  */
 export function resolveRouteIcon(path: string, menus?: MenuGroupNode[] | null): Component | string {
   if (menus?.length) {

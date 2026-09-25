@@ -160,7 +160,7 @@ func (r *DashboardRepository) CountPipelines() (int64, error) {
 	return total, err
 }
 
-// ListMyProjects 返回用户作为成员或创建者的项目，按 updated_at 倒序。
+// ListMyProjects returns projects where the user is a member or creator, newest updated_at first.
 func (r *DashboardRepository) ListMyProjects(userID uint, limit int) ([]model.MyProject, error) {
 	var rows []model.MyProject
 	err := r.db.Table("product_projects AS p").

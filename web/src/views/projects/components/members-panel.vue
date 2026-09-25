@@ -35,7 +35,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 const props = defineProps<{
   project: ProductProject;
-  /** ProTable 高度；弹窗内建议固定高度 */
+  /** ProTable height; a fixed height is recommended inside dialogs */
   height?: string;
 }>();
 const emit = defineEmits<{ ownerTransferred: [] }>();

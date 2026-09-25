@@ -16,7 +16,7 @@ func init() {
 }
 
 // upResourceMenu moves repositories/servers/credentials from the CI/CD menu
-// group into a top-level 资源管理 (resource) module, renaming permission paths.
+// group into a top-level "resource management" (resource) module, renaming permission paths.
 func upResourceMenu(ctx context.Context, db *gorm.DB, driver migration.Driver) error {
 	_ = ctx
 	_ = driver

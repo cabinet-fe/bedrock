@@ -14,7 +14,7 @@ func init() {
 }
 
 // upResourceCliTokens moves AI CLI and personal access tokens from the AI menu
-// group into 资源管理 (resource), renaming menu routes and permission paths.
+// group into "resource management" (resource), renaming menu routes and permission paths.
 // Table names are unchanged; no legacy path aliases are kept.
 func upResourceCliTokens(ctx context.Context, db *gorm.DB, driver migration.Driver) error {
 	_ = ctx

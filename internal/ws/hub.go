@@ -121,7 +121,7 @@ func (h *Hub) Register(client *Client) {
 	h.register <- client
 }
 
-// Subscribe 将已注册客户端加入额外频道（支持多频道订阅）。
+// Subscribe adds a registered client to an extra channel (multi-channel subscription).
 func (h *Hub) Subscribe(client *Client, channel string) {
 	if channel == "" {
 		return
@@ -139,7 +139,7 @@ func (h *Hub) Unregister(client *Client) {
 	}
 }
 
-// ChannelSubscriberCount 返回频道当前订阅客户端数。
+// ChannelSubscriberCount returns the number of clients currently subscribed to a channel.
 func (h *Hub) ChannelSubscriberCount(channel string) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

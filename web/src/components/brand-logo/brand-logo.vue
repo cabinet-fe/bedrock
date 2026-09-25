@@ -88,7 +88,7 @@
   line-height: 1.15;
 }
 
-/* 英文题签在上，宋体题名居下，与登录页同源 */
+/* English tagline on top, serif title below; same source as the login page */
 .brand-logo__name {
   font-size: 10px;
   font-weight: 500;
@@ -108,7 +108,7 @@
   color: fn.use-var(text-color, title);
 }
 
-/* 朱砂小印，缀于题名之侧 */
+/* Cinnabar seal, beside the title */
 .brand-logo__seal {
   flex-shrink: 0;
   display: grid;

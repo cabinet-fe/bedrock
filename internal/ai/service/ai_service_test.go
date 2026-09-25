@@ -43,7 +43,7 @@ func TestAgentRunKeepsExplicitProjectID(t *testing.T) {
 	if run.ProjectID != nil {
 		t.Fatalf("manual run should not bind project, got %v", run.ProjectID)
 	}
-	// docs_generate 显式传入 project_id
+	// docs_generate explicitly passes project_id
 	explicit, err := agents.CreateRun(agent.ID, service.CreateRunInput{
 		TriggerType: model.TriggerDocsGen, TriggeredBy: 1, ProjectID: &project.ID,
 	})

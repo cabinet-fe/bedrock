@@ -8,10 +8,10 @@ const props = defineProps<{
   description?: string;
   status?: string;
   error?: string;
-  /** 业务上可运行（启用 + 已开手动触发） */
+  /** Runnable in business terms (enabled + manual trigger on) */
   runnable: boolean;
   disabledTip?: string;
-  /** 入队中或 run 未终态 */
+  /** Queued or the run is not terminal */
   busy: boolean;
   canExecute: boolean;
   canViewHistory?: boolean;

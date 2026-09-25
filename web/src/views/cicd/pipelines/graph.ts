@@ -3,7 +3,7 @@ import type { InjectionKey, Ref } from "vue";
 
 import type { PipelineEdgeCondition, PipelineNodeEnvVar } from "@/api/types";
 
-/** 节点副标题解析：key 为 `${nodeType}:${targetId}`，值为任务/智能体名 */
+/** Node subtitle resolution: key `${nodeType}:${targetId}`, value the job/agent name */
 export const PIPELINE_TARGET_NAMES: InjectionKey<Ref<Record<string, string>>> =
   Symbol("pipeline-target-names");
 
@@ -15,7 +15,7 @@ export interface PipelineNodeData {
   script_job_id?: number;
   agent_id?: number;
   env_vars?: PipelineNodeEnvVar[];
-  /** 运行时状态（仅运行详情注入，不落库） */
+  /** Runtime status (injected on run detail only, not persisted) */
   status?: string;
   [key: string]: unknown;
 }
@@ -33,7 +33,7 @@ export function edgeCondition(edge: Edge): PipelineEdgeCondition {
   return c === "on_failure" || c === "always" ? c : "on_success";
 }
 
-/** 按边条件应用颜色/虚线/标签（on_success 不显示标签） */
+/** Apply color/dash/label per edge condition (on_success shows no label) */
 export function applyEdgeVisual(edge: Edge): Edge {
   const condition = edgeCondition(edge);
   const visual: Pick<Edge, "style" | "label" | "labelStyle" | "labelBgStyle"> =
@@ -60,7 +60,7 @@ export function applyEdgeVisual(edge: Edge): Edge {
   return { ...edge, data: { condition }, ...visual };
 }
 
-/** 解析 graph_json；旧图 node.type 缺省按 buildJob 处理 */
+/** Parses graph_json; legacy graphs default missing node.type to buildJob */
 export function parseGraphJson(raw: string): { nodes: Node[]; edges: Edge[] } {
   try {
     const g = JSON.parse(raw || '{"nodes":[],"edges":[]}') as {
@@ -79,7 +79,7 @@ export function parseGraphJson(raw: string): { nodes: Node[]; edges: Edge[] } {
   }
 }
 
-/** 序列化为 graph_json v2：nodes 只留 {id,type,position,data}；edges 只留 {id,source,target,data?} */
+/** Serializes to graph_json v2: nodes keep {id,type,position,data}; edges keep {id,source,target,data?} */
 export function serializeGraph(nodes: Node[], edges: Edge[]): string {
   return JSON.stringify({
     nodes: nodes.map((n) => {
@@ -108,7 +108,7 @@ export function createGraphNode(type: PipelineNodeType, position: { x: number; y
   return { id: `n-${type}-${Date.now()}`, type, position, data };
 }
 
-/** 空图种子化：start（左）+ end（右） */
+/** Seeds empty graphs: start (left) + end (right) */
 export function seedGraph(): { nodes: Node[]; edges: Edge[] } {
   return {
     nodes: [
@@ -119,7 +119,7 @@ export function seedGraph(): { nodes: Node[]; edges: Edge[] } {
   };
 }
 
-/** 按流水线 DAG 拓扑序排列 stage（开始 → … → 结束）；不可达节点保留原相对顺序追加在末尾。 */
+/** Orders stages by the pipeline DAG's topological order (start → … → end); unreachable nodes keep their relative order at the end. */
 export function orderStagesByGraph<T extends { node_id: string }>(
   stages: T[],
   snapshotJson: string,

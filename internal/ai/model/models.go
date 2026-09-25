@@ -69,29 +69,29 @@ func (AgentRepoBinding) TableName() string { return "ai_agent_repo_bindings" }
 
 // AiAgent is a configured agent bound to skills, model selection, and repository checkouts.
 type AiAgent struct {
-	ID              uint          `json:"id" gorm:"primaryKey"`
-	Name            string        `json:"name" gorm:"size:100;not null"`
-	Description     string        `json:"description" gorm:"size:500"`
-	Enabled         bool          `json:"enabled" gorm:"not null;default:true"`
-	ModelProvider   string        `json:"model_provider,omitempty" gorm:"column:model_provider;size:100"`
-	ModelID         string        `json:"model_id,omitempty" gorm:"column:model_id;size:200"`
-	ReasoningEffort string        `json:"reasoning_effort,omitempty" gorm:"column:reasoning_effort;size:40;not null;default:''"`
-	ApprovalMode    string        `json:"approval_mode" gorm:"column:approval_mode;size:20;not null;default:manual"`
-	SystemPrompt        string `json:"system_prompt" gorm:"type:text"`
-	InjectDefaultPrompt bool   `json:"inject_default_prompt" gorm:"column:inject_default_prompt;not null;default:true"`
-	SkillIDsJSON        string `json:"-" gorm:"type:text"`
-	SkillIDs        []uint        `json:"skill_ids" gorm:"-"`
-	RepoBindings    []RepoBinding `json:"repo_bindings" gorm:"-"`
-	EnvVarsCipher   string        `json:"-" gorm:"type:text"`
-	EnvVars         []EnvVarView  `json:"env_vars" gorm:"-"`
-	OutputDir       string        `json:"output_dir" gorm:"size:200;not null;default:output"`
-	StreamOutput    bool          `json:"-" gorm:"not null;default:false"` // legacy column, unused by the session backend
-	TimeoutSec      int           `json:"timeout_sec" gorm:"not null;default:600"`
-	WorkspaceStatus string        `json:"workspace_status" gorm:"size:20;not null;default:ready"`
-	WorkspaceError  string        `json:"workspace_error" gorm:"type:text"`
-	CreatedBy       uint          `json:"created_by" gorm:"index"`
-	CreatedAt       time.Time     `json:"created_at"`
-	UpdatedAt       time.Time     `json:"updated_at"`
+	ID                  uint          `json:"id" gorm:"primaryKey"`
+	Name                string        `json:"name" gorm:"size:100;not null"`
+	Description         string        `json:"description" gorm:"size:500"`
+	Enabled             bool          `json:"enabled" gorm:"not null;default:true"`
+	ModelProvider       string        `json:"model_provider,omitempty" gorm:"column:model_provider;size:100"`
+	ModelID             string        `json:"model_id,omitempty" gorm:"column:model_id;size:200"`
+	ReasoningEffort     string        `json:"reasoning_effort,omitempty" gorm:"column:reasoning_effort;size:40;not null;default:''"`
+	ApprovalMode        string        `json:"approval_mode" gorm:"column:approval_mode;size:20;not null;default:manual"`
+	SystemPrompt        string        `json:"system_prompt" gorm:"type:text"`
+	InjectDefaultPrompt bool          `json:"inject_default_prompt" gorm:"column:inject_default_prompt;not null;default:true"`
+	SkillIDsJSON        string        `json:"-" gorm:"type:text"`
+	SkillIDs            []uint        `json:"skill_ids" gorm:"-"`
+	RepoBindings        []RepoBinding `json:"repo_bindings" gorm:"-"`
+	EnvVarsCipher       string        `json:"-" gorm:"type:text"`
+	EnvVars             []EnvVarView  `json:"env_vars" gorm:"-"`
+	OutputDir           string        `json:"output_dir" gorm:"size:200;not null;default:output"`
+	StreamOutput        bool          `json:"-" gorm:"not null;default:false"` // legacy column, unused by the session backend
+	TimeoutSec          int           `json:"timeout_sec" gorm:"not null;default:600"`
+	WorkspaceStatus     string        `json:"workspace_status" gorm:"size:20;not null;default:ready"`
+	WorkspaceError      string        `json:"workspace_error" gorm:"type:text"`
+	CreatedBy           uint          `json:"created_by" gorm:"index"`
+	CreatedAt           time.Time     `json:"created_at"`
+	UpdatedAt           time.Time     `json:"updated_at"`
 }
 
 func (AiAgent) TableName() string { return "ai_agents" }

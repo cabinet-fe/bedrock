@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"bedrock/internal/ops/model"
 	"bedrock/internal/ops/repository"
@@ -413,23 +412,6 @@ func TestFailedJobPersistsRedactedSpacedCLISecrets(t *testing.T) {
 			}
 		}
 	}
-}
-
-func awaitJob(t *testing.T, svc *DevEnvironmentService, envID, id uint) *model.DevEnvJob {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		job, err := svc.GetJob(envID, id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if job.Status != model.JobQueued && job.Status != model.JobRunning {
-			return job
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("job %d did not finish", id)
-	return nil
 }
 
 func writeStubExecutable(t *testing.T, path, script string) {

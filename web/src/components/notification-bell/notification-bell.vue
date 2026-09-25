@@ -99,7 +99,7 @@ async function onMarkAll(): Promise<void> {
   });
 }
 
-/** 类型 → 图标：构建 / 智能体 / 其他 */
+/** Type → icon: build / agent / other */
 function iconOf(n: NotificationItem): Component {
   if (n.type.startsWith("build_run_")) return Build;
   if (n.type.startsWith("agent_run_")) return Agent;
@@ -108,7 +108,7 @@ function iconOf(n: NotificationItem): Component {
 
 type NotifTone = "success" | "failed" | "muted";
 
-/** 状态 → 色调：成功松烟绿，失败朱砂，其余黛墨灰 */
+/** Status → hue: success pine smoke green, failure cinnabar, the rest ink gray */
 function toneOf(n: NotificationItem): NotifTone {
   if (n.type.endsWith("_success")) return "success";
   if (n.type.endsWith("_failed")) return "failed";
@@ -215,22 +215,22 @@ onUnmounted(() => {
 @use "pkg:@veltra/styles/functions" as fn;
 @use "@/lib/empty-center.scss" as empty;
 
-/* 默认 UBadge 无 top/right，会落在触发器后方并叠到头像上；钉到铃铛右上角 */
+/* Default UBadge has no top/right, so it lands behind the trigger and overlaps the avatar; pin it to the bell's top-right */
 .notif-badge {
   display: inline-flex;
   vertical-align: middle;
-  /* 给角标外溢留一点空隙，避免贴住头像 */
+  /* Leave a little room for the badge's overflow so it does not touch the avatar */
   margin-right: 4px;
 
   :deep(.u-badge__sup) {
     top: -2px;
     right: -2px;
-    /* 覆盖组件内联 transform，避免半截漂到头像上 */
+    /* Override the component's inline transform so it does not drift half-way onto the avatar */
     transform: none !important;
     min-width: 16px;
     height: 16px;
     padding: 0 4px;
-    /* 与登录页朱砂印同色；勿用 type=danger 浅底字色 */
+    /* Same color as the login page's cinnabar seal; do not use type=danger's light-bg text color */
     background-color: #b3452e !important;
     color: #fff;
     border: 1.5px solid fn.use-var(bg-color, top);
@@ -264,7 +264,7 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: fn.use-var(gap, small);
   padding: 12px 16px 10px;
-  /* 发丝分隔线，比整根 border 轻 */
+  /* Hairline separator, lighter than a full border */
   border-bottom: 1px solid color-mix(in srgb, fn.use-var(border, muted-color) 55%, transparent);
 }
 
@@ -324,7 +324,7 @@ onUnmounted(() => {
     background: fn.use-var(bg-color, hover);
   }
 
-  /* 已读条目整体降半阶，未读保持墨色并缀朱砂点 */
+  /* Read items drop half a step; unread stay ink-colored with a cinnabar dot */
   &:not(.is-unread) {
     .notif-item__title {
       color: fn.use-var(text-color, second);
@@ -351,7 +351,7 @@ onUnmounted(() => {
     background: color-mix(in srgb, fn.use-var(color, primary) 10%, transparent);
   }
 
-  /* 与登录页朱砂印同色 */
+  /* Same color as the login page's cinnabar seal */
   &.is-failed {
     color: #b3452e;
     background: color-mix(in srgb, #b3452e 10%, transparent);
@@ -402,7 +402,7 @@ onUnmounted(() => {
   height: 6px;
   margin-left: 2px;
   border-radius: 50%;
-  /* 与登录页朱砂印同色 */
+  /* Same color as the login page's cinnabar seal */
   background: #b3452e;
 }
 </style>

@@ -74,7 +74,7 @@ const columns = defineProTableColumns([
   { key: "action", name: "操作", width: 240, align: "center", fixed: "right" },
 ]);
 
-// --------------------------- 一键备份 ---------------------------
+// --------------------------- One-click backup ---------------------------
 const createDialogOpen = ref(false);
 const creating = ref(false);
 const createForm = reactive({
@@ -126,7 +126,7 @@ async function handleCreateSubmit() {
   }
 }
 
-// --------------------------- 在线恢复 ---------------------------
+// --------------------------- Online restore ---------------------------
 const restoreDialogOpen = ref(false);
 const restoreSuccessOpen = ref(false);
 const restoreMode = ref<"record" | "upload">("record");
@@ -207,7 +207,7 @@ function handleReloadPage() {
   window.location.reload();
 }
 
-// --------------------------- 下载 & 删除 ---------------------------
+// --------------------------- Download & delete ---------------------------
 const onDownload = bind(async (row: SystemBackup) => {
   try {
     const blob = await downloadBackup(row.id);

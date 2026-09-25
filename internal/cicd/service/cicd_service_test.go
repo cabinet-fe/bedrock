@@ -634,7 +634,7 @@ func TestBuildJob_ProjectID_D3ListReadAndWriteForbidden(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 不带 project_id：self 仍不可见他人私有任务
+	// Without project_id: self scope still cannot see others' private jobs
 	items, total, err := jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", nil, 1, "self")
 	if err != nil || total != 0 || len(items) != 0 {
 		t.Fatalf("global self list = %#v total=%d err=%v", items, total, err)
@@ -646,14 +646,14 @@ func TestBuildJob_ProjectID_D3ListReadAndWriteForbidden(t *testing.T) {
 		t.Fatalf("unbound private still forbidden: %v", err)
 	}
 
-	// 带 project_id：跳过 data-scope，可见项目内任务
+	// With project_id: data scope skipped, jobs inside the project are visible
 	pid := project.ID
 	items, total, err = jobSvc.List(pkg.ListQuery{Page: 1, PageSize: 20}, nil, "", "", &pid, 1, "self")
 	if err != nil || total != 1 || len(items) != 1 || items[0].ID != bound.ID {
 		t.Fatalf("project list = %#v total=%d err=%v", items, total, err)
 	}
 
-	// 写仍 403
+	// Writes still 403
 	if _, err := jobSvc.Update(bound.ID, 1, "self", service.UpdateBuildJobInput{}); !service.IsForbidden(err) {
 		t.Fatalf("update must stay forbidden: %v", err)
 	}
@@ -916,5 +916,3 @@ type stubCron struct{ addErr error }
 
 func (s stubCron) Add(job model.BuildJob) error { return s.addErr }
 func (s stubCron) Remove(jobID uint)            {}
-
-func ptr[T any](v T) *T { return &v }

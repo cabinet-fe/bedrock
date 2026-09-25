@@ -5,7 +5,7 @@ export type DictOption = { label: string; value: string };
 const memo = new Map<string, DictOption[]>();
 const inflight = new Map<string, Promise<DictOption[]>>();
 
-/** 拉取启用中的字典项为 select options；同 code 去重并缓存。 */
+/** Fetches enabled dict items as select options; dedupes by code and caches. */
 export function loadDictOptions(code: string): Promise<DictOption[]> {
   const cached = memo.get(code);
   if (cached) return Promise.resolve(cached);
@@ -27,7 +27,7 @@ export function loadDictOptions(code: string): Promise<DictOption[]> {
   return request;
 }
 
-/** 字典保存后清缓存，避免下拉仍用旧项。 */
+/** Clears the cache after saving a dict so dropdowns do not keep stale items. */
 export function clearDictOptionsCache(code?: string) {
   if (code) {
     memo.delete(code);

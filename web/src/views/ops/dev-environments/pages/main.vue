@@ -150,7 +150,7 @@ async function refreshLatestJob(envId: number) {
       trackJob(envId, job.id);
     }
   } catch {
-    // 卡片在没有任务时仍渲染占位
+    // Cards still render a placeholder when there are no jobs
   }
 }
 
@@ -402,7 +402,7 @@ async function pollPendingJobs() {
       }
     }
   } catch {
-    // 轮询失败不中断监控
+    // Poll failures do not interrupt monitoring
   }
   if (pendingJobs.size === 0) stopJobPolling();
 }

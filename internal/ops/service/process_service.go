@@ -245,7 +245,7 @@ func sortProcesses(items []model.ProcessInfo, sortSpec string) {
 	})
 }
 
-// parseProcessSort 解析 ProTable 的 field@asc|desc。
+// parseProcessSort parses ProTable's field@asc|desc.
 func parseProcessSort(sortSpec string) (field string, ascending bool) {
 	sortSpec = strings.TrimSpace(sortSpec)
 	if sortSpec == "" {

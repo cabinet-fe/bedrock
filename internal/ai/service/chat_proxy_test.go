@@ -481,5 +481,3 @@ func TestChatProxy_OrphanToolMessagesSanitized(t *testing.T) {
 		t.Fatalf("expected 1 sanitized message, got %d: %v", len(upstreamMsgs), upstreamMsgs)
 	}
 }
-
-

@@ -11,16 +11,16 @@ const (
 	RoleTypeCustom  = "custom"
 
 	RoleCodeSuperAdmin = "super_admin"
-	// 注册可选的内置角色编码（数据权限均为 self）。
+	// Codes of optional built-in roles (data scope is always self).
 	RoleCodeDeveloper   = "developer"
 	RoleCodeTester      = "tester"
 	RoleCodeOps         = "ops"
 	RoleCodeImplementer = "implementer"
 	RoleCodeProduct     = "product"
 
-	// DataScopeSelf：仅自己创建的数据（项目另含成员例外）
+	// DataScopeSelf: only data the user created (projects also include membership)
 	DataScopeSelf = "self"
-	// DataScopeAll：可读全部（项目写权限仍靠成员 / manage_all）
+	// DataScopeAll: read everything (project writes still require membership / manage_all)
 	DataScopeAll = "all"
 )
 
@@ -140,21 +140,21 @@ type MenuItemNode struct {
 
 // PermissionCatalogGroup is the three-level catalog for role permission editors.
 type PermissionCatalogGroup struct {
-	ID    uint                     `json:"id"`
-	Name  string                   `json:"name"`
-	Code  string                   `json:"code"`
-	Menus []PermissionCatalogMenu  `json:"menus"`
+	ID    uint                    `json:"id"`
+	Name  string                  `json:"name"`
+	Code  string                  `json:"code"`
+	Menus []PermissionCatalogMenu `json:"menus"`
 }
 
 type PermissionCatalogMenu struct {
-	ID             uint                        `json:"id"`
-	Code           string                      `json:"code"`
-	FullCode       string                      `json:"full_code"`
-	Title          string                      `json:"title"`
-	SuperAdminOnly bool                        `json:"super_admin_only"`
-	Hidden         bool                        `json:"hidden"`
-	Enabled        bool                        `json:"enabled"`
-	Features       []PermissionCatalogFeature  `json:"features"`
+	ID             uint                       `json:"id"`
+	Code           string                     `json:"code"`
+	FullCode       string                     `json:"full_code"`
+	Title          string                     `json:"title"`
+	SuperAdminOnly bool                       `json:"super_admin_only"`
+	Hidden         bool                       `json:"hidden"`
+	Enabled        bool                       `json:"enabled"`
+	Features       []PermissionCatalogFeature `json:"features"`
 }
 
 type PermissionCatalogFeature struct {

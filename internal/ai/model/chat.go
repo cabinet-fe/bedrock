@@ -191,4 +191,3 @@ func (r *ChatCompletionRequest) UnmarshalJSON(data []byte) error {
 	r.Extra = extra
 	return nil
 }
-

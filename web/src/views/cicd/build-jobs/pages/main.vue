@@ -73,7 +73,7 @@ const ARTIFACT_OPTIONS = [
   { label: "gzip", value: "gzip" },
 ];
 
-/** 常用触发时区；filterable + creatable，仍可输入任意 IANA 时区 */
+/** Common trigger timezones; filterable + creatable, any IANA timezone is still accepted */
 const TIMEZONE_OPTIONS = [
   { label: "Asia/Shanghai（北京）", value: "Asia/Shanghai" },
   { label: "Asia/Tokyo（东京）", value: "Asia/Tokyo" },
@@ -108,7 +108,7 @@ type EnvVarDraft = { key: string; value: string; has_value?: boolean };
 type CachePathDraft = { path: string };
 type ArtifactPathDraft = { path: string };
 
-/** API `cache_paths` 为 JSON 数组字符串 */
+/** API `cache_paths` is a JSON-array string */
 function parseCachePaths(raw: string | undefined): string[] {
   if (!raw) return [];
   const trimmed = raw.trim();
@@ -117,7 +117,7 @@ function parseCachePaths(raw: string | undefined): string[] {
     const parsed: unknown = JSON.parse(trimmed);
     if (Array.isArray(parsed)) return parsed.map((s) => String(s).trim()).filter(Boolean);
   } catch {
-    /* 非法 JSON 视为无缓存路径 */
+    /* Invalid JSON counts as no cache paths */
   }
   return [];
 }
@@ -131,7 +131,7 @@ const BUILD_SCRIPT_TYPE_OPTIONS = [
   { label: "CMD", value: "cmd" },
 ];
 
-/** 脚本类型 → 编辑器高亮语言；无对应语言则不指定 */
+/** Script type → editor highlight language; none when unsupported */
 const SCRIPT_TYPE_LANG: Record<string, CodeEditorLang | undefined> = {
   bash: "bash",
   node: "js",
@@ -204,7 +204,7 @@ const form = reactive({
 
 const branchPlaceholder = computed(() => (branchesLoading.value ? "加载分支…" : "选择或输入分支"));
 
-/** 编辑器高亮语言跟随脚本类型；python / cmd 无对应语言则不指定 */
+/** Editor highlight language follows the script type; none for python / cmd */
 const editorLangs = computed(() => {
   const lang = SCRIPT_TYPE_LANG[form.build_script_type];
   return lang ? [lang] : [];
@@ -316,7 +316,7 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
-  // 无 AI 模块权限时静默失败，Agent 选项留空
+  // Fails silently without AI module permission; the Agent option stays empty
   try {
     const agents = await listAgents({ page: 1, page_size: 100 });
     agentOptions.value = (agents.items ?? []).map((a: AiAgent) => ({
@@ -491,7 +491,7 @@ function buildBody(): Record<string, unknown> | undefined {
     env_vars: envVars,
     artifact_paths: form.artifact_paths.map((a) => a.path.trim()).filter(Boolean),
     cache_paths: JSON.stringify(form.cache_paths.map((c) => c.path.trim()).filter(Boolean)),
-    // 后端 Update 用 *uint：0 表示解除关联（省略字段则不改）
+    // Backend Update uses *uint: 0 means unlink (omitted fields are untouched)
     project_id: form.project_id ?? 0,
     deploy_targets: form.deploy_targets.map((t, i) => ({
       server_id: t.method === "local" ? null : t.server_id,
@@ -979,7 +979,7 @@ async function rotateWebhookSecret() {
   flex-wrap: wrap;
   gap: 4px;
 }
-// 自定义内容在 u-form 网格中默认只占一列，撑满整行
+// Custom content takes one column by default in the u-form grid; span the full row
 .deploy-targets {
   grid-column: 1 / -1;
 }

@@ -25,11 +25,6 @@ func NewBugHandler(svc *projectservice.BugService, perm *rbacservice.PermissionS
 	return &BugHandler{svc: svc, perm: perm}
 }
 
-func (h *BugHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
-	g := rg.Group("/projects", authMW)
-	h.RegisterRoutesOnGroup(g)
-}
-
 // RegisterRoutesOnGroup mirrors the requireDocsAuth pattern: PAT requests need
 // the bug scope (read for queries, write for create/transition/comment/upload),
 // JWT requests keep RBAC. Routes not covered by a bug scope stay JWT-only.

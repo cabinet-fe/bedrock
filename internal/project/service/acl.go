@@ -22,7 +22,7 @@ func NewAccessContext(userID uint, superAdmin bool, permissions []string) Access
 	return newAccessContext(userID, superAdmin, scope, permissions)
 }
 
-// NewAccessContextWithDataScope 供 handler 注入 ResolveDataScope 结果。
+// NewAccessContextWithDataScope lets handlers inject ResolveDataScope results.
 func NewAccessContextWithDataScope(userID uint, superAdmin bool, permissions []string, dataScope string) AccessContext {
 	return newAccessContext(userID, superAdmin, dataScope, permissions)
 }
@@ -35,7 +35,7 @@ func newAccessContext(userID uint, superAdmin bool, dataScope string, permission
 	return AccessContext{UserID: userID, SuperAdmin: superAdmin, DataScope: dataScope, Permissions: set}
 }
 
-// bypassProjectListFilter 列表查询时超管、data_scope=all 或 manage_all 可见全部项目。
+// bypassProjectListFilter lets super admins, data_scope=all, or manage_all see all projects in list queries.
 func (a AccessContext) bypassProjectListFilter() bool {
 	return a.SuperAdmin || a.DataScope == rbacmodel.DataScopeAll || a.Has("project_projects:manage_all")
 }
@@ -71,7 +71,7 @@ const (
 )
 
 // projectACL implements DESIGN §4.4。
-// 读侧：data_scope=self 时仅成员或创建人可见；写操作仍需 manage_all 或项目成员角色。
+// Read side: with data_scope=self only members or creators are visible; writes still require manage_all or a project member role.
 type projectACL struct {
 	repo *repository.ProjectRepository
 }
@@ -107,7 +107,7 @@ func (a *projectACL) Require(projectID uint, actor AccessContext, globalPermissi
 	return nil, NewForbidden("项目角色无此操作权限")
 }
 
-// CanListProjects 校验列表权限；数据范围过滤在 service/repo 层。
+// CanListProjects checks list permission; data scope filtering happens in service/repo.
 func (a *projectACL) CanListProjects(actor AccessContext) error {
 	if !actor.Has("project_projects:view") {
 		return NewForbidden("缺少全局权限: project_projects:view")
@@ -115,7 +115,7 @@ func (a *projectACL) CanListProjects(actor AccessContext) error {
 	return nil
 }
 
-// requireProjectReadAccess data_scope=self 时要求成员身份或创建人。
+// requireProjectReadAccess requires membership or creator when data_scope=self.
 func (a *projectACL) requireProjectReadAccess(projectID uint, actor AccessContext, capability aclCapability) (*model.ProjectMember, error) {
 	member, err := a.repo.FindMember(projectID, actor.UserID)
 	if err == nil {

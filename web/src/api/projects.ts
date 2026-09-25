@@ -561,7 +561,7 @@ export async function importDevDocsZIP(
 }
 
 // ---------------------------------------------------------------------------
-// 统一工作项(需求/缺陷/任务)— /issues 系列端点
+// Unified work items (requirements/bugs/tasks) — /issues endpoints
 // ---------------------------------------------------------------------------
 
 export type IssueCreateInput = {
@@ -767,7 +767,7 @@ export async function isWatchingProjectIssue(projectID: number, issueID: number)
 }
 
 // ---------------------------------------------------------------------------
-// 看板
+// Kanban
 // ---------------------------------------------------------------------------
 
 export async function getProjectKanban(params: {
@@ -817,7 +817,7 @@ export async function listIssueStatuses(
 }
 
 // ---------------------------------------------------------------------------
-// 迭代
+// Iterations
 // ---------------------------------------------------------------------------
 
 export type IterationInput = {

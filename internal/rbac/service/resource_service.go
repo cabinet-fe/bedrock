@@ -141,14 +141,14 @@ func (s *ResourceService) ListTree(filter ListResourcesFilter) ([]model.RbacReso
 }
 
 type UpdateResourceInput struct {
-	Enabled        *bool  `json:"enabled"`
-	SortKey        *int   `json:"sort_key"`
-	Title          string `json:"title"`
+	Enabled        *bool   `json:"enabled"`
+	SortKey        *int    `json:"sort_key"`
+	Title          string  `json:"title"`
 	Route          *string `json:"route"`
 	Code           *string `json:"code"`
-	GroupID        *uint  `json:"group_id"`
-	Hidden         *bool  `json:"hidden"`
-	SuperAdminOnly *bool  `json:"super_admin_only"`
+	GroupID        *uint   `json:"group_id"`
+	Hidden         *bool   `json:"hidden"`
+	SuperAdminOnly *bool   `json:"super_admin_only"`
 }
 
 func (s *ResourceService) Update(id uint, in UpdateResourceInput, actorIsSuperAdmin bool) (*model.RbacResource, error) {

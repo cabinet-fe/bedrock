@@ -30,7 +30,7 @@ import {
 } from "@/lib/tag";
 import { useTabsStore } from "@/stores/tabs";
 
-/** 与 BuildRun.stage 对齐（不含终态 idle） */
+/** Aligned with BuildRun.stage (terminal idle excluded) */
 const PIPELINE_STEPS: { key: string; label: string }[] = [
   { key: "pending", label: "排队" },
   { key: "cloning", label: "克隆" },
@@ -142,7 +142,7 @@ function stageStepIndex(stage: string): number {
   return idx >= 0 ? idx : 0;
 }
 
-/** u-steps：undefined = 全部完成；否则为当前活动步索引 */
+/** u-steps: undefined = all done; otherwise the active step index */
 const stepCurrent = computed<number | undefined>(() => {
   const r = run.value;
   if (!r) return undefined;
@@ -155,7 +155,7 @@ const stepCurrent = computed<number | undefined>(() => {
       }
       return undefined;
     }
-    // 排队中取消会直接落到 idle
+    // Cancelling while queued falls straight to idle
     if (status === "cancelled" || status === "interrupted") return 0;
     return undefined;
   }

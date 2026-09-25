@@ -8,7 +8,7 @@ export type WorkspaceTab = {
   /** Latest fullPath; layout tab navigation always uses this. */
   fullPath: string;
   title: string;
-  /** Route kind label (e.g. 构建详情); updateTitle composes `${kind} • ${detail}`. */
+  /** Route kind label (e.g. build detail); updateTitle composes `${kind} • ${detail}`. */
   kind?: string;
   closable: boolean;
 };

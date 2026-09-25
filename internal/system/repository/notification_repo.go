@@ -19,7 +19,7 @@ func (r *NotificationRepository) Create(n *model.Notification) error {
 	return r.db.Create(n).Error
 }
 
-// ListByUser 按用户分页查询通知；isRead 非 nil 时按已读状态过滤。
+// ListByUser paginates a user's notifications; a non-nil isRead filters by read state.
 func (r *NotificationRepository) ListByUser(userID uint, isRead *bool, q pkg.ListQuery) ([]model.Notification, int64, error) {
 	var items []model.Notification
 	var total int64

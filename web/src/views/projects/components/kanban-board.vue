@@ -181,7 +181,7 @@ function cardTags(tags: string): string | undefined {
   color: fn.use-var(color, text-secondary);
 }
 
-// 列内独立滚动，列头保持可见
+// Each column scrolls independently; column headers stay visible
 :deep(.u-kanban) {
   height: 100%;
 }

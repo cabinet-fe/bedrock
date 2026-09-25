@@ -38,13 +38,6 @@ func NewChatProxy(providerSvc *ProviderService, chatSvc *ChatService) *ChatProxy
 	}
 }
 
-// SetHTTPClient sets a custom HTTP client (primarily for testing).
-func (p *ChatProxy) SetHTTPClient(client *http.Client) {
-	if client != nil {
-		p.httpClient = client
-	}
-}
-
 type streamChunkChoiceDelta struct {
 	Content          string `json:"content"`
 	ReasoningContent string `json:"reasoning_content"`

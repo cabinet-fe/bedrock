@@ -239,14 +239,14 @@ export interface BuildJob {
   build_script: string;
   post_build_script?: string;
   work_dir: string;
-  /** 绝对路径：{workspace}/jobs/job-{id}/（只读，由服务端计算） */
+  /** Absolute path: {workspace}/jobs/job-{id}/ (read-only, computed server-side) */
   workspace_path?: string;
-  /** 相对仓库根的制品路径（文件或目录）；单文件不压缩，多路径打成一个包 */
+  /** Artifact paths relative to the repo root (file or dir); a single file is not compressed, multiple paths are packed */
   artifact_paths?: string[];
-  /** JSON 数组字符串，相对仓库根的缓存路径列表 */
+  /** JSON-array string: cache paths relative to the repo root */
   cache_paths: string;
   env_var_names?: string[];
-  /** 回显仅 key + has_value；提交为 key + 可选 value */
+  /** Echo is key + has_value only; submission is key + optional value */
   env_vars?: { key: string; value?: string; has_value?: boolean }[];
   trigger_manual: boolean;
   trigger_webhook: boolean;
@@ -316,7 +316,7 @@ export interface ScriptJob {
   script_type: string;
   script: string;
   work_dir: string;
-  /** 绝对路径：{workspace}/scripts/script-{id}/（只读） */
+  /** Absolute path: {workspace}/scripts/script-{id}/ (read-only) */
   workspace_path?: string;
   env_var_names?: string[];
   env_vars?: { key: string; value?: string; has_value?: boolean }[];
@@ -372,10 +372,10 @@ export interface BuildPipeline {
   updated_at: string;
 }
 
-/** 流水线边条件（graph_json v2） */
+/** Pipeline edge conditions (graph_json v2) */
 export type PipelineEdgeCondition = "on_success" | "on_failure" | "always";
 
-/** 流水线节点变量覆盖：{key, value} 设新值；{key} 保留已存密值；回显仅 {key, has_value} */
+/** Pipeline node var overrides: {key, value} sets a new value; {key} keeps the stored secret; echo is {key, has_value} only */
 export interface PipelineNodeEnvVar {
   key: string;
   value?: string;
@@ -388,7 +388,7 @@ export interface PipelineStageRun {
   node_id: string;
   /** start | end | buildJob | scriptJob | agent */
   node_type: string;
-  /** 非 buildJob 节点为 0 */
+  /** 0 for non-buildJob nodes */
   build_job_id: number;
   build_run_id?: number | null;
   script_job_id: number;
@@ -699,7 +699,7 @@ export type BugStatus = "open" | "in_progress" | "resolved" | "closed" | "reject
 export type BugSeverity = "low" | "normal" | "high" | "critical";
 export type BugPriority = "low" | "normal" | "high" | "urgent";
 
-/** 统一工作项类型(需求/缺陷/任务共用一张表) */
+/** Unified work item type (requirements/bugs/tasks share one table) */
 export type IssueType = "requirement" | "bug" | "task";
 
 export interface ProjectIssue {

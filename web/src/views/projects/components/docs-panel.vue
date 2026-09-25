@@ -50,7 +50,7 @@ const props = withDefaults(
     project: ProductProject;
     projectRole?: ProjectRole;
     manageAll: boolean;
-    /** api = 接口文档；dev = 开发文档 */
+    /** api = API docs; dev = dev docs */
     docKind?: "api" | "dev";
   }>(),
   { docKind: "api" },
@@ -62,18 +62,18 @@ const permPrefix = computed(() => (isDev.value ? "project_dev_docs" : "project_d
 
 const route = useRoute();
 const router = useRouter();
-/** URL 查询参数名：记录当前查看的文档 id，刷新 / 切 tab 后可恢复 */
+/** URL query param name: records the currently viewed doc id so it survives refresh / tab switches */
 const docQueryKey = props.docKind === "dev" ? "devDocId" : "docId";
 
 const tree = ref<ProjectDocNode[]>([]);
 const treeRef = useTemplateRef<TreeExposed>("treeRef");
-/** 当前是否全部展开；点击「展开/收起全部」时切换 */
+/** Whether everything is expanded; toggled by "expand/collapse all" */
 const allExpanded = ref(true);
-/** 当前选中的节点 id；与树单选双向绑定，并同步到 URL 查询参数 */
+/** Currently selected node id; two-way bound to the tree single-select and synced to the URL query param */
 const selectedID = ref<number>();
-/** 批量操作模式：进入后树才显示勾选框 */
+/** Batch mode: checkboxes only appear in the tree while in it */
 const batchMode = ref(false);
-/** 勾选的节点 id，批量模式下用于批量删除 */
+/** Checked node ids, used for batch delete in batch mode */
 const checked = ref<number[]>([]);
 const selected = ref<ProjectDocNode | null>(null);
 const content = ref("");
@@ -83,12 +83,12 @@ const nodeDialogOpen = ref(false);
 const moveDialogOpen = ref(false);
 const creatingKind = ref<"dir" | "doc">("doc");
 const createParentID = ref<number | null>(null);
-/** 当前正在移动的节点（来自树节点操作，非右侧内容区） */
+/** The node currently being moved (from tree node actions, not the right content area) */
 const movingNode = ref<ProjectDocNode | null>(null);
 const nodeForm = reactive({ name: "" });
 const moveForm = reactive({ parent_id: undefined as number | undefined, sort_order: 0 });
 const searchKeyword = ref("");
-/** 文档内容缓存：搜索文件内容时按需拉取，命中后不再重复请求 */
+/** Doc content cache: fetched on demand during content search; no repeat requests once hit */
 const contentCache = new Map<number, string>();
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -124,9 +124,9 @@ const docPaneTabs = computed(() =>
     : [{ key: "preview", name: "预览" }],
 );
 
-/** 移动弹框可选父目录：仅目录节点 */
+/** Parent directories selectable in the move dialog: directory nodes only */
 const moveDirTree = computed(() => filterDirNodes(tree.value));
-/** 不可选为父目录的节点（自身及其子孙） */
+/** Nodes not selectable as a parent (itself and its descendants) */
 const moveBlockedIds = computed(() => {
   const ids = new Set<number>();
   if (movingNode.value) collectNodeIds(movingNode.value, ids);
@@ -152,7 +152,7 @@ function findNode(nodes: ProjectDocNode[], id: number): ProjectDocNode | undefin
   }
 }
 
-/** 勾选了父节点时去掉其子孙，避免重复删除（删目录会连带子树） */
+/** When a parent is checked, drop its descendants to avoid double delete (removing a directory cascades) */
 function pruneDeleteTargets(ids: number[]): ProjectDocNode[] {
   const descendantIds = new Set<number>();
   const nodes: ProjectDocNode[] = [];
@@ -176,7 +176,7 @@ function isMoveTargetDisabled(item: Record<string, any>) {
   return moveBlockedIds.value.has(item.id as number);
 }
 
-/** 读取 URL 查询参数里的文档 id（无参数或非法值返回 undefined） */
+/** Reads the doc id from the URL query param (undefined when absent or invalid) */
 function queryDocID(): number | undefined {
   const raw = route.query[docQueryKey];
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -184,7 +184,7 @@ function queryDocID(): number | undefined {
   return Number.isSafeInteger(id) && id > 0 ? id : undefined;
 }
 
-/** 把当前选中的文档 id 同步到 URL 查询参数（replace 不产生历史记录） */
+/** Syncs the selected doc id to the URL query param (replace, no history entry) */
 function syncDocQuery(id?: number) {
   const raw = route.query[docQueryKey];
   const current = Array.isArray(raw) ? raw[0] : raw;
@@ -193,7 +193,7 @@ function syncDocQuery(id?: number) {
   void router.replace({ query: { ...route.query, [docQueryKey]: next } });
 }
 
-/** 树加载后从 URL 恢复上次查看的文档；节点已不存在时清理参数 */
+/** After the tree loads, restore the last-viewed doc from the URL; clears the param when the node is gone */
 function restoreSelectedFromQuery() {
   const raw = route.query[docQueryKey];
   if (raw === undefined) return;
@@ -254,7 +254,7 @@ async function runConcurrent<T>(items: T[], limit: number, worker: (item: T) => 
   );
 }
 
-/** 提取文档一级标题（第一个 `# ` 行），用于按标题搜索 */
+/** Extracts the doc's H1 (first `# ` line) for title search */
 function firstHeading(id: number): string {
   const match = (contentCache.get(id) ?? "").match(/^#\s+(.+)$/m);
   return (match?.[1] ?? "").trim().toLowerCase();
@@ -302,7 +302,7 @@ async function loadSelected(id: number) {
   }
 }
 
-/** 选中变化：同步 URL 参数并加载文档内容（树的点击选中与程序化选中统一走这里） */
+/** Selection change: syncs the URL param and loads content (both click and programmatic selection go through here) */
 watch(selectedID, (id) => {
   syncDocQuery(id);
   if (id === undefined) {
@@ -381,7 +381,7 @@ async function removeNodes(nodes: { id: number }[]) {
 async function confirmRemove(nodes: { id: number; name: string }[]) {
   const roots = pruneDeleteTargets(nodes.map((n) => n.id));
   if (!roots.length) return;
-  /** 单个文件直接删，目录（连带子树）与批量删除需要确认 */
+  /** Single files delete directly; directories (with subtree) and batch deletes need confirmation */
   const singleDoc = roots.length === 1 && roots[0].kind === "doc";
   if (!singleDoc) {
     const text =
@@ -400,7 +400,7 @@ function confirmRemoveChecked() {
   void confirmRemove(checkedNodes());
 }
 
-/** 切换批量操作模式；退出时清空勾选 */
+/** Toggles batch mode; clears selections on exit */
 function toggleBatchMode() {
   batchMode.value = !batchMode.value;
   if (!batchMode.value) checked.value = [];
@@ -515,7 +515,7 @@ async function importZIPFile(files: File[]) {
   }
 }
 
-/** 按扩展名分流：zip 走文档包导入，其余按 Markdown 导入 */
+/** Route by extension: zip goes through doc-package import, everything else imports as Markdown */
 async function importFile(files: File[]) {
   const file = files[0];
   if (!file) return;
@@ -884,7 +884,7 @@ watch(canUpdate, (ok) => {
   height: 100%;
   min-height: 0;
 
-  /* UTabs 插槽会被其内部 u-scroll 包裹，需让内容占满容器高度（同 handbook） */
+  /* UTabs slots are wrapped by its internal u-scroll, so fill the container height (same as handbook) */
   :deep(.u-scroll__content) {
     height: 100%;
   }

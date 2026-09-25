@@ -37,7 +37,7 @@ const pipelineName = ref("");
 const jobNames = ref(new Map<number, string>());
 const nodes = ref<Node[]>([]);
 const edges = ref<Edge[]>([]);
-/** snapshot 中 node_id → 节点名称 */
+/** node_id → node name from the snapshot */
 const nodeLabels = ref(new Map<string, string>());
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -59,7 +59,7 @@ const orderedStages = computed(() => {
   return orderStagesByGraph(r.stages ?? [], r.snapshot_json || "");
 });
 
-/** 节点副标题解析（构建任务名；脚本/智能体回退为类型名） */
+/** Node subtitle resolution (build job name; script/agent fall back to type name) */
 const targetNames = computed(() => {
   const map: Record<string, string> = {};
   for (const [id, name] of jobNames.value) map[`buildJob:${id}`] = name;

@@ -260,7 +260,7 @@ export function useLoginFlow(
         l.len = linkLength(l);
         return l;
       };
-      // 每侧只有一个锚点：左列汇入一点，右列自一点发出
+      // One anchor per side: the left column converges into one point, the right column emits from one point
       links.push(mk({ x: colX + ICON_PAD, y }, { x: hubX, y: hubCY }));
       links.push(mk({ x: hubX + hubW, y: hubCY }, { x: w - colX - ICON_PAD, y }));
     }

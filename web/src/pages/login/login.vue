@@ -17,10 +17,10 @@ const flowCanvasRef = useTemplateRef<HTMLCanvasElement>("flowCanvas");
 const hubCardRef = useTemplateRef<HTMLFormElement>("hubCard");
 const stageRef = useTemplateRef<HTMLElement>("stage");
 const mode = ref<"login" | "register">("login");
-// 嵌入部署由服务端注入；dev / 未注入时视为开放
+// Injected by the server for embedded deployments; treated as open in dev / when not injected
 const allowRegister = window.__BEDROCK_ALLOW_REGISTER__ !== false;
 const loading = ref(false);
-// 注册可选的系统内置角色（与后端 seed 一一对应）
+// Optional built-in roles for signup (one-to-one with the backend seed)
 const ROLE_OPTIONS = [
   { label: "开发", value: "developer" },
   { label: "测试", value: "tester" },
@@ -40,10 +40,10 @@ const errors = reactive({
   confirm: "",
 });
 
-// 登录面板即平台枢纽：画布上的左列端点流入、右列端点流出
+// The login panel is the platform hub: canvas left-column anchors flow in, right-column anchors flow out
 useLoginFlow(flowCanvasRef, hubCardRef);
 
-// 面板 3D 倾斜：指针坐标只在 rAF 回调里消费一次，角度/眩光写成 CSS 变量，平滑交给 transition
+// Panel 3D tilt: pointer coords are consumed once per rAF callback; angle/glare go into CSS vars; smoothing is left to transition
 const tiltReady =
   window.matchMedia("(hover: hover) and (pointer: fine)").matches &&
   !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -75,7 +75,7 @@ function applyTilt() {
   stage.style.setProperty("--py", ny.toFixed(3));
 }
 
-// 离开页面时面板回正；眩光位置保留，避免渐变跳变
+// On leave, the panel returns to center; glare position is kept to avoid gradient jumps
 function onStageLeave() {
   if (!tiltReady) return;
   cancelAnimationFrame(tiltRaf);
@@ -110,7 +110,7 @@ function validate() {
   return !errors.username && !errors.password;
 }
 
-// 切换登录/注册：保留用户名，清掉密码与错误
+// Switch login/signup: keep the username, clear password and errors
 function toggleMode() {
   mode.value = mode.value === "login" ? "register" : "login";
   formData.password = "";
@@ -120,7 +120,7 @@ function toggleMode() {
   errors.confirm = "";
 }
 
-// 点击面板空白处时，聚焦第一个待填字段
+// Clicking the panel's blank area focuses the first empty field
 function focusFirstEmptyField(event: MouseEvent) {
   if ((event.target as HTMLElement).closest("input, button")) return;
   if (!formData.username) usernameInputRef.value?.focus();
@@ -238,7 +238,7 @@ async function handleSubmit() {
 
 <style scoped lang="scss">
 .login-page {
-  // 品牌点缀色，主题 token 之外的唯一一处硬编码
+  // Brand accent; the only hard-coded color outside theme tokens
   --seal: #b3452e;
   --serif: "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
@@ -256,13 +256,13 @@ async function handleSubmit() {
   box-sizing: border-box;
   background:
     radial-gradient(ellipse 70% 42% at 50% 0%, var(--u-color-primary-light-9), transparent 75%),
-    // 纸纹肌理
+    // Paper texture
     repeating-linear-gradient(95deg, transparent 0 6px, rgb(64 54 32 / 1.1%) 6px 7px),
     var(--u-bg-color-bottom);
   color: var(--u-text-color-title);
 }
 
-/* 节点流动画：蓝图网格 + 左右端点连线与粒子 */
+/* Node flow animation: blueprint grid + left/right anchor connections and particles */
 .flow {
   position: absolute;
   inset: 0;
@@ -270,7 +270,7 @@ async function handleSubmit() {
   height: 100%;
 }
 
-/* 淡墨「磐」字水印，位于画布之上、面板之下 */
+/* Faint ink "磐" watermark above the canvas, below the panel */
 .backdrop-glyph {
   position: absolute;
   top: 50%;
@@ -287,7 +287,7 @@ async function handleSubmit() {
   user-select: none;
 }
 
-/* 登录面板：画布网络的中央枢纽 */
+/* Login panel: the central hub of the canvas network */
 .hub {
   position: relative;
   z-index: 1;
@@ -307,7 +307,7 @@ async function handleSubmit() {
   cursor: text;
   animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 
-  // 工程制图角标
+  // Engineering-drawing corner mark
   &::before,
   &::after {
     content: "";
@@ -340,7 +340,7 @@ async function handleSubmit() {
   margin: 0 0 16px;
 }
 
-/* 朱砂小印 */
+/* Cinnabar seal */
 .seal {
   display: grid;
   place-items: center;
@@ -371,7 +371,7 @@ async function handleSubmit() {
   color: var(--u-text-color-assist);
 }
 
-/* 平台能力标签：流经枢纽之物 */
+/* Platform capability tags: things flowing through the hub */
 .hub-modules {
   display: flex;
   flex-wrap: wrap;
@@ -455,7 +455,7 @@ async function handleSubmit() {
 
 .term-error {
   margin: 0;
-  // 对齐输入列（prompt 宽 9ch + 间距 8px）
+  // Align the input column (prompt 9ch wide + 8px gap)
   padding-left: calc(9ch + 8px);
   color: var(--seal);
 }
@@ -486,7 +486,7 @@ async function handleSubmit() {
   }
 }
 
-/* 登录/注册模式切换：终端里的下一条命令 */
+/* Login/signup mode switch: the next command in the terminal */
 .term-switch {
   align-self: flex-end;
   margin-top: 6px;
@@ -505,7 +505,7 @@ async function handleSubmit() {
   }
 }
 
-/* 输入聚焦后隐去装饰光标，避免与原生 caret 争辉 */
+/* Hide the decorative cursor on focus so it does not fight the native caret */
 .hub:focus-within .cursor {
   animation: none;
   opacity: 0;
@@ -520,7 +520,7 @@ async function handleSubmit() {
   animation: blink 1.1s steps(2, jump-none) infinite;
 }
 
-/* rise 走 translate 属性，与倾斜的 transform 正交组合互不覆盖 */
+/* rise uses translate, orthogonal to the tilt transform so they never overwrite each other */
 @keyframes rise {
   from {
     opacity: 0;
@@ -539,7 +539,7 @@ async function handleSubmit() {
   }
 }
 
-/* 面板 3D：倾斜角/眩光位置由 --rx/--ry/--gx/--gy 驱动（脚本写入），全在合成器层；
+/* Panel 3D: tilt/glare driven by --rx/--ry/--gx/--gy (written by script), all on the compositor layer;
    仅支持悬停指针且未开启「减弱动态效果」时启用 */
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .hub {
@@ -556,7 +556,7 @@ async function handleSubmit() {
       var(--u-bg-color-top);
   }
 
-  /* 景深分层：品牌浮得最高，输入区最贴近面板 */
+  /* Depth layering: brand floats highest, input closest to the panel */
   .hub-brand {
     translate: 0 0 34px;
   }
@@ -573,21 +573,21 @@ async function handleSubmit() {
     translate: 0 0 18px;
   }
 
-  /* 背景淡墨巨字与面板反向视差，强化纵深 */
+  /* Background giant ink characters parallax opposite the panel, deepening the depth */
   .backdrop-glyph {
     translate: calc(-50% + var(--px, 0) * -22px) calc(-50% + var(--py, 0) * -14px);
     transition: translate 0.25s ease-out;
   }
 }
 
-/* 窄屏收起节点网络，只留登录面板 */
+/* Collapse the node network on narrow screens, leaving only the login panel */
 @media (max-width: 759px) {
   .flow {
     display: none;
   }
 }
 
-/* iOS 对小于 16px 的输入框会自动放大页面，触屏设备上抬高一档 */
+/* iOS auto-zooms pages for inputs under 16px; bump the size on touch devices */
 @media (pointer: coarse) {
   .term-field input {
     font-size: 16px;

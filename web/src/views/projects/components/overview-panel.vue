@@ -146,13 +146,13 @@ async function loadTimeline() {
   let anyOk = false;
   let anyAttempt = false;
 
-  // 触发者 id → 用户名：成员列表带 username/display_name，失败则回退为 #id
+  // Trigger id → username: member list carries username/display_name; falls back to #id on failure
   const users = new Map<number, string>();
   try {
     const members: ProjectMember[] = await listMembers(pid);
     for (const m of members) users.set(m.user_id, userLabel(m));
   } catch {
-    /* 成员加载失败时触发者回退为 #id */
+    /* Trigger falls back to #id when member loading fails */
   }
   const who = (id?: number) => (id ? (users.get(id) ?? `#${id}`) : "—");
 
@@ -162,7 +162,7 @@ async function loadTimeline() {
       chunks.push(await block());
       anyOk = true;
     } catch {
-      /* 单块降级 */
+      /* Single-block fallback */
     }
   }
 
@@ -237,7 +237,7 @@ async function loadTimeline() {
   if (hasPermission("ai_runs:view")) {
     blocks.push(
       settleBlock(async () => {
-        // AgentRun.project_id 仅 docs_generate 等显式场景写入；智能体本身不归属项目
+        // AgentRun.project_id is only written in explicit scenarios like docs_generate; agents themselves do not belong to a project
         const runs = await listRuns({ project_id: pid, page: 1, page_size: 5 });
         return (runs.items ?? []).map((r) => ({
           key: `ai-${r.id}`,

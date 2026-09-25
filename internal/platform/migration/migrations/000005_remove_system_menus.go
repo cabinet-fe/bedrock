@@ -13,8 +13,8 @@ func init() {
 	migration.Register("000005_remove_system_menus", upRemoveSystemMenus)
 }
 
-// upRemoveSystemMenus drops the standalone admin "菜单" resource (system.menus).
-// Menu metadata lives on menu-type RbacResource nodes and is edited via 权限资源.
+// upRemoveSystemMenus drops the standalone admin "menu" resource (system.menus).
+// Menu metadata lives on menu-type RbacResource nodes and is edited via permission resources.
 func upRemoveSystemMenus(ctx context.Context, db *gorm.DB, driver migration.Driver) error {
 	_ = ctx
 	_ = driver

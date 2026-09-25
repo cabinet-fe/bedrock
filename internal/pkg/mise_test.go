@@ -32,7 +32,7 @@ func TestWrapShellWithProfile(t *testing.T) {
 			t.Fatalf("expected untouched command on windows: %q", wrapped)
 		}
 	} else {
-		// .bashrc 有交互守卫不能 source；必须加载 profile 并产出 mise 的 shims PATH
+		// .bashrc has interactive guards and must not be sourced; the profile must be loaded and mise shims PATH produced
 		if strings.Contains(wrapped, ".bashrc") || !strings.HasSuffix(wrapped, cmd) {
 			t.Fatalf("expected profile wrap without .bashrc: %q", wrapped)
 		}

@@ -464,23 +464,6 @@ func (s *IssueService) ListIssueActivities(actor AccessContext, projectID, issue
 	return s.issueRepo.ListActivities(issueID)
 }
 
-// CountByStatus returns issue counts grouped by status for a type in a project.
-func (s *IssueService) CountByStatus(actor AccessContext, projectID uint, issueType string) (map[string]int64, error) {
-	if issueType == "" {
-		member, err := s.acl.Require(projectID, actor, "project_projects:view", capProjectView)
-		if err != nil {
-			return nil, err
-		}
-		return s.issueRepo.CountByStatus(projectID, "", issueReadScope(actor, member))
-	}
-	permPrefix, viewCap, _, _ := issueDomain(issueType)
-	member, err := s.acl.Require(projectID, actor, permPrefix+":view", viewCap)
-	if err != nil {
-		return nil, err
-	}
-	return s.issueRepo.CountByStatus(projectID, issueType, issueReadScope(actor, member))
-}
-
 // Kanban renders a board for a type: columns come from the status dictionary
 // ordered by sort_order; terminal statuses are excluded by default (D38).
 func (s *IssueService) Kanban(actor AccessContext, projectID *uint, issueType string, includeTerminal bool, filter repository.IssueFilter) (*KanbanBoard, error) {

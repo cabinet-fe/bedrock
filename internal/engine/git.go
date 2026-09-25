@@ -22,7 +22,7 @@ func GitCloneOrPull(ctx context.Context, workDir, repoURL, authType, username, p
 	// Remove stale lock files that may remain from a previous crashed build
 	cleanGitLockFiles(workDir, logFn)
 
-	// 凭证或仓库地址变更后，工作区 .git/config 里仍可能缓存旧的 origin URL
+	// After credentials or repo URL change, the workspace .git/config may still cache the old origin URL
 	if err := syncGitRemoteOrigin(ctx, workDir, authURL, logFn); err != nil {
 		return err
 	}

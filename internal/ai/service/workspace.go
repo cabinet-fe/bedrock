@@ -201,7 +201,7 @@ func (s *AgentService) SyncAgentWorkspace(ctx context.Context, agent *model.AiAg
 	if err := writeFileIfUnchanged(promptPath, []byte(agent.SystemPrompt), 0o644); err != nil {
 		return nil, nil, err
 	}
-	// 解密写入工作区 .env（同 UID 可见）；Run 时还会注入 cmd.Env。
+	// Decrypt and write workspace .env (visible to the same UID); Run also injects cmd.Env.
 	if _, _, err := s.writeAgentEnvFile(agent, root); err != nil {
 		return nil, nil, err
 	}

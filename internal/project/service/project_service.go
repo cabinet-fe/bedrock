@@ -149,7 +149,7 @@ func (s *ProjectService) GetProject(actor AccessContext, id uint) (*ProjectView,
 	return &views[0], nil
 }
 
-// ResolveProjectRef 解析路径参数：正整数按 ID；否则 normalizeSlug 后按 slug 查找。
+// ResolveProjectRef resolves a path param: positive integers as ID; otherwise normalizeSlug then lookup by slug.
 func (s *ProjectService) ResolveProjectRef(ref string) (uint, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -212,7 +212,7 @@ func projectCapabilities(actor AccessContext, role string) ProjectCapabilities {
 
 // ListRequirementStatuses returns only enabled status options. Requirement
 // readers may retrieve this business metadata without dictionary-admin access
-// （D2：持有 project_requirements:view 即可，无需项目成员身份）。
+// (D2: holding project_requirements:view suffices; no project membership needed).
 func (s *ProjectService) ListRequirementStatuses(actor AccessContext) ([]projectmodel.RequirementStatusOption, error) {
 	if !actor.Has("project_requirements:view") {
 		return nil, NewForbidden("缺少全局权限: project_requirements:view")

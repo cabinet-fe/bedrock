@@ -10,11 +10,11 @@ import (
 
 	"bedrock/internal/ai/model"
 	"bedrock/internal/ai/repository"
+	"bedrock/internal/pkg"
 	"bedrock/internal/platform/config"
 	"bedrock/internal/platform/db"
 	"bedrock/internal/platform/migration"
 	_ "bedrock/internal/platform/migration/migrations"
-	"bedrock/internal/pkg"
 )
 
 func setupHarnessConfig(t *testing.T) (*HarnessConfigService, *ProviderService, string) {
