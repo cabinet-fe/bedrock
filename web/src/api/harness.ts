@@ -187,6 +187,16 @@ export interface HarnessSessionAdapterOptions {
   initialPrompt?: string;
 }
 
+/**
+ * History-replay event: carries the `history: true` marker the fold uses to
+ * keep live streaming state authoritative (typed as an intersection until the
+ * installed @veltra/ai version ships the field natively).
+ */
+type HistoryChatSessionEvent = ChatSessionEvent & { history?: boolean };
+
+/** Synthetic user-message id seeding the run prompt before backend history has it. */
+const SYNTHETIC_PROMPT_ID = "run-initial-prompt";
+
 function cleanUserContent(raw: string, initialPrompt?: string): string {
   if (!initialPrompt) return raw;
   const trimmed = initialPrompt.trim();
@@ -334,11 +344,17 @@ export function createHarnessSessionAdapter(
               // Only mark seen when we actually emit: otherwise history replay
               // can still surface the composed prompt (workspace hint, etc.).
               seenUserIds.add(status.messageId);
-              emit({
-                type: "user/message",
-                messageId: status.messageId,
-                content: options.initialPrompt,
-              } as ChatSessionEvent);
+              // The synthetic prompt turn may already be seeded for this run
+              // (chat mounted before the prompt hit backend history): adopting
+              // the id keeps later history replays quiet without emitting a
+              // duplicate user turn.
+              if (!seenUserIds.has(SYNTHETIC_PROMPT_ID)) {
+                emit({
+                  type: "user/message",
+                  messageId: status.messageId,
+                  content: options.initialPrompt,
+                } as ChatSessionEvent);
+              }
             }
             emit({ type: "running", running: true });
             return;
@@ -539,6 +555,7 @@ export function createHarnessSessionAdapter(
     const messages = await listSessionMessages(sessionId);
     const events: ChatSessionEvent[] = [];
     let foundUserMessage = false;
+    let foundOpenAssistant = false;
 
     for (const message of messages) {
       if (message.role === "user") {
@@ -553,10 +570,20 @@ export function createHarnessSessionAdapter(
           type: "user/message",
           messageId: message.id,
           content: cleanUserContent(rawText, options?.initialPrompt),
-        } as ChatSessionEvent);
+          history: true,
+        } as HistoryChatSessionEvent);
         continue;
       }
       if (message.role !== "assistant") continue;
+      // 仍在直播流式中的消息：历史必然是落后快照（甚至为空），跳过回放 ——
+      // 否则断线补拉会把流式消息标记成 done、清空/缩短内容，重连续流又翻回
+      // streaming，消息在「完成 / 思考中」间来回翻转；终态由重连回放的 durable
+      // 帧（message_text / tool_result）落定。去重键（textKeys / callIds）也
+      // 不登记，避免重连后的 durable 终态帧被误判重复而丢弃。
+      if (openAssistantIds.has(message.id)) {
+        foundOpenAssistant = true;
+        continue;
+      }
       seenAssistantIds.add(message.id);
       const toolCalls: {
         id: string;
@@ -629,20 +656,21 @@ export function createHarnessSessionAdapter(
         content: textOfParts(message.content, "text"),
         reasoning: reasoning || undefined,
         toolCalls: toolCalls.length ? toolCalls : undefined,
-      } as ChatSessionEvent);
+        history: true,
+      } as HistoryChatSessionEvent);
     }
 
     // If initial history fetch yielded no user message yet (prompt still being submitted in backend),
-    // and an initialPrompt is known for this run, seed it so the user sees their prompt immediately.
-    if (!foundUserMessage && options?.initialPrompt?.trim()) {
-      const syntheticId = "run-initial-prompt";
+    // and an assistant message is not already streaming, seed it so the user sees their prompt immediately.
+    if (!foundUserMessage && !foundOpenAssistant && options?.initialPrompt?.trim()) {
+      const syntheticId = SYNTHETIC_PROMPT_ID;
       if (!seenUserIds.has(syntheticId)) {
         seenUserIds.add(syntheticId);
         events.unshift({
           type: "user/message",
           messageId: syntheticId,
           content: options.initialPrompt,
-        } as ChatSessionEvent);
+        } as HistoryChatSessionEvent);
       }
     }
 

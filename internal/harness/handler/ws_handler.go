@@ -22,6 +22,10 @@ import (
 // wsWriteWait bounds one WS frame write before the connection is dropped.
 const wsWriteWait = 10 * time.Second
 
+// wsPingInterval is the keepalive cadence for one connection; it must stay
+// below typical proxy idle timeouts (30-60s).
+const wsPingInterval = 25 * time.Second
+
 // WSHandler serves /ws/harness/sessions/:id/events: one unified-frame stream
 // per connection, replaying the bridge ring buffer after a seq baseline,
 // re-sending still-pending asks, then streaming live frames.
@@ -110,12 +114,13 @@ func (h *WSHandler) HandleSessionEvents(c *gin.Context) {
 	replay, live, stop := h.streams.Subscribe(sessionID)
 	defer stop()
 	pending := h.streams.PendingRequests(sessionID)
-	// Snapshot the settled state when the replay baseline itself asserts a
-	// running session: replay never carries transient status frames (seq 0),
-	// so a client joining after the last turn would otherwise stay on the
-	// running state asserted by the replayed step frames forever. The
-	// bridge's busy view and the replay are snapshotted atomically.
-	settled := !h.streams.SessionBusy(sessionID) && replayAssertsRunning(replay, after)
+	// Idle snapshot whenever the bridge believes the session is not running:
+	// the synthesized idle frame is transient (seq 0) and never replayed, so a
+	// client that missed it (connection dropped in the settle window) would
+	// otherwise stay on the running state asserted by earlier frames forever.
+	// Duplicated idles are idempotent for converged clients; a still-busy
+	// session sends none and the live frames drive the client as before.
+	settled := !h.streams.SessionBusy(sessionID)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -133,8 +138,9 @@ func (h *WSHandler) HandleSessionEvents(c *gin.Context) {
 }
 
 // pump writes the replay baseline, the pending asks, the settled-idle
-// snapshot and then the live feed. It returns when ctx is cancelled, the
-// peer disconnects, or a write fails.
+// snapshot and then the live feed, keeping the connection alive with
+// periodic pings. It returns when ctx is cancelled, the peer disconnects, or
+// a write fails.
 func (h *WSHandler) pump(ctx context.Context, sessionID string, conn *websocket.Conn, replay []provider.Frame, pending []service.PendingRequest, live <-chan *provider.Frame, after int64, settled bool) {
 	for i := range replay {
 		// Transient frames (seq 0) are never replayed; durable frames are
@@ -161,10 +167,22 @@ func (h *WSHandler) pump(ctx context.Context, sessionID string, conn *websocket.
 			return
 		}
 	}
+	// Agent turns have long quiet windows (model thinking, slow tools) with no
+	// frames at all; proxies time idle WebSocket connections out and every
+	// forced reconnect made the client refetch/resnapshot mid-stream. Pings
+	// keep the connection warm; browsers answer control frames automatically
+	// and never surface them to application handlers.
+	ping := time.NewTicker(wsPingInterval)
+	defer ping.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-ping.C:
+			_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		case frame, ok := <-live:
 			if !ok {
 				return
@@ -174,27 +192,6 @@ func (h *WSHandler) pump(ctx context.Context, sessionID string, conn *websocket.
 			}
 		}
 	}
-}
-
-// replayAssertsRunning reports whether the durable status frames above the
-// seq baseline leave the session in the running state (a prompt or step
-// start after the last idle/error/step-failure), mirroring how the client
-// fold resolves them.
-func replayAssertsRunning(replay []provider.Frame, after int64) bool {
-	running := false
-	for i := range replay {
-		f := &replay[i]
-		if f.Kind != provider.FrameStatus || f.Status == nil || f.Seq <= 0 || f.Seq <= after {
-			continue
-		}
-		switch f.Status.Name {
-		case provider.StatusPromptAdmitted, provider.StatusPrompted, provider.StatusStepStarted:
-			running = true
-		case provider.StatusIdle, provider.StatusError, provider.StatusStepFailed:
-			running = false
-		}
-	}
-	return running
 }
 
 // writeFrame marshals and sends one unified frame under a write deadline.

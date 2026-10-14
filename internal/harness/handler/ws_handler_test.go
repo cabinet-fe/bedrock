@@ -120,6 +120,17 @@ func readFrame(t *testing.T, conn *websocket.Conn) provider.Frame {
 	return frame
 }
 
+// expectIdleSnapshot asserts one transient idle snapshot frame (sent whenever
+// the bridge believes the session is idle, so a client that missed the live
+// idle frame still converges).
+func expectIdleSnapshot(t *testing.T, conn *websocket.Conn) {
+	t.Helper()
+	frame := readFrame(t, conn)
+	if frame.Kind != provider.FrameStatus || frame.Status == nil || frame.Status.Name != provider.StatusIdle {
+		t.Fatalf("expected idle snapshot, got %+v", frame)
+	}
+}
+
 func TestWSHandler_AuthAndGate(t *testing.T) {
 	env := setupWS(t, true)
 
@@ -193,6 +204,7 @@ func TestWSHandler_GrantedUserUpgrades(t *testing.T) {
 	}
 	defer conn.Close()
 
+	expectIdleSnapshot(t, conn)
 	env.fake.bus <- &provider.Frame{Seq: 1, SessionID: "ses_1", Kind: provider.FrameMessageText,
 		MessageText: &provider.MessageText{TextID: "t1", Text: "ok"}}
 	frame := readFrame(t, conn)
@@ -234,6 +246,9 @@ func TestWSHandler_ReplayPendingAndLive(t *testing.T) {
 	if pending.Kind != provider.FramePermission || pending.Permission.RequestID != "req_1" {
 		t.Fatalf("expected pending permission frame, got %+v", pending)
 	}
+	// Idle bridge: the settled-idle snapshot follows the baseline (and any
+	// pending asks) before the live feed starts.
+	expectIdleSnapshot(t, conn)
 
 	// Live frames after the replay baseline: a transient message delta, a
 	// durable tool call and a transient question ask must all arrive.
@@ -279,6 +294,7 @@ func TestWSHandler_ReplayAfterBaselineFiltersDurableFrames(t *testing.T) {
 	if frame.Seq != 2 || frame.MessageText.Text != "two" {
 		t.Fatalf("expected only seq=2 after baseline 1, got %+v", frame)
 	}
+	expectIdleSnapshot(t, conn)
 
 	env.fake.bus <- &provider.Frame{Seq: 3, SessionID: "ses_1", Kind: provider.FrameMessageText,
 		MessageText: &provider.MessageText{TextID: "t3", Text: "three"}}
@@ -307,6 +323,7 @@ func TestWSHandler_MultiConnectionNoDuplication(t *testing.T) {
 		ToolCall: &provider.ToolCall{CallID: "c1", Tool: "bash"}}
 
 	for i, conn := range []*websocket.Conn{conn1, conn2} {
+		expectIdleSnapshot(t, conn)
 		frame := readFrame(t, conn)
 		if frame.Seq != 5 || frame.Kind != provider.FrameToolCall {
 			t.Fatalf("connection %d: expected one tool_call frame seq=5, got %+v", i+1, frame)
@@ -399,9 +416,10 @@ func TestWSHandler_NoSnapshotWhileBusy(t *testing.T) {
 	}
 }
 
-// A replay that already ends settled (error state) asserts no running, so
-// no snapshot is needed.
-func TestWSHandler_NoSnapshotWhenReplaySettled(t *testing.T) {
+// Even a replay that already ends settled (error state) is followed by the
+// idle snapshot: the snapshot is keyed on the bridge's busy view alone, so a
+// client that missed transient idle/error tails still converges.
+func TestWSHandler_SnapshotEvenWhenReplaySettled(t *testing.T) {
 	env := setupWS(t, true)
 
 	env.fake.bus <- &provider.Frame{Seq: 1, SessionID: "ses_1", Kind: provider.FrameStatus,
@@ -412,6 +430,7 @@ func TestWSHandler_NoSnapshotWhenReplaySettled(t *testing.T) {
 		replay, _, _ := env.stream.Subscribe("ses_1")
 		return len(replay) == 2
 	})
+	waitForBusy(t, "bridge settle after step_failed", env, false)
 
 	conn, _, err := dialWS(t, env, "/ws/harness/sessions/ses_1/events?token="+env.token)
 	if err != nil {
@@ -424,9 +443,10 @@ func TestWSHandler_NoSnapshotWhenReplaySettled(t *testing.T) {
 			t.Fatalf("replay frame seq = %d, want %d", frame.Seq, seq)
 		}
 	}
+	expectIdleSnapshot(t, conn)
 	env.fake.bus <- &provider.Frame{Seq: 3, SessionID: "ses_1", Kind: provider.FrameMessageText,
 		MessageText: &provider.MessageText{TextID: "t9", Text: "after"}}
 	if frame := readFrame(t, conn); frame.Seq != 3 {
-		t.Fatalf("expected live frame seq=3 right after replay (no snapshot), got %+v", frame)
+		t.Fatalf("expected live frame seq=3 after snapshot, got %+v", frame)
 	}
 }
