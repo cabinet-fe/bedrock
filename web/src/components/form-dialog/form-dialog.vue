@@ -8,7 +8,7 @@ export interface FormDialogGroup {
   key: string;
 }
 
-const model = defineModel<boolean>({ default: false });
+const open = defineModel<boolean>({ default: false });
 
 const props = withDefaults(
   defineProps<{
@@ -75,8 +75,8 @@ function reset() {
   forms().forEach((form) => form.clearValidate());
 }
 
-watch(model, (open, wasOpen) => {
-  if (open) {
+watch(open, (isOpen, wasOpen) => {
+  if (isOpen) {
     sessionKey.value += 1;
     return;
   }
@@ -105,7 +105,7 @@ function onClosed() {
 </script>
 
 <template>
-  <u-dialog v-model="model" :title="title" @closed="onClosed">
+  <u-dialog v-model="open" :title="title" @closed="onClosed">
     <!-- 表单前置内容（提示、说明等） -->
     <slot name="prepend" />
 
