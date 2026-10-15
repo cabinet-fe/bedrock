@@ -8,6 +8,14 @@ func (r *OpsRepository) ListSiteLinks() ([]model.SiteLink, error) {
 	return items, err
 }
 
+func (r *OpsRepository) FindSiteLink(id uint) (*model.SiteLink, error) {
+	var item model.SiteLink
+	if err := r.db.First(&item, id).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
 func (r *OpsRepository) CreateSiteLink(item *model.SiteLink) error {
 	return r.db.Create(item).Error
 }

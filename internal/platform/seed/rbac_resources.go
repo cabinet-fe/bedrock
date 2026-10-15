@@ -61,6 +61,7 @@ func EnsureRBACResources(db *gorm.DB) error {
 					},
 				},
 				{Code: "handbook", Title: "操作手册", Route: "/handbook", SortKey: 20, Actions: []string{"view"}},
+				{Code: "site_links", Title: "网站链接", Route: "/site-links", SortKey: 30, Actions: []string{"view"}},
 			},
 		},
 		{
@@ -73,6 +74,11 @@ func EnsureRBACResources(db *gorm.DB) error {
 				{
 					Code: "ops_dev_environments", Title: "开发环境", Route: "/ops/dev-environments", SortKey: 20,
 					Actions: []string{"view", "create", "update", "delete", "execute"},
+				},
+				{
+					Code: "ops_site_links", Title: "网站链接", Route: "/ops/site-links", SortKey: 30,
+					SuperAdminOnly: true,
+					Actions:        []string{"view", "create", "update", "delete"},
 				},
 			},
 		},
@@ -159,9 +165,14 @@ func EnsureRBACResources(db *gorm.DB) error {
 				return err
 			}
 		}
-		// System cards are reserved for the super admin. Re-asserted on every
-		// boot so manual flips via the resource API cannot stick.
-		if err := enforceSuperAdminOnly(tx, "dashboard:system_info", "dashboard:system_status"); err != nil {
+		// Re-asserted on every boot so manual flips via the resource API cannot
+		// stick: dashboard system cards, and the ops site-links menu plus its
+		// four actions.
+		if err := enforceSuperAdminOnly(tx,
+			"dashboard:system_info", "dashboard:system_status",
+			"ops_site_links",
+			"ops_site_links:view", "ops_site_links:create", "ops_site_links:update", "ops_site_links:delete",
+		); err != nil {
 			return err
 		}
 		if err := hideMenus(tx,

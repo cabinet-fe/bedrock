@@ -27,6 +27,7 @@ func NewPermissionService(
 // ResolvePermissions returns the effective permission code set for a user:
 // the union of the permissions bound to the user's roles, with
 // super_admin_only features stripped. Super-admin receives every full_code.
+// Every non-super user also receives site_links:view, even with no role grant.
 func (s *PermissionService) ResolvePermissions(userID uint, isSuperAdmin bool) ([]string, error) {
 	if isSuperAdmin {
 		return s.allFeaturePermissions()
@@ -35,7 +36,14 @@ func (s *PermissionService) ResolvePermissions(userID uint, isSuperAdmin bool) (
 	if err != nil {
 		return nil, err
 	}
-	return s.filterSuperAdminOnly(uniqSorted(codes))
+	filtered, err := s.filterSuperAdminOnly(uniqSorted(codes))
+	if err != nil {
+		return nil, err
+	}
+	// Workbench site links stay readable without a role grant. Ops maintenance
+	// codes are not added here; super_admin_only already strips them.
+	filtered = append(filtered, rbac.FeatureFullCode("site_links", "view"))
+	return uniqSorted(filtered), nil
 }
 
 // ResolveDataScope returns the widest data_scope among the user's roles.

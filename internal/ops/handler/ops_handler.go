@@ -19,11 +19,17 @@ import (
 type OpsHandler struct {
 	processes *service.ProcessService
 	devEnvs   *service.DevEnvironmentService
+	siteLinks *service.SiteLinkService
 	perm      *rbacservice.PermissionService
 }
 
-func NewOpsHandler(processes *service.ProcessService, devEnvs *service.DevEnvironmentService, perm *rbacservice.PermissionService) *OpsHandler {
-	return &OpsHandler{processes: processes, devEnvs: devEnvs, perm: perm}
+func NewOpsHandler(
+	processes *service.ProcessService,
+	devEnvs *service.DevEnvironmentService,
+	siteLinks *service.SiteLinkService,
+	perm *rbacservice.PermissionService,
+) *OpsHandler {
+	return &OpsHandler{processes: processes, devEnvs: devEnvs, siteLinks: siteLinks, perm: perm}
 }
 
 func (h *OpsHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc) {
@@ -53,6 +59,12 @@ func (h *OpsHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc)
 	g.GET("/dev-environments/:id/jobs/:jobId", rbacmw.RequirePermission(h.perm, "ops_dev_environments:view"), h.GetJob)
 	g.GET("/dev-environments/:id/jobs/:jobId/logs", rbacmw.RequirePermission(h.perm, "ops_dev_environments:view"), h.JobLogs)
 	g.POST("/dev-environments/:id/jobs/:jobId/retry", rbacmw.RequirePermission(h.perm, "ops_dev_environments:execute"), h.RetryJob)
+
+	// List is any signed-in user. Writes stay on the super-admin ops menu.
+	g.GET("/site-links", h.ListSiteLinks)
+	g.POST("/site-links", rbacmw.RequirePermission(h.perm, "ops_site_links:create"), h.CreateSiteLink)
+	g.PUT("/site-links/:id", rbacmw.RequirePermission(h.perm, "ops_site_links:update"), h.UpdateSiteLink)
+	g.DELETE("/site-links/:id", rbacmw.RequirePermission(h.perm, "ops_site_links:delete"), h.DeleteSiteLink)
 }
 
 func (h *OpsHandler) ListProcesses(c *gin.Context) {

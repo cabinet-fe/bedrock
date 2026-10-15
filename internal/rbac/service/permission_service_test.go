@@ -291,6 +291,63 @@ func TestSuperAdminOnlyGate(t *testing.T) {
 	}
 }
 
+func TestSiteLinksViewWithoutGrant(t *testing.T) {
+	perm, roles, _, users, roleRepo := setupRBAC(t)
+
+	hash, _ := pkg.HashPassword("pass")
+	u := &authmodel.User{Username: "sitelink_reader", PasswordHash: hash, IsActive: true}
+	if err := users.Create(u); err != nil {
+		t.Fatal(err)
+	}
+
+	codes, err := perm.ResolvePermissions(u.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := rbac.ToSet(codes)
+	if !rbac.HasPermission(set, "site_links:view") {
+		t.Fatalf("ungranted user missing site_links:view: %v", codes)
+	}
+	for _, gated := range []string{
+		"ops_site_links:view", "ops_site_links:create", "ops_site_links:update", "ops_site_links:delete",
+	} {
+		if rbac.HasPermission(set, gated) {
+			t.Fatalf("ops site link permission leaked: %s in %v", gated, codes)
+		}
+		if err := perm.CheckAccess(u.ID, false, gated); err == nil || !service.IsForbidden(err) {
+			t.Fatalf("expected super-admin gate for %s, got %v", gated, err)
+		}
+	}
+	if err := perm.CheckAccess(u.ID, false, "site_links:view"); err != nil {
+		t.Fatalf("site_links:view should pass without a role grant: %v", err)
+	}
+	if err := perm.CheckAccess(u.ID, true, "ops_site_links:create"); err != nil {
+		t.Fatalf("super-admin should pass ops site links: %v", err)
+	}
+
+	if _, err := roles.Create("网站维护", "site_link_maint", "", "", []string{"ops_site_links:create"}); err == nil || !strings.Contains(err.Error(), "超级管理员") {
+		t.Fatalf("expected role bind reject, got %v", err)
+	}
+	if _, err := roleRepo.FindByCode("site_link_maint"); err == nil {
+		t.Fatal("rejected role was persisted")
+	}
+
+	role, err := roles.Create("手册", "handbook_only", "", "", []string{"handbook:view"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := roles.SetPermissions(role.ID, []string{"ops_site_links:update", "handbook:view"}); err == nil || !strings.Contains(err.Error(), "超级管理员") {
+		t.Fatalf("expected SetPermissions reject, got %v", err)
+	}
+	kept, err := roles.Get(role.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept.Permissions) != 1 || kept.Permissions[0].Permission != "handbook:view" {
+		t.Fatalf("permissions changed after rejected bind: %+v", kept.Permissions)
+	}
+}
+
 func TestMenuTrimTwoLevelGroups(t *testing.T) {
 	perm, roles, _, users, roleRepo := setupRBAC(t)
 
@@ -300,13 +357,15 @@ func TestMenuTrimTwoLevelGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Role-less users see no nav; binding a builtin role trims to its menus.
+	// Role-less users still see the workbench site-links page; other menus stay hidden.
 	menus, err := perm.TrimMenus(u.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(menus) != 0 {
-		t.Fatalf("expected empty nav without roles, got %+v", menus)
+	if len(menus) != 1 || len(menus[0].Children) != 1 ||
+		menus[0].Title != "工作台" || menus[0].Children[0].Title != "网站链接" ||
+		menus[0].Children[0].Path != "/site-links" {
+		t.Fatalf("expected only the site links menu, got %+v", menus)
 	}
 	dev, err := roleRepo.FindByCode(model.RoleCodeDeveloper)
 	if err != nil {

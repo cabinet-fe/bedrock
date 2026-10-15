@@ -113,7 +113,7 @@ func TestGetJobRedactsCommandAndSourceSecrets(t *testing.T) {
 	}
 
 	router := gin.New()
-	router.GET("/dev-environments/:id/jobs/:jobId", NewOpsHandler(nil, svc, nil).GetJob)
+	router.GET("/dev-environments/:id/jobs/:jobId", NewOpsHandler(nil, svc, nil, nil).GetJob)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(
 		http.MethodGet,

@@ -315,3 +315,88 @@ func TestEnsureRBACResources_HarnessChat(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureRBACResources_SiteLinks(t *testing.T) {
+	gdb, err := db.Open(&config.DatabaseConfig{
+		Driver: "sqlite",
+		Path:   filepath.Join(t.TempDir(), "seed_site_links.sqlite"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migration.Up(context.Background(), gdb, migration.Driver("sqlite")); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.EnsureRBACResources(gdb); err != nil {
+		t.Fatal(err)
+	}
+
+	var overview rbacmodel.MenuGroup
+	if err := gdb.Where("code = ?", "overview").First(&overview).Error; err != nil {
+		t.Fatal(err)
+	}
+	var workbench rbacmodel.RbacResource
+	if err := gdb.Where("full_code = ? AND type = ?", "site_links", rbacmodel.ResourceTypeMenu).First(&workbench).Error; err != nil {
+		t.Fatal(err)
+	}
+	if workbench.Title != "网站链接" || workbench.Route != "/site-links" || workbench.SuperAdminOnly || workbench.Hidden {
+		t.Fatalf("workbench menu = %+v", workbench)
+	}
+	if workbench.GroupID == nil || *workbench.GroupID != overview.ID {
+		t.Fatalf("site_links group = %v, want %d", workbench.GroupID, overview.ID)
+	}
+	var view rbacmodel.RbacResource
+	if err := gdb.Where("full_code = ?", "site_links:view").First(&view).Error; err != nil {
+		t.Fatal(err)
+	}
+	if view.Type != rbacmodel.ResourceTypeAction || view.SuperAdminOnly || view.Title != "查看" {
+		t.Fatalf("site_links:view = %+v", view)
+	}
+
+	var opsGroup rbacmodel.MenuGroup
+	if err := gdb.Where("code = ?", "ops").First(&opsGroup).Error; err != nil {
+		t.Fatal(err)
+	}
+	opsCodes := []string{
+		"ops_site_links",
+		"ops_site_links:view", "ops_site_links:create", "ops_site_links:update", "ops_site_links:delete",
+	}
+	for _, code := range opsCodes {
+		var res rbacmodel.RbacResource
+		if err := gdb.Where("full_code = ?", code).First(&res).Error; err != nil {
+			t.Fatalf("missing %s: %v", code, err)
+		}
+		if !res.SuperAdminOnly {
+			t.Errorf("%s should be super_admin_only", code)
+		}
+		if code == "ops_site_links" && (res.Title != "网站链接" || res.Route != "/ops/site-links" || res.GroupID == nil || *res.GroupID != opsGroup.ID) {
+			t.Errorf("ops menu = %+v", res)
+		}
+	}
+
+	if err := gdb.Model(&rbacmodel.RbacResource{}).Where("full_code IN ?", opsCodes).
+		Updates(map[string]any{"super_admin_only": false}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.EnsureRBACResources(gdb); err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range opsCodes {
+		var res rbacmodel.RbacResource
+		if err := gdb.Where("full_code = ?", code).First(&res).Error; err != nil {
+			t.Fatal(err)
+		}
+		if !res.SuperAdminOnly {
+			t.Errorf("boot did not rewrite %s", code)
+		}
+	}
+	for _, code := range []string{"site_links", "site_links:view", "ops_processes", "ops_dev_environments"} {
+		var res rbacmodel.RbacResource
+		if err := gdb.Where("full_code = ?", code).First(&res).Error; err != nil {
+			t.Fatal(err)
+		}
+		if res.SuperAdminOnly {
+			t.Errorf("%s should stay grantable", code)
+		}
+	}
+}

@@ -212,7 +212,8 @@ func main() {
 	opsRepo := opsrepo.NewOpsRepository(gdb)
 	processSvc := opsservice.NewProcessService()
 	devEnvSvc := opsservice.NewDevEnvironmentService(opsRepo, auditSvc)
-	opsHandler := opshandler.NewOpsHandler(processSvc, devEnvSvc, permSvc)
+	siteLinkSvc := opsservice.NewSiteLinkService(opsRepo)
+	opsHandler := opshandler.NewOpsHandler(processSvc, devEnvSvc, siteLinkSvc, permSvc)
 
 	storageRepo := storagerepo.NewStorageRepository(gdb)
 	storageSvc, err := storageservice.NewStorageService(storageRepo, cfg.Storage.Root, storageservice.Limits{
