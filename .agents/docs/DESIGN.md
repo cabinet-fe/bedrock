@@ -182,7 +182,7 @@ RbacResource
 - 登录 / `GET /auth/me` 返回两层菜单（分组 → 菜单项），对齐侧栏 `u-group-nav`；过滤 `hidden`、未启用、非超管的 `super_admin_only`，且需具备 `{menuCode}:view`。
 - 前端**只渲染**下发菜单，不硬编码全量再隐藏。
 - 图标：原始体积 ≤ 32KB；超限 400。
-- `super_admin_only`：仅超级管理员可访问；seed 每次启动强制回写仪表盘「系统信息」「系统状态」卡片为 `super_admin_only`，资源 API 手动翻转不能持久。
+- `super_admin_only`：仅超级管理员可访问；seed 每次启动强制回写仪表盘「系统信息」「系统状态」卡片，以及运维菜单 `ops_site_links` 与其 `view` / `create` / `update` / `delete`，为 `super_admin_only`，资源 API 手动翻转不能持久。
 
 ### 4.4 项目 ACL 与角色数据权限
 
