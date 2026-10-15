@@ -14,7 +14,7 @@ Bedrock 的 HTTP 接口约定写在本目录的 Markdown 里，按业务域拆�
 | [resource.md](resource.md) | 代码仓库、服务器、凭证、AI CLI、个人访问令牌（PAT） |
 | [cicd.md](cicd.md) | 构建任务、构建运行、构建流水线、流水线运行、Webhook |
 | [cicd-scripts.md](cicd-scripts.md) | 脚本任务、脚本运行、脚本 Webhook |
-| [ops.md](ops.md) | 仪表盘卡片与运维（进程、开发环境） |
+| [ops.md](ops.md) | 仪表盘卡片与运维（进程、开发环境、网站链接） |
 | [project.md](project.md) | 项目（成员、需求、评论、附件、文档发布） |
 | [ai.md](ai.md) | Agents、运行记录、Skills |
 | [harness.md](harness.md) | 智能体会话底座（会话、消息、审批/提问应答、导出、模型与 agent 目录、WS 统一帧） |

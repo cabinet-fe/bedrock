@@ -238,6 +238,42 @@
 响应 202：data = DevEnvJob
 错误：403
 
+## 网站链接
+
+不挂产品项目，也没有账号子表。列表一次返回全部条目（含停用），按 `updated_at` 倒序，不分页。读取响应含明文 `password` 与 `updated_at`，不返回密文。未登录为 401。名称或地址为空（含只含空白）、图标解码后原始字节超过 32KB，为 400 且不落库。非超管创建、更新、删除为 403。图标只保存上传图片的 Base64，不接受图标 URL。账号或密码提交空字符串即保存为空；空密码在库中为空串。
+
+### GET /ops/site-links — 列出网站链接
+
+权限：已登录
+响应 200：data = SiteLink[]
+错误：401
+说明：不要求权限码。不按项目过滤。
+
+### POST /ops/site-links — 创建网站链接
+
+权限：`ops_site_links:create`（`super_admin_only`）
+请求：{ name*, url*, icon_base64, icon_mime, account, password, remark, enabled }
+响应 201：data = SiteLink
+错误：400 / 401 / 403
+说明：`password` 为明文。非空值以 AES-GCM 写入密文列，响应仍回明文。`enabled` 缺省为 true。
+
+### PUT /ops/site-links/{id} — 更新网站链接
+
+权限：`ops_site_links:update`（`super_admin_only`）
+路径参数：id*: integer
+请求：同创建
+响应 200：data = SiteLink
+错误：400 / 401 / 403
+说明：按请求值保存。账号或密码传空字符串即清空，不是留空跳过。
+
+### DELETE /ops/site-links/{id} — 删除网站链接
+
+权限：`ops_site_links:delete`（`super_admin_only`）
+路径参数：id*: integer
+响应 200
+错误：400 / 401 / 403
+说明：`id` 不是整数时为 400。
+
 ## 对象形状
 
 ### AgentRunSummary
@@ -428,6 +464,22 @@
 | `page_size` | `integer` | 是 |  |
 | `total_pages` | `integer` | 是 |  |
 | `items` | `DevEnvJob[]` |  |  |
+
+### SiteLink
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `integer` |  |  |
+| `name` | `string` | 是 | 不可为空白 |
+| `url` | `string` | 是 | 不可为空白 |
+| `icon_base64` | `string` |  | 图片 Base64，可空；解码后原始字节不超过 32KB |
+| `icon_mime` | `string` |  | 可空 |
+| `account` | `string` |  | 可空；一条记录只有一个账号 |
+| `password` | `string` |  | 明文，可空。空串表示无密码；响应不含密文 |
+| `remark` | `string` |  | 可空 |
+| `enabled` | `boolean` |  | 缺省 true |
+| `created_at` | `string(date-time)` |  |  |
+| `updated_at` | `string(date-time)` |  | 列表按此字段倒序 |
 
 ### DevEnvironment
 
