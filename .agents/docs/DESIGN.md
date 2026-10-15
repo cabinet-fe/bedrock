@@ -120,7 +120,7 @@ internal/
   cicd/                   # BuildJob、BuildRun、Webhook
   engine/                 # Pipeline、Scheduler、Cron、Git（依赖 cicd / resource 接口）
   deployer/               # rsync/sftp/scp/agent/local
-  ops/                    # Process、DevEnvironment
+  ops/                    # Process、DevEnvironment、网站清单
   project/                # ProductProject、Requirement、ApiDoc
   ai/                     # AiAgent、AgentRun、Skill（CLI 查找依赖 resource 注入）
   dashboard/              # Layout + 卡片数据源
@@ -132,6 +132,8 @@ api/                      # HTTP 契约（Markdown，按域拆分）
 web/                      # Vue 3 前端
 .agents/docs/             # 工程底座文档：PROJECT / ARCHITECTURE / DEV-STANDARDS / CODE-MAP / PRD / DESIGN / ops-handbook / release-checklist / dsh-integration-design
 ```
+
+`ops` 的职责包括进程、开发环境与网站清单（SiteLink，不挂产品项目）。工作台只读：读接口对已登录用户返回明文密码；库内非空密码为 AES-GCM，空密码为空串。运维维护（创建、更新、删除）仅超管。
 
 ### 3.2 分层规则
 
@@ -453,7 +455,7 @@ database:
 
 - Auth / Users / Roles / RBAC resources / Menus / Dictionaries / Operation logs / Tokens
 - Dashboard layout + card data
-- Ops processes / dev-environments / per-environment sources
+- Ops processes / dev-environments / per-environment sources / site-links（网站清单）
 - Resource: repositories / servers / credentials
 - CI/CD: webhook / build-jobs / build-runs / build-pipelines / pipeline-runs
 - Projects / members / requirements / docs（含 generate、publish、diff）

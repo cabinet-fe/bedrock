@@ -266,8 +266,8 @@ database:
 
 | 分组 code  | 标题示例 | 典型菜单 code                                                                                                      |
 | ---------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| `overview` | 工作台   | `dashboard`（卡片：`build_summary` / `agent_run_summary` / `system_info` / `system_status`）、`handbook`（操作手册） |
-| `ops`      | 运维     | `ops_processes`、`ops_dev_environments`（均 `super_admin_only`）                                                   |
+| `overview` | 工作台   | `dashboard`（卡片：`build_summary` / `agent_run_summary` / `system_info` / `system_status`）、`handbook`（操作手册）、`site_links` |
+| `ops`      | 运维     | `ops_processes`、`ops_dev_environments`、`ops_site_links`（均 `super_admin_only`）                                 |
 | `resource` | 资源管理 | `resource_repositories`、`resource_servers`、`resource_credentials`、`resource_tokens`            |
 | `cicd`     | CI/CD    | `cicd_build_jobs`、`cicd_build_runs`                                                                               |
 | `project`  | 项目管理 | `project_projects`、`project_requirements`、`project_docs`                                                          |
@@ -325,7 +325,11 @@ database:
 
 ## 7. 运维（仅超级管理员）
 
+进程管理与开发环境管理仅超级管理员可进入。网站链接的工作台只读入口是对 §7.1 的例外，见 §7.4。
+
 ### 7.1 准入
+
+本节适用于进程管理、开发环境管理，以及运维维护菜单 `ops_site_links`。工作台只读菜单 `site_links`（§7.4）不在本节范围内：面向全部已登录用户，不标记 `super_admin_only`。
 
 - 运维菜单与功能标记 `super_admin_only`；仅超级管理员可见菜单、可调用 API。
 - 系统支持多用户，但运维域与业务 RBAC 正交：**非超管永远不可进入**（即使自定义角色误绑权，服务端拒绝写入与生效）。
@@ -386,6 +390,16 @@ database:
 3. 自定义开发环境定义可被检测与安装流程复用。
 4. 非超管不可访问。
 5. 智能体 CLI 管理入口在开发环境页，资源管理侧栏无独立 CLI 菜单。
+
+### 7.4 网站链接
+
+不挂产品项目。字段为名称、地址（必填），以及可选的图标、一个测试账号、一个密码、备注、是否启用。图标以上传图片的 Base64 保存（解码后原始字节不超过 32KB，口径与菜单图标相同），不接受图标 URL。
+
+工作台菜单 `site_links` 是只读入口，面向全部已登录用户，不依赖角色是否勾选该菜单权限；该入口是对 §7.1 的例外。运维菜单 `ops_site_links` 及其创建、更新、删除标记 `super_admin_only`，仅超级管理员可维护，仍适用 §7.1。
+
+明文展示账号和密码，是对「敏感字段密文不回显、编辑留空表示不修改」的例外：读取返回明文，编辑框展示当前明文，提交空字符串即保存为空。非空密码在库内为 AES-GCM。
+
+停用项仍然显示（含账号与密码），但地址不可跳转。
 
 ---
 
