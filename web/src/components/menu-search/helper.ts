@@ -9,8 +9,21 @@ export const shortcutLabel = isMac ? "⌘ K" : "Ctrl K";
 export const MENU_KEYWORDS: Record<string, string[]> = {
   "/": ["home", "shouye", "sy", "index", "dashboard", "概览", "工作台", "主页"],
   "/handbook": ["handbook", "manual", "shouce", "sc", "help", "docs", "帮助", "指南"],
+  "/site-links": [
+    "site",
+    "link",
+    "website",
+    "wangzhan",
+    "wz",
+    "lianjie",
+    "lj",
+    "网站",
+    "链接",
+    "网站链接",
+  ],
   "/ops/processes": ["process", "jincheng", "jc", "proc", "pm2", "ops", "运维", "进程"],
   "/ops/dev-environments": ["dev", "env", "environment", "huanjing", "hj", "容器", "环境"],
+  "/ops/site-links": ["site", "link", "ops", "yunwei", "yw", "wangzhan", "网站链接", "运维"],
   "/resource/repositories": ["repo", "repository", "git", "cangku", "ck", "code", "代码仓库"],
   "/resource/servers": ["server", "fuwuqi", "fwq", "host", "node", "服务器", "主机"],
   "/resource/credentials": [

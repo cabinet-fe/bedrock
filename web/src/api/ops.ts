@@ -4,6 +4,8 @@ import type {
   DevEnvJob,
   DevEnvironment,
   PageResult,
+  SiteLink,
+  SiteLinkWrite,
   VersionCatalog,
 } from "./types";
 
@@ -132,4 +134,23 @@ export async function retryDevEnvJob(envId: number, jobId: number): Promise<DevE
     {},
   );
   return body;
+}
+
+export async function listSiteLinks(): Promise<SiteLink[]> {
+  const { body } = await http.get<SiteLink[]>("/ops/site-links");
+  return body ?? [];
+}
+
+export async function createSiteLink(input: SiteLinkWrite): Promise<SiteLink> {
+  const { body } = await http.post<SiteLink>("/ops/site-links", input);
+  return body;
+}
+
+export async function updateSiteLink(id: number, input: SiteLinkWrite): Promise<SiteLink> {
+  const { body } = await http.put<SiteLink>(`/ops/site-links/${id}`, input);
+  return body;
+}
+
+export async function deleteSiteLink(id: number): Promise<void> {
+  await http.delete(`/ops/site-links/${id}`);
 }

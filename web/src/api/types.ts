@@ -565,6 +565,25 @@ export interface ProcessInfo {
   ports: number[];
 }
 
+export interface SiteLink {
+  id: number;
+  name: string;
+  url: string;
+  icon_base64: string;
+  icon_mime: string;
+  account: string;
+  password: string;
+  remark: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SiteLinkWrite = Pick<
+  SiteLink,
+  "name" | "url" | "icon_base64" | "icon_mime" | "account" | "password" | "remark" | "enabled"
+>;
+
 export interface DevEnvironment {
   id: number;
   name: string;
