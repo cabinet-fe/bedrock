@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,8 +13,9 @@ import (
 	"bedrock/internal/rbac"
 )
 
-// SiteLinkService stores one test-site account. A non-empty password is
-// AES-GCM ciphertext in the database; reads return the plaintext.
+// SiteLinkService stores website links with zero or more test accounts.
+// Each non-empty password is AES-GCM ciphertext inside accounts_json in the database;
+// reads return the plaintext accounts.
 type SiteLinkService struct {
 	repo *repository.OpsRepository
 }
@@ -22,23 +24,27 @@ func NewSiteLinkService(repo *repository.OpsRepository) *SiteLinkService {
 	return &SiteLinkService{repo: repo}
 }
 
-// SiteLinkInput is the create and update body. Omitted enabled defaults to true.
-// An empty password is stored as an empty string.
-type SiteLinkInput struct {
-	Name       string `json:"name"`
-	URL        string `json:"url"`
-	IconBase64 string `json:"icon_base64"`
-	IconMime   string `json:"icon_mime"`
-	Account    string `json:"account"`
-	Password   string `json:"password"`
-	Remark     string `json:"remark"`
-	Enabled    *bool  `json:"enabled"`
+type storedSiteLinkAccount struct {
+	Account        string `json:"account"`
+	PasswordCipher string `json:"password_cipher"`
+	Remark         string `json:"remark"`
 }
 
-// SiteLinkView is the read model: plaintext password, no ciphertext.
+// SiteLinkInput is the create and update body. Omitted enabled defaults to true.
+type SiteLinkInput struct {
+	Name       string                  `json:"name"`
+	URL        string                  `json:"url"`
+	IconBase64 string                  `json:"icon_base64"`
+	IconMime   string                  `json:"icon_mime"`
+	Accounts   []model.SiteLinkAccount `json:"accounts"`
+	Remark     string                  `json:"remark"`
+	Enabled    *bool                   `json:"enabled"`
+}
+
+// SiteLinkView is the read model: plaintext accounts, no ciphertext.
 type SiteLinkView struct {
 	model.SiteLink
-	Password string `json:"password"`
+	Accounts []model.SiteLinkAccount `json:"accounts"`
 }
 
 func (s *SiteLinkService) List() ([]SiteLinkView, error) {
@@ -110,7 +116,22 @@ func applySiteLink(item *model.SiteLink, in SiteLinkInput) error {
 	if err != nil {
 		return err
 	}
-	cipher, err := pkg.Encrypt(in.Password)
+	stored := make([]storedSiteLinkAccount, 0, len(in.Accounts))
+	for _, acc := range in.Accounts {
+		if strings.TrimSpace(acc.Account) == "" && acc.Password == "" && strings.TrimSpace(acc.Remark) == "" {
+			continue
+		}
+		cipher, err := pkg.Encrypt(acc.Password)
+		if err != nil {
+			return err
+		}
+		stored = append(stored, storedSiteLinkAccount{
+			Account:        acc.Account,
+			PasswordCipher: cipher,
+			Remark:         acc.Remark,
+		})
+	}
+	accountsBytes, err := json.Marshal(stored)
 	if err != nil {
 		return err
 	}
@@ -122,20 +143,35 @@ func applySiteLink(item *model.SiteLink, in SiteLinkInput) error {
 	item.URL = url
 	item.IconBase64 = icon
 	item.IconMime = mime
-	item.Account = in.Account
-	item.PasswordCipher = cipher
+	item.AccountsJSON = string(accountsBytes)
 	item.Remark = in.Remark
 	item.Enabled = enabled
 	return nil
 }
 
 func toSiteLinkView(item model.SiteLink) (SiteLinkView, error) {
-	plain, err := pkg.Decrypt(item.PasswordCipher)
-	if err != nil {
-		return SiteLinkView{}, err
+	accounts := []model.SiteLinkAccount{}
+	raw := strings.TrimSpace(item.AccountsJSON)
+	if raw != "" && raw != "[]" {
+		var stored []storedSiteLinkAccount
+		if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+			return SiteLinkView{}, err
+		}
+		accounts = make([]model.SiteLinkAccount, 0, len(stored))
+		for _, s := range stored {
+			plain, err := pkg.Decrypt(s.PasswordCipher)
+			if err != nil {
+				return SiteLinkView{}, err
+			}
+			accounts = append(accounts, model.SiteLinkAccount{
+				Account:  s.Account,
+				Password: plain,
+				Remark:   s.Remark,
+			})
+		}
 	}
-	item.PasswordCipher = ""
-	return SiteLinkView{SiteLink: item, Password: plain}, nil
+	item.AccountsJSON = ""
+	return SiteLinkView{SiteLink: item, Accounts: accounts}, nil
 }
 
 // normalizeSiteLinkIcon accepts raw Base64 or a data URL. Empty clears the icon.

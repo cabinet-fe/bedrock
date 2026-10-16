@@ -182,7 +182,7 @@ RbacResource
 - 登录 / `GET /auth/me` 返回两层菜单（分组 → 菜单项），对齐侧栏 `u-group-nav`；过滤 `hidden`、未启用、非超管的 `super_admin_only`，且需具备 `{menuCode}:view`。
 - 前端**只渲染**下发菜单，不硬编码全量再隐藏。
 - 图标：原始体积 ≤ 32KB；超限 400。
-- `super_admin_only`：仅超级管理员可访问；seed 每次启动强制回写仪表盘「系统信息」「系统状态」卡片，以及运维菜单 `ops_site_links` 与其 `view` / `create` / `update` / `delete`，为 `super_admin_only`，资源 API 手动翻转不能持久。
+- `super_admin_only`：仅超级管理员可访问；seed 每次启动强制回写仪表盘「系统信息」「系统状态」卡片，以及工作台「网站链接」写权限 `site_links:create` / `site_links:update` / `site_links:delete` 为 `super_admin_only`，资源 API 手动翻转不能持久。
 
 ### 4.4 项目 ACL 与角色数据权限
 
@@ -241,6 +241,7 @@ RbacResource
 | PAT | `Authorization: Bearer <pat>`；与 JWT 分流校验；按 scope 映射端点 |
 | Webhook | 无 Bearer；见 §8 |
 | WS | query `token`（JWT）；生产建议 HTTPS 以降低日志泄露面 |
+| 文件下载 | `<a href>` 不能带 Authorization。GET 且路径以 `/artifact`、`/download`、`/package` 结尾时接受 query `token`（JWT 或 PAT），校验与 Bearer 相同，由浏览器原生下载。token 会进入访问日志，生产建议 HTTPS |
 
 **不提供**：refresh rotation 作为首期必做（可后续增强）；但用户禁用后，后续请求必须失败（校验时查库 `disabled`）。
 
@@ -301,7 +302,7 @@ flowchart TB
 
 **脚本模板**：`build_script` / `post_build_script` / ScriptJob `script` 启动前对 `${{ path }}` 做一次性文本替换（非 shell 求值）。构建内置只读：`job.id`、`job.name`、`run.id`、`run.build_number`、`run.branch`、`run.commit`、`workspace`；脚本任务内置：`job.id`、`job.name`、`run.id`、`workspace`。用户变量 `${{ env.KEY }}` 对齐 `env_var_names` + `env_vars`（同名以 Key-Value 为准），进程环境仍注入以兼容 `$KEY`。未知变量 → `failed`；替换值不二次展开。
 
-**制品路径（`artifact_paths`）**：相对仓库根的文件/目录列表。运行时在 clone 根下解析并做边界校验；配置路径缺失 → 构建 `failed`。归档规则：0 路径无制品（有部署目标时拒绝整仓分发，`distribution_summary=all_failed`）；1 文件原样存储（`artifact_kind=file`）；1 目录按 `artifact_format` 打 zip/tar.gz（`archive`）；2+ 路径按 basename 合并后打一包（`bundle`，basename 冲突失败）。分发与 redeploy 均从同一 `deployRoot` 出发（文件/归档先物化到 staging）。
+**制品路径（`artifact_paths`）**：相对仓库根的文件/目录列表。运行时在 clone 根下解析并做边界校验；配置路径缺失 → 构建 `failed`。归档规则：0 路径无制品（有部署目标时拒绝整仓分发，`distribution_summary=all_failed`）；1 文件原样存储（`artifact_kind=file`，按 `build-{number}-{文件名}` 分文件，避免固定文件名被多次构建共用）；1 目录按 `artifact_format` 打 zip/tar.gz（`archive`）；2+ 路径按 basename 合并后打一包（`bundle`，basename 冲突失败）。清理只保留最近 `max_artifacts` 次构建的制品记录；若待删路径仍被保留范围内的构建引用，则不删除该文件。分发与 redeploy 均从同一 `deployRoot` 出发（文件/归档先物化到 staging）。
 
 **分发**：rsync 默认 merge（覆盖制品文件，不删远端多余文件）；DeployTarget.`mirror=true` 时加 `--delete` 镜像同步。post-deploy 与 rsync/scp 等 CLI 分发共用系统 `ssh`/`sshpass` 与主机 `~/.ssh` 认证（`auth_type=agent` 仍走 HTTP）。
 

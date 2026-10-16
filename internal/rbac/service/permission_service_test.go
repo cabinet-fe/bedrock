@@ -309,10 +309,10 @@ func TestSiteLinksViewWithoutGrant(t *testing.T) {
 		t.Fatalf("ungranted user missing site_links:view: %v", codes)
 	}
 	for _, gated := range []string{
-		"ops_site_links:view", "ops_site_links:create", "ops_site_links:update", "ops_site_links:delete",
+		"site_links:create", "site_links:update", "site_links:delete",
 	} {
 		if rbac.HasPermission(set, gated) {
-			t.Fatalf("ops site link permission leaked: %s in %v", gated, codes)
+			t.Fatalf("site link write permission leaked: %s in %v", gated, codes)
 		}
 		if err := perm.CheckAccess(u.ID, false, gated); err == nil || !service.IsForbidden(err) {
 			t.Fatalf("expected super-admin gate for %s, got %v", gated, err)
@@ -321,11 +321,11 @@ func TestSiteLinksViewWithoutGrant(t *testing.T) {
 	if err := perm.CheckAccess(u.ID, false, "site_links:view"); err != nil {
 		t.Fatalf("site_links:view should pass without a role grant: %v", err)
 	}
-	if err := perm.CheckAccess(u.ID, true, "ops_site_links:create"); err != nil {
-		t.Fatalf("super-admin should pass ops site links: %v", err)
+	if err := perm.CheckAccess(u.ID, true, "site_links:create"); err != nil {
+		t.Fatalf("super-admin should pass site_links:create: %v", err)
 	}
 
-	if _, err := roles.Create("网站维护", "site_link_maint", "", "", []string{"ops_site_links:create"}); err == nil || !strings.Contains(err.Error(), "超级管理员") {
+	if _, err := roles.Create("网站维护", "site_link_maint", "", "", []string{"site_links:create"}); err == nil || !strings.Contains(err.Error(), "超级管理员") {
 		t.Fatalf("expected role bind reject, got %v", err)
 	}
 	if _, err := roleRepo.FindByCode("site_link_maint"); err == nil {
@@ -336,7 +336,7 @@ func TestSiteLinksViewWithoutGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := roles.SetPermissions(role.ID, []string{"ops_site_links:update", "handbook:view"}); err == nil || !strings.Contains(err.Error(), "超级管理员") {
+	if _, err := roles.SetPermissions(role.ID, []string{"site_links:update", "handbook:view"}); err == nil || !strings.Contains(err.Error(), "超级管理员") {
 		t.Fatalf("expected SetPermissions reject, got %v", err)
 	}
 	kept, err := roles.Get(role.ID)

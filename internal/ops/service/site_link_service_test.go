@@ -104,68 +104,81 @@ func TestSiteLinkRejectsBlankAndOversizedIcon(t *testing.T) {
 	}
 }
 
-func TestSiteLinkPasswordCipherAndEmpty(t *testing.T) {
+func TestSiteLinkAccountsCipherAndEmpty(t *testing.T) {
 	svc, gdb := newSiteLinkService(t)
-	const plain = "plain-secret"
+	const plain1 = "plain-secret-1"
+	const plain2 = "plain-secret-2"
 	view, err := svc.Create(SiteLinkInput{
-		Name: "secret", URL: "https://secret.example", Account: "user", Password: plain, Remark: "note",
+		Name: "secret", URL: "https://secret.example", Remark: "note",
+		Accounts: []model.SiteLinkAccount{
+			{Account: "admin", Password: plain1, Remark: "管理员"},
+			{Account: "tester", Password: plain2, Remark: "测试员"},
+			{Account: "   ", Password: "", Remark: "  "}, // completely blank row ignored
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Password != plain || view.PasswordCipher != "" {
-		t.Fatalf("read model = password %q cipher %q", view.Password, view.PasswordCipher)
+	if len(view.Accounts) != 2 || view.Accounts[0].Password != plain1 || view.Accounts[1].Password != plain2 || view.AccountsJSON != "" {
+		t.Fatalf("read model = %+v", view)
 	}
 	raw, err := json.Marshal(view)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(raw), "password_cipher") {
-		t.Fatalf("response exposes ciphertext field: %s", raw)
+	if strings.Contains(string(raw), "password_cipher") || strings.Contains(string(raw), "accounts_json") {
+		t.Fatalf("response exposes internal ciphertext field: %s", raw)
 	}
 
 	var row model.SiteLink
 	if err := gdb.First(&row, view.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if row.PasswordCipher == "" || row.PasswordCipher == plain || strings.Contains(row.PasswordCipher, plain) {
-		t.Fatalf("stored password is not ciphertext: %q", row.PasswordCipher)
+	if row.AccountsJSON == "" || strings.Contains(row.AccountsJSON, plain1) || strings.Contains(row.AccountsJSON, plain2) {
+		t.Fatalf("stored accounts_json contains plaintext or is empty: %q", row.AccountsJSON)
 	}
-	got, err := pkg.Decrypt(row.PasswordCipher)
-	if err != nil || got != plain {
-		t.Fatalf("decrypt stored password = %q err=%v", got, err)
+	var stored []storedSiteLinkAccount
+	if err := json.Unmarshal([]byte(row.AccountsJSON), &stored); err != nil || len(stored) != 2 {
+		t.Fatalf("unmarshal stored accounts: %v err=%v", stored, err)
 	}
-	if strings.Contains(string(raw), row.PasswordCipher) {
+	got1, err := pkg.Decrypt(stored[0].PasswordCipher)
+	if err != nil || got1 != plain1 {
+		t.Fatalf("decrypt stored[0] = %q err=%v", got1, err)
+	}
+	if strings.Contains(string(raw), stored[0].PasswordCipher) {
 		t.Fatalf("response contains ciphertext: %s", raw)
 	}
 
-	cleared, err := svc.Update(view.ID, SiteLinkInput{Name: "secret", URL: "https://secret.example", Password: ""})
+	cleared, err := svc.Update(view.ID, SiteLinkInput{
+		Name: "secret", URL: "https://secret.example",
+		Accounts: []model.SiteLinkAccount{{Account: "admin", Password: "", Remark: "无密码"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleared.Password != "" {
-		t.Fatalf("cleared password = %q", cleared.Password)
+	if len(cleared.Accounts) != 1 || cleared.Accounts[0].Password != "" {
+		t.Fatalf("cleared accounts = %+v", cleared.Accounts)
 	}
 	if err := gdb.First(&row, view.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if row.PasswordCipher != "" {
-		t.Fatalf("empty password stored as %q", row.PasswordCipher)
+	if err := json.Unmarshal([]byte(row.AccountsJSON), &stored); err != nil || len(stored) != 1 || stored[0].PasswordCipher != "" {
+		t.Fatalf("empty password stored as %+v", stored)
 	}
 
-	empty, err := svc.Create(SiteLinkInput{Name: "none", URL: "https://none.example", Password: ""})
+	empty, err := svc.Create(SiteLinkInput{Name: "none", URL: "https://none.example"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if empty.Password != "" {
-		t.Fatalf("empty create password = %q", empty.Password)
+	if len(empty.Accounts) != 0 {
+		t.Fatalf("empty create accounts = %+v", empty.Accounts)
 	}
 	var emptyRow model.SiteLink
 	if err := gdb.First(&emptyRow, empty.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if emptyRow.PasswordCipher != "" {
-		t.Fatalf("empty create stored %q", emptyRow.PasswordCipher)
+	if emptyRow.AccountsJSON != "[]" {
+		t.Fatalf("empty create stored %q", emptyRow.AccountsJSON)
 	}
 
 	off := false
@@ -187,7 +200,10 @@ func TestSiteLinkPasswordCipherAndEmpty(t *testing.T) {
 
 func TestSiteLinkListOrdersByUpdatedAtDesc(t *testing.T) {
 	svc, gdb := newSiteLinkService(t)
-	older, err := svc.Create(SiteLinkInput{Name: "old", URL: "https://old.example", Password: "old-secret"})
+	older, err := svc.Create(SiteLinkInput{
+		Name: "old", URL: "https://old.example",
+		Accounts: []model.SiteLinkAccount{{Account: "u1", Password: "old-secret"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +231,7 @@ func TestSiteLinkListOrdersByUpdatedAtDesc(t *testing.T) {
 	if len(items) != 2 || items[0].ID != newer.ID || items[1].ID != older.ID {
 		t.Fatalf("order = %#v", items)
 	}
-	if items[1].Password != "old-secret" || items[0].Password != "" {
-		t.Fatalf("list passwords = %q %q", items[0].Password, items[1].Password)
+	if len(items[1].Accounts) != 1 || items[1].Accounts[0].Password != "old-secret" || len(items[0].Accounts) != 0 {
+		t.Fatalf("list accounts = %+v / %+v", items[0].Accounts, items[1].Accounts)
 	}
 }

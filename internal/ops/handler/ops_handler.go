@@ -60,11 +60,11 @@ func (h *OpsHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc)
 	g.GET("/dev-environments/:id/jobs/:jobId/logs", rbacmw.RequirePermission(h.perm, "ops_dev_environments:view"), h.JobLogs)
 	g.POST("/dev-environments/:id/jobs/:jobId/retry", rbacmw.RequirePermission(h.perm, "ops_dev_environments:execute"), h.RetryJob)
 
-	// List is any signed-in user. Writes stay on the super-admin ops menu.
+	// List is any signed-in user. Writes require super-admin site_links actions.
 	g.GET("/site-links", h.ListSiteLinks)
-	g.POST("/site-links", rbacmw.RequirePermission(h.perm, "ops_site_links:create"), h.CreateSiteLink)
-	g.PUT("/site-links/:id", rbacmw.RequirePermission(h.perm, "ops_site_links:update"), h.UpdateSiteLink)
-	g.DELETE("/site-links/:id", rbacmw.RequirePermission(h.perm, "ops_site_links:delete"), h.DeleteSiteLink)
+	g.POST("/site-links", rbacmw.RequirePermission(h.perm, "site_links:create"), h.CreateSiteLink)
+	g.PUT("/site-links/:id", rbacmw.RequirePermission(h.perm, "site_links:update"), h.UpdateSiteLink)
+	g.DELETE("/site-links/:id", rbacmw.RequirePermission(h.perm, "site_links:delete"), h.DeleteSiteLink)
 }
 
 func (h *OpsHandler) ListProcesses(c *gin.Context) {

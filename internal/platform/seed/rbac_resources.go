@@ -61,7 +61,7 @@ func EnsureRBACResources(db *gorm.DB) error {
 					},
 				},
 				{Code: "handbook", Title: "操作手册", Route: "/handbook", SortKey: 20, Actions: []string{"view"}},
-				{Code: "site_links", Title: "网站链接", Route: "/site-links", SortKey: 30, Actions: []string{"view"}},
+				{Code: "site_links", Title: "网站链接", Route: "/site-links", SortKey: 30, Actions: standardCRUD},
 			},
 		},
 		{
@@ -74,11 +74,6 @@ func EnsureRBACResources(db *gorm.DB) error {
 				{
 					Code: "ops_dev_environments", Title: "开发环境", Route: "/ops/dev-environments", SortKey: 20,
 					Actions: []string{"view", "create", "update", "delete", "execute"},
-				},
-				{
-					Code: "ops_site_links", Title: "网站链接", Route: "/ops/site-links", SortKey: 30,
-					SuperAdminOnly: true,
-					Actions:        []string{"view", "create", "update", "delete"},
 				},
 			},
 		},
@@ -166,12 +161,10 @@ func EnsureRBACResources(db *gorm.DB) error {
 			}
 		}
 		// Re-asserted on every boot so manual flips via the resource API cannot
-		// stick: dashboard system cards, and the ops site-links menu plus its
-		// four actions.
+		// stick: dashboard system cards, and site_links write actions.
 		if err := enforceSuperAdminOnly(tx,
 			"dashboard:system_info", "dashboard:system_status",
-			"ops_site_links",
-			"ops_site_links:view", "ops_site_links:create", "ops_site_links:update", "ops_site_links:delete",
+			"site_links:create", "site_links:update", "site_links:delete",
 		); err != nil {
 			return err
 		}
@@ -183,7 +176,7 @@ func EnsureRBACResources(db *gorm.DB) error {
 		); err != nil {
 			return err
 		}
-		return removeRetiredMenus(tx, "dashboard_system_info", "dashboard_system_status", "resource_clis")
+		return removeRetiredMenus(tx, "dashboard_system_info", "dashboard_system_status", "resource_clis", "ops_site_links")
 	})
 }
 

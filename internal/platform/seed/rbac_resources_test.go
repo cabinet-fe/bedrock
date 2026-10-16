@@ -353,15 +353,8 @@ func TestEnsureRBACResources_SiteLinks(t *testing.T) {
 		t.Fatalf("site_links:view = %+v", view)
 	}
 
-	var opsGroup rbacmodel.MenuGroup
-	if err := gdb.Where("code = ?", "ops").First(&opsGroup).Error; err != nil {
-		t.Fatal(err)
-	}
-	opsCodes := []string{
-		"ops_site_links",
-		"ops_site_links:view", "ops_site_links:create", "ops_site_links:update", "ops_site_links:delete",
-	}
-	for _, code := range opsCodes {
+	writeCodes := []string{"site_links:create", "site_links:update", "site_links:delete"}
+	for _, code := range writeCodes {
 		var res rbacmodel.RbacResource
 		if err := gdb.Where("full_code = ?", code).First(&res).Error; err != nil {
 			t.Fatalf("missing %s: %v", code, err)
@@ -369,19 +362,24 @@ func TestEnsureRBACResources_SiteLinks(t *testing.T) {
 		if !res.SuperAdminOnly {
 			t.Errorf("%s should be super_admin_only", code)
 		}
-		if code == "ops_site_links" && (res.Title != "网站链接" || res.Route != "/ops/site-links" || res.GroupID == nil || *res.GroupID != opsGroup.ID) {
-			t.Errorf("ops menu = %+v", res)
-		}
 	}
 
-	if err := gdb.Model(&rbacmodel.RbacResource{}).Where("full_code IN ?", opsCodes).
+	var retiredCount int64
+	if err := gdb.Model(&rbacmodel.RbacResource{}).Where("full_code LIKE ?", "ops_site_links%").Count(&retiredCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if retiredCount != 0 {
+		t.Fatalf("retired ops_site_links resources should not exist, count=%d", retiredCount)
+	}
+
+	if err := gdb.Model(&rbacmodel.RbacResource{}).Where("full_code IN ?", writeCodes).
 		Updates(map[string]any{"super_admin_only": false}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := seed.EnsureRBACResources(gdb); err != nil {
 		t.Fatal(err)
 	}
-	for _, code := range opsCodes {
+	for _, code := range writeCodes {
 		var res rbacmodel.RbacResource
 		if err := gdb.Where("full_code = ?", code).First(&res).Error; err != nil {
 			t.Fatal(err)

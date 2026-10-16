@@ -34,7 +34,7 @@ const router = createRouter({
         {
           path: "site-links",
           name: "site-links",
-          component: () => import("@/views/ops/site-links/pages/browse.vue"),
+          component: () => import("@/views/ops/site-links/pages/main.vue"),
           meta: {
             permission: "site_links:view",
             title: "网站链接",
@@ -302,15 +302,6 @@ const router = createRouter({
           meta: {
             permission: "ops_dev_environments:view",
             title: "开发环境",
-          },
-        },
-        {
-          path: "ops/site-links",
-          name: "ops-site-links",
-          component: () => import("@/views/ops/site-links/pages/main.vue"),
-          meta: {
-            permission: "ops_site_links:view",
-            title: "网站链接",
           },
         },
         {

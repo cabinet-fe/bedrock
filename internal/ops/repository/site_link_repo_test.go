@@ -27,11 +27,11 @@ func TestSiteLinkRepository_ListOrdersByUpdatedAtDesc(t *testing.T) {
 	}
 
 	repo := NewOpsRepository(gdb)
-	older := &model.SiteLink{Name: "old", URL: "https://old.example", PasswordCipher: "cipher-old", Enabled: true}
-	mid := &model.SiteLink{Name: "mid", URL: "https://mid.example", Enabled: false}
+	older := &model.SiteLink{Name: "old", URL: "https://old.example", AccountsJSON: `[{"account":"admin","password_cipher":"cipher-old","remark":"r1"}]`, Enabled: true}
+	mid := &model.SiteLink{Name: "mid", URL: "https://mid.example", AccountsJSON: "[]", Enabled: false}
 	newer := &model.SiteLink{
-		Name: "new", URL: "https://new.example", Account: "user",
-		PasswordCipher: "", Remark: "note", Enabled: true,
+		Name: "new", URL: "https://new.example",
+		AccountsJSON: "[]", Remark: "note", Enabled: true,
 	}
 	for _, item := range []*model.SiteLink{older, mid, newer} {
 		if err := repo.CreateSiteLink(item); err != nil {
@@ -69,18 +69,18 @@ func TestSiteLinkRepository_ListOrdersByUpdatedAtDesc(t *testing.T) {
 			t.Fatalf("order = %v, want %v", got, want)
 		}
 	}
-	if items[0].PasswordCipher != "" {
-		t.Fatalf("empty password must stay an empty string, got %q", items[0].PasswordCipher)
+	if items[0].AccountsJSON != "[]" {
+		t.Fatalf("empty accounts must stay '[]', got %q", items[0].AccountsJSON)
 	}
-	if items[2].PasswordCipher != "cipher-old" {
-		t.Fatalf("ciphertext = %q", items[2].PasswordCipher)
+	if items[2].AccountsJSON != `[{"account":"admin","password_cipher":"cipher-old","remark":"r1"}]` {
+		t.Fatalf("accounts_json = %q", items[2].AccountsJSON)
 	}
 	if items[1].Enabled {
 		t.Fatal("expected mid link to stay disabled")
 	}
 
 	older.Name = "old-edited"
-	older.PasswordCipher = ""
+	older.AccountsJSON = "[]"
 	if err := repo.UpdateSiteLink(older); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestSiteLinkRepository_ListOrdersByUpdatedAtDesc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if items[0].ID != older.ID || items[0].Name != "old-edited" || items[0].PasswordCipher != "" {
+	if items[0].ID != older.ID || items[0].Name != "old-edited" || items[0].AccountsJSON != "[]" {
 		t.Fatalf("updated row not newest: %+v", items[0])
 	}
 

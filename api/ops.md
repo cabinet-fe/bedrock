@@ -240,7 +240,7 @@
 
 ## 网站链接
 
-不挂产品项目，也没有账号子表。列表一次返回全部条目（含停用），按 `updated_at` 倒序，不分页。读取响应含明文 `password` 与 `updated_at`，不返回密文。未登录为 401。名称或地址为空（含只含空白）、图标无法解码或解码后原始字节超过 32KB，为 400 且不落库。非超管创建、更新、删除为 403。图标只保存上传图片的 Base64，不接受 http(s) 图标 URL。`icon_base64` 可以带 `data:*;base64,` 前缀，入库前去掉前缀并规范为标准 Base64。更新或删除的 `id` 不存在时为 404。账号或密码提交空字符串即保存为空；空密码在库中为空串。
+不挂产品项目，也没有独立账号子表（多账号以 JSON 数组保存在主表 `accounts_json`，其中非空密码为 AES-GCM 密文）。列表一次返回全部条目（含停用），按 `updated_at` 倒序，不分页。读取响应含 `accounts`（明文 `password`）与 `updated_at`，不返回密文。未登录为 401。名称或地址为空（含只含空白）、图标无法解码或解码后原始字节超过 32KB，为 400 且不落库。非超管创建、更新、删除为 403。图标只保存上传图片的 Base64，不接受 http(s) 图标 URL。`icon_base64` 可以带 `data:*;base64,` 前缀，入库前去掉前缀并规范为标准 Base64。更新或删除的 `id` 不存在时为 404。
 
 ### GET /ops/site-links — 列出网站链接
 
@@ -251,24 +251,24 @@
 
 ### POST /ops/site-links — 创建网站链接
 
-权限：`ops_site_links:create`（`super_admin_only`）
-请求：{ name*, url*, icon_base64, icon_mime, account, password, remark, enabled }
+权限：`site_links:create`（`super_admin_only`）
+请求：{ name*, url*, icon_base64, icon_mime, accounts, remark, enabled }
 响应 201：data = SiteLink
 错误：400 / 401 / 403
-说明：`password` 为明文。非空值以 AES-GCM 写入密文列，响应仍回明文。`enabled` 缺省为 true。
+说明：`accounts` 为 `{ account, password, remark }[]`；各条 `password` 为明文，非空值以 AES-GCM 加密入库，响应仍回明文；三字段均为空白的账号项会被忽略。`enabled` 缺省为 true。
 
 ### PUT /ops/site-links/{id} — 更新网站链接
 
-权限：`ops_site_links:update`（`super_admin_only`）
+权限：`site_links:update`（`super_admin_only`）
 路径参数：id*: integer
 请求：同创建
 响应 200：data = SiteLink
 错误：400 / 401 / 403 / 404
-说明：按请求值保存。账号或密码传空字符串即清空，不是留空跳过。`id` 不存在时为 404。
+说明：按请求值全量替换保存 `accounts` 及网站字段。`id` 不存在时为 404。
 
 ### DELETE /ops/site-links/{id} — 删除网站链接
 
-权限：`ops_site_links:delete`（`super_admin_only`）
+权限：`site_links:delete`（`super_admin_only`）
 路径参数：id*: integer
 响应 200
 错误：400 / 401 / 403 / 404
@@ -465,6 +465,14 @@
 | `total_pages` | `integer` | 是 |  |
 | `items` | `DevEnvJob[]` |  |  |
 
+### SiteLinkAccount
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `account` | `string` |  | 账号，可空 |
+| `password` | `string` |  | 明文密码，可空；非空值在库内为 AES-GCM 密文，响应不含密文 |
+| `remark` | `string` |  | 账号备注（如角色/用途说明），可空 |
+
 ### SiteLink
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -474,9 +482,8 @@
 | `url` | `string` | 是 | 不可为空白 |
 | `icon_base64` | `string` |  | 图片 Base64，可空；解码后原始字节不超过 32KB |
 | `icon_mime` | `string` |  | 可空 |
-| `account` | `string` |  | 可空；一条记录只有一个账号 |
-| `password` | `string` |  | 明文，可空。空串表示无密码；响应不含密文 |
-| `remark` | `string` |  | 可空 |
+| `accounts` | `SiteLinkAccount[]` |  | 账号列表，默认空数组 `[]` |
+| `remark` | `string` |  | 网站整体备注，可空 |
 | `enabled` | `boolean` |  | 缺省 true |
 | `created_at` | `string(date-time)` |  |  |
 | `updated_at` | `string(date-time)` |  | 列表按此字段倒序 |

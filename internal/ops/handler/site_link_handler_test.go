@@ -176,7 +176,11 @@ func TestSiteLinkRoutesAndHTTP(t *testing.T) {
 
 	const plain = "plain-secret"
 	w := doSiteLink(t, env.router, "admin", http.MethodPost, "/api/v1/ops/site-links", map[string]any{
-		"name": "site", "url": "https://site.example", "account": "user", "password": plain,
+		"name": "site", "url": "https://site.example",
+		"accounts": []map[string]any{
+			{"account": "user1", "password": plain, "remark": "主账号"},
+			{"account": "user2", "password": "", "remark": "免密账号"},
+		},
 	})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create = %d %s", w.Code, w.Body.String())
@@ -187,21 +191,21 @@ func TestSiteLinkRoutesAndHTTP(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	if created.Data.Password != plain {
-		t.Fatalf("create password = %q", created.Data.Password)
+	if len(created.Data.Accounts) != 2 || created.Data.Accounts[0].Password != plain || created.Data.Accounts[0].Remark != "主账号" {
+		t.Fatalf("create accounts = %+v", created.Data.Accounts)
 	}
 	stored, err := env.repo.FindSiteLink(created.Data.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.PasswordCipher == "" || stored.PasswordCipher == plain || strings.Contains(w.Body.String(), stored.PasswordCipher) || strings.Contains(w.Body.String(), "password_cipher") {
-		t.Fatalf("ciphertext leaked or missing: body=%s cipher=%q", w.Body.String(), stored.PasswordCipher)
+	if stored.AccountsJSON == "" || strings.Contains(stored.AccountsJSON, plain) || strings.Contains(w.Body.String(), "password_cipher") {
+		t.Fatalf("ciphertext leaked or missing: body=%s accounts_json=%q", w.Body.String(), stored.AccountsJSON)
 	}
-	cipherBeforeReject := stored.PasswordCipher
+	accountsBeforeReject := stored.AccountsJSON
 
 	if w := doSiteLink(t, env.router, "normal", http.MethodGet, "/api/v1/ops/site-links", nil); w.Code != http.StatusOK {
 		t.Fatalf("list = %d %s", w.Code, w.Body.String())
-	} else if !strings.Contains(w.Body.String(), plain) || strings.Contains(w.Body.String(), stored.PasswordCipher) {
+	} else if !strings.Contains(w.Body.String(), plain) || strings.Contains(w.Body.String(), "password_cipher") {
 		t.Fatalf("list password mismatch: %s", w.Body.String())
 	}
 
@@ -214,7 +218,7 @@ func TestSiteLinkRoutesAndHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.URL != "https://site.example" || stored.PasswordCipher != cipherBeforeReject {
+	if stored.URL != "https://site.example" || stored.AccountsJSON != accountsBeforeReject {
 		t.Fatalf("rejected update changed the row: %+v", stored)
 	}
 
@@ -225,16 +229,16 @@ func TestSiteLinkRoutesAndHTTP(t *testing.T) {
 	}
 
 	cleared := doSiteLink(t, env.router, "admin", http.MethodPut, "/api/v1/ops/site-links/"+strconv.FormatUint(uint64(created.Data.ID), 10), map[string]any{
-		"name": "site", "url": "https://site.example", "password": "",
+		"name": "site", "url": "https://site.example", "accounts": []any{},
 	})
 	if cleared.Code != http.StatusOK {
-		t.Fatalf("clear password = %d %s", cleared.Code, cleared.Body.String())
+		t.Fatalf("clear accounts = %d %s", cleared.Code, cleared.Body.String())
 	}
 	stored, err = env.repo.FindSiteLink(created.Data.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.PasswordCipher != "" || !strings.Contains(cleared.Body.String(), `"password":""`) {
-		t.Fatalf("empty password stored=%q body=%s", stored.PasswordCipher, cleared.Body.String())
+	if stored.AccountsJSON != "[]" || !strings.Contains(cleared.Body.String(), `"accounts":[]`) {
+		t.Fatalf("empty accounts stored=%q body=%s", stored.AccountsJSON, cleared.Body.String())
 	}
 }

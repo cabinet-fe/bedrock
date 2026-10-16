@@ -565,14 +565,19 @@ export interface ProcessInfo {
   ports: number[];
 }
 
+export interface SiteLinkAccount {
+  account: string;
+  password: string;
+  remark: string;
+}
+
 export interface SiteLink {
   id: number;
   name: string;
   url: string;
   icon_base64: string;
   icon_mime: string;
-  account: string;
-  password: string;
+  accounts: SiteLinkAccount[];
   remark: string;
   enabled: boolean;
   created_at: string;
@@ -581,7 +586,7 @@ export interface SiteLink {
 
 export type SiteLinkWrite = Pick<
   SiteLink,
-  "name" | "url" | "icon_base64" | "icon_mime" | "account" | "password" | "remark" | "enabled"
+  "name" | "url" | "icon_base64" | "icon_mime" | "accounts" | "remark" | "enabled"
 >;
 
 export interface DevEnvironment {

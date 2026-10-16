@@ -226,7 +226,7 @@ database:
 #### 4.2.3 通用规则
 
 - 无对应功能权限 → 菜单不下发、路由不可进入、API 返回 403、仪表盘相关卡片不可配置且不可显示。
-- `super_admin_only`（当前仅仪表盘「系统信息」「系统状态」卡片，以及运维菜单 `ops_site_links` 与其 `view` / `create` / `update` / `delete`，种子每次启动强制回写）：服务端拒绝绑入角色权限；生效时非超管一律拒绝。
+- `super_admin_only`（当前仅仪表盘「系统信息」「系统状态」卡片，以及工作台「网站链接」写权限 `site_links:create` / `site_links:update` / `site_links:delete`，种子每次启动强制回写）：服务端拒绝绑入角色权限；生效时非超管一律拒绝。
 - 产品项目内权限与全局 RBAC **同时生效**：见 DESIGN §4.4（`view_all` / `manage_all` + 项目成员角色）。
 
 ### 4.3 全局权限矩阵（首期基线）
@@ -266,8 +266,8 @@ database:
 
 | 分组 code  | 标题示例 | 典型菜单 code                                                                                                      |
 | ---------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| `overview` | 工作台   | `dashboard`（卡片：`build_summary` / `agent_run_summary` / `system_info` / `system_status`）、`handbook`（操作手册）、`site_links` |
-| `ops`      | 运维     | `ops_processes`、`ops_dev_environments`、`ops_site_links`（均 `super_admin_only`）                                 |
+| `overview` | 工作台   | `dashboard`（卡片：`build_summary` / `agent_run_summary` / `system_info` / `system_status`）、`handbook`（操作手册）、`site_links`（网站链接） |
+| `ops`      | 运维     | `ops_processes`、`ops_dev_environments`（均 `super_admin_only`）                                                   |
 | `resource` | 资源管理 | `resource_repositories`、`resource_servers`、`resource_credentials`、`resource_tokens`            |
 | `cicd`     | CI/CD    | `cicd_build_jobs`、`cicd_build_runs`                                                                               |
 | `project`  | 项目管理 | `project_projects`、`project_requirements`、`project_docs`                                                          |
@@ -325,11 +325,11 @@ database:
 
 ## 7. 运维（仅超级管理员）
 
-进程管理与开发环境管理仅超级管理员可进入。网站链接的工作台只读入口是对 §7.1 的例外，见 §7.4。
+进程管理与开发环境管理仅超级管理员可进入。网站链接的工作台菜单 `site_links` 是对 §7.1 的例外，见 §7.4。
 
 ### 7.1 准入
 
-本节适用于进程管理、开发环境管理，以及运维维护菜单 `ops_site_links`。工作台只读菜单 `site_links`（§7.4）不在本节范围内：面向全部已登录用户，不标记 `super_admin_only`。
+本节适用于进程管理、开发环境管理，以及网站链接的写权限 `site_links:create` / `site_links:update` / `site_links:delete`。工作台菜单 `site_links` 及其查看权限 `site_links:view`（§7.4）不在本节范围内：面向全部已登录用户，不标记 `super_admin_only`。
 
 - 运维菜单与功能标记 `super_admin_only`；仅超级管理员可见菜单、可调用 API。
 - 系统支持多用户，但运维域与业务 RBAC 正交：**非超管永远不可进入**（即使自定义角色误绑权，服务端拒绝写入与生效）。
@@ -393,13 +393,15 @@ database:
 
 ### 7.4 网站链接
 
-不挂产品项目。字段为名称、地址（必填），以及可选的图标、一个测试账号、一个密码、备注、是否启用。图标以上传图片的 Base64 保存（解码后原始字节不超过 32KB，口径与菜单图标相同），不接受图标 URL。
+不挂产品项目。字段为名称、地址（必填），以及可选的图标、多个测试账号（每条含账号、密码、备注）、整体备注、是否启用。图标以上传图片的 Base64 保存（解码后原始字节不超过 32KB，口径与菜单图标相同），不接受图标 URL。
 
-工作台菜单 `site_links` 是只读入口，面向全部已登录用户，不依赖角色是否勾选该菜单权限；该入口是对 §7.1 的例外。运维菜单 `ops_site_links` 及其查看（`ops_site_links:view`）、创建、更新、删除标记 `super_admin_only`，仅超级管理员可维护，仍适用 §7.1。
+仅保留工作台唯一菜单 `site_links`（`/site-links`），所有角色共用同一网格页面，运维分组下不设重复菜单。查看权限 `site_links:view` 面向全部已登录用户，不依赖角色是否勾选该菜单权限；写权限 `site_links:create` / `site_links:update` / `site_links:delete` 标记 `super_admin_only`，仅超级管理员可在该页面新建、右键编辑或删除。
 
-明文展示账号和密码，是对「敏感字段密文不回显、编辑留空表示不修改」的例外：读取返回明文，编辑框展示当前明文，提交空字符串即保存为空。非空密码在库内为 AES-GCM。
+页面采用类似手机应用图标的网格排列（无自定义图标时默认取名称首字作为图标，图标下方显示网站名称）；左键点击启用项在新标签页打开对应地址，右键弹出上下文菜单（查看账号、复制链接；超级管理员含编辑、删除），点击「查看账号」弹窗列出该网站的所有账号、明文密码与备注并支持一键复制。
 
-停用项仍然显示（含账号与密码），但地址不可跳转。
+明文展示账号和密码，是对「敏感字段密文不回显、编辑留空表示不修改」的例外：读取返回明文，编辑框展示当前明文，提交空字符串即保存为空。非空密码在库内为 AES-GCM 密文。
+
+停用项仍然显示（含右键查看账号与密码），但左键不可跳转。
 
 ---
 
