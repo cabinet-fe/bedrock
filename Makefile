@@ -18,7 +18,7 @@ dev:
 	@trap 'kill 0' INT TERM; \
 	$(MAKE) --no-print-directory check-harness-bin; \
 	(cd cmd/server && go run -tags dev . --config ../../config.yaml) & \
-	(cd $(FRONTEND_DIR) && vp dev) & \
+	(cd $(FRONTEND_DIR) && bun run dev) & \
 	wait
 
 # The server supervises `opencode serve` itself when harness.enabled=true;
@@ -35,7 +35,7 @@ check-harness-bin:
 	fi
 
 build-frontend:
-	cd $(FRONTEND_DIR) && vp install && vp build
+	cd $(FRONTEND_DIR) && bun install && bun run build
 
 build-backend:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bedrock ./cmd/server

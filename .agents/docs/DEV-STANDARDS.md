@@ -21,12 +21,14 @@
 
 ## 测试
 
-- 后端 `go test ./...`，单测 `*_test.go` 同包
+- 单测 `*_test.go` 同包
 - 涉及 schema：三驱动合同测试（`go test ./internal/platform/db/... -tags=contract`）或明确标注驱动差异
 - 涉及 API：对照 `api/` 契约文档
 - 涉及状态机 / 权限 / Webhook / 存储路径：必须有单测或集成测
 - GA 冒烟：`make smoke`（fresh-install + api-e2e + recovery + 三库 + linux 包）
 - 不做容量 / 延迟 SLO 验收（2.0 仅功能 Gate，见 DESIGN.md）
+- 局部验证：后端 `go test ./<pkg>/...`；前端 `cd web && vp check`
+- 全量：`go test ./...` 与 `cd web && vp check`。默认只在 CI / 收口阶段跑
 
 ## 接口
 

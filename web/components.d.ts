@@ -45,6 +45,7 @@ declare module 'vue' {
     RepoSelect: typeof import('./src/components/repo-select/repo-select.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    RunHistoryDialog: typeof import('./src/components/run-history-dialog/run-history-dialog.vue')['default']
     ThemeSwitcher: typeof import('./src/components/theme-switcher/theme-switcher.vue')['default']
     UAction: typeof import('@veltra/desktop')['UAction']
     UActionGroup: typeof import('@veltra/desktop')['UActionGroup']
