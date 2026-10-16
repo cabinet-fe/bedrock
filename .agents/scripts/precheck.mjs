@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // setup 完成判定。检查项以本脚本为唯一定义：
-// 各类：根 AGENTS.md 与当前类别模板一致；PROJECT.md；.agents/scripts/ 下的脚本与模板齐全；
+// 各类：根 AGENTS.md 与当前类别模板一致；PROJECT.md；INSTRUCTIONS.md；.agents/scripts/ 下的脚本与模板齐全；
 //       .agents/cooking/；.gitignore 忽略 cooking 且不忽略 docs/scripts
 // 仅代码类：ARCHITECTURE.md、DEV-STANDARDS.md、CODE-MAP.md、SMELLS.md
 // 用法（以目标仓库根目录为工作目录）：
@@ -29,6 +29,8 @@ const CODE_ONLY_DOCS = [
   '.agents/docs/SMELLS.md',
 ];
 
+const ALL_CATEGORY_DOCS = ['.agents/docs/INSTRUCTIONS.md'];
+
 process.stdout.on('error', (err) => {
   if (err.code === 'EPIPE') process.exit(0);
 });
@@ -52,7 +54,7 @@ function normalizedLines(content) {
   return content.split(/\r?\n/).map(normalizeLine).filter(Boolean);
 }
 
-// 模板每行（归一化后）都出现在目标 AGENTS.md 中即视为一致；目标多出的行不影响判定
+// 模板每行（归一化后）都出现在目标 AGENTS.md 中即视为一致；目标多出的行不影响判定（自定义文档索引行）
 function agentsTemplateMissing(templateFile) {
   const template = normalizedLines(fs.readFileSync(templateFile, 'utf8'));
   const actual = new Set(normalizedLines(fs.readFileSync('AGENTS.md', 'utf8')));
@@ -128,6 +130,10 @@ function main() {
     if (!category) {
       failures.push('.agents/docs/PROJECT.md 未写明有效类别（代码 / 非代码）');
     }
+  }
+
+  for (const doc of ALL_CATEGORY_DOCS) {
+    if (!fs.existsSync(doc)) failures.push(`${doc} 不存在（两类都必须有）`);
   }
 
   let templateFile = category ? path.join(SCRIPTS_DIR, ROOT_AGENTS_TEMPLATE[category]) : null;
