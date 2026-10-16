@@ -309,12 +309,7 @@ async function removeAttachment(attachment: RequirementAttachment) {
 async function download(attachment: RequirementAttachment) {
   if (!selected.value) return;
   try {
-    await downloadRequirementAttachment(
-      props.project.id,
-      selected.value.id,
-      attachment.id,
-      attachment.filename,
-    );
+    await downloadRequirementAttachment(props.project.id, selected.value.id, attachment.id);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "下载失败");
   }

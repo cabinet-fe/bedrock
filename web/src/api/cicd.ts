@@ -102,7 +102,6 @@ export async function redeployBuildRun(
   return data;
 }
 
-/** Artifact download URL (Bearer via browser navigation with token query is not used; open with fetch blob). */
 export function buildRunArtifactURL(id: number): string {
   return `/api/v1/build-runs/${id}/artifact`;
 }

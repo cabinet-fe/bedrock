@@ -99,6 +99,10 @@ export function agentRunArtifactURL(id: number): string {
   return `/api/v1/ai/runs/${id}/artifact`;
 }
 
+export function skillPackageURL(id: number): string {
+  return `/api/v1/skills/${id}/package`;
+}
+
 export async function listSkills(query?: Query): Promise<PageResult<SkillPackage>> {
   const { body } = await http.get<PageResult<SkillPackage>>("/skills", {
     query: compactQuery(query),
@@ -123,11 +127,6 @@ export async function overwriteSkill(id: number, form: FormData): Promise<SkillP
 
 export async function deleteSkill(id: number): Promise<void> {
   await http.delete(`/skills/${id}`);
-}
-
-export async function downloadSkill(id: number): Promise<Blob> {
-  const { body } = await http.get<Blob>(`/skills/${id}/package`, { responseType: "blob" });
-  return body;
 }
 
 export async function listSkillFiles(id: number): Promise<SkillFileNode[]> {

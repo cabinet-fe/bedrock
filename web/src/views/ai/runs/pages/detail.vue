@@ -3,7 +3,6 @@ defineOptions({ name: "AiRunDetail" });
 
 import { computed, onMounted, onScopeDispose, ref, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
-import { saveBlob } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
 import { Maximum, ZoomOut } from "@veltra/icons/normal";
 import { createServerTransport, UAiChat, type ChatSessionTransport } from "@veltra/ai";
@@ -11,10 +10,10 @@ import "@veltra/ai/style";
 
 import { createHarnessSessionAdapter } from "@/api/harness";
 import { agentRunArtifactURL, cancelRun, getAgent, getRun } from "@/api/ai";
-import { getAccessToken } from "@/api/http";
 import type { AgentRun } from "@/api/types";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime, formatDurationMs } from "@/lib/datetime";
+import { triggerNativeDownload } from "@/lib/native-download";
 import { JOB_STATUS_TAG, TRIGGER_TYPE_TAG, tagType } from "@/lib/tag";
 import { useTabsStore } from "@/stores/tabs";
 
@@ -130,20 +129,9 @@ async function onCancel() {
 }
 
 async function onDownloadArtifact() {
-  const token = getAccessToken();
-  if (!token || !run.value) return;
+  if (!run.value) return;
   try {
-    const res = await fetch(agentRunArtifactURL(run.value.id), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      throw new Error((await res.text()) || `HTTP ${res.status}`);
-    }
-    const blob = await res.blob();
-    const cd = res.headers.get("Content-Disposition") || "";
-    const m = /filename="?([^"]+)"?/.exec(cd);
-    const name = m?.[1] || `run-${run.value.id}.zip`;
-    saveBlob(blob, name);
+    await triggerNativeDownload(agentRunArtifactURL(run.value.id));
   } catch (err) {
     message.error(err instanceof Error ? err.message : "下载失败");
   }

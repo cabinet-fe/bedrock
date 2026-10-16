@@ -304,7 +304,7 @@ async function handleUploadAttachment(files: File[]) {
 async function handleDownloadAttachment(att: BugAttachment) {
   if (!bug.value) return;
   try {
-    await downloadProjectBugAttachment(bug.value.project_id, bug.value.id, att.id, att.filename);
+    await downloadProjectBugAttachment(bug.value.project_id, bug.value.id, att.id);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "下载附件失败");
   }

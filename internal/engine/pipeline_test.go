@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -170,7 +172,68 @@ func (m *memRunStore) HasNonTerminal(jobID uint) (bool, error) {
 }
 
 func (m *memRunStore) ListArtifactsByJob(jobID uint) ([]model.BuildRun, error) {
-	return nil, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]model.BuildRun, 0)
+	for _, r := range m.runs {
+		if r.BuildJobID == jobID && strings.TrimSpace(r.ArtifactPath) != "" {
+			out = append(out, *r)
+		}
+	}
+	slices.SortFunc(out, func(a, b model.BuildRun) int {
+		return cmp.Compare(b.ID, a.ID)
+	})
+	return out, nil
+}
+
+func TestCleanupArtifactsSkipsPathStillInUse(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	shared := filepath.Join(dir, "app.jar")
+	oldUnique := filepath.Join(dir, "build-001-old.jar")
+	keptUnique := filepath.Join(dir, "build-010-app.jar")
+	for path, body := range map[string]string{
+		shared:     "current",
+		oldUnique:  "old",
+		keptUnique: "kept",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := newMemRunStore(
+		&model.BuildRun{ID: 1, BuildJobID: 3, ArtifactPath: oldUnique},
+		&model.BuildRun{ID: 2, BuildJobID: 3, ArtifactPath: shared},
+		&model.BuildRun{ID: 3, BuildJobID: 3, ArtifactPath: shared},
+		&model.BuildRun{ID: 4, BuildJobID: 3, ArtifactPath: keptUnique},
+	)
+	p := &Pipeline{runs: store}
+	p.cleanupArtifacts(&model.BuildJob{ID: 3, MaxArtifacts: 2})
+
+	if _, err := os.Stat(shared); err != nil {
+		t.Fatalf("shared artifact removed: %v", err)
+	}
+	if _, err := os.Stat(keptUnique); err != nil {
+		t.Fatalf("kept artifact removed: %v", err)
+	}
+	if _, err := os.Stat(oldUnique); !os.IsNotExist(err) {
+		t.Fatalf("old unique artifact still present: %v", err)
+	}
+	for _, id := range []uint{1, 2} {
+		got, err := store.FindByID(id)
+		if err != nil || got.ArtifactPath != "" {
+			t.Fatalf("run %d path=%q err=%v", id, got.ArtifactPath, err)
+		}
+	}
+	for _, tc := range []struct {
+		id   uint
+		path string
+	}{{3, shared}, {4, keptUnique}} {
+		got, err := store.FindByID(tc.id)
+		if err != nil || got.ArtifactPath != tc.path {
+			t.Fatalf("run %d path=%q err=%v", tc.id, got.ArtifactPath, err)
+		}
+	}
 }
 
 type memJobStore struct {

@@ -212,13 +212,6 @@ export function downloadBackupUrl(id: number): string {
   return `/api/v1/system/backups/${id}/download`;
 }
 
-export async function downloadBackup(id: number): Promise<Blob> {
-  const { body } = await http.get<Blob>(`/system/backups/${id}/download`, {
-    responseType: "blob",
-  });
-  return body;
-}
-
 export async function inspectBackupFile(file: File | FormData): Promise<BackupInspectResult> {
   const form =
     file instanceof FormData

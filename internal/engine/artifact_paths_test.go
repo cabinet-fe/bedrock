@@ -118,15 +118,54 @@ func TestPipeline_SingleFileArtifactNoArchive(t *testing.T) {
 	if got.ArtifactKind != artifactKindFile {
 		t.Fatalf("kind=%s", got.ArtifactKind)
 	}
-	if !strings.HasSuffix(got.ArtifactPath, "app.jar") {
+	if !strings.HasSuffix(got.ArtifactPath, "build-004-app.jar") {
 		t.Fatalf("artifact_path=%q", got.ArtifactPath)
-	}
-	if strings.HasSuffix(got.ArtifactPath, ".tar.gz") || strings.HasSuffix(got.ArtifactPath, ".zip") {
-		t.Fatalf("single file must not be archived: %s", got.ArtifactPath)
 	}
 	body, err := os.ReadFile(got.ArtifactPath)
 	if err != nil || strings.TrimSpace(string(body)) != "jar" {
 		t.Fatalf("body=%q err=%v", body, err)
+	}
+}
+
+func TestStorePreparedArtifactSingleFilePerBuild(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "target"), 0755)
+	_ = os.WriteFile(filepath.Join(root, "target", "app.jar"), []byte("v1"), 0644)
+	prep, err := prepareDeployRoot(root, []string{"target/app.jar"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prep.Cleanup()
+
+	dir := t.TempDir()
+	first, err := storePreparedArtifact(dir, 1, "gzip", prep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(root, "target", "app.jar"), []byte("v2"), 0644)
+	prep2, err := prepareDeployRoot(root, []string{"target/app.jar"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prep2.Cleanup()
+	second, err := storePreparedArtifact(dir, 2, "gzip", prep2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatalf("builds share artifact path %s", first)
+	}
+	b1, err := os.ReadFile(first)
+	if err != nil || string(b1) != "v1" {
+		t.Fatalf("first=%q err=%v", b1, err)
+	}
+	b2, err := os.ReadFile(second)
+	if err != nil || string(b2) != "v2" {
+		t.Fatalf("second=%q err=%v", b2, err)
+	}
+	if filepath.Base(first) != "build-001-app.jar" || filepath.Base(second) != "build-002-app.jar" {
+		t.Fatalf("names %s %s", first, second)
 	}
 }
 

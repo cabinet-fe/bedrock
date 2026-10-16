@@ -194,7 +194,8 @@ func storePreparedArtifact(artifactDir string, buildNumber int, format string, p
 			return "", fmt.Errorf("单文件制品目录为空")
 		}
 		src := filepath.Join(prep.DeployRoot, fileName)
-		dst := filepath.Join(artifactDir, fileName)
+		// 按构建号分文件。固定文件名会让历次构建共用同一路径，清理历史制品时删掉当前文件。
+		dst := filepath.Join(artifactDir, fmt.Sprintf("build-%03d-%s", buildNumber, fileName))
 		info, err := os.Stat(src)
 		if err != nil {
 			return "", err

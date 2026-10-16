@@ -2,14 +2,13 @@
 defineOptions({ name: "SystemBackup" });
 
 import { computed, reactive, ref, useTemplateRef } from "vue";
-import { saveBlob } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
 import { CirclePlus, Download, Upload } from "@veltra/icons/normal";
 
 import {
   createBackup,
   deleteBackup,
-  downloadBackup,
+  downloadBackupUrl,
   inspectBackupFile,
   restoreBackup,
 } from "@/api/system";
@@ -18,6 +17,7 @@ import ProTable, { defineProTableColumns, type ProTableQuery } from "@/component
 import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime } from "@/lib/datetime";
+import { triggerNativeDownload } from "@/lib/native-download";
 import type { TagType } from "@/lib/tag";
 
 const { hasPermission } = usePermission();
@@ -210,8 +210,7 @@ function handleReloadPage() {
 // --------------------------- Download & delete ---------------------------
 const onDownload = bind(async (row: SystemBackup) => {
   try {
-    const blob = await downloadBackup(row.id);
-    saveBlob(blob, row.filename);
+    await triggerNativeDownload(downloadBackupUrl(row.id));
   } catch (err) {
     message.error(err instanceof Error ? err.message : "下载备份包失败");
   }

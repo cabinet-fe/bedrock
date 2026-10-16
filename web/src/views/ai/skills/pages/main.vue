@@ -4,15 +4,15 @@ defineOptions({ name: "AiSkills" });
 import { reactive, ref, useTemplateRef } from "vue";
 import { useRouter } from "vue-router";
 import { o } from "@cat-kit/core";
-import { saveBlob } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
 
-import { deleteSkill, downloadSkill, overwriteSkill, uploadSkill } from "@/api/ai";
+import { deleteSkill, overwriteSkill, skillPackageURL, uploadSkill } from "@/api/ai";
 import type { SkillPackage } from "@/api/types";
 import FormDialog from "@/components/form-dialog";
 import ProTable, { defineProTableColumns } from "@/components/pro-table";
 import { useBusyKey } from "@/composables/use-busy";
 import { usePermission } from "@/composables/use-permission";
+import { triggerNativeDownload } from "@/lib/native-download";
 
 const router = useRouter();
 const { hasPermission } = usePermission();
@@ -82,7 +82,7 @@ async function save() {
 
 const onDownload = bind(async (row: SkillPackage) => {
   try {
-    saveBlob(await downloadSkill(row.id), `${row.name}.zip`);
+    await triggerNativeDownload(skillPackageURL(row.id));
   } catch (error) {
     message.error(error instanceof Error ? error.message : "下载失败");
   }

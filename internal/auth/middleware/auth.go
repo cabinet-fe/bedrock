@@ -31,20 +31,13 @@ type PATValidator interface {
 }
 
 // AuthWithPAT accepts JWT or PAT (br_*) under Authorization: Bearer.
+// File downloads also accept ?token= : an <a href> cannot set Authorization.
 func AuthWithPAT(authSvc *authservice.AuthService, patSvc PATValidator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			pkg.Error(c, http.StatusUnauthorized, "missing authorization header")
+		raw, ok := bearerCredential(c)
+		if !ok {
 			return
 		}
-
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			pkg.Error(c, http.StatusUnauthorized, "invalid authorization header")
-			return
-		}
-		raw := parts[1]
 
 		if patSvc != nil && strings.HasPrefix(raw, "br_") {
 			userID, scopes, err := patSvc.ValidateBearer(raw)
@@ -84,6 +77,34 @@ func AuthWithPAT(authSvc *authservice.AuthService, patSvc PATValidator) gin.Hand
 		c.Set(ctxIsPAT, false)
 		c.Next()
 	}
+}
+
+// bearerCredential reads Authorization: Bearer, or ?token= on file-download GETs.
+func bearerCredential(c *gin.Context) (string, bool) {
+	authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") || strings.TrimSpace(parts[1]) == "" {
+			pkg.Error(c, http.StatusUnauthorized, "invalid authorization header")
+			return "", false
+		}
+		return strings.TrimSpace(parts[1]), true
+	}
+	if token := strings.TrimSpace(c.Query("token")); token != "" && allowsDownloadQueryToken(c) {
+		return token, true
+	}
+	pkg.Error(c, http.StatusUnauthorized, "missing authorization header")
+	return "", false
+}
+
+func allowsDownloadQueryToken(c *gin.Context) bool {
+	if c.Request == nil || c.Request.Method != http.MethodGet {
+		return false
+	}
+	path := c.Request.URL.Path
+	return strings.HasSuffix(path, "/artifact") ||
+		strings.HasSuffix(path, "/download") ||
+		strings.HasSuffix(path, "/package")
 }
 
 // AuthChatCompletions accepts JWT/PAT or a loopback harness token (opencode

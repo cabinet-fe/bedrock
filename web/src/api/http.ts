@@ -11,6 +11,19 @@ export function getAccessToken(): string | null {
   return storage.local.get(ACCESS_KEY);
 }
 
+function jwtExpMs(token: string): number | null {
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const json = JSON.parse(atob(padded)) as { exp?: number };
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
 export function setAccessToken(access: string): void {
   storage.local.set(ACCESS_KEY, access);
   storage.local.remove(LEGACY_REFRESH_KEY);
@@ -95,6 +108,21 @@ async function refreshAccessToken(): Promise<void> {
     expireSession();
     throw err;
   }
+}
+
+/** 缺少或即将过期时先刷新，再返回可用的 access token。 */
+export async function ensureAccessToken(): Promise<string | null> {
+  const token = getAccessToken();
+  const exp = token ? jwtExpMs(token) : null;
+  if (token && (exp == null || exp > Date.now() + 30_000)) {
+    return token;
+  }
+  try {
+    await refreshAccessToken();
+  } catch {
+    return null;
+  }
+  return getAccessToken();
 }
 
 export const http = new HTTPClient("/api/v1", {

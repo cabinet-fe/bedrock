@@ -3,7 +3,6 @@ defineOptions({ name: "CicdBuildRunDetail" });
 
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { saveBlob } from "@cat-kit/fe";
 import { message } from "@veltra/desktop";
 import type { ColorType } from "@veltra/utils";
 
@@ -15,11 +14,11 @@ import {
   redeployBuildRun,
   retryBuildRun,
 } from "@/api/cicd";
-import { getAccessToken } from "@/api/http";
 import type { BuildRun, DeployTarget } from "@/api/types";
 import BuildLogViewer, { resolveBuildLogStatus } from "@/components/build-log-viewer";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime, formatDurationBetween, formatDurationMs } from "@/lib/datetime";
+import { triggerNativeDownload } from "@/lib/native-download";
 import {
   BUILD_DISTRIBUTION_TAG,
   BUILD_STAGE_TAG,
@@ -255,20 +254,9 @@ async function onRedeploy() {
 }
 
 async function onDownloadArtifact() {
-  const token = getAccessToken();
-  if (!token || !run.value) return;
+  if (!run.value) return;
   try {
-    const res = await fetch(buildRunArtifactURL(run.value.id), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      throw new Error((await res.text()) || `HTTP ${res.status}`);
-    }
-    const blob = await res.blob();
-    const cd = res.headers.get("Content-Disposition") || "";
-    const m = /filename="?([^"]+)"?/.exec(cd);
-    const name = m?.[1] || `build-${run.value.build_number}.tar.gz`;
-    saveBlob(blob, name);
+    await triggerNativeDownload(buildRunArtifactURL(run.value.id));
   } catch (err) {
     message.error(err instanceof Error ? err.message : "下载失败");
   }

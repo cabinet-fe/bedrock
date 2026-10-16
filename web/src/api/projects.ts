@@ -1,4 +1,4 @@
-import { saveBlob } from "@cat-kit/fe";
+import { triggerNativeDownload } from "@/lib/native-download";
 
 import { http } from "./http";
 import type {
@@ -254,13 +254,10 @@ export async function downloadRequirementAttachment(
   projectID: number,
   requirementID: number,
   attachmentID: number,
-  filename: string,
 ): Promise<void> {
-  const { body } = await http.get<Blob>(
-    `/projects/${projectID}/requirements/${requirementID}/attachments/${attachmentID}/download`,
-    { responseType: "blob" },
+  await triggerNativeDownload(
+    `/api/v1/projects/${projectID}/requirements/${requirementID}/attachments/${attachmentID}/download`,
   );
-  saveBlob(body, filename);
 }
 
 export async function listBugsAcrossProjects(params?: ListQuery): Promise<PageResult<ProjectBug>> {
@@ -418,13 +415,10 @@ export async function downloadProjectBugAttachment(
   projectID: number,
   bugID: number,
   attachmentID: number,
-  filename: string,
 ): Promise<void> {
-  const { body } = await http.get<Blob>(
-    `/projects/${projectID}/bugs/${bugID}/attachments/${attachmentID}/download`,
-    { responseType: "blob" },
+  await triggerNativeDownload(
+    `/api/v1/projects/${projectID}/bugs/${bugID}/attachments/${attachmentID}/download`,
   );
-  saveBlob(body, filename);
 }
 
 export async function listDocTree(projectID: number): Promise<ApiDocNode[]> {
@@ -742,13 +736,10 @@ export async function downloadProjectIssueAttachment(
   projectID: number,
   issueID: number,
   attachmentID: number,
-  filename: string,
 ): Promise<void> {
-  const { body } = await http.get<Blob>(
-    `/projects/${projectID}/issues/${issueID}/attachments/${attachmentID}/download`,
-    { responseType: "blob" },
+  await triggerNativeDownload(
+    `/api/v1/projects/${projectID}/issues/${issueID}/attachments/${attachmentID}/download`,
   );
-  saveBlob(body, filename);
 }
 
 export async function watchProjectIssue(projectID: number, issueID: number): Promise<void> {

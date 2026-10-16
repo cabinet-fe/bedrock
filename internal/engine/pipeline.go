@@ -597,11 +597,22 @@ func (p *Pipeline) cleanupArtifacts(job *model.BuildJob) {
 	if len(builds) <= maxArtifacts {
 		return
 	}
-	for _, b := range builds[maxArtifacts:] {
-		if b.ArtifactPath != "" {
-			_ = os.Remove(b.ArtifactPath)
-			_ = p.runs.UpdateFields(b.ID, map[string]interface{}{"artifact_path": ""})
+	// 旧数据里单文件制品共用固定路径。路径仍被保留范围内的构建引用时不能删文件。
+	keep := make(map[string]struct{}, maxArtifacts)
+	for _, b := range builds[:maxArtifacts] {
+		if path := strings.TrimSpace(b.ArtifactPath); path != "" {
+			keep[path] = struct{}{}
 		}
+	}
+	for _, b := range builds[maxArtifacts:] {
+		path := strings.TrimSpace(b.ArtifactPath)
+		if path == "" {
+			continue
+		}
+		if _, ok := keep[path]; !ok {
+			_ = os.Remove(path)
+		}
+		_ = p.runs.UpdateFields(b.ID, map[string]interface{}{"artifact_path": ""})
 	}
 }
 
