@@ -348,15 +348,24 @@ const router = createRouter({
   ],
 });
 
+function embedProjectReturn(from: { path: string; fullPath: string }): string | undefined {
+  if (/^\/project\/projects\/\d+$/.test(from.path)) return from.fullPath;
+  const carried = window.history.state?.projectReturn;
+  return typeof carried === "string" && carried ? carried : undefined;
+}
+
 router.beforeEach(async (to, from) => {
   // Keep iframe embed mode across in-dialog navigations so inner pages
   // do not render the app shell or create workspace tabs.
+  // Push, do not replace, and carry the project URL so nested pages
+  // (build detail, pipeline run, …) can return to that project.
   if (from.query._embed === "1" && to.query._embed !== "1" && to.name !== "login") {
+    const projectReturn = embedProjectReturn(from);
     return {
       path: to.path,
       query: { ...to.query, _embed: "1" },
       hash: to.hash,
-      replace: true,
+      ...(projectReturn ? { state: { projectReturn } } : {}),
     };
   }
 

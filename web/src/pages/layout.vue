@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { NavItem } from "@veltra/desktop";
-import { AiChat, Logout } from "@veltra/icons/normal";
+import { AiChat, ArrowLeft, Logout } from "@veltra/icons/normal";
 
 import AiChatWorkspace from "@/components/ai-chat/ai-chat-workspace.vue";
 import AppBreadcrumb from "@/components/app-breadcrumb";
@@ -25,6 +25,50 @@ const route = useRoute();
 
 /** Embed mode: strip shell UI for iframe embedding (dashboard dialogs). */
 const embed = computed(() => route.query._embed === "1");
+
+function historyString(key: string): string {
+  const value = window.history.state?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function locationPath(full: string): string {
+  return (full.split("?")[0] ?? "").split("#")[0] ?? "";
+}
+
+/** Where the embed dialog can return. Empty on the page that opened the dialog. */
+const embedBack = computed(() => {
+  if (route.query._embed !== "1") return "";
+  const projectReturn = historyString("projectReturn");
+  if (projectReturn) {
+    return locationPath(projectReturn) === route.path ? "" : "返回项目";
+  }
+  const back = historyString("back");
+  if (!back || back === route.fullPath) return "";
+  return "返回";
+});
+
+function goEmbedBack() {
+  const projectReturn = historyString("projectReturn");
+  if (projectReturn && locationPath(projectReturn) !== route.path) {
+    if (projectReturn === historyString("back")) {
+      router.back();
+      return;
+    }
+    const url = new URL(projectReturn, window.location.origin);
+    const query: Record<string, string> = {};
+    url.searchParams.forEach((value, key) => {
+      query[key] = value;
+    });
+    void router.push({
+      path: url.pathname,
+      query,
+      hash: url.hash,
+      state: { projectReturn },
+    });
+    return;
+  }
+  router.back();
+}
 
 const displayName = computed(() => auth.user?.display_name || auth.user?.username || "");
 const nameInitial = computed(() => {
@@ -73,6 +117,12 @@ function onNavClick(item: NavItem) {
 <template>
   <!-- Embed mode: bare page content for iframe embedding -->
   <main v-if="embed" class="app-embed">
+    <div v-if="embedBack" class="app-embed__back">
+      <u-button text size="small" @click="goEmbedBack">
+        <u-icon :size="14"><ArrowLeft /></u-icon>
+        {{ embedBack }}
+      </u-button>
+    </div>
     <router-view v-slot="{ Component, route: viewRoute }">
       <component :is="Component" :key="viewRoute.path" class="app-page" />
     </router-view>
@@ -194,9 +244,23 @@ function onNavClick(item: NavItem) {
 
 .app-embed {
   height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: fn.use-var(bg-color, bottom);
   color: fn.use-var(text-color, main);
+}
+
+.app-embed__back {
+  flex: none;
+  padding: fn.use-var(gap, large) fn.use-var(gap, large) 0;
+}
+
+.app-embed > .app-page {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .app-shell {
