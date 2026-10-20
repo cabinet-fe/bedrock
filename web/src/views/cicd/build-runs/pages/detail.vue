@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: "CicdBuildRunDetail" });
 
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, shallowRef, useTemplateRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@veltra/desktop";
 import type { ColorType } from "@veltra/utils";
@@ -14,8 +14,11 @@ import {
   redeployBuildRun,
   retryBuildRun,
 } from "@/api/cicd";
-import type { BuildRun, DeployTarget } from "@/api/types";
+import type { BuildDeployAttempt, BuildRun, DeployTarget } from "@/api/types";
 import BuildLogViewer, { resolveBuildLogStatus } from "@/components/build-log-viewer";
+import RedeployDialog, {
+  type RedeployTarget,
+} from "@/views/cicd/build-runs/components/redeploy-dialog.vue";
 import { usePermission } from "@/composables/use-permission";
 import { formatDateTime, formatDurationBetween, formatDurationMs } from "@/lib/datetime";
 import { triggerNativeDownload } from "@/lib/native-download";
@@ -46,7 +49,10 @@ const { hasPermission } = usePermission();
 const run = ref<BuildRun | null>(null);
 const loading = ref(true);
 const acting = ref(false);
-const logViewerRef = ref<InstanceType<typeof BuildLogViewer> | null>(null);
+const preparingRedeploy = ref(false);
+const redeployOpen = ref(false);
+const redeployTargets = shallowRef<RedeployTarget[]>([]);
+const logViewerRef = useTemplateRef("logViewerRef");
 
 function parseRouteId(raw: unknown): number | null {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -238,14 +244,57 @@ async function onRetry() {
   }
 }
 
+function lastAttemptStatus(targetId: number): string | undefined {
+  const attempts = run.value?.deploy_attempts;
+  if (!attempts?.length) return undefined;
+  let match: BuildDeployAttempt | undefined;
+  for (const attempt of attempts) {
+    if (attempt.deploy_target_id !== targetId) continue;
+    if (!match || attempt.batch_no > match.batch_no) match = attempt;
+  }
+  return match?.status;
+}
+
 async function onRedeploy() {
+  if (!run.value || acting.value || preparingRedeploy.value) return;
+  preparingRedeploy.value = true;
+  try {
+    const job = await getBuildJob(run.value.build_job_id);
+    const targets = (job.deploy_targets ?? []).filter(
+      (t): t is DeployTarget & { id: number } => typeof t.id === "number" && t.id > 0,
+    );
+    if (targets.length > 1) {
+      redeployTargets.value = targets.map((t) => ({
+        id: t.id,
+        method: t.method,
+        remote_path: t.remote_path,
+        server_id: t.server_id,
+        last_status: lastAttemptStatus(t.id),
+      }));
+      redeployOpen.value = true;
+      return;
+    }
+    await submitRedeploy();
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : "加载分发目标失败");
+  } finally {
+    preparingRedeploy.value = false;
+  }
+}
+
+async function submitRedeploy(targetIds?: number[]) {
   if (!run.value || acting.value) return;
+  if (targetIds && targetIds.length === 0) return;
   acting.value = true;
   try {
-    run.value = await redeployBuildRun(run.value.id);
+    run.value = await redeployBuildRun(
+      run.value.id,
+      targetIds?.length ? { target_ids: targetIds } : undefined,
+    );
     message.success("已开始重新分发");
     logViewerRef.value?.appendLine("=== Redeploy requested ===");
     logViewerRef.value?.reconnect();
+    redeployOpen.value = false;
   } catch (err) {
     message.error(err instanceof Error ? err.message : "重新分发失败");
   } finally {
@@ -293,7 +342,12 @@ onMounted(async () => {
           <u-button v-if="canRetry" type="primary" :disabled="acting" @click="onRetry"
             >重试</u-button
           >
-          <u-button v-if="canRedeploy" type="primary" :disabled="acting" @click="onRedeploy">
+          <u-button
+            v-if="canRedeploy"
+            type="primary"
+            :disabled="acting || preparingRedeploy || redeployOpen"
+            @click="onRedeploy"
+          >
             重新分发
           </u-button>
         </div>
@@ -446,6 +500,13 @@ onMounted(async () => {
             </div>
           </div>
         </section>
+
+        <RedeployDialog
+          v-model="redeployOpen"
+          :targets="redeployTargets"
+          :loading="acting"
+          @confirm="submitRedeploy"
+        />
       </template>
       <div v-else class="page-empty">
         <u-empty text="执行记录不存在或无权访问" />
