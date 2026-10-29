@@ -54,6 +54,6 @@ auth:
 harness:
   enabled: false # true = bedrock starts and supervises the serve process
   backend: "opencode" # reserved; only opencode for now
-  bin: "opencode" # executable name or absolute path
+  bin: "opencode" # executable name or absolute path; must be opencode 2.x (version gated at startup)
   port: 4096 # listen on 127.0.0.1 only; keep clear of other services
   approval_mode: "manual" # manual | auto (unattended triggers override per agent)

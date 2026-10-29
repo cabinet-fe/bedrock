@@ -116,7 +116,7 @@ func (f *fakeProvider) Prompt(_ context.Context, sessionID string, input provide
 		return nil, f.notFound(sessionID)
 	}
 	f.prompts <- promptCall{sessionID: sessionID, input: input}
-	return &provider.PromptAck{MessageID: "msg_1", AdmittedSeq: 7}, nil
+	return &provider.PromptAck{MessageID: "msg_1"}, nil
 }
 
 func (f *fakeProvider) History(_ context.Context, sessionID string) ([]provider.Message, error) {

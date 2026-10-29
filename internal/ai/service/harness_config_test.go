@@ -93,10 +93,11 @@ func TestHarnessConfigRefreshAndEnsure(t *testing.T) {
 	got := readHarnessConfig(t, filepath.Join(root, "opencode.json"))
 	for _, want := range []string{
 		`"` + key + `"`,
-		`"@ai-sdk/openai-compatible"`,
+		`"aisdk:@ai-sdk/openai-compatible"`,
 		`"baseURL": "http://127.0.0.1:8080/api/v1/ai"`,
 		`"apiKey": "br_harness_test_token"`,
 		`"model": "` + key + `/deepseek-chat"`,
+		`"title"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("root config missing %s:\n%s", want, got)

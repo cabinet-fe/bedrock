@@ -5,19 +5,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // WorkspaceConfigFileName is the project-level opencode config written into
 // every bedrock-managed session directory; opencode loads it per location.
 const WorkspaceConfigFileName = "opencode.json"
 
-// openAICompatibleNPMPackage wires custom providers through the
-// OpenAI-compatible AI SDK (all bedrock providers expose /chat/completions).
-const openAICompatibleNPMPackage = "@ai-sdk/openai-compatible"
+// openAICompatiblePackage wires custom providers through the OpenAI-compatible
+// AI SDK (all bedrock providers expose /chat/completions). opencode 2.x
+// prefixes AI SDK package ids with "aisdk:".
+const openAICompatiblePackage = "aisdk:@ai-sdk/openai-compatible"
 
 // ModelConfigEntry is one model of a rendered provider. ReasoningEffort, when
-// set, rides the model's request options and reaches the upstream API as
-// `reasoning_effort` on every call (verified against opencode 1.18.x).
+// set, rides the model's settings and reaches the upstream API as
+// `reasoning_effort` on every call (verified against opencode 2.2.0).
 type ModelConfigEntry struct {
 	ID              string
 	Name            string
@@ -25,9 +27,8 @@ type ModelConfigEntry struct {
 }
 
 // ProviderConfigEntry is one rendered BYOK provider. APIKey carries the
-// literal key: opencode 1.18.x does not expand `{file:}`/`{env:}` references
-// in custom provider options, so the config file must be written 0600 (same
-// same-UID threat model as the workspace .env).
+// literal key: the config file must be written 0600 (same same-UID threat
+// model as the workspace .env).
 type ProviderConfigEntry struct {
 	Key     string // opencode provider id, e.g. "bedrock-p3"
 	Name    string // display name in catalogs
@@ -41,34 +42,46 @@ type ProviderConfigEntry struct {
 type ProviderConfigInput struct {
 	Providers []ProviderConfigEntry
 	// DefaultModel is the fallback "provider/model" for sessions without an
-	// explicit model (also used for title generation); "" omits it.
+	// explicit model; "" omits it. It also pins the title-generation model
+	// (opencode 2.x: agents.title.model) so auxiliary calls stay on BYOK
+	// providers instead of falling back to opencode's shared free models.
 	DefaultModel string
 }
 
-// workspaceConfigDoc mirrors the opencode.json subset bedrock generates.
-// Field order follows the struct; provider/model maps marshal sorted.
+// workspaceConfigDoc mirrors the opencode.json (v2 schema) subset bedrock
+// generates. Field order follows the struct; provider/model maps marshal
+// sorted.
 type workspaceConfigDoc struct {
-	Schema     string                            `json:"$schema,omitempty"`
-	Model      string                            `json:"model,omitempty"`
-	SmallModel string                            `json:"small_model,omitempty"`
-	Provider   map[string]workspaceProviderEntry `json:"provider,omitempty"`
+	Schema   string                            `json:"$schema,omitempty"`
+	Model    string                            `json:"model,omitempty"`
+	Agents   *workspaceAgents                  `json:"agents,omitempty"`
+	Provider map[string]workspaceProviderEntry `json:"providers,omitempty"`
+}
+
+type workspaceAgents struct {
+	Title *workspaceAgentRef `json:"title,omitempty"`
+}
+
+type workspaceAgentRef struct {
+	ProviderID string `json:"providerID"`
+	Model      string `json:"model"`
 }
 
 type workspaceProviderEntry struct {
-	NPM     string                           `json:"npm"`
-	Name    string                           `json:"name,omitempty"`
-	Options workspaceProviderOptions         `json:"options"`
-	Models  map[string]workspaceModelOptions `json:"models"`
+	Package  string                           `json:"package"`
+	Name     string                           `json:"name,omitempty"`
+	Settings workspaceProviderSettings        `json:"settings"`
+	Models   map[string]workspaceModelOptions `json:"models"`
 }
 
-type workspaceProviderOptions struct {
+type workspaceProviderSettings struct {
 	BaseURL string `json:"baseURL"`
 	APIKey  string `json:"apiKey,omitempty"`
 }
 
 type workspaceModelOptions struct {
-	Name    string                  `json:"name"`
-	Options *workspaceModelSettings `json:"options,omitempty"`
+	Name     string                  `json:"name"`
+	Settings *workspaceModelSettings `json:"settings,omitempty"`
 }
 
 type workspaceModelSettings struct {
@@ -82,18 +95,24 @@ func RenderWorkspaceConfig(in ProviderConfigInput) ([]byte, error) {
 		Provider: map[string]workspaceProviderEntry{},
 	}
 	if in.DefaultModel != "" {
+		providerID, modelID, ok := strings.Cut(in.DefaultModel, "/")
+		if !ok || providerID == "" || modelID == "" {
+			return nil, fmt.Errorf("oc config: default model %q must be provider/model", in.DefaultModel)
+		}
 		doc.Model = in.DefaultModel
-		doc.SmallModel = in.DefaultModel
+		doc.Agents = &workspaceAgents{
+			Title: &workspaceAgentRef{ProviderID: providerID, Model: modelID},
+		}
 	}
 	for _, p := range in.Providers {
 		if p.Key == "" {
 			return nil, fmt.Errorf("oc config: provider key is required")
 		}
 		entry := workspaceProviderEntry{
-			NPM:     openAICompatibleNPMPackage,
-			Name:    p.Name,
-			Options: workspaceProviderOptions{BaseURL: p.BaseURL, APIKey: p.APIKey},
-			Models:  map[string]workspaceModelOptions{},
+			Package:  openAICompatiblePackage,
+			Name:     p.Name,
+			Settings: workspaceProviderSettings{BaseURL: p.BaseURL, APIKey: p.APIKey},
+			Models:   map[string]workspaceModelOptions{},
 		}
 		for _, m := range p.Models {
 			if m.ID == "" {
@@ -101,7 +120,7 @@ func RenderWorkspaceConfig(in ProviderConfigInput) ([]byte, error) {
 			}
 			model := workspaceModelOptions{Name: m.Name}
 			if m.ReasoningEffort != "" {
-				model.Options = &workspaceModelSettings{ReasoningEffort: m.ReasoningEffort}
+				model.Settings = &workspaceModelSettings{ReasoningEffort: m.ReasoningEffort}
 			}
 			entry.Models[m.ID] = model
 		}

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,9 +15,9 @@ import (
 	"bedrock/internal/harness/provider"
 )
 
-// rawEvent is one decoded SSE payload from either stream. Per-session
-// durable events carry {id, type, durable, data}; service-bus events add a
-// location field.
+// rawEvent is one decoded SSE payload from the event bus: {id, created?,
+// type, location?, data, durable?}. Durable events carry {aggregateID, seq,
+// version}; transient ones (e.g. permission asks) only an id.
 type rawEvent struct {
 	ID       string          `json:"id"`
 	Type     string          `json:"type"`
@@ -45,31 +44,16 @@ type frameStream struct {
 	closeErr  error
 }
 
-// SessionStream opens GET /api/session/{id}/event?after=<seq>: serve replays
-// durable events after the sequence, then continues live. Deltas, permission
-// and question frames only appear on the BusStream; the durable stream
-// carries finished text via message_text frames.
-func (c *Client) SessionStream(ctx context.Context, sessionID string, after int64) (provider.Stream, error) {
-	q := url.Values{}
-	if after > 0 {
-		q.Set("after", strconv.FormatInt(after, 10))
-	}
-	return c.openStream(ctx, "/api/session/"+sessionID+"/event", q)
-}
-
-// BusStream opens the service-level event bus GET /api/event. Unlike the
-// per-session durable stream it also emits transient frames (text deltas,
-// permission and question requests) for every session; consumers filter by
-// SessionID and use location to route by workspace.
+// BusStream opens the service-level event bus GET /api/event (opencode 2.x
+// has no per-session event route). The bus carries every session's frames —
+// durable and transient; consumers filter by SessionID and use location to
+// route by workspace.
 func (c *Client) BusStream(ctx context.Context) (provider.Stream, error) {
-	return c.openStream(ctx, "/api/event", nil)
+	return c.openStream(ctx, "/api/event")
 }
 
-func (c *Client) openStream(ctx context.Context, path string, query url.Values) (provider.Stream, error) {
+func (c *Client) openStream(ctx context.Context, path string) (provider.Stream, error) {
 	u := c.baseURL + path
-	if len(query) > 0 {
-		u += "?" + query.Encode()
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("oc stream %s: %w", path, err)
@@ -192,42 +176,38 @@ func scanSSE(r io.Reader, emit func([]byte) error) error {
 	}
 }
 
-// Wire payload shapes. Every payload scopes itself with sessionID; it moves
-// onto the returned Frame so the neutral payloads stay lean.
+// Wire payload shapes (opencode 2.x). Every payload scopes itself with
+// sessionID; it moves onto the returned Frame so the neutral payloads stay
+// lean. Text/reasoning parts are identified by their ordinal within the
+// assistant message (v1 used a textID string); the neutral TextID carries
+// the stringified ordinal so downstream part keying keeps working.
 
-type wireTextDelta struct {
+type wirePartDelta struct {
 	SessionID          string `json:"sessionID"`
 	AssistantMessageID string `json:"assistantMessageID"`
-	TextID             string `json:"textID"`
+	Ordinal            int    `json:"ordinal"`
 	Delta              string `json:"delta"`
 }
 
-type wireTextEnded struct {
+type wirePartEnded struct {
 	SessionID          string `json:"sessionID"`
 	AssistantMessageID string `json:"assistantMessageID"`
-	TextID             string `json:"textID"`
+	Ordinal            int    `json:"ordinal"`
 	Text               string `json:"text"`
-}
-
-type wireReasoningDelta struct {
-	SessionID          string `json:"sessionID"`
-	AssistantMessageID string `json:"assistantMessageID"`
-	Delta              string `json:"delta"`
 }
 
 type wireToolCalled struct {
 	SessionID          string          `json:"sessionID"`
 	AssistantMessageID string          `json:"assistantMessageID"`
-	CallID             string          `json:"callID"`
-	Tool               string          `json:"tool"`
+	ID                 string          `json:"id"`
+	Name               string          `json:"name"`
 	Input              json.RawMessage `json:"input"`
 }
 
 type wireToolResult struct {
 	SessionID          string          `json:"sessionID"`
 	AssistantMessageID string          `json:"assistantMessageID"`
-	CallID             string          `json:"callID"`
-	Tool               string          `json:"tool"`
+	ID                 string          `json:"id"`
 	Content            json.RawMessage `json:"content"`
 	Error              struct {
 		Message string `json:"message"`
@@ -237,6 +217,7 @@ type wireToolResult struct {
 type wireStatus struct {
 	SessionID          string             `json:"sessionID"`
 	MessageID          string             `json:"messageID"`
+	InboxID            string             `json:"inboxID"`
 	AssistantMessageID string             `json:"assistantMessageID"`
 	Delivery           string             `json:"delivery"`
 	Finish             string             `json:"finish"`
@@ -245,6 +226,9 @@ type wireStatus struct {
 	Error              struct {
 		Message string `json:"message"`
 	} `json:"error"`
+	Item struct {
+		Delivery string `json:"delivery"`
+	} `json:"item"`
 }
 
 type wirePermissionAsked struct {
@@ -255,68 +239,74 @@ type wirePermissionAsked struct {
 	Save      []string `json:"save"`
 }
 
-type wireQuestionAsked struct {
-	ID        string `json:"id"`
-	SessionID string `json:"sessionID"`
-	Questions []struct {
-		Question string `json:"question"`
-		Header   string `json:"header"`
-		Options  []struct {
-			Label       string `json:"label"`
-			Description string `json:"description"`
-		} `json:"options"`
-		Multiple bool `json:"multiple"`
-	} `json:"questions"`
+// wireFormCreated is the form.created payload: a Form.Info (opencode 2.x
+// replaced v1 questions with the form system).
+type wireFormCreated struct {
+	ID        string          `json:"id"`
+	SessionID string          `json:"sessionID"`
+	Title     string          `json:"title"`
+	Fields    []wireFormField `json:"fields"`
+}
+
+type wireFormField struct {
+	Key         string `json:"key"`
+	Type        string `json:"type"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Options     []struct {
+		Value string `json:"value"`
+		Label string `json:"label"`
+	} `json:"options"`
 }
 
 // toFrame converts a wire event into a unified frame, or nil for events the
-// harness does not consume (file watchers, pty, tui, ...).
+// harness does not consume (registry updates, file watchers, pty, tui, ...).
 func toFrame(ev rawEvent) *provider.Frame {
 	f := &provider.Frame{EventID: ev.ID}
 	if ev.Durable != nil {
 		f.Seq = ev.Durable.Seq
 	}
 	switch ev.Type {
-	case "session.next.prompt.admitted":
+	case "session.inbox.enqueued":
 		return statusFrame(f, provider.StatusPromptAdmitted, ev.Data)
-	case "session.next.prompted":
+	case "session.inbox.delivered":
 		return statusFrame(f, provider.StatusPrompted, ev.Data)
-	case "session.next.step.started":
+	case "session.step.started":
 		return statusFrame(f, provider.StatusStepStarted, ev.Data)
-	case "session.next.step.ended":
+	case "session.step.ended":
 		return statusFrame(f, provider.StatusStepEnded, ev.Data)
-	case "session.next.step.failed":
+	case "session.step.failed":
 		return statusFrame(f, provider.StatusStepFailed, ev.Data)
-	case "session.error":
+	case "session.execution.failed":
 		return statusFrame(f, provider.StatusError, ev.Data)
-	case "session.idle":
+	case "session.execution.succeeded", "session.execution.interrupted", "session.idle":
 		return statusFrame(f, provider.StatusIdle, ev.Data)
-	case "session.next.text.delta":
-		w := decode[wireTextDelta](ev.Data)
+	case "session.text.delta":
+		w := decode[wirePartDelta](ev.Data)
 		if w == nil {
 			return nil
 		}
 		f.Kind, f.SessionID = provider.FrameMessageDelta, w.SessionID
 		f.MessageDelta = &provider.MessageDelta{
 			AssistantMessageID: w.AssistantMessageID,
-			TextID:             w.TextID,
+			TextID:             strconv.Itoa(w.Ordinal),
 			Delta:              w.Delta,
 		}
 		return f
-	case "session.next.text.ended":
-		w := decode[wireTextEnded](ev.Data)
+	case "session.text.ended":
+		w := decode[wirePartEnded](ev.Data)
 		if w == nil {
 			return nil
 		}
 		f.Kind, f.SessionID = provider.FrameMessageText, w.SessionID
 		f.MessageText = &provider.MessageText{
 			AssistantMessageID: w.AssistantMessageID,
-			TextID:             w.TextID,
+			TextID:             strconv.Itoa(w.Ordinal),
 			Text:               w.Text,
 		}
 		return f
-	case "session.next.reasoning.delta":
-		w := decode[wireReasoningDelta](ev.Data)
+	case "session.reasoning.delta":
+		w := decode[wirePartDelta](ev.Data)
 		if w == nil {
 			return nil
 		}
@@ -326,7 +316,7 @@ func toFrame(ev rawEvent) *provider.Frame {
 			Delta:              w.Delta,
 		}
 		return f
-	case "session.next.tool.called":
+	case "session.tool.called":
 		w := decode[wireToolCalled](ev.Data)
 		if w == nil {
 			return nil
@@ -334,12 +324,12 @@ func toFrame(ev rawEvent) *provider.Frame {
 		f.Kind, f.SessionID = provider.FrameToolCall, w.SessionID
 		f.ToolCall = &provider.ToolCall{
 			AssistantMessageID: w.AssistantMessageID,
-			CallID:             w.CallID,
-			Tool:               w.Tool,
+			CallID:             w.ID,
+			Tool:               w.Name,
 			Input:              w.Input,
 		}
 		return f
-	case "session.next.tool.success", "session.next.tool.failed":
+	case "session.tool.success", "session.tool.failed":
 		w := decode[wireToolResult](ev.Data)
 		if w == nil {
 			return nil
@@ -347,13 +337,12 @@ func toFrame(ev rawEvent) *provider.Frame {
 		f.Kind, f.SessionID = provider.FrameToolResult, w.SessionID
 		f.ToolResult = &provider.ToolResult{
 			AssistantMessageID: w.AssistantMessageID,
-			CallID:             w.CallID,
-			Tool:               w.Tool,
+			CallID:             w.ID,
 			Output:             w.Content,
 			Error:              w.Error.Message,
 		}
 		return f
-	case "permission.v2.asked":
+	case "permission.asked":
 		w := decode[wirePermissionAsked](ev.Data)
 		if w == nil {
 			return nil
@@ -366,23 +355,30 @@ func toFrame(ev rawEvent) *provider.Frame {
 			Save:      w.Save,
 		}
 		return f
-	case "question.v2.asked":
-		w := decode[wireQuestionAsked](ev.Data)
+	case "form.created":
+		w := decode[wireFormCreated](ev.Data)
 		if w == nil {
 			return nil
 		}
 		f.Kind, f.SessionID = provider.FrameQuestion, w.SessionID
 		qf := &provider.QuestionFrame{RequestID: w.ID}
-		for _, q := range w.Questions {
-			labels := make([]string, 0, len(q.Options))
-			for _, o := range q.Options {
+		for _, field := range w.Fields {
+			labels := make([]string, 0, len(field.Options))
+			for _, o := range field.Options {
 				labels = append(labels, o.Label)
 			}
+			question := field.Title
+			if question == "" {
+				question = field.Description
+			}
+			if question == "" {
+				question = field.Key
+			}
 			qf.Questions = append(qf.Questions, provider.Question{
-				Question: q.Question,
-				Header:   q.Header,
+				Question: question,
+				Key:      field.Key,
 				Options:  labels,
-				Multiple: q.Multiple,
+				Multiple: field.Type == "multiselect",
 			})
 		}
 		f.Question = qf
@@ -392,7 +388,9 @@ func toFrame(ev rawEvent) *provider.Frame {
 	}
 }
 
-// statusFrame decodes a status payload onto the frame.
+// statusFrame decodes a status payload onto the frame. Prompt transitions
+// carry the user message as inboxID; step transitions identify the assistant
+// message. Delivery rides the enqueued inbox item.
 func statusFrame(f *provider.Frame, name provider.StatusName, data json.RawMessage) *provider.Frame {
 	f.Kind = provider.FrameStatus
 	w := decode[wireStatus](data)
@@ -400,11 +398,19 @@ func statusFrame(f *provider.Frame, name provider.StatusName, data json.RawMessa
 		return nil
 	}
 	f.SessionID = w.SessionID
+	messageID := w.MessageID
+	if messageID == "" {
+		messageID = w.InboxID
+	}
+	delivery := w.Delivery
+	if delivery == "" {
+		delivery = w.Item.Delivery
+	}
 	f.Status = &provider.StatusFrame{
 		Name:               name,
-		MessageID:          w.MessageID,
+		MessageID:          messageID,
 		AssistantMessageID: w.AssistantMessageID,
-		Delivery:           provider.Delivery(w.Delivery),
+		Delivery:           provider.Delivery(delivery),
 		Finish:             w.Finish,
 		Agent:              w.Agent,
 		Model:              w.Model,

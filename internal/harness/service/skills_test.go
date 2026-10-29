@@ -220,7 +220,8 @@ func TestSyncAgentDefinitionCompileAndReconcile(t *testing.T) {
 	for _, want := range []string{
 		`description: "Rel: release helper"`,
 		`model: "anthropic/claude-sonnet-4-5"`,
-		"permission:\n  skill: allow",
+		"mode: primary",
+		"permissions:\n  - action: skill\n    resource: \"*\"\n    effect: allow",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("compiled def misses %q:\n%s", want, text)

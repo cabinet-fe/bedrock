@@ -103,9 +103,9 @@ type sessionState struct {
 	resolving bool
 	activeAt  time.Time
 	// busy tracks whether the backend agent loop is believed to run. It
-	// flips true on prompt/step-start frames and false only when the settle
-	// check confirms idleness; the synthesized idle frame closes the gap
-	// left by backends that never broadcast session.idle (opencode 1.18.x).
+	// flips true on prompt/step-start frames and false on turn-terminal
+	// status frames (opencode 2.x execution.* lifecycle) or when the settle
+	// check confirms idleness against the backend.
 	frames int64
 	busy   bool
 	settle *time.Timer
@@ -359,8 +359,10 @@ func (s *StreamService) resolveApprovalMode(sessionID string) {
 }
 
 // trackBusyLocked folds status frames into the busy state and (dis)arms the
-// settle check: prompt/step-start frames assert business, step-end-ish frames
-// open the settle window that confirms idleness against the backend.
+// settle check: prompt/step-start frames assert business; turn-terminal
+// frames (idle from execution.succeeded/interrupted, error from
+// execution.failed) close it directly; step-end-ish frames open the settle
+// window that confirms idleness against the backend as a safety net.
 func (s *StreamService) trackBusyLocked(sessionID string, st *sessionState, frame *provider.Frame) {
 	if frame.Kind != provider.FrameStatus || frame.Status == nil {
 		return
@@ -369,7 +371,11 @@ func (s *StreamService) trackBusyLocked(sessionID string, st *sessionState, fram
 	case provider.StatusPromptAdmitted, provider.StatusPrompted, provider.StatusStepStarted:
 		st.busy = true
 		s.stopSettleLocked(st)
-	case provider.StatusStepEnded, provider.StatusStepFailed, provider.StatusError:
+	case provider.StatusIdle, provider.StatusError:
+		st.busy = false
+		st.activeAt = time.Now()
+		s.stopSettleLocked(st)
+	case provider.StatusStepEnded, provider.StatusStepFailed:
 		s.armSettleLocked(sessionID, st, s.settleDelay())
 	}
 }

@@ -1,12 +1,17 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "bedrock-p1/deepseek-chat",
-  "small_model": "bedrock-p1/deepseek-chat",
-  "provider": {
+  "agents": {
+    "title": {
+      "providerID": "bedrock-p1",
+      "model": "deepseek-chat"
+    }
+  },
+  "providers": {
     "bedrock-p1": {
-      "npm": "@ai-sdk/openai-compatible",
+      "package": "aisdk:@ai-sdk/openai-compatible",
       "name": "DeepSeek 官方",
-      "options": {
+      "settings": {
         "baseURL": "http://127.0.0.1:8080/api/v1/ai",
         "apiKey": "br_harness_loopback"
       },
@@ -16,16 +21,16 @@
         },
         "deepseek-reasoner": {
           "name": "DeepSeek Reasoner",
-          "options": {
+          "settings": {
             "reasoningEffort": "high"
           }
         }
       }
     },
     "bedrock-p2": {
-      "npm": "@ai-sdk/openai-compatible",
+      "package": "aisdk:@ai-sdk/openai-compatible",
       "name": "本地网关",
-      "options": {
+      "settings": {
         "baseURL": "http://127.0.0.1:8080/api/v1/ai",
         "apiKey": "br_harness_loopback"
       },

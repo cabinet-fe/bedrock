@@ -1,5 +1,5 @@
 // Command fakeserve imitates the process and HTTP surface of `opencode serve`
-// used by bedrock tests and smoke runs: it serves a Basic-Auth /global/health
+// used by bedrock tests and smoke runs: it serves a Basic-Auth GET /api/info
 // on the requested host:port, reports the address it actually bound via
 // FAKE_SERVE_ADDR_FILE, crashes on demand via /global/crash, and implements
 // the scripted opencode REST/SSE surface bedrock talks to (see backend.go and
@@ -28,9 +28,12 @@ func main() {
 			port = args[i+1]
 		}
 	}
-	password := os.Getenv("OPENCODE_SERVER_PASSWORD")
+	password := os.Getenv("OPENCODE_PASSWORD")
 	if password == "" {
-		fmt.Fprintln(os.Stderr, "OPENCODE_SERVER_PASSWORD is required")
+		password = os.Getenv("OPENCODE_SERVER_PASSWORD")
+	}
+	if password == "" {
+		fmt.Fprintln(os.Stderr, "OPENCODE_PASSWORD is required")
 		os.Exit(2)
 	}
 	ln, err := net.Listen("tcp", net.JoinHostPort(host, port))
@@ -44,9 +47,9 @@ func main() {
 
 	b := newBackend(password)
 	mux := http.NewServeMux()
-	mux.HandleFunc("/global/health", b.auth(b.handleHealth))
 	// /global/crash simulates a serve crash (exit without cleanup) so tests
-	// can exercise the supervisor restart path.
+	// can exercise the supervisor restart path; it stays unauthenticated on
+	// purpose (test-only kill switch).
 	mux.HandleFunc("/global/crash", func(http.ResponseWriter, *http.Request) {
 		os.Exit(1)
 	})

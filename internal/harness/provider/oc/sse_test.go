@@ -48,7 +48,7 @@ func TestScanSSEEmitError(t *testing.T) {
 }
 
 // TestToFrame maps every wire type the adapter consumes; payloads are the
-// shapes captured from opencode v1.18.29.
+// shapes captured from opencode 2.2.0.
 func TestToFrame(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -59,7 +59,7 @@ func TestToFrame(t *testing.T) {
 	}{
 		{
 			name: "prompt admitted",
-			wire: `{"id":"evt_a","type":"session.next.prompt.admitted","durable":{"aggregateID":"ses_1","seq":1,"version":1},"data":{"sessionID":"ses_1","messageID":"msg_1","prompt":{"text":"hi"},"delivery":"queue"}}`,
+			wire: `{"id":"evt_a","type":"session.inbox.enqueued","location":{"directory":"/w"},"durable":{"aggregateID":"ses_1","seq":1,"version":1},"data":{"sessionID":"ses_1","inboxID":"msg_1","item":{"type":"user","payload":{"text":"hi"},"delivery":"queue"}}}`,
 			kind: provider.FrameStatus,
 			seq:  1,
 			check: func(t *testing.T, f *provider.Frame) {
@@ -69,8 +69,30 @@ func TestToFrame(t *testing.T) {
 			},
 		},
 		{
+			name: "prompt delivered",
+			wire: `{"id":"evt_a2","type":"session.inbox.delivered","durable":{"aggregateID":"ses_1","seq":2,"version":1},"data":{"sessionID":"ses_1","inboxID":"msg_1"}}`,
+			kind: provider.FrameStatus,
+			seq:  2,
+			check: func(t *testing.T, f *provider.Frame) {
+				if f.Status.Name != provider.StatusPrompted || f.Status.MessageID != "msg_1" {
+					t.Fatalf("status = %+v", f.Status)
+				}
+			},
+		},
+		{
+			name: "step started with agent and model",
+			wire: `{"id":"evt_b","type":"session.step.started","durable":{"aggregateID":"ses_1","seq":5,"version":1},"data":{"sessionID":"ses_1","agent":"build","model":{"id":"m","providerID":"p","variant":"default"},"assistantMessageID":"msg_2","started":1793182899724}}`,
+			kind: provider.FrameStatus,
+			seq:  5,
+			check: func(t *testing.T, f *provider.Frame) {
+				if f.Status.Name != provider.StatusStepStarted || f.Status.Agent != "build" || f.Status.Model == nil || f.Status.Model.ProviderID != "p" {
+					t.Fatalf("status = %+v", f.Status)
+				}
+			},
+		},
+		{
 			name: "step ended with finish",
-			wire: `{"id":"evt_b","type":"session.next.step.ended","durable":{"aggregateID":"ses_1","seq":8,"version":2},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","finish":"stop","cost":0,"tokens":{"input":1,"output":2,"reasoning":0,"cache":{"read":0,"write":0}}}}`,
+			wire: `{"id":"evt_b2","type":"session.step.ended","durable":{"aggregateID":"ses_1","seq":8,"version":2},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","finish":"stop","cost":0,"tokens":{"input":1,"output":2,"reasoning":0,"cache":{"read":0,"write":0}}}}`,
 			kind: provider.FrameStatus,
 			seq:  8,
 			check: func(t *testing.T, f *provider.Frame) {
@@ -80,41 +102,96 @@ func TestToFrame(t *testing.T) {
 			},
 		},
 		{
-			name: "text delta is transient",
-			wire: `{"id":"evt_c","type":"session.next.text.delta","location":{"directory":"/w"},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","textID":"t_1","delta":"po"}}`,
-			kind: provider.FrameMessageDelta,
-			seq:  0,
+			name: "step failed with error",
+			wire: `{"id":"evt_b3","type":"session.step.failed","durable":{"aggregateID":"ses_1","seq":9,"version":1},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","error":{"type":"provider.transport","message":"ECONNREFUSED"}}}`,
+			kind: provider.FrameStatus,
+			seq:  9,
 			check: func(t *testing.T, f *provider.Frame) {
-				if f.MessageDelta.Delta != "po" || f.MessageDelta.TextID != "t_1" {
+				if f.Status.Name != provider.StatusStepFailed || f.Status.Error != "ECONNREFUSED" {
+					t.Fatalf("status = %+v", f.Status)
+				}
+			},
+		},
+		{
+			name: "execution failed maps to terminal error",
+			wire: `{"id":"evt_b4","type":"session.execution.failed","durable":{"aggregateID":"ses_1","seq":10,"version":1},"data":{"sessionID":"ses_1","error":{"type":"provider.transport","message":"boom"}}}`,
+			kind: provider.FrameStatus,
+			seq:  10,
+			check: func(t *testing.T, f *provider.Frame) {
+				if f.Status.Name != provider.StatusError || f.Status.Error != "boom" {
+					t.Fatalf("status = %+v", f.Status)
+				}
+			},
+		},
+		{
+			name: "execution succeeded maps to idle",
+			wire: `{"id":"evt_b5","type":"session.execution.succeeded","durable":{"aggregateID":"ses_1","seq":11,"version":1},"data":{"sessionID":"ses_1"}}`,
+			kind: provider.FrameStatus,
+			seq:  11,
+			check: func(t *testing.T, f *provider.Frame) {
+				if f.Status.Name != provider.StatusIdle {
+					t.Fatalf("status = %+v", f.Status)
+				}
+			},
+		},
+		{
+			name: "text delta carries ordinal as textId",
+			wire: `{"id":"evt_c","type":"session.text.delta","location":{"directory":"/w"},"durable":{"aggregateID":"ses_1","seq":12,"version":1},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","ordinal":0,"delta":"po"}}`,
+			kind: provider.FrameMessageDelta,
+			seq:  12,
+			check: func(t *testing.T, f *provider.Frame) {
+				if f.MessageDelta.Delta != "po" || f.MessageDelta.TextID != "0" {
 					t.Fatalf("delta = %+v", f.MessageDelta)
 				}
 			},
 		},
 		{
 			name: "text ended carries full text",
-			wire: `{"id":"evt_d","type":"session.next.text.ended","durable":{"aggregateID":"ses_1","seq":7,"version":1},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","textID":"t_1","text":"pong"}}`,
+			wire: `{"id":"evt_d","type":"session.text.ended","durable":{"aggregateID":"ses_1","seq":7,"version":1},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","ordinal":0,"text":"pong"}}`,
 			kind: provider.FrameMessageText,
 			seq:  7,
 			check: func(t *testing.T, f *provider.Frame) {
-				if f.MessageText.Text != "pong" {
+				if f.MessageText.Text != "pong" || f.MessageText.TextID != "0" {
 					t.Fatalf("text = %+v", f.MessageText)
 				}
 			},
 		},
 		{
+			name: "reasoning delta",
+			wire: `{"id":"evt_d2","type":"session.reasoning.delta","durable":{"aggregateID":"ses_1","seq":13,"version":1},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","ordinal":0,"delta":"thinking"}}`,
+			kind: provider.FrameReasoningDelta,
+			seq:  13,
+			check: func(t *testing.T, f *provider.Frame) {
+				if f.ReasoningDelta.Delta != "thinking" {
+					t.Fatalf("reasoning = %+v", f.ReasoningDelta)
+				}
+			},
+		},
+		{
 			name: "tool called",
-			wire: `{"id":"evt_e","type":"session.next.tool.called","durable":{"aggregateID":"ses_1","seq":10,"version":1},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","callID":"call_1","tool":"bash","input":{"command":"echo hi"},"provider":{"executed":false}}}`,
+			wire: `{"id":"evt_e","type":"session.tool.called","durable":{"aggregateID":"ses_1","seq":10,"version":1},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","id":"call_1","name":"shell","input":{"command":"echo hi"},"executed":false}}`,
 			kind: provider.FrameToolCall,
 			seq:  10,
 			check: func(t *testing.T, f *provider.Frame) {
-				if f.ToolCall.Tool != "bash" || string(f.ToolCall.Input) == "" {
+				if f.ToolCall.Tool != "shell" || f.ToolCall.CallID != "call_1" || string(f.ToolCall.Input) == "" {
 					t.Fatalf("toolCall = %+v", f.ToolCall)
 				}
 			},
 		},
 		{
+			name: "tool success",
+			wire: `{"id":"evt_e2","type":"session.tool.success","durable":{"aggregateID":"ses_1","seq":11,"version":1},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","id":"call_1","content":[{"type":"text","text":"hi\n"}],"metadata":{"exit":0},"executed":false}}`,
+			kind: provider.FrameToolResult,
+			seq:  11,
+			check: func(t *testing.T, f *provider.Frame) {
+				if f.ToolResult.CallID != "call_1" || string(f.ToolResult.Output) == "" || f.ToolResult.Error != "" {
+					t.Fatalf("toolResult = %+v", f.ToolResult)
+				}
+			},
+		},
+		{
 			name: "tool failed",
-			wire: `{"id":"evt_f","type":"session.next.tool.failed","durable":{"aggregateID":"ses_1","seq":12,"version":1},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","callID":"call_1","error":{"message":"denied"},"provider":{"executed":false}}}`,
+			wire: `{"id":"evt_f","type":"session.tool.failed","durable":{"aggregateID":"ses_1","seq":12,"version":1},"data":{"sessionID":"ses_1","assistantMessageID":"msg_2","id":"call_1","error":{"type":"tool.execution","message":"denied"},"executed":false}}`,
 			kind: provider.FrameToolResult,
 			seq:  12,
 			check: func(t *testing.T, f *provider.Frame) {
@@ -124,44 +201,37 @@ func TestToFrame(t *testing.T) {
 			},
 		},
 		{
-			name: "permission asked (bus only)",
-			wire: `{"id":"evt_g","type":"permission.v2.asked","location":{"directory":"/w"},"data":{"id":"per_1","sessionID":"ses_1","action":"bash","resources":["echo hi"],"save":["echo hi"],"source":{"type":"tool"}}}`,
+			name: "permission asked",
+			wire: `{"id":"evt_g","type":"permission.asked","location":{"directory":"/w"},"data":{"id":"per_1","sessionID":"ses_1","action":"shell","resources":["echo hi"],"save":["echo hi"],"source":{"type":"tool","messageID":"msg_2","id":"call_1"}}}`,
 			kind: provider.FramePermission,
 			seq:  0,
 			check: func(t *testing.T, f *provider.Frame) {
-				if f.Permission.RequestID != "per_1" || f.Permission.Action != "bash" || len(f.Permission.Resources) != 1 {
+				if f.Permission.RequestID != "per_1" || f.Permission.Action != "shell" || len(f.Permission.Resources) != 1 {
 					t.Fatalf("permission = %+v", f.Permission)
 				}
 			},
 		},
 		{
-			name: "question asked (bus only)",
-			wire: `{"id":"evt_h","type":"question.v2.asked","location":{"directory":"/w"},"data":{"id":"que_1","sessionID":"ses_1","questions":[{"question":"color?","header":"Color","options":[{"label":"red","description":"r"},{"label":"blue","description":"b"}],"multiple":false}]}}`,
+			name: "form created maps to question",
+			wire: `{"id":"evt_h","type":"form.created","location":{"directory":"/w"},"data":{"id":"frm_1","sessionID":"ses_1","title":"Pick a color","fields":[{"key":"color","type":"string","title":"color?","options":[{"value":"red","label":"red"},{"value":"blue","label":"blue"}]},{"key":"notes","type":"multiselect","description":"extra notes"}]}}`,
 			kind: provider.FrameQuestion,
 			seq:  0,
 			check: func(t *testing.T, f *provider.Frame) {
-				if f.Question.RequestID != "que_1" || len(f.Question.Questions) != 1 {
+				if f.Question.RequestID != "frm_1" || len(f.Question.Questions) != 2 {
 					t.Fatalf("question = %+v", f.Question)
 				}
 				q := f.Question.Questions[0]
-				if q.Header != "Color" || len(q.Options) != 2 || q.Options[0] != "red" {
+				if q.Question != "color?" || q.Key != "color" || len(q.Options) != 2 || q.Options[0] != "red" {
 					t.Fatalf("question detail = %+v", q)
 				}
-			},
-		},
-		{
-			name: "session error",
-			wire: `{"id":"evt_i","type":"session.error","location":{"directory":"/w"},"data":{"sessionID":"ses_1","error":{"name":"APIError","message":"boom"}}}`,
-			kind: provider.FrameStatus,
-			check: func(t *testing.T, f *provider.Frame) {
-				if f.Status.Name != provider.StatusError || f.Status.Error != "boom" {
-					t.Fatalf("status = %+v", f.Status)
+				if !f.Question.Questions[1].Multiple || f.Question.Questions[1].Question != "extra notes" {
+					t.Fatalf("second question = %+v", f.Question.Questions[1])
 				}
 			},
 		},
 		{
 			name: "irrelevant event dropped",
-			wire: `{"id":"evt_j","type":"file.watcher.updated","data":{"path":"/x"}}`,
+			wire: `{"id":"evt_j","type":"filesystem.changed","data":{"path":"/x"}}`,
 			kind: "",
 			check: func(t *testing.T, f *provider.Frame) {
 				if f != nil {
@@ -198,22 +268,24 @@ func TestToFrame(t *testing.T) {
 	}
 }
 
-// TestSessionStreamReplayAndLive drives a fake SSE server that first replies
-// the recorded prompt.ended payload matching after=3, then streams a live
-// frame.
-func TestSessionStreamReplayAndLive(t *testing.T) {
+// TestBusStreamFramesAndCancellation checks the event bus stream: Basic
+// Auth, unified frame delivery of durable events and context cancellation on
+// a drained stream.
+func TestBusStreamFramesAndCancellation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/session/ses_1/event" {
+		if r.URL.Path != "/api/event" {
 			t.Errorf("path = %q", r.URL.Path)
 		}
-		if got := r.URL.Query().Get("after"); got != "3" {
-			t.Errorf("after = %q, want 3", got)
+		if user, pass, _ := r.BasicAuth(); user != "opencode" || pass != "pw" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		fl, _ := w.(http.Flusher)
-		_, _ = w.Write([]byte("data: {\"id\":\"evt_1\",\"type\":\"session.next.prompt.admitted\",\"durable\":{\"aggregateID\":\"ses_1\",\"seq\":4,\"version\":1},\"data\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_9\",\"delivery\":\"queue\"}}\n\n"))
+		_, _ = w.Write([]byte(": connected\n\n"))
+		_, _ = w.Write([]byte("data: {\"id\":\"evt_1\",\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"/w\"},\"durable\":{\"aggregateID\":\"ses_1\",\"seq\":4,\"version\":1},\"data\":{\"sessionID\":\"ses_1\",\"inboxID\":\"msg_9\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"hi\"},\"delivery\":\"queue\"}}}\n\n"))
 		fl.Flush()
-		_, _ = w.Write([]byte("data: {\"id\":\"evt_2\",\"type\":\"session.next.prompted\",\"durable\":{\"aggregateID\":\"ses_1\",\"seq\":5,\"version\":1},\"data\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_9\",\"delivery\":\"queue\"}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"id\":\"evt_2\",\"type\":\"session.inbox.delivered\",\"durable\":{\"aggregateID\":\"ses_1\",\"seq\":5,\"version\":1},\"data\":{\"sessionID\":\"ses_1\",\"inboxID\":\"msg_9\"}}\n\n"))
 		fl.Flush()
 		// keep the stream open so Next must honor context cancellation
 		<-r.Context().Done()
@@ -222,9 +294,9 @@ func TestSessionStreamReplayAndLive(t *testing.T) {
 
 	client := NewClient(Config{BaseURL: srv.URL, Password: "pw"})
 	ctx := context.Background()
-	stream, err := client.SessionStream(ctx, "ses_1", 3)
+	stream, err := client.BusStream(ctx)
 	if err != nil {
-		t.Fatalf("session stream: %v", err)
+		t.Fatalf("bus stream: %v", err)
 	}
 	defer stream.Close()
 
@@ -251,31 +323,25 @@ func TestSessionStreamReplayAndLive(t *testing.T) {
 	}
 }
 
-// TestBusStreamAuthAndFrames checks the service bus stream: Basic Auth and
-// unified frame delivery including transient delta frames.
-func TestBusStreamAuthAndFrames(t *testing.T) {
+// TestBusStreamTransientDelta checks transient delta frame delivery.
+func TestBusStreamTransientDelta(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if user, pass, _ := r.BasicAuth(); user != "opencode" || pass != "pw" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		fl, _ := w.(http.Flusher)
 		_, _ = w.Write([]byte(": connected\n\n"))
-		_, _ = w.Write([]byte("data: {\"id\":\"evt_1\",\"type\":\"session.next.text.delta\",\"location\":{\"directory\":\"/w\"},\"data\":{\"sessionID\":\"ses_1\",\"assistantMessageID\":\"msg_2\",\"textID\":\"t_1\",\"delta\":\"po\"}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"id\":\"evt_1\",\"type\":\"session.text.delta\",\"location\":{\"directory\":\"/w\"},\"durable\":{\"aggregateID\":\"ses_1\",\"seq\":6,\"version\":1},\"data\":{\"sessionID\":\"ses_1\",\"assistantMessageID\":\"msg_2\",\"ordinal\":0,\"delta\":\"po\"}}\n\n"))
 		fl.Flush()
 	}))
 	t.Cleanup(srv.Close)
 
 	client := NewClient(Config{BaseURL: srv.URL, Password: "pw"})
-	ctx := context.Background()
-	stream, err := client.BusStream(ctx)
+	stream, err := client.BusStream(context.Background())
 	if err != nil {
 		t.Fatalf("bus stream: %v", err)
 	}
 	defer stream.Close()
 
-	f, err := stream.Next(ctx)
+	f, err := stream.Next(context.Background())
 	if err != nil {
 		t.Fatalf("bus frame: %v", err)
 	}
@@ -287,14 +353,14 @@ func TestBusStreamAuthAndFrames(t *testing.T) {
 // TestStreamHTTPError verifies non-2xx stream handshake surfaces APIError.
 func TestStreamHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"_tag":"NotFoundError","message":"session not found"}`))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"_tag":"ServiceUnavailableError","message":"overloaded"}`))
 	}))
 	t.Cleanup(srv.Close)
 	client := NewClient(Config{BaseURL: srv.URL, Password: "pw"})
-	_, err := client.SessionStream(context.Background(), "ses_missing", 0)
+	_, err := client.BusStream(context.Background())
 	var apiErr *APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
-		t.Fatalf("err = %v, want 404 APIError", err)
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusServiceUnavailable {
+		t.Fatalf("err = %v, want 503 APIError", err)
 	}
 }

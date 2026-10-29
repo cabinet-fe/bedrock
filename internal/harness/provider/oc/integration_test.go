@@ -33,8 +33,10 @@ func integrationSetup(t *testing.T) (*Adapter, provider.ModelRef) {
 	return adapter, provider.ModelRef{ProviderID: parts[0], ID: parts[1]}
 }
 
-// readUntil collects frames until pred holds or the deadline expires.
-func readUntil(ctx context.Context, t *testing.T, stream provider.Stream, pred func(*provider.Frame) bool, what string) *provider.Frame {
+// readUntil collects bus frames of the session until pred holds or the
+// deadline expires. The opencode 2.x bus carries every session; frames are
+// filtered by sessionID.
+func readUntil(ctx context.Context, t *testing.T, stream provider.Stream, sessionID string, pred func(*provider.Frame) bool, what string) *provider.Frame {
 	t.Helper()
 	deadline := time.Now().Add(90 * time.Second)
 	for {
@@ -44,16 +46,19 @@ func readUntil(ctx context.Context, t *testing.T, stream provider.Stream, pred f
 		if err != nil {
 			t.Fatalf("waiting for %s: %v", what, err)
 		}
+		if f.SessionID != sessionID {
+			continue
+		}
 		if pred(f) {
 			return f
 		}
 	}
 }
 
-// TestIntegrationSessionPromptReplay covers the M0 acceptance against a real
+// TestIntegrationSessionPromptWait covers the acceptance flow against a real
 // serve: create a session with location.directory, prompt with queue and
-// steer delivery, and resume the per-session durable stream via after=<seq>.
-func TestIntegrationSessionPromptReplay(t *testing.T) {
+// steer delivery over the event bus, then confirm Wait settles once idle.
+func TestIntegrationSessionPromptWait(t *testing.T) {
 	adapter, model := integrationSetup(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -69,9 +74,13 @@ func TestIntegrationSessionPromptReplay(t *testing.T) {
 		t.Fatalf("unexpected session id %q", session.ID)
 	}
 
-	// 1. queue delivery. opencode holds SSE response headers until the first
-	// event, so the stream opens after the prompt; the after=0 durable
-	// replay redelivers everything from seq 1.
+	bus, err := adapter.BusStream(ctx)
+	if err != nil {
+		t.Fatalf("open event bus: %v", err)
+	}
+	defer bus.Close()
+
+	// 1. queue delivery.
 	ack, err := adapter.Prompt(ctx, session.ID, provider.PromptInput{
 		Text:     "Reply with exactly the word: pong",
 		Delivery: provider.DeliveryQueue,
@@ -79,46 +88,29 @@ func TestIntegrationSessionPromptReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prompt queue: %v", err)
 	}
-	if ack.AdmittedSeq == 0 || ack.MessageID == "" {
-		t.Fatalf("prompt ack missing admittedSeq/messageID: %+v", ack)
+	if ack.MessageID == "" {
+		t.Fatalf("prompt ack missing messageID: %+v", ack)
 	}
 
-	live, err := adapter.EventStream(ctx, session.ID, 0)
-	if err != nil {
-		t.Fatalf("open live stream: %v", err)
+	admitted := readUntil(ctx, t, bus, session.ID, func(f *provider.Frame) bool {
+		return f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusPromptAdmitted
+	}, "queue admission")
+	if admitted.Status.MessageID != ack.MessageID {
+		t.Errorf("admitted frame messageID %q != ack %q", admitted.Status.MessageID, ack.MessageID)
 	}
-	defer live.Close()
-
-	lastSeq := int64(0)
-	sawAdmitted, sawPrompted, sawStepEnded, sawText := false, false, false, false
-	for deadline := time.Now().Add(90 * time.Second); !sawStepEnded && time.Now().Before(deadline); {
-		f, err := live.Next(ctx)
-		if err != nil {
-			t.Fatalf("live frame: %v", err)
-		}
-		if f.Seq > lastSeq {
-			lastSeq = f.Seq
-		}
-		switch {
-		case f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusPromptAdmitted:
-			sawAdmitted = true
-			if f.Status.MessageID != ack.MessageID {
-				t.Errorf("admitted frame messageID %q != ack %q", f.Status.MessageID, ack.MessageID)
-			}
-			if f.Status.Delivery != provider.DeliveryQueue {
-				t.Errorf("admitted delivery = %q, want queue", f.Status.Delivery)
-			}
-		case f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusPrompted:
-			sawPrompted = true
-		case f.Kind == provider.FrameMessageText:
-			sawText = true
-		case f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusStepEnded:
-			sawStepEnded = true
-		}
+	if admitted.Status.Delivery != provider.DeliveryQueue {
+		t.Errorf("admitted delivery = %q, want queue", admitted.Status.Delivery)
 	}
-	if !sawAdmitted || !sawPrompted || !sawText || !sawStepEnded {
-		t.Fatalf("live stream incomplete: admitted=%v prompted=%v text=%v stepEnded=%v", sawAdmitted, sawPrompted, sawText, sawStepEnded)
-	}
+	readUntil(ctx, t, bus, session.ID, func(f *provider.Frame) bool {
+		return f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusPrompted &&
+			f.Status.MessageID == ack.MessageID
+	}, "queue prompted")
+	readUntil(ctx, t, bus, session.ID, func(f *provider.Frame) bool {
+		return f.Kind == provider.FrameMessageText
+	}, "assistant text")
+	readUntil(ctx, t, bus, session.ID, func(f *provider.Frame) bool {
+		return f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusStepEnded
+	}, "queue step ended")
 
 	// 2. steer delivery: admitted immediately, prompted after the idle turn.
 	steerAck, err := adapter.Prompt(ctx, session.ID, provider.PromptInput{
@@ -128,56 +120,27 @@ func TestIntegrationSessionPromptReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prompt steer: %v", err)
 	}
-	readUntil(ctx, t, live, func(f *provider.Frame) bool {
+	readUntil(ctx, t, bus, session.ID, func(f *provider.Frame) bool {
 		return f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusPromptAdmitted &&
 			f.Status.MessageID == steerAck.MessageID && f.Status.Delivery == provider.DeliverySteer
 	}, "steer admission")
-	steerDone := readUntil(ctx, t, live, func(f *provider.Frame) bool {
+	steerDone := readUntil(ctx, t, bus, session.ID, func(f *provider.Frame) bool {
 		return f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusPrompted &&
 			f.Status.MessageID == steerAck.MessageID
 	}, "steer prompted")
-	if steerDone.Seq <= lastSeq {
-		t.Errorf("steer prompted seq %d not after prior events %d", steerDone.Seq, lastSeq)
+	if steerDone.Seq <= admitted.Seq {
+		t.Errorf("steer prompted seq %d not after prior events %d", steerDone.Seq, admitted.Seq)
 	}
-
-	// drain the second turn
-	readUntil(ctx, t, live, func(f *provider.Frame) bool {
+	readUntil(ctx, t, bus, session.ID, func(f *provider.Frame) bool {
 		return f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusStepEnded
 	}, "steer step ended")
 
-	// 3. replay from the last durable seq: the reconnect must only deliver
-	// events after the baseline, then continue live for a fresh prompt.
-	after := lastSeq
-	replay, err := adapter.EventStream(ctx, session.ID, after)
-	if err != nil {
-		t.Fatalf("open replay stream: %v", err)
-	}
-	defer replay.Close()
-	third, err := adapter.Prompt(ctx, session.ID, provider.PromptInput{
-		Text:     "Reply with exactly the word: last",
-		Delivery: provider.DeliveryQueue,
-	})
-	if err != nil {
-		t.Fatalf("prompt replay-turn: %v", err)
-	}
-	var sawReplayAdmit, sawReplayEnd bool
-	for deadline := time.Now().Add(90 * time.Second); !sawReplayEnd && time.Now().Before(deadline); {
-		f, err := replay.Next(ctx)
-		if err != nil {
-			t.Fatalf("replay frame: %v", err)
-		}
-		if f.Seq <= after {
-			t.Errorf("replay delivered seq %d <= after %d (duplicate replay)", f.Seq, after)
-		}
-		if f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusPromptAdmitted && f.Status.MessageID == third.MessageID {
-			sawReplayAdmit = true
-		}
-		if f.Kind == provider.FrameStatus && f.Status.Name == provider.StatusStepEnded && sawReplayAdmit {
-			sawReplayEnd = true
-		}
-	}
-	if !sawReplayEnd {
-		t.Fatal("replayed stream never reached the new turn's step end")
+	// 3. wait settles on the idle session (opencode 2.x implements the
+	// experimental wait route that 1.18.x answered 503).
+	waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer waitCancel()
+	if err := adapter.Wait(waitCtx, session.ID); err != nil {
+		t.Errorf("wait on idle session: %v", err)
 	}
 
 	// 4. history reflects the prompts
@@ -216,6 +179,29 @@ func TestIntegrationSelectModelAndInterrupt(t *testing.T) {
 	}
 }
 
+// TestIntegrationArchiveSession verifies the archived-boolean PATCH and the
+// archived timestamp surfacing in the inventory entry.
+func TestIntegrationArchiveSession(t *testing.T) {
+	adapter, _ := integrationSetup(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	session, err := adapter.CreateSession(ctx, provider.CreateSessionInput{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := adapter.ArchiveSession(ctx, session.ID); err != nil {
+		t.Fatalf("archive session: %v", err)
+	}
+	info, err := adapter.GetSession(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if info.ArchivedAt == nil {
+		t.Fatal("archived session reports no archivedAt")
+	}
+}
+
 // TestIntegrationCatalogs verifies the directory catalog endpoints on a real
 // serve, including the bracketed location query encoding.
 func TestIntegrationCatalogs(t *testing.T) {
@@ -229,7 +215,7 @@ func TestIntegrationCatalogs(t *testing.T) {
 		t.Fatalf("list models: %v", err)
 	}
 	// A freshly queried directory can briefly return an empty catalog while
-	// the project loads (harness-integration-plan.md §2.2); retry briefly.
+	// the project loads; retry briefly.
 	for deadline := time.Now().Add(30 * time.Second); len(models) == 0 && time.Now().Before(deadline); {
 		time.Sleep(2 * time.Second)
 		models, err = adapter.ListModels(ctx, dir)
@@ -259,7 +245,7 @@ func TestIntegrationCatalogs(t *testing.T) {
 		t.Fatalf("list agents: %v", err)
 	}
 	// A freshly queried directory can briefly return an empty list while
-	// the project loads (harness-integration-plan.md §2.2); retry briefly.
+	// the project loads; retry briefly.
 	for deadline := time.Now().Add(30 * time.Second); len(agents) == 0 && time.Now().Before(deadline); {
 		time.Sleep(2 * time.Second)
 		agents, err = adapter.ListAgents(ctx, dir)

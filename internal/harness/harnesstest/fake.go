@@ -361,7 +361,7 @@ func (f *Fake) Prompt(_ context.Context, sessionID string, input provider.Prompt
 	}
 	f.delivery[sessionID] = input.Delivery
 	f.seq++
-	ack := &provider.PromptAck{MessageID: fmt.Sprintf("msg-%s-%d", sessionID, len(f.prompts[sessionID])), AdmittedSeq: f.seq}
+	ack := &provider.PromptAck{MessageID: fmt.Sprintf("msg-%s-%d", sessionID, len(f.prompts[sessionID]))}
 	var sess *provider.Session
 	for i := range f.sessions {
 		if f.sessions[i].ID == sessionID {
@@ -391,12 +391,6 @@ func (f *Fake) History(_ context.Context, sessionID string) ([]provider.Message,
 	out := make([]provider.Message, len(f.history[sessionID]))
 	copy(out, f.history[sessionID])
 	return out, nil
-}
-
-func (f *Fake) EventStream(ctx context.Context, sessionID string, after int64) (provider.Stream, error) {
-	// The run path consumes the stream bridge (BusStream); per-session event
-	// replay is not simulated.
-	return idleStream{ctx: ctx}, nil
 }
 
 func (f *Fake) BusStream(ctx context.Context) (provider.Stream, error) {
@@ -528,17 +522,3 @@ func (s chanStream) Next(ctx context.Context) (*provider.Frame, error) {
 }
 
 func (s chanStream) Close() error { return nil }
-
-// idleStream blocks without frames until ctx ends.
-type idleStream struct{ ctx context.Context }
-
-func (s idleStream) Next(ctx context.Context) (*provider.Frame, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-s.ctx.Done():
-		return nil, s.ctx.Err()
-	}
-}
-
-func (s idleStream) Close() error { return nil }

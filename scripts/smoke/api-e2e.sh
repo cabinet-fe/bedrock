@@ -217,7 +217,7 @@ EOF
 bun "$WS_DIR/live.mjs" "ws://127.0.0.1:${PORT}/ws/harness/sessions/${SID}/events?token=${TOKEN}" \
   "$TOKEN" "$BASE" "$SID" "$WS_DIR/live.jsonl" "$WS_DIR/ack.json" || {
     echo "harness live WS failed" >&2; exit 1; }
-json_get "$(cat "$WS_DIR/ack.json")" "o['status']==202 and o['body']['data']['admitted_seq']>0 and bool(o['body']['data']['id'])" >/dev/null
+json_get "$(cat "$WS_DIR/ack.json")" "o['status']==202 and bool(o['body']['data']['id'])" >/dev/null
 
 echo "==> harness WS: replay (after=0) of durable frames"
 cat >"$WS_DIR/replay.mjs" <<'EOF'
@@ -259,16 +259,16 @@ if mode == "live":
         err.append("missing message_delta")
     if not kinds("permission") or not kinds("permission")[0]["permission"].get("requestId"):
         err.append("missing permission ask")
-    if not any((f.get("toolCall") or {}).get("tool") == "exec" for f in kinds("tool_call")):
+    if not any((f.get("toolCall") or {}).get("tool") == "shell" for f in kinds("tool_call")):
         err.append("missing tool_call")
     if not any("smoke-done-" in text(f) for f in kinds("message_text")):
         err.append("missing final message_text")
     if not any((f.get("status") or {}).get("name") == "idle" for f in kinds("status")):
         err.append("missing idle")
-    if any(f.get("seq", 0) != 0 for f in kinds("message_delta") + kinds("permission")):
-        err.append("transient frame carries seq")
+    if any(f.get("seq", 0) != 0 for f in kinds("permission")):
+        err.append("permission ask carries seq")
 else:
-    if kinds("message_delta") or kinds("permission"):
+    if kinds("permission"):
         err.append("transient frame replayed")
     if not any("smoke-done-" in text(f) for f in kinds("message_text")):
         err.append("missing replay message_text")

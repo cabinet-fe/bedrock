@@ -79,8 +79,7 @@ type PromptInput struct {
 
 // PromptAck is the admission result of a prompt.
 type PromptAck struct {
-	MessageID   string `json:"id"`
-	AdmittedSeq int64  `json:"admittedSeq"`
+	MessageID string `json:"id"`
 }
 
 // Message is one message in a session transcript.
@@ -131,10 +130,9 @@ const (
 	// step started/ended/failed, session errors and idle.
 	FrameStatus FrameKind = "status"
 	// FrameMessageDelta is an incremental text fragment of an assistant
-	// message (transient: only delivered on the live bus, never replayed).
+	// message.
 	FrameMessageDelta FrameKind = "message_delta"
-	// FrameMessageText is the full text of a finished assistant text part
-	// (durable: always replayable).
+	// FrameMessageText is the full text of a finished assistant text part.
 	FrameMessageText FrameKind = "message_text"
 	// FrameReasoningDelta is an incremental reasoning fragment.
 	FrameReasoningDelta FrameKind = "reasoning_delta"
@@ -148,11 +146,12 @@ const (
 	FrameQuestion FrameKind = "question"
 )
 
-// Frame is the provider-neutral event unit delivered by EventStream and the
-// service bus. Exactly one payload field is set, matching Kind.
+// Frame is the provider-neutral event unit delivered by the service bus and
+// replayed from the bridge ring. Exactly one payload field is set, matching
+// Kind.
 type Frame struct {
-	// Seq is the durable sequence number (0 for transient frames such as
-	// deltas, permissions and questions).
+	// Seq is the durable sequence number (0 for frames the backend marks
+	// transient, e.g. permission asks).
 	Seq int64 `json:"seq"`
 	// EventID is the backend event id (diagnostics/resumption aid).
 	EventID string `json:"eventId,omitempty"`
@@ -263,13 +262,17 @@ type QuestionFrame struct {
 
 // Question is one structured question with selectable options.
 type Question struct {
-	Question string   `json:"question"`
+	Question string `json:"question"`
+	// Key is the backend field key the answer targets (opencode 2.x forms
+	// key answers by field; empty when the backend has no key).
+	Key      string   `json:"key,omitempty"`
 	Header   string   `json:"header,omitempty"`
 	Options  []string `json:"options,omitempty"`
 	Multiple bool     `json:"multiple,omitempty"`
 }
 
-// QuestionAnswers answers a QuestionFrame; one answer list per question.
+// QuestionAnswers answers a QuestionFrame; one answer list per question,
+// positionally aligned with QuestionFrame.Questions.
 type QuestionAnswers struct {
 	Answers [][]string `json:"answers"`
 }
@@ -302,17 +305,14 @@ type Provider interface {
 	SelectModel(ctx context.Context, sessionID string, model ModelRef) error
 	// History lists the messages of a session, oldest first.
 	History(ctx context.Context, sessionID string) ([]Message, error)
-	// EventStream subscribes to a session, replaying durable events after
-	// the given sequence (0 replays everything) then streaming live.
-	EventStream(ctx context.Context, sessionID string, after int64) (Stream, error)
-	// BusStream subscribes to the backend-wide live event bus: transient
-	// frames (deltas, permission and question requests) of every session,
-	// without replay. The stream bridge is the intended consumer.
+	// BusStream subscribes to the backend-wide live event bus: frames of
+	// every session (durable and transient), without replay. The stream
+	// bridge is the intended consumer; it keeps its own per-session replay
+	// ring (opencode 2.x exposes no per-session durable stream endpoint).
 	BusStream(ctx context.Context) (Stream, error)
 	// ActiveSessions reports which sessions currently run an agent loop
 	// (foreground drains): the returned set holds the busy session ids and
-	// absent ids are idle. Backends whose event bus never announces idle
-	// (opencode 1.18.x) are settled from this query instead.
+	// absent ids are idle.
 	ActiveSessions(ctx context.Context) (map[string]bool, error)
 	// Wait blocks until the session agent loop becomes idle.
 	Wait(ctx context.Context, sessionID string) error
@@ -351,7 +351,8 @@ type AgentInfo struct {
 }
 
 // ErrWaitUnavailable reports that the backend cannot serve Wait in the
-// current version (observed on opencode 1.18.29).
+// current version (opencode 1.18.x answered 503; kept so callers degrade
+// gracefully if a backend regresses).
 var ErrWaitUnavailable = errors.New("provider: session wait is not available")
 
 // ErrNotFound reports that the backend holds no such session. Adapters wrap

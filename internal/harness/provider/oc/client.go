@@ -1,6 +1,6 @@
 // Package oc implements the harness Provider interface against a local
 // `opencode serve` instance (OpenAPI 3.1, Basic Auth). Wire contract verified
-// against opencode v1.18.29; see testdata golden snapshot for the full spec.
+// against opencode v2.2.0; see testdata golden snapshot for the full spec.
 package oc
 
 import (
@@ -77,24 +77,27 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("oc api: http %d", e.Status)
 }
 
-// Health reports serve liveness.
+// Health reports serve liveness and the backend version.
 type Health struct {
-	Healthy bool   `json:"healthy"`
 	Version string `json:"version"`
 }
 
-// Health probes GET /global/health.
+// Health probes GET /api/info (opencode 2.x readiness endpoint; the v1
+// /global/health route now serves the embedded web UI instead).
 func (c *Client) Health(ctx context.Context) (*Health, error) {
 	var body Health
-	if err := c.get(ctx, "/global/health", nil, &body); err != nil {
+	if err := c.get(ctx, "/api/info", nil, &body); err != nil {
 		return nil, err
+	}
+	if body.Version == "" {
+		return nil, fmt.Errorf("oc api: /api/info response missing version")
 	}
 	return &body, nil
 }
 
-// Spec fetches the OpenAPI 3.1 document from GET /doc.
+// Spec fetches the OpenAPI 3.1 document from GET /openapi.json.
 func (c *Client) Spec(ctx context.Context) (json.RawMessage, error) {
-	raw, err := c.getRaw(ctx, "/doc")
+	raw, err := c.getRaw(ctx, "/openapi.json")
 	if err != nil {
 		return nil, err
 	}
@@ -235,21 +238,14 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*provider.Se
 	return &info, nil
 }
 
-// sessionPatch is the PATCH /session/{id} body. The archive flag lives only
-// on the unprefixed route group (not under /api) per the 1.18.29 spec
-// snapshot; it is not an /experimental endpoint.
-type sessionPatch struct {
-	Time sessionPatchTime `json:"time"`
-}
-
-type sessionPatchTime struct {
-	Archived float64 `json:"archived"`
-}
-
-// ArchiveSession marks a session archived at the current time.
+// ArchiveSession marks a session archived (PATCH /api/session/{id} with the
+// archived boolean; opencode 2.x replaced the v1 unprefixed time-epoch
+// patch).
 func (c *Client) ArchiveSession(ctx context.Context, sessionID string) error {
-	body := sessionPatch{Time: sessionPatchTime{Archived: float64(time.Now().UnixMilli())}}
-	return c.patch(ctx, "/session/"+sessionID, body, nil)
+	body := struct {
+		Archived bool `json:"archived"`
+	}{Archived: true}
+	return c.patch(ctx, "/api/session/"+sessionID, body, nil)
 }
 
 // Prompt sends one user message. Empty delivery defaults to queue.
@@ -259,21 +255,18 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, input provider.Pr
 		delivery = string(provider.DeliveryQueue)
 	}
 	body := struct {
-		Prompt struct {
-			Text string `json:"text"`
-		} `json:"prompt"`
+		Text     string `json:"text"`
 		Delivery string `json:"delivery"`
-	}{
-		Prompt: struct {
-			Text string `json:"text"`
-		}{Text: input.Text},
-		Delivery: delivery,
+	}{Text: input.Text, Delivery: delivery}
+	var resp struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
 	}
-	var resp envelope[provider.PromptAck]
 	if err := c.post(ctx, "/api/session/"+sessionID+"/prompt", body, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &provider.PromptAck{MessageID: resp.Data.ID}, nil
 }
 
 // SelectModel switches the session model via POST /api/session/{id}/model.
@@ -302,11 +295,12 @@ func (c *Client) ActiveSessions(ctx context.Context) (map[string]bool, error) {
 	return out, nil
 }
 
-// Wait blocks until the session loop is idle (POST /api/session/{id}/wait).
-// opencode 1.18.29 answers 503 "Session wait is not available yet" for every
-// call; callers must fall back to event-driven idle detection.
+// Wait blocks until the session loop is idle (POST
+// /api/experimental/session/{id}/wait, answered 204 once idle). The route is
+// experimental upstream; a 503 still maps to ErrWaitUnavailable so callers
+// can fall back to event-driven idle detection.
 func (c *Client) Wait(ctx context.Context, sessionID string) error {
-	err := c.post(ctx, "/api/session/"+sessionID+"/wait", nil, nil)
+	err := c.post(ctx, "/api/experimental/session/"+sessionID+"/wait", nil, nil)
 	if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.Status == http.StatusServiceUnavailable {
 		return fmt.Errorf("%w: %s", provider.ErrWaitUnavailable, apiErr.Message)
 	}
@@ -322,38 +316,93 @@ func (c *Client) Interrupt(ctx context.Context, sessionID string) error {
 // an optional message.
 func (c *Client) ReplyPermission(ctx context.Context, sessionID, requestID string, reply provider.PermissionReply, message string) error {
 	body := struct {
-		Reply   string `json:"reply"`
-		Message string `json:"message,omitempty"`
-	}{Reply: string(reply), Message: message}
+		Decision string `json:"decision"`
+		Message  string `json:"message,omitempty"`
+	}{Decision: string(reply), Message: message}
 	return c.post(ctx, "/api/session/"+sessionID+"/permission/"+requestID+"/reply", body, nil)
 }
 
-// ReplyQuestion answers a question request.
+// ReplyQuestion answers an open form (opencode 2.x replaced v1 questions
+// with the form system). The positional answer lists are keyed by the form
+// field keys via one form fetch, then POSTed as {answer: {key: value}}.
 func (c *Client) ReplyQuestion(ctx context.Context, sessionID, requestID string, answers provider.QuestionAnswers) error {
-	return c.post(ctx, "/api/session/"+sessionID+"/question/"+requestID+"/reply", answers, nil)
+	form, err := c.getForm(ctx, sessionID, requestID)
+	if err != nil {
+		return err
+	}
+	answer := map[string]any{}
+	for i, field := range form.Fields {
+		if i >= len(answers.Answers) {
+			break
+		}
+		answer[field.Key] = formAnswerValue(field, answers.Answers[i])
+	}
+	body := struct {
+		Answer map[string]any `json:"answer"`
+	}{Answer: answer}
+	return c.post(ctx, "/api/session/"+sessionID+"/form/"+requestID+"/reply", body, nil)
 }
 
-// RejectQuestion dismisses a question request without answering.
+// RejectQuestion dismisses an open form without answering (DELETE
+// /api/session/{id}/form/{formID} cancels it).
 func (c *Client) RejectQuestion(ctx context.Context, sessionID, requestID string) error {
-	return c.post(ctx, "/api/session/"+sessionID+"/question/"+requestID+"/reject", nil, nil)
+	return c.doDelete(ctx, "/api/session/"+sessionID+"/form/"+requestID)
 }
 
-// PendingPermission lists pending permission requests of a directory.
-func (c *Client) PendingPermission(ctx context.Context, directory string) ([]provider.PermissionFrame, error) {
-	var resp envelope[[]provider.PermissionFrame]
-	if err := c.get(ctx, "/api/permission/request", locationQuery(directory), &resp); err != nil {
-		return nil, err
-	}
-	return resp.Data, nil
+// formField is one field of a form (Form.Field wire shape; only the
+// answer-relevant subset is decoded).
+type formField struct {
+	Key   string `json:"key"`
+	Type  string `json:"type"` // string | number | integer | boolean | multiselect | external
+	When  []any  `json:"when"`
+	Items []struct {
+		Value string `json:"value"`
+		Label string `json:"label"`
+	} `json:"options"`
 }
 
-// PendingQuestion lists pending question requests of a directory.
-func (c *Client) PendingQuestion(ctx context.Context, directory string) ([]provider.QuestionFrame, error) {
-	var resp envelope[[]provider.QuestionFrame]
-	if err := c.get(ctx, "/api/question/request", locationQuery(directory), &resp); err != nil {
+// formInfo is the Form.Info wire shape (GET /api/session/{id}/form/{formID}).
+type formInfo struct {
+	ID        string      `json:"id"`
+	SessionID string      `json:"sessionID"`
+	Title     string      `json:"title"`
+	Fields    []formField `json:"fields"`
+}
+
+func (c *Client) getForm(ctx context.Context, sessionID, formID string) (*formInfo, error) {
+	var resp envelope[formInfo]
+	if err := c.get(ctx, "/api/session/"+sessionID+"/form/"+formID, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return &resp.Data, nil
+}
+
+// formAnswerValue converts one positional answer list into the Form.Value
+// the reply expects: multiselect fields take the whole list, boolean fields
+// a parsed bool, everything else the first entry as a string.
+func formAnswerValue(field formField, answer []string) any {
+	switch field.Type {
+	case "multiselect":
+		if answer == nil {
+			return []string{}
+		}
+		return answer
+	case "boolean":
+		for _, v := range answer {
+			switch strings.ToLower(strings.TrimSpace(v)) {
+			case "true", "yes", "1":
+				return true
+			case "false", "no", "0":
+				return false
+			}
+		}
+		return false
+	default:
+		if len(answer) == 0 {
+			return ""
+		}
+		return answer[0]
+	}
 }
 
 // message is the transcript entry shape returned by GET /api/session/{id}/message.
@@ -380,7 +429,9 @@ func userTextContent(text string) json.RawMessage {
 }
 
 // History returns the transcript messages, oldest first (serve answers the
-// message list newest first).
+// message list newest first). opencode 2.x also projects non-conversational
+// entries (e.g. terminal "idle" markers); only user and assistant messages
+// pass through.
 func (c *Client) History(ctx context.Context, sessionID string) ([]provider.Message, error) {
 	var resp envelope[[]message]
 	if err := c.get(ctx, "/api/session/"+sessionID+"/message", nil, &resp); err != nil {
@@ -389,6 +440,9 @@ func (c *Client) History(ctx context.Context, sessionID string) ([]provider.Mess
 	out := make([]provider.Message, 0, len(resp.Data))
 	for i := len(resp.Data) - 1; i >= 0; i-- {
 		m := resp.Data[i]
+		if m.Role != "user" && m.Role != "assistant" {
+			continue
+		}
 		content := m.Content
 		if m.Role == "user" && len(content) == 0 {
 			content = userTextContent(m.Text)
@@ -457,8 +511,10 @@ type agent struct {
 	Permissions []AgentPermissionRule `json:"permissions,omitempty"`
 }
 
-// AgentPermissionRule is one resolved per-tool permission rule of an agent
-// definition (action=tool, resource=pattern, effect=allow|ask|deny).
+// AgentPermissionRule is one resolved permission rule of an agent definition
+// (opencode 2.x Permission.Rule: action, resource pattern, effect
+// allow|ask|deny). The catalog returns the fully resolved ruleset — compiled
+// agent rules merged with opencode defaults.
 type AgentPermissionRule struct {
 	Action   string `json:"action"`
 	Resource string `json:"resource"`
@@ -510,12 +566,14 @@ func (c *Client) ListAgentCatalog(ctx context.Context, directory string) ([]Agen
 	return out, nil
 }
 
-// skill is the skill-catalog entry shape (GET /api/skill).
+// skill is the skill-catalog entry shape (GET /api/skill; opencode 2.x
+// Skill.Info). The path-derived id is the skill identity; name is display
+// only.
 type skill struct {
+	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Location    string `json:"location"`
 	Description string `json:"description,omitempty"`
-	Slash       bool   `json:"slash,omitempty"`
+	Path        string `json:"path"`
 }
 
 // SkillInfo describes one registered skill in a workspace directory.
@@ -523,7 +581,6 @@ type SkillInfo struct {
 	Name        string
 	Location    string
 	Description string
-	Slash       bool
 }
 
 // ListSkills lists the skills opencode discovered in a directory (GET
@@ -537,10 +594,9 @@ func (c *Client) ListSkills(ctx context.Context, directory string) ([]SkillInfo,
 	out := make([]SkillInfo, 0, len(resp.Data))
 	for _, s := range resp.Data {
 		out = append(out, SkillInfo{
-			Name:        s.Name,
-			Location:    s.Location,
+			Name:        s.ID,
+			Location:    s.Path,
 			Description: s.Description,
-			Slash:       s.Slash,
 		})
 	}
 	return out, nil
@@ -581,6 +637,11 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 // patch performs a PATCH with a JSON body (nil out ignores the response).
 func (c *Client) patch(ctx context.Context, path string, body, out any) error {
 	return c.send(ctx, http.MethodPatch, path, body, out)
+}
+
+// doDelete performs a DELETE (nil body).
+func (c *Client) doDelete(ctx context.Context, path string) error {
+	return c.send(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // send marshals body to JSON, performs the request and decodes the JSON
@@ -699,14 +760,8 @@ func (a *Adapter) History(ctx context.Context, sessionID string) ([]provider.Mes
 	return a.client.History(ctx, sessionID)
 }
 
-// EventStream implements provider.Provider: durable replay after the given
-// sequence, then live unified frames.
-func (a *Adapter) EventStream(ctx context.Context, sessionID string, after int64) (provider.Stream, error) {
-	return a.client.SessionStream(ctx, sessionID, after)
-}
-
 // BusStream implements provider.Provider: the backend-wide live event bus
-// (transient frames of every session, no replay).
+// (frames of every session, no replay).
 func (a *Adapter) BusStream(ctx context.Context) (provider.Stream, error) {
 	return a.client.BusStream(ctx)
 }

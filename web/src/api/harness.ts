@@ -18,7 +18,6 @@ export interface HarnessModelRef {
 
 export interface HarnessPromptAck {
   id: string;
-  admitted_seq: number;
 }
 
 /** Content part of GET /harness/sessions/:id/messages (provider passthrough). */

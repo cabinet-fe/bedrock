@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,16 +45,15 @@ func canonicalJSON(t *testing.T, v json.RawMessage) string {
 	return string(out)
 }
 
-// TestContractSpecSnapshot diffs GET /doc against the golden OpenAPI file.
-// The golden was captured from opencode v1.18.29; a mismatch means the serve
-// contract drifted and the adapter must be reviewed (harness-integration-
-// plan.md §2.3).
+// TestContractSpecSnapshot diffs GET /openapi.json against the golden OpenAPI
+// file. The golden was captured from opencode v2.2.0; a mismatch means the
+// serve contract drifted and the adapter must be reviewed.
 func TestContractSpecSnapshot(t *testing.T) {
 	cfg := serveEnv(t)
 	client := NewClient(cfg)
 	raw, err := client.Spec(context.Background())
 	if err != nil {
-		t.Fatalf("fetch /doc: %v", err)
+		t.Fatalf("fetch /openapi.json: %v", err)
 	}
 	got := canonicalJSON(t, raw)
 
@@ -71,7 +71,7 @@ func TestContractSpecSnapshot(t *testing.T) {
 	if got != string(want) {
 		specFile := filepath.Join(t.TempDir(), "openapi-actual.json")
 		_ = os.WriteFile(specFile, []byte(got), 0o644)
-		t.Fatalf("GET /doc spec drifted from golden (opencode upgraded?); actual spec saved to %s — review the diff and refresh the golden with -update", specFile)
+		t.Fatalf("GET /openapi.json spec drifted from golden (opencode upgraded?); actual spec saved to %s — review the diff and refresh the golden with -update", specFile)
 	}
 
 	// Guard the endpoints the adapter relies on, so drift fails with a
@@ -83,22 +83,23 @@ func TestContractSpecSnapshot(t *testing.T) {
 		t.Fatalf("parse spec: %v", err)
 	}
 	required := []string{
+		"/api/info",
 		"/api/session",
 		"/api/session/{sessionID}/prompt",
-		"/api/session/{sessionID}/wait",
-		"/api/session/{sessionID}/interrupt",
-		"/api/session/{sessionID}/event",
-		"/api/session/{sessionID}/history",
+		"/api/session/{sessionID}/model",
 		"/api/session/{sessionID}/message",
+		"/api/session/{sessionID}/interrupt",
+		"/api/session/{sessionID}/form",
+		"/api/session/{sessionID}/form/{formID}",
+		"/api/session/{sessionID}/form/{formID}/reply",
 		"/api/session/{sessionID}/permission/{requestID}/reply",
-		"/api/session/{sessionID}/question/{requestID}/reply",
+		"/api/experimental/session/{sessionID}/wait",
 		"/api/permission/request",
-		"/api/question/request",
 		"/api/provider",
 		"/api/model",
 		"/api/agent",
+		"/api/skill",
 		"/api/event",
-		"/global/health",
 	}
 	for _, p := range required {
 		if _, ok := doc.Paths[p]; !ok {
@@ -110,7 +111,8 @@ func TestContractSpecSnapshot(t *testing.T) {
 	}
 }
 
-// TestContractHealth verifies Basic Auth against a real serve.
+// TestContractHealth verifies Basic Auth against a real serve and reports the
+// backend version (the 2.x wire contract the adapter targets).
 func TestContractHealth(t *testing.T) {
 	cfg := serveEnv(t)
 	client := NewClient(cfg)
@@ -118,11 +120,11 @@ func TestContractHealth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("health: %v", err)
 	}
-	if !health.Healthy {
-		t.Fatalf("serve reports unhealthy: %+v", health)
-	}
 	if health.Version == "" {
 		t.Fatal("health response missing version")
+	}
+	if !strings.HasPrefix(health.Version, "2.") {
+		t.Fatalf("serve version %s does not speak the 2.x wire contract the adapter targets", health.Version)
 	}
 	t.Logf("serve version: %s", health.Version)
 }
@@ -133,29 +135,26 @@ func testSessionInput(t *testing.T) provider.CreateSessionInput {
 	return provider.CreateSessionInput{Directory: t.TempDir()}
 }
 
-// TestContractWaitUnavailable pins the v1.18.29 finding that POST wait
-// answers 503 for every call (harness-integration-plan.md §2.2): idle
-// detection must be event-driven.
-func TestContractWaitUnavailable(t *testing.T) {
+// TestContractWait pins that the experimental wait route settles (204) on an
+// idle session — the signal the run state machine reconciles against
+// (opencode 1.18.x answered 503 for every call).
+func TestContractWait(t *testing.T) {
 	cfg := serveEnv(t)
 	client := NewClient(cfg)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 	session, err := client.CreateSession(ctx, testSessionInput(t))
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	err = client.Wait(ctx, session.ID)
-	if err == nil {
-		t.Skip("serve now implements wait; update harness-integration-plan.md §2.2 and drop this pin")
+	if err := client.Wait(ctx, session.ID); err != nil {
+		t.Fatalf("wait on idle session: %v", err)
 	}
-	t.Logf("wait error (expected unavailable on 1.18.29): %v", err)
 }
 
-// TestContractActiveSessions pins the v1.18.29 wire shape of GET
-// /api/session/active ("sessions absent from the result are inactive"): a
-// freshly created session must not appear in the busy set. This query is
-// what the stream bridge settles turns against, because the event stream
-// never broadcasts session.idle on 1.18.x.
+// TestContractActiveSessions pins the wire shape of GET /api/session/active
+// ("sessions absent from the result are inactive"): a freshly created session
+// must not appear in the busy set.
 func TestContractActiveSessions(t *testing.T) {
 	cfg := serveEnv(t)
 	client := NewClient(cfg)

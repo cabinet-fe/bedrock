@@ -55,10 +55,10 @@ const (
 type ProcessConfig struct {
 	Bin  string
 	Port int
-	// PasswordFile persists the generated OPENCODE_SERVER_PASSWORD so a
-	// supervisor (or bedrock) restart reuses the same secret. Written 0600.
+	// PasswordFile persists the generated serve password so a supervisor (or
+	// bedrock) restart reuses the same secret. Written 0600.
 	PasswordFile string
-	// HealthInterval overrides the /global/health probe interval (tests).
+	// HealthInterval overrides the /api/info probe interval (tests).
 	HealthInterval time.Duration
 	// RestartDelay overrides the crash-restart delay (tests). The recovery
 	// budget from the spec is 60s.
@@ -87,8 +87,8 @@ type ProcessStatus struct {
 }
 
 // ProcessManager starts `{bin} serve --hostname 127.0.0.1 --port {port}`,
-// probes /global/health, restarts the process after crashes (within 60s),
-// and reports ok/degraded.
+// probes GET /api/info (gating on the 2.x wire contract), restarts the
+// process after crashes (within 60s), and reports ok/degraded.
 type ProcessManager struct {
 	cfg ProcessConfig
 	log *zap.Logger
@@ -216,8 +216,8 @@ func (m *ProcessManager) healthyWait() <-chan struct{} {
 // bedrock run (or any foreign listener) holds the port and every spawn
 // crashes on bind, producing an endless crash-restart loop while the health
 // probe reports healthy against the leftover. A leftover is identified by
-// answering /global/health with the persisted password; it is stopped just
-// the same (session state survives serve restarts), only the log differs.
+// answering /api/info with the persisted password; it is stopped just the
+// same (session state survives serve restarts), only the log differs.
 func (m *ProcessManager) reclaimStaleServe(password string) {
 	if !portAccepts(m.cfg.Port, 3*time.Second) {
 		return // port free: nothing to reclaim
@@ -305,6 +305,11 @@ func (m *ProcessManager) Stop() {
 // tool dirs included) and resolves a bare bin name against it. exec.Command
 // looks up bare names via the server's own PATH, which systemd keeps minimal —
 // the backend must be findable regardless of who started the server.
+//
+// The password rides both the opencode 2.x name (OPENCODE_PASSWORD) and the
+// legacy one (OPENCODE_SERVER_PASSWORD, still honored upstream). Free-model
+// fallback is disabled: bedrock sessions must only reach bedrock BYOK
+// providers, never opencode's shared anonymous models.
 func serveEnv(bin, password string) ([]string, string) {
 	lookup := map[string]string{}
 	for _, e := range os.Environ() {
@@ -313,7 +318,7 @@ func serveEnv(bin, password string) ([]string, string) {
 		}
 	}
 	pkg.EnsurePATH(lookup, pkg.ResolveHomeDir())
-	env := make([]string, 0, len(lookup)+1)
+	env := make([]string, 0, len(lookup)+3)
 	for k, v := range lookup {
 		env = append(env, k+"="+v)
 	}
@@ -326,7 +331,12 @@ func serveEnv(bin, password string) ([]string, string) {
 			}
 		}
 	}
-	return append(env, "OPENCODE_SERVER_PASSWORD="+password), bin
+	env = append(env,
+		"OPENCODE_PASSWORD="+password,
+		"OPENCODE_SERVER_PASSWORD="+password,
+		"OPENCODE_DISABLE_FREE_MODELS=true",
+	)
+	return env, bin
 }
 
 // supervise keeps a serve process running: spawn, wait for exit, restart.
@@ -396,8 +406,10 @@ func (m *ProcessManager) rememberCrash(waitErr error) {
 	m.setState(StatusDegraded, "serve exited: "+reason)
 }
 
-// probe polls /global/health with the persisted password. Consecutive
-// failures degrade the status; a hung live process is killed for restart.
+// probe polls GET /api/info with the persisted password and gates on the
+// backend major version: the wire contract is verified against opencode 2.x,
+// any other major stays degraded (never marked healthy). Consecutive failures
+// degrade the status; a hung live process is killed for restart.
 func (m *ProcessManager) probe() {
 	defer m.wg.Done()
 	client := oc.NewClient(oc.Config{BaseURL: m.BaseURL(), Password: m.Password()})
@@ -406,13 +418,19 @@ func (m *ProcessManager) probe() {
 	defer ticker.Stop()
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
-		_, err := client.Health(ctx)
+		health, err := client.Health(ctx)
 		cancel()
-		if err == nil {
+		switch {
+		case err == nil && !supportedBackendVersion(health.Version):
+			// Alive but the wrong contract: stay degraded without killing —
+			// restarting the same binary cannot fix the version.
+			failures = 0
+			m.setState(StatusDegraded, fmt.Sprintf("opencode backend version %s unsupported: 2.x required", health.Version))
+		case err == nil:
 			failures = 0
 			m.setState(StatusOK, "")
 			m.markHealthy()
-		} else {
+		default:
 			failures++
 			m.setState(StatusDegraded, fmt.Sprintf("health probe: %v", err))
 			if failures == hungKillThreshold {
@@ -431,6 +449,12 @@ func (m *ProcessManager) probe() {
 		case <-ticker.C:
 		}
 	}
+}
+
+// supportedBackendVersion reports whether the reported opencode version
+// speaks the 2.x wire contract (e.g. "2.2.0", "2.0.0-fakeserve").
+func supportedBackendVersion(version string) bool {
+	return strings.HasPrefix(version, "2.")
 }
 
 // markHealthy unblocks Start exactly once on the first successful probe.

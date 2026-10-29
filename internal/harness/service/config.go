@@ -16,9 +16,8 @@ type ProviderModelSpec struct {
 }
 
 // ProviderSpec is one BYOK provider projected from the ai domain. APIKey is
-// the literal key: opencode 1.18.x does not expand `{file:}`/`{env:}`
-// references in custom provider options, so workspace configs are written
-// 0600 under the same same-UID threat model as the workspace .env.
+// the literal loopback key written 0600 under the same same-UID threat model
+// as the workspace .env.
 type ProviderSpec struct {
 	Key     string // opencode provider id, e.g. "bedrock-p3"
 	Name    string
@@ -32,7 +31,8 @@ type ProviderSpec struct {
 type ProviderConfigSpec struct {
 	Providers []ProviderSpec
 	// DefaultModel is the fallback "provider/model" for sessions without an
-	// explicit model (also covers title generation); "" omits it.
+	// explicit model (also pins title generation to a bedrock provider);
+	// "" omits it.
 	DefaultModel string
 }
 

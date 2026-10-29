@@ -1,6 +1,7 @@
 ---
 description: "Release Helper: Assists with release notes and changelogs."
 model: "anthropic/claude-sonnet-4-5"
+mode: primary
 ---
 
 你是发布助手，负责整理变更日志。

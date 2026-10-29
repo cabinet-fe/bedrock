@@ -113,8 +113,8 @@ func ReconcileAgentDefs(workspace string, referencedKeys []string) error {
 }
 
 // renderAgentDef builds the full markdown document: YAML frontmatter
-// (description, model, permission) plus the system prompt body with the
-// .env read hint appended.
+// (description, model, mode, permissions — opencode 2.x format) plus the
+// system prompt body with the .env read hint appended.
 func renderAgentDef(agentKey string, in AgentDefInput) []byte {
 	var b bytes.Buffer
 	b.WriteString("---\n")
@@ -122,10 +122,13 @@ func renderAgentDef(agentKey string, in AgentDefInput) []byte {
 	if in.ModelProvider != "" && in.ModelID != "" {
 		fmt.Fprintf(&b, "model: %s\n", yamlQuote(in.ModelProvider+"/"+in.ModelID))
 	}
+	// Agents under agents/ default to subagent mode, which cannot head a
+	// session; bedrock agents are always session primaries.
+	b.WriteString("mode: primary\n")
 	if in.ApprovalMode == ApprovalModeAuto {
 		// Allow-rules exist only for unattended agents; manual mode keeps the
 		// default ask behavior without compiled rules.
-		b.WriteString("permission:\n  skill: allow\n")
+		b.WriteString("permissions:\n  - action: skill\n    resource: \"*\"\n    effect: allow\n")
 	}
 	b.WriteString("---\n\n")
 

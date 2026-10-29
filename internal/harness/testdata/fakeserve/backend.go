@@ -3,9 +3,9 @@ package main
 // backend.go implements the in-memory subset of the opencode serve REST
 // surface bedrock consumes: session inventory, prompting (which runs the
 // scripted event turn in events.go), message history and the model/agent
-// catalogs. Wire shapes mirror internal/harness/provider/oc (opencode
-// 1.18.29): {location?, data} envelopes, epoch-millisecond times and the
-// unprefixed PATCH /session/{id} archive route.
+// catalogs. Wire shapes mirror internal/harness/provider/oc (opencode 2.x):
+// {location?, data} envelopes, epoch-millisecond times, the archived-boolean
+// PATCH and the /api/experimental wait route.
 
 import (
 	"encoding/json"
@@ -20,6 +20,8 @@ const (
 	fakeProviderID = "bedrock-p-smoke"
 	fakeModelID    = "smoke-model"
 	fakeBuildAgent = "build"
+	// fakeBackendVersion must satisfy the 2.x version gate in process.go.
+	fakeBackendVersion = "2.0.0-fakeserve"
 )
 
 // ocUsername is the Basic Auth user opencode serve expects.
@@ -68,7 +70,8 @@ type backend struct {
 	nextSes  int
 	nextMsg  int
 	history  map[string][]fakeMessage
-	pending  map[string]chan string // permission request id -> reply
+	pending  map[string]chan string // permission request id -> decision
+	busy     map[string]bool        // session id -> agent loop running
 	subs     map[chan []byte]struct{}
 	seq      map[string]int64 // per-session durable event sequence
 	events   int64            // transient event id counter
@@ -79,6 +82,7 @@ func newBackend(password string) *backend {
 		password: password,
 		history:  map[string][]fakeMessage{},
 		pending:  map[string]chan string{},
+		busy:     map[string]bool{},
 		subs:     map[chan []byte]struct{}{},
 		seq:      map[string]int64{},
 	}
@@ -86,13 +90,15 @@ func newBackend(password string) *backend {
 
 // register mounts the opencode surface on the mux.
 func (b *backend) register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/info", b.auth(b.handleInfo))
 	mux.HandleFunc("POST /api/session", b.auth(b.handleCreateSession))
 	mux.HandleFunc("GET /api/session", b.auth(b.handleListSessions))
 	mux.HandleFunc("GET /api/session/{id}", b.auth(b.handleGetSession))
+	mux.HandleFunc("PATCH /api/session/{id}", b.auth(b.handleArchiveSession))
 	mux.HandleFunc("GET /api/session/{id}/message", b.auth(b.handleMessages))
 	mux.HandleFunc("POST /api/session/{id}/prompt", b.auth(b.handlePrompt))
 	mux.HandleFunc("POST /api/session/{id}/interrupt", b.auth(b.handleInterrupt))
-	mux.HandleFunc("POST /api/session/{id}/wait", b.auth(b.handleWait))
+	mux.HandleFunc("POST /api/experimental/session/{id}/wait", b.auth(b.handleWait))
 	mux.HandleFunc("POST /api/session/{id}/permission/{reqId}/reply", b.auth(b.handlePermissionReply))
 	mux.HandleFunc("GET /api/model", b.auth(b.handleModelCatalog))
 	mux.HandleFunc("GET /api/agent", b.auth(b.handleAgentCatalog))
@@ -112,9 +118,9 @@ func (b *backend) auth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (b *backend) handleHealth(w http.ResponseWriter, _ *http.Request) {
+func (b *backend) handleInfo(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"healthy":true,"version":"fake-1.0.0"}`))
+	_, _ = w.Write([]byte(`{"version":"` + fakeBackendVersion + `"}`))
 }
 
 func (b *backend) handleCreateSession(w http.ResponseWriter, r *http.Request) {
@@ -165,6 +171,31 @@ func (b *backend) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "session not found")
 }
 
+func (b *backend) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
+	sess := b.lookupSession(r.PathValue("id"))
+	if sess == nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	var body struct {
+		Archived *bool `json:"archived"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Archived == nil {
+		writeError(w, http.StatusBadRequest, "archived boolean is required")
+		return
+	}
+	b.mu.Lock()
+	now := float64(time.Now().UnixMilli())
+	if *body.Archived {
+		sess.Time.Archived = &now
+	} else {
+		sess.Time.Archived = nil
+	}
+	sess.Time.Updated = now
+	b.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (b *backend) handleMessages(w http.ResponseWriter, r *http.Request) {
 	sess := b.lookupSession(r.PathValue("id"))
 	if sess == nil {
@@ -188,13 +219,11 @@ func (b *backend) handlePrompt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Prompt struct {
-			Text string `json:"text"`
-		} `json:"prompt"`
+		Text     string `json:"text"`
 		Delivery string `json:"delivery"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Prompt.Text == "" {
-		writeError(w, http.StatusBadRequest, "prompt.text is required")
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text == "" {
+		writeError(w, http.StatusBadRequest, "text is required")
 		return
 	}
 	delivery := body.Delivery
@@ -206,29 +235,45 @@ func (b *backend) handlePrompt(w http.ResponseWriter, r *http.Request) {
 	n := b.nextMsg
 	msgID := fmt.Sprintf("msg_%d", n)
 	b.history[sess.ID] = append(b.history[sess.ID],
-		fakeMessage{ID: msgID, Role: "user", Content: textParts(body.Prompt.Text)})
+		fakeMessage{ID: msgID, Role: "user", Content: textParts(body.Text)})
 	sess.Time.Updated = float64(time.Now().UnixMilli())
+	b.busy[sess.ID] = true
 	b.mu.Unlock()
 
-	// Admission is synchronous (the ack carries the admitted durable seq);
-	// the scripted turn continues on its own goroutine.
-	admitted := b.emitDurable(sess.ID, "session.next.prompt.admitted", map[string]any{
-		"sessionID": sess.ID, "messageID": msgID, "delivery": delivery,
+	// Admission is synchronous; the scripted turn continues on its own
+	// goroutine and clears busy at its terminal event.
+	b.emitDurable(sess.ID, "session.inbox.enqueued", map[string]any{
+		"sessionID": sess.ID, "inboxID": msgID,
+		"item": map[string]any{"type": "user", "payload": map[string]string{"text": body.Text}, "delivery": delivery},
 	})
-	b.emitDurable(sess.ID, "session.next.prompted", map[string]any{
-		"sessionID": sess.ID, "messageID": msgID,
-	})
+	b.emitDurable(sess.ID, "session.execution.started", map[string]any{"sessionID": sess.ID})
 	go b.runScript(sess.ID, msgID)
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": msgID, "admittedSeq": admitted}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": msgID, "sessionID": sess.ID}})
 }
 
 func (b *backend) handleInterrupt(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": nil})
 }
 
-// handleWait mimics opencode 1.18.29, which answers 503 for every wait call.
-func (b *backend) handleWait(w http.ResponseWriter, _ *http.Request) {
-	writeError(w, http.StatusServiceUnavailable, "Session wait is not available yet")
+// handleWait mirrors opencode 2.x: 204 once the session agent loop is idle.
+func (b *backend) handleWait(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		b.mu.Lock()
+		busy := b.busy[sessionID]
+		b.mu.Unlock()
+		if !busy {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (b *backend) handlePermissionReply(w http.ResponseWriter, r *http.Request) {
@@ -237,10 +282,10 @@ func (b *backend) handlePermissionReply(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var body struct {
-		Reply string `json:"reply"`
+		Decision string `json:"decision"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Reply == "" {
-		writeError(w, http.StatusBadRequest, "reply is required")
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Decision == "" {
+		writeError(w, http.StatusBadRequest, "decision is required")
 		return
 	}
 	b.mu.Lock()
@@ -251,7 +296,7 @@ func (b *backend) handlePermissionReply(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	select {
-	case ch <- body.Reply:
+	case ch <- body.Decision:
 	default:
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": nil})
@@ -259,13 +304,13 @@ func (b *backend) handlePermissionReply(w http.ResponseWriter, r *http.Request) 
 
 func (b *backend) handleModelCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, locationEnvelope(r, []map[string]any{
-		{"id": fakeModelID, "providerID": fakeProviderID, "name": "Smoke Model", "family": "smoke"},
+		{"id": fakeModelID, "modelID": fakeModelID, "providerID": fakeProviderID, "name": "Smoke Model"},
 	}))
 }
 
 func (b *backend) handleAgentCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, locationEnvelope(r, []map[string]any{
-		{"id": fakeBuildAgent, "description": "Smoke build agent", "mode": "primary", "hidden": false},
+		{"id": fakeBuildAgent, "name": fakeBuildAgent, "description": "Smoke build agent", "mode": "primary", "hidden": false},
 	}))
 }
 
@@ -284,6 +329,17 @@ func (b *backend) appendHistory(sessionID string, m fakeMessage) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.history[sessionID] = append(b.history[sessionID], m)
+}
+
+// setBusy flips the session agent-loop flag and reports whether it was busy.
+func (b *backend) setBusy(sessionID string, busy bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if busy {
+		b.busy[sessionID] = true
+	} else {
+		delete(b.busy, sessionID)
+	}
 }
 
 // locationEnvelope wraps directory-scoped catalog data with the echoed

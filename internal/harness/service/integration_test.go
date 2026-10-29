@@ -47,7 +47,19 @@ func TestIntegrationSessionCRUDAndLazyRecovery(t *testing.T) {
 	root := t.TempDir()
 	svc := NewSessionService(prov, SessionConfig{WorkspaceRoot: root, MaxSessionsPerDir: 2}, nil)
 
-	session, err := svc.CreateAgentSession(ctx, AgentSpec{ID: 3, SystemPrompt: "p"}, 7)
+	// The ai domain compiles the agent definition into the workspace before
+	// creating sessions; mirror that here so waitDirectoryReady can observe
+	// the bedrock-agent-3 definition in the directory catalog.
+	agent := AgentSpec{ID: 3, SystemPrompt: "p"}
+	agentDir := AgentSessionDirectory(root, agent.ID)
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncAgentDefinition(agentDir, agent); err != nil {
+		t.Fatalf("compile agent def: %v", err)
+	}
+
+	session, err := svc.CreateAgentSession(ctx, agent, 7)
 	if err != nil {
 		t.Fatalf("create agent session: %v", err)
 	}
@@ -58,7 +70,7 @@ func TestIntegrationSessionCRUDAndLazyRecovery(t *testing.T) {
 
 	// Create beyond the limit: the oldest sessions must get archived.
 	for range 2 {
-		if _, err := svc.CreateAgentSession(ctx, AgentSpec{ID: 3, SystemPrompt: "p"}, 7); err != nil {
+		if _, err := svc.CreateAgentSession(ctx, agent, 7); err != nil {
 			t.Fatalf("create follow-up session: %v", err)
 		}
 	}

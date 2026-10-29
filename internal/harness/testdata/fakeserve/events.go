@@ -2,9 +2,10 @@ package main
 
 // events.go carries the streaming half of the fake: the backend-wide SSE bus
 // (GET /api/event) and the deterministic prompt turn. Every event shape
-// mirrors internal/harness/provider/oc/sse.go — durable events carry
-// {aggregateID, seq, version}, transient ones only an id; the bedrock bridge
-// dedupes durable frames per session by seq and transient ones by event id.
+// mirrors internal/harness/provider/oc/sse.go against opencode 2.x — durable
+// events carry {aggregateID, seq, version}, transient ones only an id; the
+// bedrock bridge dedupes durable frames per session by seq and transient
+// ones by event id.
 
 import (
 	"encoding/json"
@@ -21,7 +22,7 @@ const (
 	// permissionWait bounds how long the scripted permission ask blocks for
 	// the REST reply before the turn fails.
 	permissionWait = 60 * time.Second
-	fakeTool       = "exec"
+	fakeTool       = "shell"
 )
 
 // durableRef positions an event inside the per-session durable log.
@@ -56,7 +57,7 @@ func (b *backend) emitDurable(sessionID, typ string, data any) int64 {
 	return seq
 }
 
-// emitTransient broadcasts one transient (non-replayable) event.
+// emitTransient broadcasts one transient (non-durable) event.
 func (b *backend) emitTransient(typ string, data any) {
 	b.mu.Lock()
 	b.events++
@@ -126,15 +127,21 @@ func (b *backend) handleBus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// runScript drives the deterministic turn of one prompt: a transient text
-// delta, a permission ask that blocks until the REST reply lands, then a tool
-// call and result, the final text and idle. A reject (or reply timeout) ends
-// the turn with a session error instead.
+// runScript drives the deterministic turn of one prompt: a streamed text
+// delta, a permission ask that blocks until the REST reply lands, then a
+// tool call and result, the final text and the execution lifecycle close. A
+// reject (or reply timeout) ends the turn with a failed execution instead.
 func (b *backend) runScript(sessionID, msgID string) {
+	defer b.setBusy(sessionID, false)
 	assistant := "am_" + msgID
-	textID := "t_" + msgID
-	b.emitTransient("session.next.text.delta", map[string]any{
-		"sessionID": sessionID, "assistantMessageID": assistant, "textID": textID,
+	b.emitDurable(sessionID, "session.inbox.delivered", map[string]any{
+		"sessionID": sessionID, "inboxID": msgID,
+	})
+	b.emitDurable(sessionID, "session.step.started", map[string]any{
+		"sessionID": sessionID, "agent": fakeBuildAgent, "assistantMessageID": assistant,
+	})
+	b.emitDurable(sessionID, "session.text.delta", map[string]any{
+		"sessionID": sessionID, "assistantMessageID": assistant, "ordinal": 0,
 		"delta": "smoke-delta-" + msgID,
 	})
 
@@ -143,42 +150,51 @@ func (b *backend) runScript(sessionID, msgID string) {
 	b.mu.Lock()
 	b.pending[reqID] = ch
 	b.mu.Unlock()
-	b.emitTransient("permission.v2.asked", map[string]any{
-		"id": reqID, "sessionID": sessionID, "action": "bash",
+	b.emitTransient("permission.asked", map[string]any{
+		"id": reqID, "sessionID": sessionID, "action": fakeTool,
 		"resources": []string{"echo smoke"},
 	})
-	var reply string
+	var decision string
 	select {
-	case reply = <-ch:
+	case decision = <-ch:
 	case <-time.After(permissionWait):
-		reply = "reject"
+		decision = "reject"
 	}
 	b.mu.Lock()
 	delete(b.pending, reqID)
 	b.mu.Unlock()
-	if reply == "reject" {
-		b.emitDurable(sessionID, "session.error", map[string]any{
-			"sessionID": sessionID, "error": map[string]string{"message": "permission rejected"},
+	if decision == "reject" {
+		errMsg := "permission rejected"
+		b.emitDurable(sessionID, "session.step.failed", map[string]any{
+			"sessionID": sessionID, "assistantMessageID": assistant,
+			"error": map[string]string{"message": errMsg},
 		})
-		b.emitDurable(sessionID, "session.idle", map[string]any{"sessionID": sessionID})
+		b.emitDurable(sessionID, "session.execution.failed", map[string]any{
+			"sessionID": sessionID, "error": map[string]string{"message": errMsg},
+		})
 		return
 	}
 
 	call := "call_" + msgID
-	b.emitDurable(sessionID, "session.next.tool.called", map[string]any{
-		"sessionID": sessionID, "assistantMessageID": assistant, "callID": call,
-		"tool": fakeTool, "input": map[string]string{"command": "echo smoke"},
+	b.emitDurable(sessionID, "session.tool.called", map[string]any{
+		"sessionID": sessionID, "assistantMessageID": assistant, "id": call,
+		"name": fakeTool, "input": map[string]string{"command": "echo smoke"},
 	})
-	b.emitDurable(sessionID, "session.next.tool.success", map[string]any{
-		"sessionID": sessionID, "assistantMessageID": assistant, "callID": call,
-		"tool": fakeTool, "content": []map[string]string{{"type": "text", "text": "smoke"}},
+	b.emitDurable(sessionID, "session.tool.success", map[string]any{
+		"sessionID": sessionID, "assistantMessageID": assistant, "id": call,
+		"content": []map[string]string{{"type": "text", "text": "smoke"}},
 	})
 	text := "smoke-done-" + msgID
-	b.emitDurable(sessionID, "session.next.text.ended", map[string]any{
-		"sessionID": sessionID, "assistantMessageID": assistant, "textID": textID, "text": text,
+	b.emitDurable(sessionID, "session.text.ended", map[string]any{
+		"sessionID": sessionID, "assistantMessageID": assistant, "ordinal": 0, "text": text,
+	})
+	b.emitDurable(sessionID, "session.step.ended", map[string]any{
+		"sessionID": sessionID, "assistantMessageID": assistant, "finish": "stop",
 	})
 	b.appendHistory(sessionID, fakeMessage{
 		ID: "a_" + msgID, Role: "assistant", Content: textParts(text),
 	})
-	b.emitDurable(sessionID, "session.idle", map[string]any{"sessionID": sessionID})
+	b.emitDurable(sessionID, "session.execution.succeeded", map[string]any{
+		"sessionID": sessionID,
+	})
 }

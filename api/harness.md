@@ -12,15 +12,17 @@
 平台「AI 服务商」中启用的提供商/模型（`api/ai.md` Providers 节）自动渲染为 opencode 的 BYOK 提供商，**无需在服务器上手工配置 opencode**：
 
 - 渲染目标为各会话目录的 `opencode.json`（opencode 按 `location.directory` 逐目录加载）：工作区根（`GET /ai/models` 目录锚点）、每个智能体工作区（Run 前由工作区同步刷新）、每个聊天用户目录（会话/目录读取前刷新）。
-- 提供商 id 为 `bedrock-p{providerID}`（稳定，不随改名漂移）；每个 `bedrock-p*` 的 `options.baseURL` 固定为 `http://127.0.0.1:{server.port}/api/v1/ai`（OpenAI SDK POST `{baseURL}/chat/completions` → 平台 `ChatProxy`），`options.apiKey` 为进程启动时生成的 loopback token（**不是**上游解密 Key；上游 URL/Key 仅 ChatProxy 查库转发时使用）。
-- 默认模型取目录排序第一的启用模型，写入配置 `model`/`small_model`，并同时作为无显式模型会话的建会话默认（防 opencode 冷启动回退到宿主机用户的第三方 provider）。
-- 模型默认推理强度：`ai_agents.reasoning_effort` 渲染为该智能体工作区里所选模型的 `options.reasoningEffort`（opencode 以 `reasoning_effort` 进入每次请求）；聊天目录不设。
+- 提供商 id 为 `bedrock-p{providerID}`（稳定，不随改名漂移）；每个 `bedrock-p*` 的 `settings.baseURL` 固定为 `http://127.0.0.1:{server.port}/api/v1/ai`（OpenAI SDK POST `{baseURL}/chat/completions` → 平台 `ChatProxy`），`settings.apiKey` 为进程启动时生成的 loopback token（**不是**上游解密 Key；上游 URL/Key 仅 ChatProxy 查库转发时使用）。
+- 默认模型取目录排序第一的启用模型，写入配置 `model` 与 `agents.title.model`（v2 移除了 `small_model`，标题生成模型单独固定在 bedrock 提供商上），并同时作为无显式模型会话的建会话默认（防 opencode 冷启动回退到宿主机用户的第三方 provider）。
+- 模型默认推理强度：`ai_agents.reasoning_effort` 渲染为该智能体工作区里所选模型的 `settings.reasoningEffort`（opencode 以 `reasoning_effort` 进入每次请求）；聊天目录不设。
 - 模型目录（`GET /ai/models`、`GET /harness/models`）仅返回 `bedrock-p*`；显式 `model.provider` 建会话或保存 Agent 模型覆写须为 `bedrock-p*`，否则 400。
-- 已对 opencode 1.18.x 实测：agent 定义 frontmatter 的模型参数不透传，故推理强度走模型级 options。
+- 已对 opencode 2.x 实测：agent 定义 frontmatter 的模型参数不透传，故推理强度走模型级 settings。
 
 ## 模块可用性
 
 需登录。`harness.enabled=false` 时本域全部 REST 与 WS 端点（含查看类，后端不存在）返回 HTTP 503，信封 `code=503`，`message` 整串为 `harness-unavailable`；执行类端点（建会话 / 发消息 / 应答 / 打断 / WS）同样 503，**不回退** CLI 子进程执行。
+
+wire 契约按 **opencode 2.x** 验证（golden OpenAPI 快照见 `internal/harness/provider/oc/testdata/`）；`harness.bin` 指向的二进制在启动探活时校验版本，非 2.x 保持 degraded（503）。serve 进程注入 `OPENCODE_DISABLE_FREE_MODELS=true`，BYOK 隔离：会话只会到达 `bedrock-p*` 平台提供商，不会回退到 opencode 共享免费模型。
 
 ## 权限
 
@@ -76,7 +78,7 @@
 路径参数：id*: string
 响应 200：data = HarnessMessagePage
 错误：401 / 403 / 404 / 503（`harness-unavailable`）
-说明：服务端按时间序返回（旧→新）后分页；`content` 为后端原始消息部件数组，透传不做改写（user 消息顶层 `text` 归一化为单条 `{type: text}` 部件）。
+说明：服务端按时间序返回（旧→新）后分页；`content` 为后端原始消息部件数组，透传不做改写（user 消息顶层 `text` 归一化为单条 `{type: text}` 部件；opencode 2.x 投影的非对话条目如终态 `idle` 标记被过滤）。
 
 ### POST /harness/sessions/{id}/messages — 发送消息
 
@@ -148,7 +150,7 @@
 
 连接成功后推送 JSON text 帧（`HarnessFrame`）。顺序：
 
-1. **回放基线**：服务端环形缓冲（每会话最近 200 帧）中 `seq > after` 的持久帧（`message_text` / `tool_call` / `tool_result` / `status`），按序推送；瞬态帧（`message_delta` 等）不回放。
+1. **回放基线**：服务端环形缓冲（每会话最近 200 帧）中 `seq > after` 的持久帧（`message_delta` / `message_text` / `tool_call` / `tool_result` / `status`），按序推送；瞬态帧（`permission` 等 `seq=0` 的询问）不回放。
 2. **pending 补发**：当前未应答的 `permission` / `question` 帧各推一次（前端按 `requestId` 幂等）。
 3. **空闲快照**：流桥判定会话已空闲时，补发一帧瞬态 `status: idle`（`seq=0`）。会话仍在运行则无此帧。快照不依赖回放内容：瞬态 idle 帧不参与回放与 `after` 续传，连接若在其落定窗口内断开将永久错过该帧，快照保证重连客户端的运行态最终收敛（对已收敛客户端幂等）。
 4. **实时流**：统一帧实时推送，与回放基线按 `seq` 衔接，无丢帧、无重复。
@@ -157,7 +159,7 @@
 
 > **心跳**：服务端每 25 秒发送一帧 WebSocket `ping` 控制帧（非 JSON 文本帧，不出现在应用层消息流）。智能体回合存在长时间无业务帧的安静窗口（模型思考、慢工具），代理会按空闲超时切断纯静默连接；心跳维持连接活性，浏览器自动应答 `pong`。
 
-> **idle 帧来源**：opencode 1.18.x 的事件流不发布 `session.idle`（一回合以最后一帧 `step_ended` 结束）。流桥在 step 结束后的安静窗口内向后端 `GET /api/session/active` 求证，确认会话离开活跃集后合成一帧瞬态 `status: idle`（`seq=0`）进入环形缓冲并实时分发；打断（interrupt）成功后立即触发同一求证。因此 idle 帧与打断后的收尾都可能以瞬态帧出现，不参与 `after` 续传。
+> **idle 帧来源**：opencode 2.x 在回合结束广播执行生命周期事件——`session.execution.succeeded` / `session.execution.interrupted` 映射为持久 `status: idle` 帧，`session.execution.failed` 映射为持久 `status: error` 帧（携带 error 文案）。流桥另保留一层兜底：step 结束后的安静窗口内若未见终态事件，向 `GET /api/session/active` 求证并合成瞬态 `status: idle`（`seq=0`）；打断（interrupt）成功后立即触发同一求证。因此 idle 帧可能以持久帧或瞬态帧出现，瞬态者不参与 `after` 续传。
 
 ## 对象形状
 
@@ -228,7 +230,6 @@
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `id` | `string` | 是 | 用户消息 id |
-| `admitted_seq` | `integer` | 是 | 入队序号 |
 
 ### HarnessPermissionReplyRequest
 
@@ -294,9 +295,9 @@
 | `sessionId` | `string` | 是 |  |
 | `kind` | `string` | 是 | 见下 |
 | `status` | `object` |  | `kind=status` |
-| `messageDelta` | `object` |  | `kind=message_delta`（瞬态，不回放） |
+| `messageDelta` | `object` |  | `kind=message_delta`（持久帧，可回放） |
 | `messageText` | `object` |  | `kind=message_text` |
-| `reasoningDelta` | `object` |  | `kind=reasoning_delta`（瞬态） |
+| `reasoningDelta` | `object` |  | `kind=reasoning_delta` |
 | `toolCall` | `object` |  | `kind=tool_call` |
 | `toolResult` | `object` |  | `kind=tool_result` |
 | `permission` | `object` |  | `kind=permission` |
@@ -305,7 +306,7 @@
 `kind` 取值：`status`（`prompt_admitted` / `prompted` / `step_started` / `step_ended` / `step_failed` / `error` / `idle`）、`message_delta`、`message_text`、`reasoning_delta`、`tool_call`、`tool_result`、`permission`、`question`。
 
 `permission` 载荷：`{ requestId, action, resources?, save?, resolved? }`，应答走 `POST .../permissions/{reqId}`。
-`question` 载荷：`{ requestId, questions: [{ question, header?, options?, multiple? }], resolved? }`，应答走 `POST .../questions/{reqId}`。
+`question` 载荷：`{ requestId, questions: [{ question, key?, header?, options?, multiple? }], resolved? }`，应答走 `POST .../questions/{reqId}`（answers 按序对齐各问题；`key` 为后端表单字段键，透传给 opencode 2.x form 体系）。
 
 > **应答回执（resolved）**：流桥每当一条 pending 询问被成功应答——后端自动审批（`approval_mode=auto` 会话自动 `once`）、任意 REST 客户端应答、或 pending TTL 兜底拒绝——都会向实时订阅者补发一帧瞬态（`seq=0`）同 `kind` 帧：`permission.resolved` 为 `'once' | 'always' | 'reject'`，`question.resolved` 为 `'answered' | 'dismissed'`。前端收到带 `resolved` 的帧应关闭对应确认卡片，不再展示询问。回执不进回放与 pending 补发（未应答的询问才会补发）。
 >

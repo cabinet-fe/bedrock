@@ -77,6 +77,23 @@ curl -fsS http://127.0.0.1:8080/api/v1/health
 make smoke-fresh-install
 ```
 
+### 1.3 智能体会话底座（opencode 2.x）
+
+启用 AI 智能体（`harness.enabled=true`）前，目标机需安装 **opencode 2.x**（wire 契约按 2.x 锁定，bedrock 启动时经 `GET /api/info` 做版本闸门，非 2.x 保持 degraded、执行类端点 503）：
+
+```bash
+# 任选一种安装方式（curl 安装器 / bun / homebrew）
+curl -fsSL https://opencode.ai/install | bash
+# bun i -g @opencode/cli
+# brew install opencode
+
+opencode --version   # 确认 2.x
+```
+
+- 二进制须在 bedrock 进程用户的 PATH 中（裸名 `opencode`），或以绝对路径配置 `harness.bin`。
+- serve 由 bedrock 托管（127.0.0.1 固定，密码自动生成持久化），无需手工启动或配置 opencode 全局账号；模型经平台 BYOK 注入，且进程级禁用了 opencode 免费模型回退（`OPENCODE_DISABLE_FREE_MODELS`）。
+- 小版本升级建议先在一台机器验证后推广；升级后如契约漂移，contract 测试（`HARNESS_OC_TEST_ADDR` 指向 serve）会以 golden spec 报出差异。
+
 ---
 
 ## 2. 多数据库配置

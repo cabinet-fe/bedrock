@@ -121,7 +121,7 @@ func TestProcessStartsHealthyOnLoopback(t *testing.T) {
 	if info, err := os.Stat(m.cfg.PasswordFile); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("password file mode = %v, want 0600 (err %v)", info.Mode().Perm(), err)
 	}
-	probeURL := fmt.Sprintf("http://127.0.0.1:%d/global/health", m.cfg.Port)
+	probeURL := fmt.Sprintf("http://127.0.0.1:%d/api/info", m.cfg.Port)
 	if code := healthStatus(t, probeURL, password); code != http.StatusOK {
 		t.Fatalf("health with persisted password = %d, want 200", code)
 	}
@@ -205,7 +205,7 @@ func TestProcessDegradedWhenUnavailable(t *testing.T) {
 func startOrphanServe(t *testing.T, port int, password string) <-chan struct{} {
 	t.Helper()
 	cmd := exec.Command(fakeServeBin, "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
-	cmd.Env = append(os.Environ(), "OPENCODE_SERVER_PASSWORD="+password)
+	cmd.Env = append(os.Environ(), "OPENCODE_PASSWORD="+password)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("orphan serve: %v", err)
 	}

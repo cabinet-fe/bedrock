@@ -385,12 +385,11 @@ type modelRefResponse struct {
 }
 
 type promptAckResponse struct {
-	ID          string `json:"id"`
-	AdmittedSeq int64  `json:"admitted_seq"`
+	ID string `json:"id"`
 }
 
 func newPromptAckResponse(ack provider.PromptAck) promptAckResponse {
-	return promptAckResponse{ID: ack.MessageID, AdmittedSeq: ack.AdmittedSeq}
+	return promptAckResponse{ID: ack.MessageID}
 }
 
 type messageResponse struct {

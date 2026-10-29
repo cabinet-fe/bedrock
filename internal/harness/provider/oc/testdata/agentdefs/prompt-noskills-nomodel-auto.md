@@ -1,7 +1,10 @@
 ---
 description: "Release Helper: Assists with release notes and changelogs."
-permission:
-  skill: allow
+mode: primary
+permissions:
+  - action: skill
+    resource: "*"
+    effect: allow
 ---
 
 你是发布助手，负责整理变更日志。

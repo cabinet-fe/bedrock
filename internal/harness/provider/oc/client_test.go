@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"bedrock/internal/harness/provider"
 )
@@ -84,25 +83,23 @@ func TestPromptDefaultsToQueue(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var in struct {
-			Prompt struct {
-				Text string `json:"text"`
-			} `json:"prompt"`
+			Text     string `json:"text"`
 			Delivery string `json:"delivery"`
 		}
 		_ = json.Unmarshal(body, &in)
 		if in.Delivery != "queue" {
 			t.Errorf("delivery = %q, want queue", in.Delivery)
 		}
-		if in.Prompt.Text != "hi" {
-			t.Errorf("text = %q", in.Prompt.Text)
+		if in.Text != "hi" {
+			t.Errorf("text = %q", in.Text)
 		}
-		_, _ = w.Write([]byte(`{"data":{"id":"msg_1","admittedSeq":3}}`))
+		_, _ = w.Write([]byte(`{"data":{"id":"msg_1","sessionID":"ses_x","type":"user","payload":{"text":"hi"},"delivery":"queue"}}`))
 	})
 	ack, err := client.Prompt(context.Background(), "ses_x", provider.PromptInput{Text: "hi"})
 	if err != nil {
 		t.Fatalf("prompt: %v", err)
 	}
-	if ack.MessageID != "msg_1" || ack.AdmittedSeq != 3 {
+	if ack.MessageID != "msg_1" {
 		t.Fatalf("ack = %+v", ack)
 	}
 }
@@ -194,28 +191,26 @@ func TestArchiveSession(t *testing.T) {
 		gotMethod, gotPath = r.Method, r.URL.Path
 		raw, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(raw, &body)
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusNoContent)
 	})
-	before := time.Now().UnixMilli()
 	if err := client.ArchiveSession(context.Background(), "ses_x"); err != nil {
 		t.Fatalf("archive session: %v", err)
 	}
 	if gotMethod != http.MethodPatch {
 		t.Fatalf("method = %s, want PATCH", gotMethod)
 	}
-	// The archive flag lives only on the unprefixed route group.
-	if gotPath != "/session/ses_x" {
-		t.Fatalf("path = %q, want /session/ses_x", gotPath)
+	if gotPath != "/api/session/ses_x" {
+		t.Fatalf("path = %q, want /api/session/ses_x", gotPath)
 	}
-	timeBody, _ := body["time"].(map[string]any)
-	archived, _ := timeBody["archived"].(float64)
-	if int64(archived) < before {
-		t.Fatalf("archived = %v, want >= %d", archived, before)
+	if archived, _ := body["archived"].(bool); !archived {
+		t.Fatalf("body = %v, want {\"archived\": true}", body)
 	}
 }
 
 func TestWaitUnavailable(t *testing.T) {
+	var gotPath string
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"_tag":"ServiceUnavailableError","message":"Session wait is not available yet"}`))
 	})
@@ -225,5 +220,83 @@ func TestWaitUnavailable(t *testing.T) {
 	}
 	if !errors.Is(err, provider.ErrWaitUnavailable) {
 		t.Fatalf("wait error = %v, want ErrWaitUnavailable", err)
+	}
+	if want := "/api/experimental/session/ses_x/wait"; gotPath != want {
+		t.Fatalf("path = %q, want %q", gotPath, want)
+	}
+}
+
+func TestReplyPermissionSendsDecision(t *testing.T) {
+	var gotPath string
+	var body map[string]any
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		w.WriteHeader(http.StatusOK)
+	})
+	err := client.ReplyPermission(context.Background(), "ses_x", "per_1", provider.PermissionAlways, "go ahead")
+	if err != nil {
+		t.Fatalf("reply permission: %v", err)
+	}
+	if want := "/api/session/ses_x/permission/per_1/reply"; gotPath != want {
+		t.Fatalf("path = %q, want %q", gotPath, want)
+	}
+	if body["decision"] != "always" || body["message"] != "go ahead" {
+		t.Fatalf("body = %v, want decision=always message=go ahead", body)
+	}
+}
+
+func TestReplyQuestionKeysFormAnswers(t *testing.T) {
+	var gotPath string
+	var replyBody map[string]any
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/session/ses_x/form/frm_1":
+			_, _ = w.Write([]byte(`{"data":{"id":"frm_1","sessionID":"ses_x","title":"Pick","fields":[` +
+				`{"key":"color","type":"string","title":"color?","options":[{"value":"red","label":"red"}]},` +
+				`{"key":"tags","type":"multiselect"},` +
+				`{"key":"dry","type":"boolean"}]}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/session/ses_x/form/frm_1/reply":
+			gotPath = r.URL.Path
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &replyBody)
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	})
+	err := client.ReplyQuestion(context.Background(), "ses_x", "frm_1", provider.QuestionAnswers{
+		Answers: [][]string{{"red"}, {"a", "b"}, {"yes"}},
+	})
+	if err != nil {
+		t.Fatalf("reply question: %v", err)
+	}
+	if gotPath != "/api/session/ses_x/form/frm_1/reply" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	answer, _ := replyBody["answer"].(map[string]any)
+	if answer["color"] != "red" {
+		t.Errorf("color = %v, want red", answer["color"])
+	}
+	if tags, ok := answer["tags"].([]any); !ok || len(tags) != 2 || tags[0] != "a" {
+		t.Errorf("tags = %v, want [a b]", answer["tags"])
+	}
+	if dry, ok := answer["dry"].(bool); !ok || !dry {
+		t.Errorf("dry = %v, want true", answer["dry"])
+	}
+}
+
+func TestRejectQuestionCancelsForm(t *testing.T) {
+	var gotMethod, gotPath string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := client.RejectQuestion(context.Background(), "ses_x", "frm_1"); err != nil {
+		t.Fatalf("reject question: %v", err)
+	}
+	if gotMethod != http.MethodDelete || gotPath != "/api/session/ses_x/form/frm_1" {
+		t.Fatalf("%s %q, want DELETE /api/session/ses_x/form/frm_1", gotMethod, gotPath)
 	}
 }
