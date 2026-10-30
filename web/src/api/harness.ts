@@ -20,20 +20,25 @@ export interface HarnessPromptAck {
   id: string;
 }
 
-/** Content part of GET /harness/sessions/:id/messages (provider passthrough). */
+/** Content part of GET /harness/sessions/:id/messages (provider passthrough).
+ * opencode 2.x part shapes (locked by the golden spec): tool parts key the
+ * call by `id` and name the tool by `name`; the completed state carries the
+ * output as `state.content` and errors as `state.error.message`. The
+ * `callID`/`state.output` spellings do not exist on the wire — mapping them
+ * broke replay dedup and glued duplicate tool cards onto the last message. */
 export type HarnessMessagePart =
   | { type: "text"; id?: string; text: string }
   | { type: "reasoning"; id?: string; text: string }
   | {
       type: "tool";
-      id?: string;
-      callID: string;
-      name?: string;
+      id: string;
+      name: string;
+      executed?: boolean;
       state: {
-        status: "pending" | "running" | "completed" | "error";
+        status: "streaming" | "running" | "completed" | "error";
         input?: unknown;
-        output?: string;
-        error?: string;
+        content?: string | { type?: string; text?: string }[];
+        error?: { type?: string; message?: string };
       };
     };
 
@@ -602,47 +607,40 @@ export function createHarnessSessionAdapter(
           }
           continue;
         }
-        knownCallIds.add(part.callID);
+        if (part.type !== "tool") continue; // snapshot/patch/… parts carry no chat rendering
+        // Dedup by the wire call id: after history replay the WS ring still
+        // replays recent durable tool_call frames, and a miss would glue the
+        // duplicate card onto the last folded message.
+        knownCallIds.add(part.id);
         const status =
           part.state?.status === "completed"
             ? "success"
             : part.state?.status === "error"
               ? "error"
               : "running";
-        if (status !== "running") finalCallIds.add(part.callID);
+        if (status !== "running") finalCallIds.add(part.id);
 
-        let result = part.state?.output;
-        if (result == null && (part.state as { content?: unknown })?.content != null) {
-          const c = (part.state as { content?: unknown }).content;
-          if (typeof c === "string") {
-            result = c;
-          } else if (Array.isArray(c)) {
-            result = c
-              .map((item: unknown) => {
-                if (typeof item === "string") return item;
-                if (
-                  item &&
-                  typeof item === "object" &&
-                  "text" in item &&
-                  typeof (item as { text: unknown }).text === "string"
-                ) {
-                  return (item as { text: string }).text;
-                }
-                return stringifyArg(item);
-              })
-              .join("");
-          } else {
-            result = stringifyArg(c);
-          }
+        let result: string | undefined;
+        const content = part.state?.content;
+        if (typeof content === "string") {
+          result = content;
+        } else if (Array.isArray(content)) {
+          result = content
+            .map((item) => {
+              if (typeof item === "string") return item;
+              if (typeof item?.text === "string") return item.text;
+              return stringifyArg(item);
+            })
+            .join("");
         }
 
         toolCalls.push({
-          id: part.callID,
-          name: part.name ?? "",
+          id: part.id,
+          name: part.name,
           arguments: stringifyArg(part.state?.input),
           status,
-          result: result == null ? undefined : result,
-          error: part.state?.error || undefined,
+          result,
+          error: part.state?.error?.message || undefined,
         });
       }
       const reasoning = textOfParts(message.content, "reasoning");
