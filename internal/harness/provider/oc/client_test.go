@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"bedrock/internal/harness/provider"
 )
@@ -223,6 +224,32 @@ func TestWaitUnavailable(t *testing.T) {
 	}
 	if want := "/api/experimental/session/ses_x/wait"; gotPath != want {
 		t.Fatalf("path = %q, want %q", gotPath, want)
+	}
+}
+
+// TestWaitNotBoundedByDefaultClientTimeout pins the long-poll contract: the
+// wait route holds the request until the session is idle, which can outlast
+// the default client's 60s total timeout, so Wait must ride the dedicated
+// no-timeout client (only the caller's context bounds it).
+func TestWaitNotBoundedByDefaultClientTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Longer than the default client timeout would tolerate.
+		time.Sleep(300 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	client := NewClient(Config{
+		BaseURL: srv.URL,
+		Password: "pw",
+		HTTPClient: &http.Client{Timeout: 100 * time.Millisecond},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := client.Wait(ctx, "ses_x"); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if client.longPollHTTP.Timeout != 0 {
+		t.Fatalf("long-poll client timeout = %v, want 0", client.longPollHTTP.Timeout)
 	}
 }
 

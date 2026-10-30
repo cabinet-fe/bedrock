@@ -350,9 +350,9 @@ type AgentInfo struct {
 	Hidden      bool   `json:"hidden"`
 }
 
-// ErrWaitUnavailable reports that the backend cannot serve Wait in the
-// current version (opencode 1.18.x answered 503; kept so callers degrade
-// gracefully if a backend regresses).
+// ErrWaitUnavailable reports that the backend cannot serve Wait right now
+// (the experimental wait route answered 503). Callers fall back to
+// event-driven idle detection.
 var ErrWaitUnavailable = errors.New("provider: session wait is not available")
 
 // ErrNotFound reports that the backend holds no such session. Adapters wrap

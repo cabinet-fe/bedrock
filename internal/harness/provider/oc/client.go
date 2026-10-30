@@ -31,16 +31,24 @@ type Config struct {
 	// Username defaults to DefaultUsername.
 	Username string
 	// HTTPClient defaults to a client with a 60s total timeout. Event
-	// streams always use a dedicated client without a total timeout.
+	// streams and the wait long-poll always use a dedicated client without
+	// a total timeout (the caller's context bounds them).
 	HTTPClient *http.Client
 }
 
 // Client is the opencode REST client.
 type Client struct {
-	baseURL    string
-	username   string
-	password   string
-	http       *http.Client
+	baseURL string
+	username string
+	password string
+	http    *http.Client
+	// longPollHTTP serves the wait route: no total timeout, because the
+	// long-poll holds the request until the session goes idle, which for a
+	// running agent turn can outlast any fixed budget. The caller's context
+	// is the only deadline.
+	longPollHTTP *http.Client
+	// streamHTTP serves SSE event streams (no total timeout for the same
+	// reason; cancellation is context-bound).
 	streamHTTP *http.Client
 }
 
@@ -55,11 +63,12 @@ func NewClient(cfg Config) *Client {
 		username = DefaultUsername
 	}
 	return &Client{
-		baseURL:    strings.TrimRight(cfg.BaseURL, "/"),
-		username:   username,
-		password:   cfg.Password,
-		http:       httpClient,
-		streamHTTP: &http.Client{},
+		baseURL:      strings.TrimRight(cfg.BaseURL, "/"),
+		username:     username,
+		password:     cfg.Password,
+		http:         httpClient,
+		longPollHTTP: &http.Client{},
+		streamHTTP:   &http.Client{},
 	}
 }
 
@@ -278,9 +287,9 @@ func (c *Client) SelectModel(ctx context.Context, sessionID string, model provid
 }
 
 // ActiveSessions lists the sessions currently running an agent loop
-// (GET /api/session/active): id -> true; absent ids are idle. opencode
-// 1.18.29 keeps a session in the result across the inter-step gaps of one
-// turn, so membership is the turn-level busy signal.
+// (GET /api/session/active): id -> true; absent ids are idle. A session
+// stays in the result across the inter-step gaps of one turn, so membership
+// is the turn-level busy signal.
 func (c *Client) ActiveSessions(ctx context.Context) (map[string]bool, error) {
 	var resp envelope[map[string]struct {
 		Type string `json:"type"`
@@ -296,11 +305,13 @@ func (c *Client) ActiveSessions(ctx context.Context) (map[string]bool, error) {
 }
 
 // Wait blocks until the session loop is idle (POST
-// /api/experimental/session/{id}/wait, answered 204 once idle). The route is
-// experimental upstream; a 503 still maps to ErrWaitUnavailable so callers
-// can fall back to event-driven idle detection.
+// /api/experimental/session/{id}/wait, answered 204 once idle). The route
+// holds the request open for the whole turn, so it rides the dedicated
+// long-poll client whose only deadline is the caller's context. A 503 maps
+// to ErrWaitUnavailable so callers can fall back to event-driven idle
+// detection.
 func (c *Client) Wait(ctx context.Context, sessionID string) error {
-	err := c.post(ctx, "/api/experimental/session/"+sessionID+"/wait", nil, nil)
+	err := c.sendClient(ctx, c.longPollHTTP, http.MethodPost, "/api/experimental/session/"+sessionID+"/wait", nil, nil)
 	if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.Status == http.StatusServiceUnavailable {
 		return fmt.Errorf("%w: %s", provider.ErrWaitUnavailable, apiErr.Message)
 	}
@@ -611,7 +622,7 @@ type envelope[T any] struct {
 
 // get performs a GET and decodes the JSON body into out.
 func (c *Client) get(ctx context.Context, path string, query url.Values, out any) error {
-	raw, err := c.request(ctx, http.MethodGet, path, query, nil)
+	raw, err := c.request(ctx, c.http, http.MethodGet, path, query, nil)
 	if err != nil {
 		return err
 	}
@@ -625,7 +636,7 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 }
 
 func (c *Client) getRaw(ctx context.Context, path string) ([]byte, error) {
-	return c.request(ctx, http.MethodGet, path, nil, nil)
+	return c.request(ctx, c.http, http.MethodGet, path, nil, nil)
 }
 
 // post performs a POST with a JSON body and decodes the JSON response into
@@ -644,9 +655,15 @@ func (c *Client) doDelete(ctx context.Context, path string) error {
 	return c.send(ctx, http.MethodDelete, path, nil, nil)
 }
 
-// send marshals body to JSON, performs the request and decodes the JSON
-// response into out (nil out ignores the body).
+// send marshals body to JSON, performs the request on the default client and
+// decodes the JSON response into out (nil out ignores the body).
 func (c *Client) send(ctx context.Context, method, path string, body, out any) error {
+	return c.sendClient(ctx, c.http, method, path, body, out)
+}
+
+// sendClient is send against an explicit HTTP client (the wait long-poll
+// bypasses the default client's total timeout).
+func (c *Client) sendClient(ctx context.Context, client *http.Client, method, path string, body, out any) error {
 	var payload []byte
 	if body != nil {
 		var err error
@@ -655,7 +672,7 @@ func (c *Client) send(ctx context.Context, method, path string, body, out any) e
 			return fmt.Errorf("oc encode %s: %w", path, err)
 		}
 	}
-	raw, err := c.request(ctx, method, path, nil, payload)
+	raw, err := c.request(ctx, client, method, path, nil, payload)
 	if err != nil {
 		return err
 	}
@@ -668,7 +685,7 @@ func (c *Client) send(ctx context.Context, method, path string, body, out any) e
 	return nil
 }
 
-func (c *Client) request(ctx context.Context, method, path string, query url.Values, body []byte) ([]byte, error) {
+func (c *Client) request(ctx context.Context, client *http.Client, method, path string, query url.Values, body []byte) ([]byte, error) {
 	u := c.baseURL + path
 	if len(query) > 0 {
 		u += "?" + query.Encode()
@@ -685,7 +702,7 @@ func (c *Client) request(ctx context.Context, method, path string, query url.Val
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := c.http.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("oc %s %s: %w: %w", method, path, provider.ErrUnavailable, err)
 	}

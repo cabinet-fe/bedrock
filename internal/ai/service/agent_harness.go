@@ -309,9 +309,16 @@ func (s *AgentService) runHarnessSession(
 				return s.settleContextDone(run, sessionID, writeLog)
 			case waitErr != nil:
 				// Possible serve crash: a consistent History read still
-				// settles success; a failing one means harness-unavailable.
+				// settles success. A reachable backend (active probe ok)
+				// means the wait failure was transient transport trouble —
+				// frames and the fallback timer keep driving the run; only
+				// a failing probe settles harness-unavailable.
 				if out, ok := reconcile(); ok {
 					return out
+				}
+				if _, err := s.harnessProvider.ActiveSessions(runCtx); err == nil {
+					writeLog("wait 调用失败但后端可达，继续等待事件帧: " + waitErr.Error())
+					continue
 				}
 				msg := "harness-unavailable: " + waitErr.Error()
 				writeLog(msg)

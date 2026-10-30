@@ -247,6 +247,24 @@ func TestAgentRunStateMachineMatrix(t *testing.T) {
 			wantErr: "harness-unavailable",
 		},
 		{
+			// wait 长轮询传输层失败但后端仍健康：探活成功，运行继续靠
+			// 事件帧与兜底定时器推进到成功，而不是误判 harness-unavailable。
+			name:       "wait失败但后端健康",
+			timeoutSec: 30,
+			setup: func(t *testing.T, m *matrixEnv) {
+				m.fake.SetScript(func(f *harnesstest.Fake, sess *provider.Session, _ string) {
+					f.FailWait(sess.ID, errors.New("oc POST /api/experimental/session/ses_x/wait: context deadline exceeded"))
+					time.Sleep(100 * time.Millisecond)
+					_ = f.Emit(provider.Frame{
+						SessionID: sess.ID, Kind: provider.FrameMessageText,
+						MessageText: &provider.MessageText{AssistantMessageID: "am-1", TextID: "t-1", Text: "recovered"},
+					})
+					f.Complete(sess.ID, "recovered")
+				})
+			},
+			want: model.JobSuccess,
+		},
+		{
 			name:       "模型不可用",
 			timeoutSec: 30,
 			setup: func(t *testing.T, m *matrixEnv) {

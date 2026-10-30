@@ -154,6 +154,19 @@ func (f *Fake) Complete(sessionID, text string) {
 	}
 }
 
+// FailWait releases a pending Wait with err while the backend itself stays
+// healthy (ActiveSessions still answers): transport-level wait trouble must
+// not fail the run on its own.
+func (f *Fake) FailWait(sessionID string, err error) {
+	f.mu.Lock()
+	f.waitErr[sessionID] = err
+	ch := f.takeWaitDoneLocked(sessionID)
+	f.mu.Unlock()
+	if ch != nil {
+		close(ch)
+	}
+}
+
 // FailSession emits a session-error status frame and releases Wait.
 func (f *Fake) FailSession(sessionID, message string) {
 	_ = f.Emit(provider.Frame{
