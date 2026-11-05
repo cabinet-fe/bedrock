@@ -384,10 +384,12 @@ export function createHarnessSessionAdapter(
             return;
           case "idle":
             finalizeOpenAssistants();
-            if (textParts.size === 0) {
-              // Prep window can finish the turn before the chat mounts; pull
-              // history so a late assistant message is not dropped by finish.
-              void fetchHistory().then(
+            // 只在此前没有落地任何 assistant 消息时补拉：典型是准备窗口先结束、
+            // 聊天面板后挂载，历史里还没有回复。已经回放过（或直播过）assistant
+            // 消息说明内容在手，再拉一次只会命中下面的去重、纯多一次请求 ——
+            // 打开一条已完成的运行记录正是这种情况。
+            if (seenAssistantIds.size === 0 && textParts.size === 0) {
+              void loadHistory().then(
                 ({ events }) => {
                   if (disposed) return;
                   for (const event of events) emit(event);
@@ -555,7 +557,17 @@ export function createHarnessSessionAdapter(
     }
   }
 
-  async function fetchHistory(): Promise<{ events: ChatSessionEvent[]; hasMore: boolean }> {
+  /**
+   * First history replay started by `subscribe`, kept as an in-flight promise
+   * so the runtime's own `fetchHistory()` right after `open()` joins it instead
+   * of issuing a second `/messages` request: the snapshot is already emitted by
+   * `subscribe`, so a refetch could only yield events the dedup state drops.
+   * Cleared once settled (success or failure) so reconnect catch-up and idle
+   * pulls still hit the API.
+   */
+  let initialReplay: Promise<void> | null = null;
+
+  async function loadHistory(): Promise<{ events: ChatSessionEvent[]; hasMore: boolean }> {
     const messages = await listSessionMessages(sessionId);
     const events: ChatSessionEvent[] = [];
     let foundUserMessage = false;
@@ -674,6 +686,26 @@ export function createHarnessSessionAdapter(
     return { events, hasMore: false };
   }
 
+  /**
+   * Adapter history pull. The runtime's seed call (no `beforeSeq`) right after
+   * `open()` rides the first replay `subscribe` already started — its events go
+   * out through `onEvent`, so nothing is lost — instead of hitting `/messages`
+   * a second time. The join is consumed once; reconnect catch-up
+   * (`beforeSeq != null`, which must not be swallowed) and idle refills always
+   * issue real requests.
+   */
+  async function fetchHistory(
+    beforeSeq?: number,
+  ): Promise<{ events: ChatSessionEvent[]; hasMore: boolean }> {
+    const joined = beforeSeq == null ? initialReplay : null;
+    if (joined) {
+      initialReplay = null;
+      await joined;
+      return { events: [], hasMore: false };
+    }
+    return loadHistory();
+  }
+
   return {
     subscribe(registrant) {
       handlers = registrant;
@@ -682,17 +714,21 @@ export function createHarnessSessionAdapter(
       // The adapter owns the initial history replay: emit its events first,
       // then flush the buffered WS frames so the seam order is deterministic
       // (old -> new) and deduplicated. The runtime's own fetchHistory call
-      // reuses the same dedup state and converges to no-op.
-      fetchHistory().then(
+      // joins `initialReplay` instead of refetching. Cleared before the flush
+      // so an `idle` frame met during it still refills from the API.
+      const replay = loadHistory().then(
         ({ events }) => {
+          if (initialReplay === replay) initialReplay = null;
           for (const event of events) emit(event);
           flushBuffer();
         },
         () => {
+          if (initialReplay === replay) initialReplay = null;
           flushBuffer();
           handlers?.onDisconnect?.();
         },
       );
+      initialReplay = replay;
       return () => {
         disposed = true;
         handlers = null;
@@ -701,6 +737,8 @@ export function createHarnessSessionAdapter(
         ws = null;
         buffer.length = 0;
         synced = false;
+        // Drop a pending join so a remount of the same adapter refetches.
+        initialReplay = null;
       };
     },
     async send(content) {
