@@ -237,6 +237,8 @@ export function createHarnessSessionAdapter(
   const knownTextKeys = new Set<string>();
   const knownCallIds = new Set<string>();
   const finalCallIds = new Set<string>();
+  /** 上一条下发的 running 断言；避免每个流式 delta 都发一次 fold 事件。 */
+  let liveRunning = false;
   const activePermissions = new Set<string>();
   let activeQuestionId: string | null = null;
   /** message id -> finished text parts in arrival order. */
@@ -259,6 +261,25 @@ export function createHarnessSessionAdapter(
 
   function assistantContent(messageId: string): string {
     return (textParts.get(messageId) ?? []).map((part) => part.text).join("");
+  }
+
+  /**
+   * 直播帧断言「本回合仍在运行」。原先 running 只在 prompted 置真，而每会话
+   * 回放窗口只有最近 200 帧：长回合里 prompted 早已滚出缓冲，中途挂载（打开
+   * 运行详情、刷新、切回标签页）后 running 恒为 false。此时 step_ended 会让
+   * 末条 assistant 变 done，UI 的折叠判据（running=false + 末条终态）随即成立，
+   * 过程块收成「已完成」，下一步 delta 又展开 —— 一轮对话里来回翻转。
+   * fold 的 running 是布尔赋值，重复断言幂等；复位仍走 idle / error / finish。
+   */
+  function markRunning(): void {
+    if (liveRunning) return;
+    liveRunning = true;
+    emit({ type: "running", running: true });
+  }
+
+  /** 回合终止（idle / error）：解除 running 断言，下一轮重新置真。 */
+  function clearRunning(): void {
+    liveRunning = false;
   }
 
   /** Fold treats `assistant/message` as the done marker; `finish` only clears running. */
@@ -311,6 +332,7 @@ export function createHarnessSessionAdapter(
     if (index >= 0) parts[index] = { id: textId, text };
     else parts.push({ id: textId, text });
     textParts.set(messageId, parts);
+    markRunning();
     beginAssistant(messageId);
     emit({
       type: "assistant/message",
@@ -360,22 +382,28 @@ export function createHarnessSessionAdapter(
                 } as ChatSessionEvent);
               }
             }
-            emit({ type: "running", running: true });
+            markRunning();
             return;
           case "step_started":
             // Next LLM step: close leftover thinking so at most one block is in-progress.
+            markRunning();
             finalizeOpenAssistants(status.assistantMessageId);
             return;
           case "step_ended":
+            // 一步结束不等于回合结束：回合终态只有 idle / error。这里同样断言
+            // running，否则挂载后首帧恰为 step_ended 时会误判成本轮已落定。
+            markRunning();
             if (status.assistantMessageId) finalizeAssistant(status.assistantMessageId);
             else finalizeOpenAssistants();
             return;
           case "step_failed":
             finalizeOpenAssistants();
+            clearRunning();
             emit({ type: "error", code: "step_failed", message: status.error || "step failed" });
             return;
           case "error":
             finalizeOpenAssistants();
+            clearRunning();
             emit({
               type: "error",
               code: "harness_error",
@@ -384,6 +412,7 @@ export function createHarnessSessionAdapter(
             return;
           case "idle":
             finalizeOpenAssistants();
+            clearRunning();
             // 只在此前没有落地任何 assistant 消息时补拉：典型是准备窗口先结束、
             // 聊天面板后挂载，历史里还没有回复。已经回放过（或直播过）assistant
             // 消息说明内容在手，再拉一次只会命中下面的去重、纯多一次请求 ——
@@ -410,6 +439,7 @@ export function createHarnessSessionAdapter(
       case "message_delta": {
         const delta = frame.messageDelta;
         if (!delta) return;
+        markRunning();
         beginAssistant(delta.assistantMessageId);
         emit({
           type: "assistant/chunk",
@@ -422,6 +452,7 @@ export function createHarnessSessionAdapter(
         const delta = frame.reasoningDelta;
         if (!delta) return;
         const msgId = delta.assistantMessageId;
+        markRunning();
         beginAssistant(msgId);
         reasoningParts.set(msgId, (reasoningParts.get(msgId) ?? "") + delta.delta);
         emit({
@@ -442,6 +473,7 @@ export function createHarnessSessionAdapter(
         const call = frame.toolCall;
         if (!call || knownCallIds.has(call.callId)) return;
         knownCallIds.add(call.callId);
+        markRunning();
         // Stub first if this assistant message is new so the call attaches here.
         beginAssistant(call.assistantMessageId, true);
         emit({
@@ -457,6 +489,7 @@ export function createHarnessSessionAdapter(
         const result = frame.toolResult;
         if (!result || finalCallIds.has(result.callId)) return;
         finalCallIds.add(result.callId);
+        markRunning();
         emit({
           type: "tool/result",
           callId: result.callId,
@@ -710,6 +743,7 @@ export function createHarnessSessionAdapter(
     subscribe(registrant) {
       handlers = registrant;
       disposed = false;
+      liveRunning = false;
       openWS();
       // The adapter owns the initial history replay: emit its events first,
       // then flush the buffered WS frames so the seam order is deterministic
@@ -732,6 +766,7 @@ export function createHarnessSessionAdapter(
       return () => {
         disposed = true;
         handlers = null;
+        liveRunning = false;
         if (reconnectTimer) clearTimeout(reconnectTimer);
         ws?.close();
         ws = null;
